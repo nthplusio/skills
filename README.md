@@ -89,3 +89,5 @@ It checks:
 ## Licence
 
 [MIT](LICENSE)
+
+<!-- protection test -->
