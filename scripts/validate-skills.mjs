@@ -122,7 +122,7 @@ function checkAssets(skillDir) {
 // Return an array of { level: 'error' | 'warn', msg: string }. Returning [] is
 // valid and simply disables the policy — the hard requirements above still run.
 //
-// See skills/example-skill/references/writing-good-descriptions.md for the
+// See docs/writing-good-descriptions.md for the
 // checklist this could encode.
 function checkDescriptionQuality(description, name) {
   return []
