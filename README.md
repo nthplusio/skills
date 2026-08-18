@@ -14,13 +14,13 @@ npx skills add https://skills.sh/p/AFkfFrlyUzDWbKUF
 To install from this repository instead, bypassing the pack:
 
 ```bash
-npx skills add scoussens-nthplusio/skills
+npx skills add nthplusio/skills
 ```
 
 To install a single skill:
 
 ```bash
-npx skills add scoussens-nthplusio/skills/speak-clearly
+npx skills add nthplusio/skills --skill speak-clearly
 ```
 
 ## What's in here
