@@ -5,23 +5,22 @@ AI coding agents.
 
 ## Install
 
-Install every skill in this repository:
+Install the [pack](https://www.skills.sh/docs/packs):
+
+```bash
+npx skills add https://skills.sh/p/dfs63XlSOboFyEll
+```
+
+To install from this repository instead, bypassing the pack:
 
 ```bash
 npx skills add scoussens-nthplusio/skills
 ```
 
-Install a single skill:
+To install a single skill:
 
 ```bash
 npx skills add scoussens-nthplusio/skills/speak-clearly
-```
-
-Once this repository is connected as a [pack](https://www.skills.sh/docs/packs)
-on skills.sh, it can also be installed by pack id:
-
-```bash
-npx skills add https://skills.sh/p/<pack-id>
 ```
 
 ## What's in here
