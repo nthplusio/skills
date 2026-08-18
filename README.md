@@ -28,7 +28,6 @@ npx skills add https://skills.sh/p/<pack-id>
 
 | Skill | Description |
 | --- | --- |
-| [`example-skill`](skills/example-skill/SKILL.md) | Template demonstrating the expected layout. Copy it to start a real skill. |
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
 
 ## Layout
@@ -52,7 +51,7 @@ are both supported.
 ## Adding a skill
 
 ```bash
-cp -r skills/example-skill skills/my-new-skill
+mkdir -p skills/my-new-skill
 $EDITOR skills/my-new-skill/SKILL.md
 node scripts/validate-skills.mjs
 ```
@@ -68,7 +67,7 @@ description: What it does. Use when <trigger>, <trigger>, or <trigger>.
 
 - `name` — lowercase-with-hyphens, and **must match the directory name**.
 - `description` — the only text an agent sees before deciding to load the
-  skill. See [writing good descriptions](skills/example-skill/references/writing-good-descriptions.md).
+  skill. See [writing good descriptions](docs/writing-good-descriptions.md).
 
 ## Validation
 
