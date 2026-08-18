@@ -8,7 +8,7 @@ AI coding agents.
 Install the [pack](https://www.skills.sh/docs/packs):
 
 ```bash
-npx skills add https://skills.sh/p/dfs63XlSOboFyEll
+npx skills add https://skills.sh/p/AFkfFrlyUzDWbKUF
 ```
 
 To install from this repository instead, bypassing the pack:
