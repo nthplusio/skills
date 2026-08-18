@@ -14,7 +14,7 @@ npx skills add scoussens-nthplusio/skills
 Install a single skill:
 
 ```bash
-npx skills add scoussens-nthplusio/skills/example-skill
+npx skills add scoussens-nthplusio/skills/speak-clearly
 ```
 
 Once this repository is connected as a [pack](https://www.skills.sh/docs/packs)
@@ -29,6 +29,7 @@ npx skills add https://skills.sh/p/<pack-id>
 | Skill | Description |
 | --- | --- |
 | [`example-skill`](skills/example-skill/SKILL.md) | Template demonstrating the expected layout. Copy it to start a real skill. |
+| [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
 
 ## Layout
 
