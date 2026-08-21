@@ -17,8 +17,10 @@ Build it in this order: establish ground truth, agree the story, then write.
 Two of these you cannot derive from the repository, and the third changes what
 you build. Ask them before gathering anything.
 
-1. **Which window?** A date range, a sprint, a release tag, or "since the last
-   brief". Take the answer literally and state it on the page.
+1. **Which window, and is the unit a period or a release?** These are two
+   different documents and the distinction decides what goes in. See
+   [Period or release](#period-or-release) below; ask before gathering, because
+   the two modes select different sets of work.
 2. **Who reads it, and what should they conclude?** A board, a customer
    contact, an exec team, and an investor care about different things, and the
    same set of changes usually supports several honest stories. Offer two or
@@ -27,6 +29,65 @@ you build. Ask them before gathering anything.
 3. **Artifact page, Markdown, or both?** A published Artifact carries the
    customer's own visual identity and a link they can forward. Markdown pastes
    into an email, a doc, or a tracker comment. Ask; do not assume.
+
+## Period or release
+
+A brief covers either a stretch of calendar time or one or more named
+releases. Both are legitimate; they answer different questions and they select
+different work.
+
+**Period-anchored** — "what did we ship this week", "this sprint". The reader
+wants a sense of the period. Releases inside it are incidental: count them, but
+do not organise the page around them.
+
+**Release-anchored** — "brief the client on v2.3", "what went out on Thursday".
+The reader is asking about a named thing. Show the boundaries, and say which
+release each item belongs to when there is more than one.
+
+The practical difference is the selection rule, and getting it wrong is the
+easiest way to publish a brief that is quietly incomplete:
+
+| | Period-anchored | Release-anchored |
+| --- | --- | --- |
+| Include | Work that **reached production** inside the window | The **contents of the named releases**, whenever the work was merged |
+| Boundaries | Counted, not shown | Shown, and used as structure when there are several |
+| Ages | Yes — stamp it | No — a shipped release is immutable |
+
+**Merged-in-window and released-in-window are different sets.** In a two-stage
+repository a change merges to the integration branch on one day and is promoted
+days later, so a period brief that filters on merge date drops work that went
+live inside the window and includes work that has not gone live at all. Filter
+on the promotion that carried it, not on when its pull request merged.
+
+### Finding the release boundaries
+
+On the production branch, `--first-parent` gives the promotion sequence — one
+entry per release, in order:
+
+```bash
+git log --first-parent --date=short --pretty='%h %ad %s' origin/<production-branch>
+```
+
+Each entry is a release. To read one release's contents, take the range between
+two consecutive entries; to read a tagged release, use `git log <prev-tag>..<tag>`.
+
+Trunk-based repositories have no git-visible boundary, because there the
+release *is* the deploy. Get the sequence from the deploy platform's own
+records instead, and say in the brief that a release means a deploy.
+
+### Do not count promotions as changes
+
+A promotion — the merge or squash that carries the integration branch into
+production — is not itself a change. Counting the four promotions alongside the
+31 changes they delivered inflates the headline and double-counts the work.
+Report them separately: *31 changes merged, carried live by 4 releases.*
+
+### Period briefs need an as-of stamp
+
+A period brief is a snapshot: work merged an hour after publication makes its
+"nothing is queued" claim false without anything being edited. Put the time it
+reflects next to the date range, and say in the footer that later work is not
+represented. A release brief needs no such stamp.
 
 ## Establish what actually shipped
 
@@ -47,7 +108,10 @@ Empty output means the two branches hold identical content and nothing is
 waiting. Non-empty output is the real backlog, and the brief must say which
 items are live and which are queued.
 
-Then collect the merged work in the window and probe production:
+Then collect the work and probe production. For a period brief, select what
+reached production inside the window; for a release brief, select each named
+release's contents. This lists candidates by merge date, which is a starting
+point rather than the answer:
 
 ```bash
 gh pr list --state merged --limit 100 \
@@ -56,7 +120,9 @@ gh pr list --state merged --limit 100 \
 ```
 
 `scripts/shipped-in-window.sh` runs this sequence and prints the ship-state
-verdict, the merged pull requests, and every tracker ID it can find. For the
+verdict, the release boundaries, the merged pull requests split into product
+work and promotions, and every tracker ID it can find. Pass `--release <ref>` to
+read one release's contents instead of a date window. For the
 failure modes it guards against — release branches, cherry-picks, reverts,
 deploys that lag the merge — read
 [references/verifying-ship-state.md](references/verifying-ship-state.md).
@@ -163,7 +229,11 @@ requested.
 
 ## Done when
 
-- The window is stated on the page and matches what the user asked for.
+- The window is stated on the page and matches what the user asked for, and a
+  period brief carries the time it reflects.
+- Work was selected by the rule its mode requires — reached-production for a
+  period, release contents for a release — not by merge date alone.
+- Promotions are reported separately from the changes they carried.
 - Every claim that something is live was checked against production, and
   anything still queued is labelled as such.
 - Every identifier, title, priority, type, and status came from the tracker; no

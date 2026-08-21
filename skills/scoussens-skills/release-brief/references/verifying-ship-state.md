@@ -7,6 +7,7 @@ A brief claims things are live. This is how to earn that claim.
 - [Why ancestry lies](#why-ancestry-lies)
 - [Map the branch topology first](#map-the-branch-topology-first)
 - [Merged is not deployed](#merged-is-not-deployed)
+- [Dates disagree across tools](#dates-disagree-across-tools)
 - [Confirming a web change reached the browser](#confirming-a-web-change-reached-the-browser)
 - [Cherry-picks, reverts, and partial releases](#cherry-picks-reverts-and-partial-releases)
 - [When you cannot verify](#when-you-cannot-verify)
@@ -67,6 +68,30 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://<production-host>/
 
 Read a run's `conclusion` rather than trusting an exit code: some watch
 commands exit `0` on a run that was cancelled.
+
+## Dates disagree across tools
+
+`git log --since` interprets a bare date in the machine's local timezone, while
+a forge API reports merge times in UTC. A promotion made at 21:00−05:00 is
+therefore *yesterday* to git and *today* to the API, and any date filter run
+across that boundary drops it from one side silently.
+
+This is not hypothetical. In one two-branch repository, three of the four
+promotions inside a Monday-to-Friday window carried git timestamps of
+`2026-08-16T21:00−05:00`, `21:59−05:00`, and `2026-08-17T00:45−05:00`. A
+`--since 2026-08-17` filter returned one release; the forge reported four.
+
+Two habits avoid it:
+
+- **Print full ISO timestamps** (`%cI`) rather than `%ad`/`%cd` short dates, so
+  the offset is visible and comparable.
+- **Do not date-filter a release list.** Print the recent promotion sequence
+  unfiltered and match it to the window yourself, in one timezone. You want the
+  boundary immediately *before* the window anyway, to know where the first
+  release in range begins.
+
+Where an exact cutoff matters, give git an unambiguous instant —
+`--since '2026-08-17T00:00:00Z'` — rather than a bare date.
 
 ## Confirming a web change reached the browser
 
