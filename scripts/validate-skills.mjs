@@ -4,9 +4,16 @@
 // or oversized files without failing, so a broken pack installs "successfully"
 // with skills missing. This script turns that silence into a non-zero exit.
 //
-// Usage: node scripts/validate-skills.mjs
+// It parses frontmatter with `yaml` — the same parser the builder uses — because
+// a reimplementation drifts. A hand-rolled reader here once accepted a
+// description containing ": ", which YAML reads as a nested mapping: this script
+// reported 3 valid skills while the builder shipped 2, silently dropping one.
+// If the builder ever changes parser, change this import to match it.
+//
+// Usage: npm install && node scripts/validate-skills.mjs
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { parse as parseYaml } from 'yaml'
 import { join, relative, basename, sep } from 'node:path'
 
 const ROOT = process.cwd()
@@ -37,45 +44,32 @@ function discover(dir, depth = 1) {
     .flatMap((e) => discover(join(dir, e.name), depth + 1))
 }
 
-/** Minimal YAML frontmatter reader: top-level scalars and block scalars only.
- *  Deliberately not a full YAML parser — skills only need `name` and
- *  `description`, and a hand-rolled reader keeps this script dependency-free. */
+/** Read the `---` block and parse it with the builder's parser.
+ *  Returns { data } on success, or { error } with the parser's own message so
+ *  the report matches what the pack builder prints when it skips a skill. */
 function parseFrontmatter(text) {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
-  if (!match) return null
+  if (!match) return { error: 'no YAML frontmatter; the pack builder skips this skill' }
 
-  const out = {}
-  const lines = match[1].split(/\r?\n/)
-  let key = null
-  let buffer = []
-
-  const flush = () => {
-    if (key) out[key] = buffer.join(' ').trim()
-    key = null
-    buffer = []
+  let data
+  try {
+    data = parseYaml(match[1])
+  } catch (e) {
+    // The parser's message carries line/column; keep it rather than paraphrasing.
+    return { error: `YAML parse error: ${e.message.split('\n')[0].trim()}` }
   }
 
-  for (const line of lines) {
-    const kv = /^([A-Za-z0-9_.-]+):\s*(.*)$/.exec(line)
-    if (kv && !/^\s/.test(line)) {
-      flush()
-      const [, k, rawValue] = kv
-      const value = rawValue.trim()
-      if (value === '' || /^[|>][-+]?$/.test(value)) {
-        key = k // block scalar or nested block; collect continuation lines
-      } else {
-        out[k] = value.replace(/^["'](.*)["']$/, '$1')
-      }
-    } else if (key && /^\s+\S/.test(line)) {
-      buffer.push(line.trim())
-    } else if (line.trim() === '') {
-      // blank line inside a block scalar; keep collecting
-    } else {
-      flush()
-    }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return { error: 'frontmatter is not a key/value mapping' }
   }
-  flush()
-  return out
+  return { data }
+}
+
+/** Frontmatter values must be plain strings. Real YAML happily returns a number
+ *  for `name: 2024` or a Date for a bare timestamp, and a downstream regex test
+ *  on a non-string throws rather than reporting a useful error. */
+function asString(value) {
+  return typeof value === 'string' ? value : null
 }
 
 function isBinary(path) {
@@ -137,27 +131,35 @@ function validateSkill(skillDir) {
   // we still want oversized/binary files reported in the same pass.
   checkAssets(skillDir)
 
-  const fm = parseFrontmatter(text)
-  if (!fm) {
-    err(rel, 'no YAML frontmatter; the pack builder skips this skill')
+  const { data: fm, error } = parseFrontmatter(text)
+  if (error) {
+    err(rel, error)
     return
   }
 
-  if (!fm.name) {
+  const name = asString(fm.name)
+  if (fm.name === undefined || fm.name === null) {
     err(rel, 'missing required frontmatter field `name`')
+  } else if (name === null) {
+    err(rel, `name must be a string; YAML parsed it as ${typeof fm.name}`)
   } else {
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(fm.name)) {
-      err(rel, `name "${fm.name}" must be lowercase alphanumeric with single hyphens`)
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+      err(rel, `name "${name}" must be lowercase alphanumeric with single hyphens`)
     }
-    if (fm.name !== dirName) {
-      err(rel, `name "${fm.name}" does not match its directory "${dirName}"`)
+    if (name !== dirName) {
+      err(rel, `name "${name}" does not match its directory "${dirName}"`)
     }
   }
 
-  if (!fm.description) {
+  const description = asString(fm.description)
+  if (fm.description === undefined || fm.description === null) {
     err(rel, 'missing required frontmatter field `description`')
+  } else if (description === null) {
+    err(rel, `description must be a string; YAML parsed it as ${typeof fm.description}`)
+  } else if (description.trim() === '') {
+    err(rel, 'frontmatter field `description` is empty')
   } else {
-    for (const { level, msg } of checkDescriptionQuality(fm.description, fm.name) ?? []) {
+    for (const { level, msg } of checkDescriptionQuality(description, name) ?? []) {
       ;(level === 'error' ? err : warn)(rel, msg)
     }
   }

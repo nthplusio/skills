@@ -54,7 +54,7 @@ are both supported.
 ```bash
 mkdir -p skills/my-new-skill
 $EDITOR skills/my-new-skill/SKILL.md
-node scripts/validate-skills.mjs
+npm run validate
 ```
 
 `SKILL.md` requires exactly two frontmatter fields:
@@ -73,7 +73,8 @@ description: What it does. Use when <trigger>, <trigger>, or <trigger>.
 ## Validation
 
 ```bash
-node scripts/validate-skills.mjs
+npm install
+npm run validate
 ```
 
 The pack builder fails *quietly*: it skips invalid `SKILL.md` files and omits
@@ -83,10 +84,30 @@ into a non-zero exit, and runs in CI on every push and pull request.
 
 It checks:
 
-- frontmatter is present and parses
-- `name` and `description` exist, and `name` matches its directory
+- frontmatter parses as YAML, using the same parser the builder uses
+- `name` and `description` exist, are strings, and `name` matches its directory
 - no file exceeds 2 MB
 - no binary files are committed inside a skill
+
+The validator has one dependency, `yaml`, and that is deliberate. Frontmatter
+must be parsed with the parser the builder uses, because a reimplementation
+drifts and the drift is silent. A hand-rolled reader here once accepted a
+description containing `": "` — which YAML reads as a nested mapping — and
+reported three valid skills while the pack shipped two.
+
+### Descriptions cannot contain `": "`
+
+A colon followed by a space makes an unquoted YAML value ambiguous with a
+nested mapping, and the whole skill is dropped. Introduce a list of trigger
+phrases with an em dash instead:
+
+```yaml
+# Breaks the skill, silently
+description: Load this when the user asks for an index: "index my meetings".
+
+# Correct
+description: Load this when the user asks for an index — "index my meetings".
+```
 
 ## Licence
 
