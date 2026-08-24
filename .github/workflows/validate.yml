@@ -22,3 +22,20 @@ jobs:
         run: npm ci
       - name: Validate skills
         run: npm run validate
+
+  # Separate job on purpose. `validate` is hermetic and encodes the builder's
+  # rules; this one invokes the real builder over the network, so it can fail
+  # when upstream changes rather than when this repository does. Keeping them
+  # apart means the two failures are never mistaken for one another.
+  builder-agrees:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check the pack builder finds every skill
+        run: npm run check:builder

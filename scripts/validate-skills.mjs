@@ -14,11 +14,10 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
-import { join, relative, basename, sep } from 'node:path'
+import { CONTAINER, discoverSkillDirs, skillPaths } from './lib/discover-skills.mjs'
+import { join, relative, basename } from 'node:path'
 
 const ROOT = process.cwd()
-const CONTAINER = 'skills'
-const MAX_DEPTH = 3
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 
 const errors = []
@@ -26,23 +25,6 @@ const warnings = []
 
 const err = (file, msg) => errors.push({ file, msg })
 const warn = (file, msg) => warnings.push({ file, msg })
-
-/** Walk the container dir up to MAX_DEPTH, collecting skill dirs.
- *  A SKILL.md at a shallower level shadows any nested below it, matching the
- *  CLI's discovery precedence. */
-function discover(dir, depth = 1) {
-  let entries
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  if (entries.some((e) => e.isFile() && e.name === 'SKILL.md')) return [dir]
-  if (depth >= MAX_DEPTH) return []
-  return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-    .flatMap((e) => discover(join(dir, e.name), depth + 1))
-}
 
 /** Read the `---` block and parse it with the builder's parser.
  *  Returns { data } on success, or { error } with the parser's own message so
@@ -168,7 +150,7 @@ function validateSkill(skillDir) {
   if (!body) warn(rel, 'frontmatter only, no instructions in the body')
 }
 
-const skillDirs = discover(join(ROOT, CONTAINER))
+const skillDirs = discoverSkillDirs(ROOT)
 
 if (skillDirs.length === 0) {
   console.error(`✗ no skills found under ${CONTAINER}/ — a pack needs at least one`)
@@ -180,7 +162,7 @@ for (const dir of skillDirs) validateSkill(dir)
 for (const { file, msg } of warnings) console.warn(`! ${file}: ${msg}`)
 for (const { file, msg } of errors) console.error(`✗ ${file}: ${msg}`)
 
-const names = skillDirs.map((d) => relative(ROOT, d).split(sep).slice(1).join('/'))
+const names = skillPaths(ROOT)
 if (errors.length > 0) {
   console.error(`\n${errors.length} error(s) across ${skillDirs.length} skill(s).`)
   process.exit(1)
