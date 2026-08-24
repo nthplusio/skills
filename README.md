@@ -55,6 +55,7 @@ are both supported.
 mkdir -p skills/my-new-skill
 $EDITOR skills/my-new-skill/SKILL.md
 npm run validate
+npm run check:builder
 ```
 
 `SKILL.md` requires exactly two frontmatter fields:
@@ -88,6 +89,30 @@ It checks:
 - `name` and `description` exist, are strings, and `name` matches its directory
 - no file exceeds 2 MB
 - no binary files are committed inside a skill
+
+### The builder-agreement check
+
+```bash
+npm run check:builder
+```
+
+The validator *encodes* the builder's rules, and encoded rules drift. This
+check encodes nothing: it runs the real skills.sh CLI against the checkout and
+asserts it finds every skill the repository contains, so it cannot fall out of
+step by construction. When the two disagree, it prints the file, the builder's
+own reason, and what the gap costs:
+
+```
+✗ the builder skipped .../meeting-index/SKILL.md
+    YAML parse error: Nested mappings are not allowed in compact mappings at line 2, column 14:
+✗ "meeting-index" exists in this repo but the builder did not find it
+✗ the builder reported 2 skill(s); this repository contains 3
+```
+
+It reaches the network and runs `skills@latest`, so an upstream change can fail
+the build without anything here changing. That is the point — upstream changing
+the rules is worth being told about — but it is why CI runs it as its own job,
+separate from the hermetic validator, so the two failures are never confused.
 
 The validator has one dependency, `yaml`, and that is deliberate. Frontmatter
 must be parsed with the parser the builder uses, because a reimplementation

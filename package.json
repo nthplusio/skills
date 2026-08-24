@@ -6,7 +6,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "validate": "node scripts/validate-skills.mjs"
+    "validate": "node scripts/validate-skills.mjs",
+    "check:builder": "node scripts/check-builder-agrees.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.0"
