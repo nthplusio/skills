@@ -39,3 +39,6 @@ more specific skill and will not fire on an indirect request.
 - [ ] Includes the words a user would type, not just the words you would.
 - [ ] States when *not* to use it, if it overlaps with a sibling skill.
 - [ ] Reads as one self-contained string — it is shown without the body.
+- [ ] Contains no `": "`. A colon followed by a space makes the value
+      ambiguous with a nested mapping, and the builder drops the whole skill
+      without reporting an error. Introduce trigger phrases with an em dash.

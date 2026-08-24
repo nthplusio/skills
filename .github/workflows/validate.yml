@@ -14,7 +14,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # No dependencies — the validator is dependency-free by design, so there
-      # is nothing to install and nothing to keep patched.
+          cache: npm
+      # The validator depends on `yaml` so it parses frontmatter with the same
+      # parser the pack builder uses. A reimplementation drifts, and the drift is
+      # invisible: it once passed a skill the builder silently dropped.
+      - name: Install dependencies
+        run: npm ci
       - name: Validate skills
-        run: node scripts/validate-skills.mjs
+        run: npm run validate

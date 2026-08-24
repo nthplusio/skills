@@ -1,0 +1,14 @@
+{
+  "name": "@nthplusio/skills",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A skills.sh pack — reusable skills for AI coding agents.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "validate": "node scripts/validate-skills.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}
