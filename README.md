@@ -30,6 +30,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
 | [`scoussens-skills/release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder, verified against what actually reached production. Invoked explicitly. |
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
+| [`scoussens-skills/work-proposal`](skills/scoussens-skills/work-proposal/SKILL.md) | Turn a body of scoped work into a client-ready proposal — effort grounded in the codebase, priced against the agreement that already exists, delivered as a themed Artifact, PDF, or email. Invoked explicitly. |
 
 ## Layout
 
