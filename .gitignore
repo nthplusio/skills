@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+# Python bytecode inside skill dirs fails the pack validator as a binary file.
+__pycache__/
+*.pyc
