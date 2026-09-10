@@ -25,16 +25,30 @@ timeline; none of it is a score.
 """
 
 import json
+import os
 import re
 import sys
 from datetime import datetime
 
-# `copilot-pull-request-reviewer` carries no [bot] suffix in the reviews API
-# and was being counted as a human reviewer — which on PR #1215 turned 4 bot
-# passes into "4 teammates reviewed this."
-BOT = re.compile(r"claude|\[bot\]|dependabot|renovate|linear-code|copilot", re.I)
+# Bot detection must not be a name list. This artifact publishes a scored
+# judgement about a named person, and a bot counted as a human inflates the
+# "a teammate blocked this" signal — the strongest one in the whole report.
+#
+# The authority is GitHub's own `user.type == "Bot"`, which `gather_pr.sh`
+# collects into `botLogins`. Two traps make the naive check wrong:
+#   * `gh pr view --json reviews` exposes only `author.login` — no type field.
+#   * It also STRIPS the `[bot]` suffix, so matching on `[bot]` never fires on
+#     that path. `copilot-pull-request-reviewer` arrives bare.
+# The name list below is a last-resort fallback for a login that never appeared
+# in the REST payload; anything it cannot classify is reported as UNKNOWN rather
+# than silently counted as a human.
+BOT_HINT = re.compile(r"claude|\[bot\]|dependabot|renovate|linear-code|copilot|"
+                      r"coderabbit|sourcery|greptile|codecov|sonar", re.I)
+BOT_LOGINS = set()      # populated from GitHub's user.type == "Bot"
+UNCLASSIFIED = set()    # logins we could not decide; the artifact must disclose these
 SOURCE_TAG = re.compile(r"_\(source:\s*([^)]+)\)_", re.I)
 FAIL = {"FAILURE", "TIMED_OUT", "ERROR", "CANCELLED", "STARTUP_FAILURE"}
+_SLA = float(os.environ["PR_DETAIL_SLA_HOURS"]) if os.environ.get("PR_DETAIL_SLA_HOURS") else None
 FIXUP = re.compile(r"^(fix(up)?!|squash!|wip\b|fix ci\b|lint\b|typo\b|address (review|comments|feedback))", re.I)
 
 
@@ -46,14 +60,40 @@ def hours(a, b):
     return round((b - a).total_seconds() / 3600, 1) if a and b else None
 
 
+def _bare(login):
+    """REST reports `acme-reviewer[bot]`; `gh pr view --json reviews` reports the
+    same account as `acme-reviewer`. Compare on the bare form or the
+    authoritative lookup misses exactly the bots no name list knows about."""
+    return (login or "").removesuffix("[bot]")
+
+
 def is_bot(login):
-    return bool(login and BOT.search(login))
+    """True for a bot, False for a human. A login GitHub did not label and no
+    hint matches is recorded in UNCLASSIFIED and treated as human -- the caller
+    must surface that list rather than present the count as certain."""
+    if not login:
+        return False
+    bare = _bare(login)
+    if bare in BOT_LOGINS or login.endswith("[bot]"):
+        return True
+    if BOT_HINT.search(login):
+        return True
+    if bare not in _KNOWN_HUMANS:
+        UNCLASSIFIED.add(login)
+    return False
+
+
+_KNOWN_HUMANS = set()   # logins GitHub labelled type == "User"
 
 
 def main():
     raw = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
     d = json.loads(raw)
     pr, threads, timeline, checks = d["pr"], d["threads"], d["timeline"], d["checkRuns"]
+
+    # GitHub's own account types, when gather_pr.sh could fetch them.
+    for login, kind in (d.get("accountTypes") or {}).items():
+        (BOT_LOGINS if kind == "Bot" else _KNOWN_HUMANS).add(_bare(login))
 
     author = (pr.get("author") or {}).get("login")
     opened, merged = ts(pr.get("createdAt")), ts(pr.get("mergedAt") or pr.get("closedAt"))
@@ -184,7 +224,13 @@ def main():
             "hoursToFirstReview": response_hours(first_any),
             "hoursToFirstHumanReview": response_hours(first_human),
             "reviewedWhileDraft": bool(rfr and first_any and first_any < rfr),
-            "slaBreach24h": (response_hours(first_any) or 0) > 24 if first_any else None,
+            # No SLA is assumed. Set PR_DETAIL_SLA_HOURS only where the repo
+            # actually publishes one; otherwise this stays null rather than
+            # implying a commitment that does not exist.
+            "unclassifiedLogins": sorted(UNCLASSIFIED),
+            "slaThresholdHours": _SLA,
+            "slaBreach": (None if (_SLA is None or not first_any)
+                          else (response_hours(first_any) or 0) > _SLA),
             "slaClockFrom": "ready_for_review" if rfr else "createdAt",
             "mergedWithNoReview": len(reviews) == 0,
         },

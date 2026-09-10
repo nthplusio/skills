@@ -59,6 +59,26 @@ gh pr view "$NUM" --repo "$REPO" --json \
 additions,deletions,changedFiles,files,headRefName,baseRefName,labels,\
 reviews,comments,commits,statusCheckRollup,mergedBy,reviewDecision > "$TMP/pr.json"
 
+# An empty result from a FAILED fetch and an empty result from a PR with
+# nothing to report are the same JSON. This artifact publishes a judgement
+# about a named person, so "no review threads" must never be manufactured by a
+# permissions error. Record the failure and let the caller disclose it.
+FAILED_FETCHES=""
+fetch_failed() {
+  echo "WARNING: could not fetch $1 -- emitting an empty set. Any conclusion" >&2
+  echo "         that depends on it is unsupported and must say so." >&2
+  FAILED_FETCHES="$FAILED_FETCHES $1"
+  echo '[]' > "$2"
+}
+
+# Who is a bot, according to GitHub rather than a name list. `gh pr view
+# --json reviews` gives only author.login and strips the [bot] suffix, so the
+# authoritative account type has to come from REST.
+gh api "repos/$REPO/pulls/$NUM/reviews" --paginate \
+  --jq '[.[] | {login: .user.login, type: .user.type}] | from_entries? // ([.[] | {(.login): .type}] | add)' \
+  > "$TMP/accounts.json" 2>/dev/null || echo '{}' > "$TMP/accounts.json"
+if [ ! -s "$TMP/accounts.json" ]; then echo '{}' > "$TMP/accounts.json"; fi
+
 gh api graphql -f query='
 query($o:String!,$r:String!,$n:Int!){
   repository(owner:$o,name:$r){ pullRequest(number:$n){
@@ -68,8 +88,8 @@ query($o:String!,$r:String!,$n:Int!){
     }}
   }}
 }' -F o="$OWNER" -F r="$NAME" -F n="$NUM" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes' > "$TMP/threads.json" 2>/dev/null \
-  || echo '[]' > "$TMP/threads.json"
+  --jq '.data.repository.pullRequest.reviewThreads.nodes' > "$TMP/threads.json" \
+  || fetch_failed threads "$TMP/threads.json"
 
 gh api "repos/$REPO/issues/$NUM/timeline?per_page=100" --paginate \
   --jq '[.[] | {event, at: (.created_at // .submitted_at // .committed_at // .author.date // .committer.date),
@@ -77,8 +97,8 @@ gh api "repos/$REPO/issues/$NUM/timeline?per_page=100" --paginate \
                 state, label: .label.name,
                 sha: (.sha // .commit_id),
                 message: (.message // null),
-                ref: (.source.issue.number // null)}]' > "$TMP/timeline.json" 2>/dev/null \
-  || echo '[]' > "$TMP/timeline.json"
+                ref: (.source.issue.number // null)}]' > "$TMP/timeline.json" \
+  || fetch_failed timeline "$TMP/timeline.json"
 
 # Per-commit CI history. Bounded to 40 commits: beyond that the pattern is
 # established and the extra calls cost more than they inform.
@@ -88,7 +108,9 @@ if [ -n "$SHAS" ]; then
   for sha in $SHAS; do
     gh api "repos/$REPO/commits/$sha/check-runs" \
       --jq "{sha: \"$sha\", runs: [.check_runs[] | {name, conclusion, status}]}" \
-      2>/dev/null || echo "{\"sha\":\"$sha\",\"runs\":[]}"
+      || { echo "WARNING: check-runs fetch failed for $sha -- its CI history is missing" >&2
+           FAILED_FETCHES="$FAILED_FETCHES check-runs:$sha"
+           echo "{\"sha\":\"$sha\",\"runs\":[]}"; }
   done | jq -s '.' > "$TMP/checks.json"
 fi
 
@@ -97,4 +119,8 @@ jq -n \
   --slurpfile threads  "$TMP/threads.json" \
   --slurpfile timeline "$TMP/timeline.json" \
   --slurpfile checks   "$TMP/checks.json" \
-  '{pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0]}'
+  --slurpfile accounts "$TMP/accounts.json" \
+  --arg failed "$FAILED_FETCHES" \
+  '{pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0],
+    accountTypes: $accounts[0],
+    failedFetches: ($failed | split(" ") | map(select(length > 0)))}'

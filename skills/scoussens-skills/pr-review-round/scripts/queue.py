@@ -22,23 +22,55 @@ DETAIL_FIELDS = "files,statusCheckRollup"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
 # a PR touching a migration and a stylesheet is a DATA PR, not a WEB one.
+#
+# These patterns are deliberately generic — they are the vocabulary most stacks
+# share, not one repo's layout. Add your repo's own names (a migration prefix,
+# an ORM class, a package dir) in `.pr-review-tiers.json` at the repo root:
+#
+#     {"DATA": ["V001", "il_specs"], "API": ["ILCrud"]}
+#
+# The point is the OTHER count printed at the end. Tier-driven depth is this
+# script's whole purpose, so a queue where most PRs land in OTHER means the
+# patterns do not fit this repo and the depth column should not be trusted --
+# far better to say so than to let every PR quietly read as low risk.
+# Anchor every pattern that could appear inside a longer word: a bare "entity"
+# matches "identity" and files an auth change as DATA. Prefer "/entities/" to
+# "entity", "/seed/" to "seed".
+#
+# Order is load-bearing: the first match wins, so the stricter tier must come
+# first. DATA before AUTH is deliberate — auth vocabulary ("secret", "token")
+# appears incidentally across a large diff, while a migration path does not.
 TIERS = [
-    ("DATA",  ("migrations/", "/seed/", "schema.sql", "V001", "il_specs",
-               "customer-upgrades", "/store/", "store.py", "_specs.py", "/mongo/")),
+    ("DATA",  ("migration", "/seed/", "schema.sql", "/store/", "store.py",
+               "_specs.py", "/mongo/", "/models/", "/entities/", "/repositories/")),
     ("AUTH",  ("auth", "jwt", "principal", "licens", "secret", "middleware",
-               "ws_tickets", "token", "permission")),
-    ("API",   ("routers/", "/services/", "sql_queries/", "ILCrud", "/api/",
-               "packages/", "/dags/")),
+               "token", "permission", "session", "credential")),
+    ("API",   ("routers/", "/services/", "/handlers/", "/controllers/",
+               "sql_quer", "/api/", "packages/", "/dags/")),
     ("INFRA", ("/terraform/", ".github/workflows/", "Dockerfile",
-               "docker-compose", "/infra/")),
-    ("WEB",   ("apps/web/", ".tsx", ".jsx", ".css")),
+               "docker-compose", "/infra/", "/deploy", "/helm/", ".tf")),
+    ("WEB",   ("/web/", "/frontend/", "/ui/", ".tsx", ".jsx", ".vue",
+               ".svelte", ".css", ".scss")),
 ]
 
 
-def tier(paths):
-    joined = " ".join(paths)
+def load_overrides(path=".pr-review-tiers.json"):
+    """Repo-supplied patterns, merged onto the generic ones. Absent is normal."""
+    try:
+        with open(path) as f:
+            extra = json.load(f)
+    except (OSError, ValueError):
+        return TIERS
+    merged = []
     for name, pats in TIERS:
-        if any(p in joined for p in pats):
+        merged.append((name, tuple(pats) + tuple(extra.get(name) or ())))
+    return merged
+
+
+def tier(paths, tiers=None):
+    joined = " ".join(paths).lower()
+    for name, pats in (tiers or TIERS):
+        if any(p.lower() in joined for p in pats):
             return name
     if paths and all(p.endswith((".md", ".json", ".html")) or "docs/" in p for p in paths):
         return "DOCS"
@@ -100,6 +132,7 @@ def main():
         p.update(detail or {"files": [], "statusCheckRollup": []})
         p["_degraded"] = detail is None
 
+    tiers = load_overrides()
     print(f"{len(prs)} open non-draft PR(s) targeting {base}, oldest first\n")
     hdr = (f'{"PR":<7}{"OPENED":<12}{"AUTHOR":<18}{"RISK":<7}'
            f'{"SIZE":<13}{"BLOCKER":<22}{"CI":<9}{"AUTO":<6}TITLE')
@@ -117,8 +150,17 @@ def main():
             ci = f"{len(red)} RED" if red else (f"{len(pend)} pend" if pend else "green")
         size = f'+{p["additions"]}/-{p["deletions"]}'
         print(f'#{p["number"]:<6}{p["createdAt"][:10]:<12}{p["author"]["login"][:17]:<18}'
-              f'{tier(paths):<7}{size:<13}{blocker_of(p, red):<22}{ci:<9}'
+              f'{tier(paths, tiers):<7}{size:<13}{blocker_of(p, red):<22}{ci:<9}'
               f'{auto_of(p):<6}{p["title"][:46]}')
+
+    others = [p["number"] for p in prs
+              if tier([f["path"] for f in (p.get("files") or [])], tiers) == "OTHER"]
+    if others and len(others) >= max(2, len(prs) // 3):
+        print(f"\n!! {len(others)} of {len(prs)} PR(s) classified OTHER: "
+              f"{', '.join('#%d' % n for n in others)}")
+        print("   The tier patterns do not fit this repo, so the RISK column is not a")
+        print("   reliable depth signal. Add this repo's own path names to")
+        print("   .pr-review-tiers.json, or choose depth by reading the diff instead.")
 
     print("""
 RISK -> depth   DATA/AUTH  full independent trace; check migrations and reverts

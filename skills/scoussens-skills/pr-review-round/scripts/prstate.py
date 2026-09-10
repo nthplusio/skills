@@ -69,9 +69,13 @@ def main():
     print(f"  head {head}")
     print(f'  {pr["url"]}')
 
-    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"]) or []
-    if isinstance(reviews, str):
-        reviews = []
+    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"])
+    if not isinstance(reviews, list):
+        # A failed fetch and a PR with no reviews are the same empty list. The
+        # message below would then read as "nothing is blocking this" -- a clean
+        # bill of health manufactured from an error. Refuse instead.
+        sys.exit(f"could not read reviews for #{num} -- re-check by hand rather "
+                 f"than treating this as 'no blocking reviews'")
 
     # Only these states gate a merge. COMMENTED/DISMISSED reviews are history.
     active = [r for r in reviews if r.get("state") in ("CHANGES_REQUESTED", "APPROVED")]

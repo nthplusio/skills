@@ -37,7 +37,13 @@ def main():
     repo = (gh(["gh", "repo", "view", "--json", "nameWithOwner",
                 "-q", ".nameWithOwner"]) or "").strip()
 
-    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"]) or []
+    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"])
+    if not isinstance(reviews, list):
+        # A failed fetch and a PR with no reviews produce the same empty list.
+        # Saying "no blocking reviews" on a fetch failure invents a clean bill
+        # of health, so refuse instead.
+        sys.exit(f"could not read reviews for #{num} -- re-check by hand rather "
+                 f"than treating this as 'no blocking reviews'")
     if isinstance(reviews, str):
         reviews = []
     if wanted is None:
