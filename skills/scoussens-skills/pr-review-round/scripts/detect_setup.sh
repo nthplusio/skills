@@ -40,4 +40,12 @@ echo "repo conventions docs (grounds severity claims — cite these, don't inven
 for f in CLAUDE.md AGENTS.md CONTRIBUTING.md docs/conventions.md docs/README.md; do
   [ -f "$f" ] && echo "  $f"
 done
-ls -d docs/decisions docs/adr docs/architecture 2>/dev/null | sed 's/^/  /'
+# One loop, not `ls` over several candidates: `ls` exits non-zero when any
+# argument is missing, and being the last command that became the script's own
+# exit status -- so a successful detection reported failure to anything checking
+# it, or running under `set -e`.
+for d in docs/decisions docs/adr docs/architecture docs/decision-records adr; do
+  [ -d "$d" ] && echo "  $d"
+done
+
+exit 0
