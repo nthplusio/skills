@@ -1,0 +1,73 @@
+{
+  "skill_name": "pr-review-round",
+  "note": "All evals are READ-ONLY: subagents write intended GitHub mutations to files instead of posting. Iteration 2 replaced the tied eval and pruned assertions that passed in both configurations in iteration 1.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "full-round-triage",
+      "prompt": "I need to do a round of PR reviews. Can you work through the open PRs targeting development, oldest to newest, and tell me which ones are ready to merge and which are blocked and why?",
+      "expected_output": "A verdict for every open non-draft PR, in creation order, with an explicit count reconciliation, and conflicts attributed to the author rather than treated as code problems.",
+      "assertions": [
+        "covers_every_open_nondraft_pr: a verdict exists for every open non-draft PR that queue.py reports; none is silently dropped",
+        "states_an_explicit_count_reconciliation: says how many PRs were found and how many received verdicts (e.g. 'N found, N verdicts')",
+        "orders_oldest_first: the triage presents PRs in creation order, oldest first",
+        "never_requests_changes_for_a_mere_conflict: no PR receives REQUEST-CHANGES whose only stated reason is a conflict or a stale branch"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "merge-mechanics",
+      "prompt": "Which of the open PRs against development are actually ready to merge right now? For any that are, tell me the exact command you'd run to merge them.",
+      "expected_output": "Reports that no PR is currently mergeable: nothing is both APPROVED and CLEAN. Identifies #1919 as the near miss -- approved but DIRTY -- and attributes that to the author, since approving cannot clear a conflict. Any merge command stated, actual or hypothetical, is 'gh pr merge <n>' with no strategy flag because a queue owns the strategy, and enqueueing is distinguished from landing.",
+      "assertions": [
+        "reports_nothing_is_currently_mergeable: does not present any PR as ready to merge, because none is both APPROVED and CLEAN",
+        "identifies_1919_as_the_approved_but_conflicting_near_miss: singles out #1919 as approved yet blocked by a conflict rather than lumping it in with unreviewed PRs",
+        "attributes_the_1919_blocker_to_the_author: states that a conflict is the author's to resolve and that approving cannot clear it",
+        "any_merge_command_carries_no_strategy_flag: if a merge command is given at all (actual or hypothetical), it is 'gh pr merge <n>' with no --merge/--squash/--rebase, and the merge-queue rationale is stated",
+        "distinguishes_enqueued_from_landed: notes that enqueueing is not the same as merged and the queue runs its own checks",
+        "checks_auto_merge_before_approving: reports whether auto-merge is enabled on a PR (gh pr view --json autoMergeRequest) and states that where it is, approving is itself the merge action because GitHub enqueues as soon as the review gate clears",
+        "distinguishes_queued_from_merged: never describes a PR sitting in a merge queue as merged; confirms landing by state=MERGED"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "stale-review-handling",
+      "prompt": "PR 2081 has changes requested on it. Can you check whether that's still accurate and tell me what the actual state is?",
+      "expected_output": "Reads the blocking review's commit_id (every review carries one, human reviews included), compares it to the head, and separates commits the author pushed from base-branch history that arrived via a merge -- the latter means nothing was addressed. Verifies at head, and if stale proposes a dismissal naming the SHA and what was confirmed.",
+      "assertions": [
+        "reads_the_review_commit_id: takes the reviewed SHA from the review's commit_id rather than treating a human review as unmarked or judging it by date alone",
+        "separates_author_commits_from_base_merges: distinguishes commits the author pushed from base-branch commits that arrived through a merge, and does not present the raw range count as work the author did",
+        "verifies_at_current_head: shows evidence of inspecting the current code, not only re-reading the review text",
+        "recommends_evidence_bearing_dismissal_if_stale: if judged stale, proposes a dismissal message naming the SHA and the specific thing confirmed -- not a conditional or contentless one"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "severity-scoping",
+      "prompt": "Review PR 2223 in this repo and tell me whether it's ready to merge. Be specific about anything that would block it.",
+      "expected_output": "Declines to approve, flags the orphaned index, and scopes the data impact to the reads that actually filter on the renamed field rather than claiming all history becomes unreachable.",
+      "assertions": [
+        "verdict_is_not_approve: the verdict is REQUEST-CHANGES or AUTHOR-ACTION, not APPROVE",
+        "checks_which_reads_filter_on_the_renamed_field: establishes that a bound conversation reads by conversationId alone and does not constrain on the renamed anchor",
+        "scopes_the_data_impact_correctly: limits the real data effect to anchor-matched reads (adoption helper / session scope) rather than claiming all pre-deploy events become unreachable",
+        "flags_orphaned_old_index: notes the new index is added without dropping the old one, leaving a never-read index on every deployed database"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "base-merge-vs-author-work",
+      "prompt": "There's a changes-requested review on PR 1968 from a few days ago. Has the author done anything about it since?",
+      "expected_output": "Reports that the author has pushed no work: the only thing on the branch since the review is a merge of the base branch. States the author-commit count as zero and does not present the raw range (which is inflated by base history reachable through the merge commit's second parent) as author activity. Concludes the findings are still live.",
+      "assertions": [
+        "reports_zero_author_commits: states that the author pushed no commits since the review",
+        "excludes_base_history_from_the_range: uses --not origin/<base> (or equivalent) rather than reporting the unfiltered --no-merges count as work the author did",
+        "concludes_the_findings_are_still_live: says the blocking review's findings stand, rather than treating a long commit range as evidence the finding may be fixed"
+      ],
+      "files": []
+    }
+  ]
+}
