@@ -1,0 +1,280 @@
+<!doctype html>
+<!--
+  visualize-spec page template. Copy it, then replace every {{…}} marker.
+  scripts/check_page.py fails while any {{ remains.
+
+  Class names the legend explains, so use them rather than new ones:
+    .new .changed .removed   on tree entries, list items, table cells, nodes, seams
+    .inferred                anything the spec does not name and you chose
+    .gap                     a <div class="gap"> where the spec is silent
+    .suggestion              inside a gap: your proposed answer, one per gap at most
+
+  Traceability, checked by scripts/check_page.py (the ids print on the page):
+    each outcome            <li data-outcome="O1">…</li>
+    each validation step    <li data-checks="O1 O3">…</li>
+    an outcome nothing can check gets <div class="gap" data-gap-for="O2">…</div>
+
+  Decide before building, checked by scripts/check_page.py. Rank the gaps:
+    <ol class="major">       at most three: the gaps that decide whether the
+                             spec meets its goal, most serious first
+    <details class="minor"><summary>N smaller points</summary><ul>…</ul></details>
+                             everything else, one line each
+    Each item is <li><a href="#section-id">one line</a></li>.
+
+  Source, checked by scripts/check_page.py. The test list (section 6) and the
+  validation steps (section 7) each say where they came from:
+    <ol class="steps" data-source="spec">        the spec gives these
+    <ol class="steps" data-source="suggested">   yours; must sit inside that
+                                                 section's <div class="gap">
+
+  DIAGRAMS. Plain HTML; the browser does the layout, so nothing overlaps and
+  it reflows on a phone. Every diagram is a .flow or a .stack.
+
+  A node is <div class="node">Label<small>one-line note</small></div>.
+  Add a class for what it is:
+    new changed removed      what the change does to it
+    inferred                 you chose it; the spec does not name it
+    open                     a step the spec leaves undecided
+    actor                    a person or outside system (drawn as a pill)
+    test fake                a test, or a stand-in a test swaps in
+
+  .flow: steps top to bottom, an arrow between each.
+    <div class="flow">
+      <div class="node actor">Developer</div>
+      <div class="node"><span class="via">runs npm run validate</span>Validator</div>
+      <div class="fork">
+        <div class="path"><span class="cond">over 1024 chars</span><div class="node new">Error</div></div>
+        <div class="path"><span class="cond">no trigger</span><div class="node new">Warning</div></div>
+      </div>
+    </div>
+    .via labels the arrow INTO its node with what passes along it.
+    A .path is itself a flow: put more nodes after the .cond to continue it.
+    A .fork may sit inside a .path, but each level halves the width it gets;
+    keep branching to two levels, and past that split the step in two.
+
+  .stack: rows of pieces with a seam line between rows. Callers sit above a
+  seam, the pieces they call sit below it. Tests go beside the real caller,
+  fakes beside the real piece, so the picture shows where a test plugs in.
+    <div class="stack">
+      <div class="layer"><div class="node">Dispatcher</div><div class="node test">test_dispatcher</div></div>
+      <div class="seam new"><span><b>DeliveryTransport</b> send(request) → reply</span></div>
+      <div class="layer"><div class="node new">HttpTransport</div><div class="node fake">FakeTransport</div></div>
+    </div>
+    A seam takes new, changed or nothing (unchanged). Its label names the seam,
+    then what crosses it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{SPEC_TITLE}} · spec at a glance</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --surface: #ffffff; --ink: #1c1b19; --muted: #6b6760;
+    --line: #e4e1dc; --wire: #a8a39b; --accent: #2f5bd3;
+    --new: #16a34a; --new-bg: #e8f7ee;
+    --changed: #b45309; --changed-bg: #fdf3e1;
+    --removed: #dc2626; --removed-bg: #fdecec;
+    --gap: #9333ea; --gap-bg: #f5ecfe;
+    --test: #4f46e5; --test-bg: #eef0ff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --surface: #1d1d1b; --ink: #ecebe8; --muted: #a09c95;
+      --line: #34322f; --wire: #6d6962; --accent: #8aa8ff;
+      --new: #4ade80; --new-bg: #13281b;
+      --changed: #fbbf24; --changed-bg: #33270d;
+      --removed: #f87171; --removed-bg: #351616;
+      --gap: #c084fc; --gap-bg: #281a38;
+      --test: #a5b4fc; --test-bg: #1c1d3a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--sans); }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+  header h1 { font-size: 1.7rem; line-height: 1.2; margin: 0 0 6px; }
+  header .source { color: var(--muted); font-size: .9rem; margin: 0; }
+  nav { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+        margin: 20px -16px 8px; padding: 8px 16px; display: flex; gap: 14px; flex-wrap: wrap; font-size: .88rem; }
+  nav a { color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--accent); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; font-size: .8rem; }
+  .legend span { padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+            padding: 20px 22px; margin: 18px 0; scroll-margin-top: 56px; }
+  section > h2 { margin: 0 0 12px; font-size: 1.2rem; }
+  section > h2 small { color: var(--muted); font-weight: 400; font-size: .85rem; margin-left: 6px; }
+  h3 { font-size: 1rem; margin: 18px 0 6px; }
+  p, li { max-width: 72ch; }
+  ul, ol { padding-left: 1.3em; }
+  li { margin: 4px 0; }
+  code { font: .9em var(--mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  pre.tree { font: .86rem/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
+             border-radius: 8px; padding: 12px 14px; margin: 0; overflow-x: auto; white-space: pre; }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .panes h3 { margin-top: 0; }
+  @media (max-width: 720px) { .panes { grid-template-columns: 1fr; } }
+  .note { color: var(--muted); }
+  .new { color: var(--new); } .changed { color: var(--changed); }
+  .removed { color: var(--removed); text-decoration: line-through; }
+  .inferred { border-bottom: 1px dashed var(--muted); }
+  .legend .new { background: var(--new-bg); } .legend .changed { background: var(--changed-bg); }
+  .legend .removed { background: var(--removed-bg); } .legend .gapchip { background: var(--gap-bg); color: var(--gap); }
+  .legend .testchip { background: var(--test-bg); color: var(--test); }
+  .gap { border: 1px dashed var(--gap); background: var(--gap-bg); border-radius: 8px;
+         padding: 10px 14px; margin: 12px 0; }
+  .gap::before { content: "Gap — the spec does not say"; display: block; font-weight: 600;
+                 color: var(--gap); font-size: .82rem; margin-bottom: 4px; }
+  .gap .suggestion { color: var(--muted); font-size: .92rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  [data-outcome]::before, [data-checks]::after { font: 600 .75rem var(--mono); color: var(--accent); }
+  [data-outcome]::before { content: attr(data-outcome) "  "; }
+  [data-checks]::after { content: "  checks " attr(data-checks); color: var(--muted); font-weight: 400; }
+  .decide { border: 1px dashed var(--gap); background: var(--gap-bg); border-radius: 10px;
+            padding: 12px 18px; margin: 16px 0 0; }
+  .decide h2 { font-size: 1rem; margin: 0 0 6px; color: var(--gap); }
+  .decide ol, .decide ul { margin: 0; } .decide a { color: var(--ink); }
+  .decide ol.major > li { font-weight: 600; }
+  .decide details.minor { margin-top: 8px; font-size: .92rem; }
+  .decide details.minor summary { cursor: pointer; color: var(--muted); }
+  ol.steps > li { margin: 10px 0; }
+  [data-source="suggested"]::before { content: "Suggested here, not in the spec"; display: block;
+            margin: 0 0 4px -1.3em; font-size: .78rem; font-weight: 600; color: var(--gap); }
+
+  /* Diagram kit: nodes */
+  .node { position: relative; background: var(--surface); color: var(--ink); border: 1.5px solid var(--wire);
+          border-radius: 8px; padding: 8px 14px; font-size: .9rem; line-height: 1.35; text-align: center;
+          min-width: 150px; max-width: 300px; }
+  .node small { display: block; color: var(--muted); font-size: .76rem; margin-top: 2px; }
+  .node code { background: transparent; padding: 0; }
+  .node.new      { color: var(--ink); border-color: var(--new); background: var(--new-bg); }
+  .node.changed  { color: var(--ink); border-color: var(--changed); background: var(--changed-bg); }
+  .node.removed  { color: var(--muted); border-color: var(--removed); background: var(--removed-bg); }
+  .node.inferred { border-style: dashed; border-bottom-width: 1.5px; }
+  .node.open     { border: 1.5px dashed var(--gap); background: var(--gap-bg); color: var(--ink); }
+  .node.actor    { border-radius: 99px; background: var(--bg); }
+  .node.test     { border-color: var(--test); background: var(--test-bg); }
+  .node.fake     { border: 1.5px dashed var(--test); background: var(--test-bg); }
+  /* Badges sit inside the node as its last line: on the border they collided
+     with the arrow landing on a narrow node. */
+  .node.inferred::after, .node.open::after, .node.fake::after {
+          display: block; margin-top: 3px; font-size: .64rem; line-height: 1.2; letter-spacing: .02em;
+          text-transform: uppercase; color: var(--muted); }
+  .node.inferred::after { content: "inferred"; }
+  .node.open::after     { content: "spec is silent"; color: var(--gap); }
+  .node.fake::after     { content: "fake"; color: var(--test); }
+
+  /* Diagram kit: .flow, top to bottom. Each arrow is one ::before drawn with a
+     mask, so ::after stays free for the badges above. */
+  :root { --arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 28'%3E%3Cpath d='M6 0v21' stroke='black' stroke-width='2'/%3E%3Cpath d='M1 20l5 8 5-8z'/%3E%3C/svg%3E"); }
+  .flow { display: flex; flex-direction: column; align-items: center; margin: 16px 0 8px; }
+  .flow > * + *, .path > * + * { position: relative; margin-top: 34px; }
+  .flow > * + *::before, .path > * + *::before {
+          content: ""; position: absolute; left: 50%; top: -31px; width: 12px; height: 28px; transform: translateX(-6px);
+          background: var(--wire); -webkit-mask: var(--arrow) center / 12px 28px no-repeat; mask: var(--arrow) center / 12px 28px no-repeat; }
+  .via { position: absolute; top: -25px; left: calc(50% + 12px); white-space: nowrap; font-size: .72rem; color: var(--muted); }
+  .fork { display: flex; justify-content: center; align-self: stretch; }
+  .flow > .fork { margin-top: 34px; }
+  /* Branches size to their content, so one holding a nested fork gets the room
+     it needs; nodes inside a fork may shrink and wrap rather than overlap. */
+  .path { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: center; padding: 0 8px; }
+  .fork .node { min-width: 0; max-width: 100%; }
+  .fork .fork .node { min-width: 90px; }
+  .path::after { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: 2px solid var(--wire); }
+  .path:first-child::after { left: 50%; }
+  .path:last-child::after  { right: 50%; }
+  .path:only-child::after  { display: none; }
+  .cond { position: relative; z-index: 1; margin-top: -11px; font-size: .74rem; color: var(--muted); background: var(--surface);
+          border: 1px solid var(--wire); border-radius: 99px; padding: 1px 9px; text-align: center; }
+  /* On a phone the branches stack. Each becomes its own card, so stacked
+     branches never read as one sequence. */
+  @media (max-width: 600px) {
+    .fork { flex-direction: column; gap: 10px; }
+    .fork::after { content: "then one of these"; order: -1; align-self: center; font-size: .72rem; color: var(--muted); }
+    .path { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 10px 8px 12px; }
+    .path::after { display: none; }
+    .cond { margin-top: 0; }
+  }
+
+  /* Diagram kit: .stack, rows of pieces with seam lines between */
+  .stack { display: flex; flex-direction: column; margin: 16px 0 8px; }
+  .layer { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; padding: 12px 0; }
+  .seam { position: relative; text-align: center; margin: 2px 0; }
+  .seam::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px dashed var(--wire); }
+  .seam > span { position: relative; display: inline-block; max-width: 92%; background: var(--surface); border: 1.5px solid var(--wire);
+                 border-radius: 99px; padding: 3px 12px; font-size: .78rem; color: var(--muted); }
+  .seam > span b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+  .seam.new, .seam.changed { color: inherit; }
+  .seam.new::before     { border-top: 3px solid var(--new); }
+  .seam.new > span      { border-color: var(--new); background: var(--new-bg); }
+  .seam.changed::before { border-top: 3px solid var(--changed); }
+  .seam.changed > span  { border-color: var(--changed); background: var(--changed-bg); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>{{SPEC_TITLE}}</h1>
+    <p class="source">{{SPEC_SOURCE}}</p>
+    <div class="legend">
+      <span class="new">new</span><span class="changed">changed</span><span class="removed">removed</span>
+      <span class="inferred">inferred — not named in the spec</span><span class="gapchip">gap — the spec is silent</span>
+      <span class="testchip">test or fake</span>
+    </div>
+    <div class="decide">
+      <h2>Decide before building</h2>
+      {{GAPS_SUMMARY}}
+    </div>
+  </header>
+
+  <nav>
+    <a href="#problem">Problem</a><a href="#outcome">Outcome</a><a href="#workflow">Workflow</a>
+    <a href="#components">Pieces &amp; seams</a><a href="#files">Files</a><a href="#tests">Tests</a>
+    <a href="#validation">Validation</a>
+  </nav>
+
+  <section id="problem">
+    <h2>1. The problem</h2>
+    {{PROBLEM}}
+  </section>
+
+  <section id="outcome">
+    <h2>2. The outcome <small>what is true once this ships</small></h2>
+    {{OUTCOME}}
+  </section>
+
+  <section id="workflow">
+    <h2>3. The workflow <small>after the change</small></h2>
+    {{WORKFLOW}}
+  </section>
+
+  <section id="components">
+    <h2>4. The pieces and their seams <small>a seam is where two pieces meet, and where a test can swap one side for a fake</small></h2>
+    {{COMPONENTS}}
+  </section>
+
+  <section id="files">
+    <h2>5. File layout</h2>
+    <div class="panes">
+      <div id="files-current"><h3>Today</h3>{{FILES_CURRENT}}</div>
+      <div id="files-proposed"><h3>After this change</h3>{{FILES_PROPOSED}}</div>
+    </div>
+    {{FILES_NOTES}}
+  </section>
+
+  <section id="tests">
+    <h2>6. Tests and where they plug in</h2>
+    {{TESTS}}
+  </section>
+
+  <section id="validation">
+    <h2>7. How to check it worked</h2>
+    {{VALIDATION}}
+  </section>
+</main>
+</body>
+</html>
