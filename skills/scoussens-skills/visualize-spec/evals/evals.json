@@ -1,0 +1,72 @@
+{
+  "skill_name": "visualize-spec",
+  "note": "Paths are relative to the repository root. The baseline receives the user's original request verbatim (the seven sections, temp folder, plain language), so a win measures the skill's process, not its section list. Pages must be written under the run's own TMPDIR, and nothing is opened. Blind the outputs with make_blind.py before grading: it randomises A/B and scrubs run paths from replies, which leaked the configuration to a grader in iteration 3. Tell graders the pages were rendered in headless Chrome (check_mechanical.py does this), or a grader reading source offline scores Mermaid as raw text. For diagram quality, run screenshot_blind.sh and have a grader judge the PNGs only; graders reading HTML imagine the diagrams and score them wrongly.",
+  "baseline_prompt_suffix": "Make an HTML page that visualizes the spec clearly and concisely for the developer, so they can tell whether it meets their goal. It should show: the problem; the desired outcome; a visualization of the workflow; a visualization of the components and their seams; the current and proposed filesystem layout for the affected code; the test layout and seams, visualized; and the validation plan. Save it in the temp folder, since it is a throwaway. Write plainly, as if explaining to a junior developer, with no jargon, and keep it concise.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "complete-spec-this-repo",
+      "prompt": "Visualize the spec in skills/scoussens-skills/visualize-spec/evals/files/description-policy.md. It's for this repo. I want to check it does what I want before I hand it to an agent.",
+      "expected_output": "A page whose current layout names the real files (scripts/validate-skills.mjs, scripts/lib/discover-skills.mjs, package.json, .github/workflows/validate.yml) and whose proposed layout adds a policy module under scripts/lib/ and a first test file, with the module's filename tagged as chosen rather than specified. The spec is complete, so the page should show few or no gaps, and should say plainly that the repository has no tests today.",
+      "files": [
+        "skills/scoussens-skills/visualize-spec/evals/files/description-policy.md"
+      ],
+      "assertions": [
+        "current_layout_uses_real_paths: the 'today' file layout names scripts/validate-skills.mjs and scripts/lib/discover-skills.mjs, which exist in the repository, and invents no current file that does not exist",
+        "proposed_filename_marked_as_chosen: the proposed policy module's filename is not given by the spec, and the page marks it as inferred, proposed, or chosen rather than presenting it as the spec's own",
+        "states_no_tests_today: the page says the repository has no tests yet, or shows an empty 'today' test tree, which matches the spec's 'no prior art'",
+        "user_invoked_exemption_visible: the outcome or workflow shows that user-invoked skills (disable-model-invocation) are exempt from the trigger-clause warning",
+        "every_outcome_has_a_check: each stated outcome is confirmed by at least one validation step, or is explicitly marked as uncheckable",
+        "repository_facts_correct: every claim about the pack's current skills is true; all 9 descriptions carry a trigger phrase once YAML folded lines are joined",
+        "no_invented_gaps: every gap the page names is real when checked against the spec and the repository; it does not claim silence on something the spec covers (testing and out-of-scope are covered). Note the spec contradicts itself on CI ('no change to the CI workflow' vs 'the CI validate job runs it'), so flagging that is a true gap",
+        "plain_language: a junior developer could read the page without looking up terms; any technical term is defined in plain words where it first appears"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "gappy-spec-this-repo",
+      "prompt": "can you visualize skills/scoussens-skills/visualize-spec/evals/files/link-check.md so I can sanity check it? it's about this repo",
+      "expected_output": "A page that mirrors a spec with holes. It shows the testing section as a gap, because the spec has no testing decisions, rather than presenting an invented test plan as the spec's. It flags 'fast enough for a pre-commit hook' as an outcome nothing in the spec measures, and notes that no pre-commit hook exists in this repository. The current layout names the real validator and discovery module.",
+      "files": [
+        "skills/scoussens-skills/visualize-spec/evals/files/link-check.md"
+      ],
+      "assertions": [
+        "spec_played_forward: the page notes that the spec's own example would not be caught, because pr-digest/SKILL.md names its files in backticks, not Markdown links",
+        "tests_shown_as_gap: the test section says plainly that the spec gives no testing plan; any test layout shown is labelled as a suggestion, not as the spec's",
+        "validation_gap_named: the page says the spec gives no way to confirm the change works, and does not present an invented validation plan as though the spec supplied it",
+        "speed_outcome_flagged: 'fast enough for a pre-commit hook' is flagged as unmeasured or undefined (no number, no hook in the repo)",
+        "current_layout_uses_real_paths: the 'today' file layout names scripts/validate-skills.mjs and scripts/lib/discover-skills.mjs",
+        "outside_skill_rule_visible: the rule that a link pointing outside its own skill folder is an error appears in the outcome or workflow",
+        "gaps_summarised_in_reply: the final reply to the user lists the gaps, so the user sees them without opening the page",
+        "plain_language: a junior developer could read the page without looking up terms; any technical term is defined in plain words where it first appears"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "jargon-ticket-fixture-repo",
+      "prompt": "visualize the spec in skills/scoussens-skills/visualize-spec/evals/files/webhook-retries.md. the code it's about is in skills/scoussens-skills/visualize-spec/evals/fixtures/order-hooks",
+      "expected_output": "A page for a jargon-heavy ticket that explains or replaces each term in plain words: idempotent / idempotency key, backoff, jitter, DLQ (dead-letter queue), port and adapter, p99, hot path, at-least-once. The current layout comes from the fixture repository (app.py, webhooks.py, store.py, tests/test_app.py). The pieces diagram shows the new DeliveryTransport seam, and the test diagram shows FakeTransport plugging in there. The 'Not doing' list appears.",
+      "files": [
+        "skills/scoussens-skills/visualize-spec/evals/files/webhook-retries.md",
+        "skills/scoussens-skills/visualize-spec/evals/fixtures/order-hooks"
+      ],
+      "assertions": [
+        "jargon_explained: every one of idempotent/idempotency, backoff, jitter, DLQ, port/adapter, p99, hot path, at-least-once that appears on the page is defined in plain words at or near first use; terms that do not appear were replaced with plain words",
+        "retry_window_recomputed: the page shows that 8 attempts from a 2 s base give 7 waits totalling 254 s before jitter (about 5.5 minutes with the 10 s timeouts), so the spec's '~17 min' does not follow, and the 5-minute cap never applies",
+        "current_layout_from_repo: the 'today' layout lists src/order_hooks/app.py, webhooks.py, store.py and tests/test_app.py from the fixture repository",
+        "transport_seam_is_new: the pieces diagram shows the DeliveryTransport seam between the dispatcher and HTTP delivery, marked as new",
+        "fake_plugs_into_seam: the test visualization shows FakeTransport (a fake) standing in at the DeliveryTransport seam",
+        "not_doing_listed: signing (ORD-219) and a persistent queue (ORD-220) appear as out of scope",
+        "every_outcome_has_a_check: each stated outcome is confirmed by at least one validation step, or is explicitly marked as uncheckable",
+        "concise: the prose outside diagrams and file trees reads in about five minutes (roughly 900 words or fewer)"
+      ]
+    }
+  ],
+  "history": [
+    "Iteration 1: skill 17/21, baseline 18/21, preferred 2 of 3. Losses: an HTML comment in the template closed early and leaked text onto every page; a validation plan the spec never gave was presented as the spec's.",
+    "Iteration 3: skill 18/21, baseline 17/21, preferred 2 of 3. The prose rule for labelling suggested plans failed again, so check_page.py now requires data-source on the test and validation lists.",
+    "Iteration 4: skill 17/21, baseline 17/21, preferred 0 of 3. Structure held (labelling, tracing, budget, rendering); each loss was one fact: a false repository claim read off grep, a missed 'the spec would not catch its own cited incident', and a wrong retry sum plus a guessed step drawn as fact. SKILL.md then gained 'play the spec forward', 'settle facts by running something', and diagram boxes taking the inferred class. Not yet re-run.",
+    "Iteration 5 (3 samples per eval, fresh baselines, clean blinding, graded with aggregate.py): skill preferred 7 of 9 (complete 1/3, gappy 3/3, jargon 3/3); assertions 69/72 vs 66/72; mirror_fidelity 4.67 vs 3.67, decision_speed 4.11 vs 3.89, visual_clarity 4.11 vs 4.56. Skill wins on keeping spec and additions apart and on plain language for the jargon ticket (3/3 vs 0/3). It loses the complete spec on unranked gap lists (9-10 gaps at equal weight) and undefined repo terms (frontmatter, model-invoked). Baselines draw better diagrams: hand-built SVG outscores Mermaid.",
+    "Iteration 6 (Mermaid replaced by the template's HTML/CSS diagram kit; ranked gap list; repo vocabulary counts as jargon; 9 new skill samples vs the iteration-5 baselines): skill preferred 8 of 9 (complete 3/3, gappy 3/3, jargon 2/3); assertions 70/72 vs 62/72; decision_speed 4.78 vs 3.56, mirror_fidelity 4.78 vs 3.89. Diagram quality judged from screenshots: skill preferred 7 of 9, legibility 4.78 vs 3.44, clarity 4.22 vs 3.67, cleanliness 4.56 vs 3.56. The one kit bug found (nested forks overlapped) is fixed. Still weak: the retry-window arithmetic (1/3), where one sample headlined a wrong figure."
+  ]
+}
