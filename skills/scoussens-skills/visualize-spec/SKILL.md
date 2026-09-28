@@ -1,6 +1,6 @@
 ---
 name: visualize-spec
-description: Turn a spec into a throwaway HTML page in the temp folder — problem, outcome, workflow, pieces and seams, file layout, tests, and validation plan — so a developer can check it delivers what they want.
+description: Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, file layout, tests, and validation plan — themed to the repository and opened locally or published wherever the agent can, so a developer can check it delivers what they want.
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ Build one HTML page that shows a spec to the developer who asked for it, so they
 
 The page is a **mirror**. It shows what the spec says, in plain words and pictures, and only that. Where the spec is silent, the page shows a **gap**: a marked box that names what is missing. A gap is often the most useful thing on the page, because it is a decision the developer has to make before anyone builds. A plausible guess in its place hides that decision.
 
-The page is a throwaway: it lives in the temp folder and gets rebuilt whenever the spec changes.
+The page is a throwaway. It is built in the temp folder and rebuilt whenever the spec changes. Publishing it gives it a link, not a longer life.
 
 ## Step 1 — Get the whole spec
 
@@ -24,7 +24,22 @@ If you cannot tell which spec is meant, ask.
 
 **Done when** you hold the full text of one spec and can name where it came from.
 
-## Step 2 — Find the code the spec touches
+## Step 2 — Choose where the page goes
+
+List the destinations you can deliver to in this session:
+
+- **Local file.** Always available. You can open it in a browser only when there is a desktop: macOS, or Linux with `$DISPLAY` or `$WAYLAND_DISPLAY` set. Over SSH or in a container, the user gets the path instead.
+- **Hosted page.** Each tool in your tool list that publishes an HTML page and returns a link, such as an `Artifact` tool or an MCP server's page-creation tool. Read each tool's description for who can see what it publishes. A tool that stores documents as text, such as a docs or wiki connector, does not count, because it drops the styles and the diagrams.
+
+Then settle one destination:
+
+- The user already said where, for example "just open it" or "publish it": use that.
+- Only the local file is available: use it, without asking.
+- Otherwise, ask once, and offer only the destinations you found. Put the local file first as the default. Give each option one line that says who will be able to see the page. Publishing shows the repository's paths and gaps to everyone who can see the page, so the user decides this, not you. If step 1 also needs a question, ask both together.
+
+**Done when** you hold one destination, chosen by the user or left as the only one available.
+
+## Step 3 — Find the code the spec touches
 
 Specs often name modules but not files. A spec written by `to-spec` leaves paths out on purpose. So the current file layout comes from the repository, never from the spec. For each module, command, and test the spec names, find its real path and read enough to know what it does today. Also find where this area's tests live and the command that runs them (the scripts in `package.json`, `pyproject.toml`, `Makefile`, or the CI workflow).
 
@@ -38,7 +53,25 @@ If there is no repository to read, continue. The file-layout section then shows 
 - marked **new**, because the spec says to create it
 - marked **not found**, because the spec assumes it exists and the repository does not have it. That is a gap.
 
-## Step 3 — Sort the spec into seven sections
+## Step 4 — Find the theme
+
+Look for a theme or style guide in the repository you are working in. Stop at the first source that gives real colour values:
+
+1. The repository's agent instructions (`AGENTS.md`, `CLAUDE.md`, or a `docs/` standards folder), which often name the package that owns styling or link a style guide.
+2. A tokens file or a CSS theme. Prefer a shared package (`packages/ui/`, `libs/design-system/`, `src/theme/`) over one app's stylesheet.
+
+   ```bash
+   rg -l -g '!node_modules' -g '!dist' -g '*.{css,scss,sass,less}' '@theme|--color-|:root\s*\{'
+   rg -l -g '!node_modules' 'tailwind\.config|createTheme|extendTheme' .
+   ```
+
+3. A written style guide or brand sheet under `docs/`, such as a file named `style-guide`, `brand`, or `design-system`. A table of hex values counts.
+
+When you find one, read [`references/theming.md`](references/theming.md). It says which tokens the theme may replace and how to map them. When you find none, the page uses the template's default theme unchanged. Colours you would have to guess from screenshots or a website do not count as a theme.
+
+**Done when** you can name the theme's source file, or you know that the page uses the default theme.
+
+## Step 5 — Sort the spec into seven sections
 
 Draft each section as notes before writing any HTML. For every item, know its source: the spec, the code, or your own inference. Items you inferred are tagged **inferred** on the page, and that includes diagram boxes and steps, which take the `inferred` class. Items with no source are gaps.
 
@@ -48,7 +81,7 @@ When the spec gives a section nothing, the section opens with a gap. Anything yo
 2. **The outcome.** What is true once the work ships, as three to six statements a person could check, for example "Running `npm run validate` on a skill with no trigger phrase prints a warning". Condense the user stories into these statements. Add a short "Not in this change" list if the spec has an out-of-scope section.
 3. **The workflow.** The path through the system after the change: who starts it, each step, and where it ends. Draw it as a `.flow`: one node per step, a `.fork` where it branches, and a `.via` label on an arrow when what passes along it matters. Colour new and changed steps, and mark an undecided step `open`.
 4. **The pieces and their seams.** Draw a `.stack`: one node per module the change touches, callers in the row above the pieces they call, and a seam line between the rows. Label each seam with its name and what crosses it: a function call, a file, or an HTTP request. A **seam** is a place where two pieces meet, and where a test can swap one side for a fake. Mark each seam new, changed, or unchanged. Under the diagram, give each seam one line: what crosses it, and why it is there.
-5. **File layout.** Two trees side by side. **Today** shows the real paths from step 2. **After this change** shows the proposed layout. Show only the affected folders, plus one level of context around them. Mark each entry new, changed, or removed. Tag as inferred any path the spec does not name and you chose.
+5. **File layout.** Two trees side by side. **Today** shows the real paths from step 3. **After this change** shows the proposed layout. Show only the affected folders, plus one level of context around them. Mark each entry new, changed, or removed. Tag as inferred any path the spec does not name and you chose.
 6. **Tests and where they plug in.** Show where the tests live as a tree, today and after. Add a `.stack` for each seam a test enters through: the test beside the real caller above the seam, and any fake it swaps in beside the real piece below it. Give each test file one line: what it proves. This section comes from the spec's testing decisions.
 7. **How to check it worked.** Ordered steps the developer follows to confirm the outcome. Each step is a command to run and what they should see, and it names the outcomes it checks. End with the project's standard check, the command CI runs, when there is one. This section comes from the spec's acceptance criteria or validation plan.
 
@@ -60,7 +93,7 @@ Last, collect every gap into the **Decide before building** list at the top of t
 
 **Done when** all seven sections have content or a gap, and every outcome in section 2 is checked by at least one step in section 7. An outcome that no step can check gets a gap that says so.
 
-## Step 4 — Write the page
+## Step 6 — Write the page
 
 **Voice.** If `speak-clearly` is in your available skills, load it now and apply it to every sentence on the page. If it is not, write as you would explain the spec to a junior developer in their first week: short sentences, one idea each, and name who or what acts.
 
@@ -68,14 +101,19 @@ Either way, use plain words. That applies to everything on the page a person rea
 
 **Length.** The developer should be able to read the whole page in five minutes. Each list item is one line. Keep diagrams to about twelve boxes. Keep the words outside diagrams, trees, and headings under 900, the "Decide before building" list included. The checker counts them, and every gap stays; cut words, never gaps.
 
-**Build.** Copy `assets/page-template.html` from this skill's folder to `${TMPDIR:-/tmp}/visualize-spec/<spec-slug>.html`, then replace every `{{…}}` marker. The template's header comment lists the class names, the traceability attributes (`data-outcome`, `data-checks`, `data-gap-for`), and the diagram kit: `.flow` and `.stack`, built from plain HTML so the browser lays them out, with no library and no network. Use them, so every page reads the same way and the checker can trace outcomes to steps.
+**Build.** Copy `assets/page-template.html` from this skill's folder to `${TMPDIR:-/tmp}/visualize-spec/<spec-slug>.html`, then replace every `{{…}}` marker. The template's header comment lists the class names, the traceability attributes (`data-outcome`, `data-checks`, `data-gap-for`), and the diagram kit: `.flow` and `.stack`, built from plain HTML so the browser lays them out, with no library and no network. Use them, so every page reads the same way and the checker can trace outcomes to steps. Then apply the theme from step 4 to the template's `THEME` block.
 
-## Step 5 — Check it, then open it
+When the destination is a hosted page, follow that tool's own authoring rules, and load any skill its description names before writing (the `Artifact` tool names `artifact-design`). Keep the template's sections, classes, and diagram kit, because the checker still runs on the page.
+
+## Step 7 — Check it, then deliver it
 
 ```bash
 python3 <this skill's folder>/scripts/check_page.py <page>
 ```
 
-Fix each `FAIL` line and rerun until the checker exits 0. Then open the page with `xdg-open` on Linux or `open` on macOS. The page stays a local file.
+Fix each `FAIL` line and rerun until the checker exits 0. Then deliver the checked file to the destination from step 2:
 
-Your reply gives the page's path, then lists the gaps, one line each. The gaps are what the developer has to act on, and the page carries everything else.
+- **Local file:** open it with `open` on macOS or `xdg-open` on Linux. Without a desktop, give the path only.
+- **Hosted page:** publish the file with the tool. When the spec changes, republish to the same link rather than creating a new one.
+
+Your reply gives the page's path, and the link with who can see it when you published it. Next is one line naming the theme's source file, or saying the page uses the default theme. Last come the gaps, one line each. The gaps are what the developer has to act on, and the page carries everything else.

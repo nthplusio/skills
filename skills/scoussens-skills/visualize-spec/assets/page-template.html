@@ -69,6 +69,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{SPEC_TITLE}} · spec at a glance</title>
 <style>
+  /* THEME. These values are the default theme. references/theming.md says
+     which tokens a repository's theme may replace. The dark values appear
+     twice: once for the reader's system setting, once for a host that stamps
+     data-theme="dark". Keep the two blocks identical. */
   :root {
     --bg: #fbfaf8; --surface: #ffffff; --ink: #1c1b19; --muted: #6b6760;
     --line: #e4e1dc; --wire: #a8a39b; --accent: #2f5bd3;
@@ -81,7 +85,7 @@
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #151514; --surface: #1d1d1b; --ink: #ecebe8; --muted: #a09c95;
       --line: #34322f; --wire: #6d6962; --accent: #8aa8ff;
       --new: #4ade80; --new-bg: #13281b;
@@ -91,6 +95,16 @@
       --test: #a5b4fc; --test-bg: #1c1d3a;
     }
   }
+  :root[data-theme="dark"] {
+    --bg: #151514; --surface: #1d1d1b; --ink: #ecebe8; --muted: #a09c95;
+    --line: #34322f; --wire: #6d6962; --accent: #8aa8ff;
+    --new: #4ade80; --new-bg: #13281b;
+    --changed: #fbbf24; --changed-bg: #33270d;
+    --removed: #f87171; --removed-bg: #351616;
+    --gap: #c084fc; --gap-bg: #281a38;
+    --test: #a5b4fc; --test-bg: #1c1d3a;
+  }
+  /* END THEME */
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--sans); }
   main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
