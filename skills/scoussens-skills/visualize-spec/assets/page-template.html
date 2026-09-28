@@ -62,6 +62,26 @@
     </div>
     A seam takes new, changed or nothing (unchanged). Its label names the seam,
     then what crosses it.
+
+  .erd: the data layer, one card per entity (a kind of stored record). Put
+  one .erd in each pane of section 5, #data-current and #data-proposed. Only
+  the After pane carries new, changed, removed, and inferred, on an .entity or
+  on one property <li>. Checker text inside an .erd is not counted as prose.
+    <div class="erd">
+      <div class="entity new">
+        <b>DeadLetter <small>in memory</small></b>
+        <ul>
+          <li class="key">id <small>text</small></li>
+          <li>order <small>links to Order</small></li>
+          <li class="inferred">last_error <small>text, optional</small></li>
+        </ul>
+      </div>
+    </div>
+    <ul class="rels">
+      <li class="new">one <b>Order</b> has many <b>DeadLetter</b> records</li>
+    </ul>
+    Types are plain words: text, whole number, date and time, yes or no.
+    A key, the property that names one record, takes class key.
 -->
 <html lang="en">
 <head>
@@ -227,6 +247,34 @@
   .seam.new > span      { border-color: var(--new); background: var(--new-bg); }
   .seam.changed::before { border-top: 3px solid var(--changed); }
   .seam.changed > span  { border-color: var(--changed); background: var(--changed-bg); }
+
+  /* Diagram kit: .erd, entity cards with their properties */
+  .erd { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin: 8px 0; }
+  .entity { flex: 1 1 170px; max-width: 280px; border: 1.5px solid var(--wire); border-radius: 8px;
+            background: var(--surface); color: var(--ink); font-size: .86rem; }
+  .entity > b { display: block; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  .entity > b small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .entity ul { list-style: none; margin: 0; padding: 6px 12px 8px; }
+  .entity li { display: flex; gap: 6px; margin: 2px 0; }
+  .entity li small { margin-left: auto; padding-left: 8px; color: var(--muted); text-align: right; }
+  .entity li.key::after { content: "key"; order: -1; font: 600 .62rem var(--mono); color: var(--accent);
+            text-transform: uppercase; align-self: center; }
+  .entity li.inferred { border-bottom: 0; }
+  .entity li.inferred > small::after { content: " · inferred"; font-style: italic; }
+  .entity.new     { border-color: var(--new); background: var(--new-bg); color: var(--ink); }
+  .entity.changed { border-color: var(--changed); background: var(--changed-bg); color: var(--ink); }
+  .entity.removed { border-color: var(--removed); background: var(--removed-bg); color: var(--muted); }
+  .entity.inferred { border-style: dashed; }
+  /* A sign as well as a colour, so the change reads without colour vision. */
+  .entity li.new::before     { content: "+"; order: -2; font-weight: 700; }
+  .entity li.changed::before { content: "~"; order: -2; font-weight: 700; }
+  .entity li.removed::before { content: "−"; order: -2; font-weight: 700; }
+  .rels { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: .82rem; }
+  .rels li { margin: 0; padding: 2px 10px; border: 1px solid var(--wire); border-radius: 99px; color: var(--ink); }
+  .rels li.new { border-color: var(--new); background: var(--new-bg); }
+  .rels li.changed { border-color: var(--changed); background: var(--changed-bg); }
+  .rels li.removed { border-color: var(--removed); background: var(--removed-bg); color: var(--muted); }
+  .no-data { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -247,7 +295,7 @@
 
   <nav>
     <a href="#problem">Problem</a><a href="#outcome">Outcome</a><a href="#workflow">Workflow</a>
-    <a href="#components">Pieces &amp; seams</a><a href="#files">Files</a><a href="#tests">Tests</a>
+    <a href="#components">Pieces &amp; seams</a><a href="#data">Data</a><a href="#files">Files</a><a href="#tests">Tests</a>
     <a href="#validation">Validation</a>
   </nav>
 
@@ -271,8 +319,18 @@
     {{COMPONENTS}}
   </section>
 
+  <section id="data">
+    <h2>5. The data layer <small>what is stored, before and after</small></h2>
+    {{DATA_INTRO}}
+    <div class="panes">
+      <div id="data-current"><h3>Today</h3>{{DATA_CURRENT}}</div>
+      <div id="data-proposed"><h3>After this change</h3>{{DATA_PROPOSED}}</div>
+    </div>
+    {{DATA_NOTES}}
+  </section>
+
   <section id="files">
-    <h2>5. File layout</h2>
+    <h2>6. File layout</h2>
     <div class="panes">
       <div id="files-current"><h3>Today</h3>{{FILES_CURRENT}}</div>
       <div id="files-proposed"><h3>After this change</h3>{{FILES_PROPOSED}}</div>
@@ -281,12 +339,12 @@
   </section>
 
   <section id="tests">
-    <h2>6. Tests and where they plug in</h2>
+    <h2>7. Tests and where they plug in</h2>
     {{TESTS}}
   </section>
 
   <section id="validation">
-    <h2>7. How to check it worked</h2>
+    <h2>8. How to check it worked</h2>
     {{VALIDATION}}
   </section>
 </main>
