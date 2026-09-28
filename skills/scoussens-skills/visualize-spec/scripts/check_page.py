@@ -111,6 +111,18 @@ def words(chunks):
     return len(re.findall(r"[A-Za-z0-9][\w'’-]*", " ".join(chunks)))
 
 
+def tokens(css):
+    return dict(re.findall(r"(--[\w-]+)\s*:\s*([^;]+);", css))
+
+
+def dark_blocks(html):
+    """The dark tokens for the reader's setting, and for a host's data-theme stamp."""
+    system = re.search(r':root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}', html)
+    stamped = re.search(r':root\[data-theme="dark"\]\s*\{([^}]*)\}', html)
+    return (tokens(system.group(1)) if system else None,
+            tokens(stamped.group(1)) if stamped else None)
+
+
 def main(path_arg):
     path = Path(path_arg).resolve()
     html = path.read_text(encoding="utf-8", errors="replace")
@@ -123,6 +135,21 @@ def main(path_arg):
     left = sorted(set(re.findall(r"\{\{[A-Z_]+\}\}", html)))
     if left:
         fails.append(f"template markers still unfilled: {', '.join(left)}")
+
+    # Theming edits these by hand, and a host that stamps data-theme reads the
+    # second block, so a drift between them shows only on some readers' screens.
+    system, stamped = dark_blocks(html)
+    if system is None or stamped is None:
+        fails.append('dark theme needs both :root:not([data-theme="light"]) and :root[data-theme="dark"] blocks')
+    elif system != stamped:
+        diff = sorted(k for k in system.keys() | stamped.keys() if system.get(k) != stamped.get(k))
+        fails.append(f"the two dark theme blocks differ on: {', '.join(diff)}")
+
+    # The page works offline and publishes anywhere, so it loads nothing.
+    remote = re.search(r'<(?:link|script)\b[^>]*\b(?:href|src)\s*=\s*["\']?(?:https?:)?//'
+                       r'|@import|url\(\s*["\']?(?:https?:)?//', html, re.I)
+    if remote:
+        fails.append(f"page loads from the network: {remote.group(0)!r}; inline it or drop it")
 
     page = Page()
     page.feed(html)
