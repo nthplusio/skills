@@ -12,13 +12,13 @@ import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 
-SECTIONS = ["problem", "outcome", "workflow", "components", "files", "tests", "validation"]
+SECTIONS = ["problem", "outcome", "workflow", "components", "data", "files", "tests", "validation"]
 DIAGRAM_SECTIONS = ["workflow", "components", "tests"]
 # Sections an author is tempted to fill in when the spec is silent. Each must
 # say where its list came from, so a plan the spec never gave cannot pass as
 # the spec's. Two eval rounds lost on exactly this before it was checked.
 SOURCED_SECTIONS = ["tests", "validation"]
-# Everything the developer reads outside diagrams, trees, and headings: the
+# Everything the developer reads outside diagrams, trees, entity cards, and headings: the
 # sections and the "Decide before building" box. Past this, the page stops
 # being a five-minute read. evals/check_mechanical.py counts the same way.
 PROSE_WORD_BUDGET = 900
@@ -39,6 +39,8 @@ class Page(HTMLParser):
         self.gap_count = {s: 0 for s in SECTIONS}
         self.in_h2 = False
         self.divs = []            # one bool per open <div>: is it a gap?
+        self.erds = []            # one bool per open <div>: is it an .erd?
+        self.no_data = False      # the data section says the change stores nothing
         self.sources = {s: [] for s in SOURCED_SECTIONS}  # (source, inside a gap?)
         self.lists = {s: 0 for s in SOURCED_SECTIONS}     # <ol>/<ul> count
         self.visible = []         # all readable text on the page, for leak checks
@@ -60,6 +62,9 @@ class Page(HTMLParser):
             self.major_items += self.in_major
         if tag == "div":
             self.divs.append("gap" in (a.get("class") or "").split())
+            self.erds.append("erd" in (a.get("class") or "").split())
+        if self.section == "data" and "no-data" in (a.get("class") or "").split():
+            self.no_data = True
         if tag in ("ol", "ul") and self.section in SOURCED_SECTIONS:
             self.lists[self.section] += 1
         if a.get("data-source") and self.section in SOURCED_SECTIONS:
@@ -68,7 +73,7 @@ class Page(HTMLParser):
             self.section = a["id"]
         if self.section:
             classes = (a.get("class") or "").split()
-            if "flow" in classes or "stack" in classes or tag == "svg":
+            if "flow" in classes or "stack" in classes or "erd" in classes or tag == "svg":
                 self.diagrams[self.section] += 1
             if tag == "pre" and "tree" in classes:
                 self.trees[self.section] += 1
@@ -90,6 +95,7 @@ class Page(HTMLParser):
             self.in_major = False
         if tag == "div" and self.divs:
             self.divs.pop()
+            self.erds.pop()
         if tag in ("pre", "script", "style", "svg", "title") and self.skip:
             self.skip -= 1
         if tag in ("h1", "h2", "h3"):
@@ -100,6 +106,10 @@ class Page(HTMLParser):
             self.in_decide = False
 
     def handle_data(self, data):
+        # Entity cards list properties the way a tree lists files: read on
+        # demand, so they sit outside the prose budget like <pre class="tree">.
+        if any(self.erds):
+            return
         if not self.skip and not self.in_h2:
             self.visible.append(data)
         # Section headings don't count toward "is this section filled in".
@@ -165,6 +175,15 @@ def main(path_arg):
     for pane in ("files-current", "files-proposed"):
         if pane not in page.ids:
             fails.append(f'file layout pane "{pane}" is missing')
+    # The data section is the one diagram section a change can rightly leave
+    # empty, so it needs a diagram, a gap, or a line saying nothing is stored.
+    if "data" in page.ids:
+        if page.diagrams["data"]:
+            for pane in ("data-current", "data-proposed"):
+                if pane not in page.ids:
+                    fails.append(f'data layer pane "{pane}" is missing')
+        elif not page.gap_count["data"] and not page.no_data:
+            fails.append('section "data" needs an .erd in each pane, a gap, or a <p class="no-data"> line')
 
     for s in SOURCED_SECTIONS:
         srcs = page.sources[s]

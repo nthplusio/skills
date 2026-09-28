@@ -32,6 +32,7 @@ SECTION_WORDS = {
     "outcome": r"outcome|goal|result|success|done",
     "workflow": r"workflow|flow|how it works|how the \w+ runs|how a \w+ (?:works|travels|moves)|journey|steps|sequence",
     "components": r"component|piece|\bparts?\b|seam|module|architecture",
+    "data": r"\bdata\b|entit|schema|stored|storage|record",
     "files": r"file|layout|folder|director",
     "tests": r"test",
     "validation": r"validat|verify|check|confirm|prove|know it work",
@@ -121,8 +122,9 @@ def check(html, reply, page_path, name):
                                    "evidence": page_path or "no page-path.txt"}
 
     found = [k for k, pat in SECTION_WORDS.items() if re.search(pat, heads, re.I)]
-    out["seven_sections"] = {"passed": len(found) == 7,
-                             "evidence": f"{len(found)}/7 by heading: missing {sorted(set(SECTION_WORDS) - set(found)) or 'none'}"}
+    n = len(SECTION_WORDS)
+    out["all_sections"] = {"passed": len(found) == n,
+                           "evidence": f"{len(found)}/{n} by heading: missing {sorted(set(SECTION_WORDS) - set(found)) or 'none'}"}
 
     mermaid_text = len(re.findall(r"\b(?:flowchart|graph\s+(?:TD|LR|TB)|sequenceDiagram)\b", html))
     n_diag = max(s.diagrams, mermaid_text)
