@@ -56,6 +56,12 @@ GAP_PHRASES = r"\bgap\b|not specified|unspecified|does(?:n't| not) say|is silent
               r"undefined|no testing|missing from the spec|open question|\bTBD\b|not stated|unclear"
 EXTERNAL = re.compile(r"""<(?:script|link)[^>]+(?:src|href)\s*=\s*["']https?://|import\s+\w+\s+from\s+["']https?://""", re.I)
 PROSE_BUDGET = 900
+# Entity cards list properties the way a file tree lists paths, so their text
+# sits outside the prose budget, as scripts/check_page.py counts it. Matched by
+# class name so a baseline's own cards count the same way; a baseline that
+# draws its data as a bare <table> is still counted, so read the evidence.
+DATA_CARD = re.compile(r"(?:^|[\s_-])(?:erd|entity|entities|schema)(?:[\s_-]|$)", re.I)
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
 
 
 class Split(HTMLParser):
@@ -65,6 +71,7 @@ class Split(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.stack, self.headings, self.prose, self.diagrams = [], [], [], 0
         self._h = None
+        self.open = []            # (tag, is a data card) for every open element
 
     def handle_starttag(self, tag, attrs):
         cls = (dict(attrs).get("class") or "")
@@ -79,8 +86,16 @@ class Split(HTMLParser):
             self.stack.append(tag)
         if tag in ("h1", "h2", "h3"):
             self._h = []
+        if tag not in VOID:
+            self.open.append((tag, bool(DATA_CARD.search(cls))))
 
     def handle_endtag(self, tag):
+        # Pop to the matching tag, so a stray unclosed <li> or <p> cannot
+        # leave a data card open for the rest of the page.
+        for i in range(len(self.open) - 1, -1, -1):
+            if self.open[i][0] == tag:
+                del self.open[i:]
+                break
         if self.stack and self.stack[-1] == tag:
             self.stack.pop()
         if tag in ("h1", "h2", "h3") and self._h is not None:
@@ -90,7 +105,7 @@ class Split(HTMLParser):
     def handle_data(self, data):
         if self._h is not None:
             self._h.append(data)
-        elif not self.stack:
+        elif not self.stack and not any(card for _, card in self.open):
             self.prose.append(data)
 
 
