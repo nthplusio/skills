@@ -5,3 +5,7 @@ node_modules/
 # Python bytecode inside skill dirs fails the pack validator as a binary file.
 __pycache__/
 *.pyc
+
+# Claude Code writes a plugin's API types here when it loads the plugin;
+# they are build-specific, so each contributor's engine regenerates them.
+plugins/*/.claude-plugin/types/
