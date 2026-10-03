@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "nthplusio",
+  "owner": { "name": "Seth Coussens", "email": "seth.coussens@nthplus.io" },
+  "description": "Claude Code plugins from nthplusio/skills.",
+  "plugins": [
+    {
+      "name": "context-statusline",
+      "source": "./plugins/context-statusline",
+      "description": "A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch.",
+      "category": "productivity",
+      "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/context-statusline"
+    }
+  ]
+}
