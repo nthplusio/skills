@@ -208,7 +208,7 @@ export const register: Register = (on, options) => {
         const source = sources.find(s => s.name === 'agent-mail')
         if (!source) return { text: 'The shared agent-mail source is missing. Run /doorbell:join.' }
         retry = crypto.randomUUID()
-        publication = { sourceId: source.id, text: input.text, fields: { recipient: input.recipient, sender: role.name, thread: input.reply ? incomingThread as string : crypto.randomUUID(), kind: input.kind ?? (input.reply ? 'reply' : 'message') }, idempotencyKey: retry }
+        publication = { sourceId: source.id, text: input.text, fields: { recipient: input.recipient, sender: role.name, thread: input.reply ? incomingThread as string : crypto.randomUUID(), kind: input.kind ?? (input.reply ? 'reply' : 'request') }, idempotencyKey: retry }
         await $.store.set(key('publication', url, retry), { publication, cwd, identity: identity(role) })
       }
       const receipt = await call($, 'publish_mcp_message', publication)

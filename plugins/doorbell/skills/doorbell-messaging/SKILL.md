@@ -52,11 +52,16 @@ calls for its own known lease. A customer can also use
 
 For customer commands, use `/doorbell:send` with a recipient and text.
 `reply: true` uses this session's known incoming thread; send a reply before
-acknowledgment. New conversations get a generated thread. The plugin derives
-sender from the exact directory binding and saves the publication's idempotency
-key before sending. After an uncertain result, retry the saved key with identical
-content; do not make a fresh publication. Doorbell retains idempotency for seven
-days. Acceptance is a receipt, not proof of delivery or completed work.
+acknowledgment. New conversations get a generated thread. Unless explicitly set,
+`kind` defaults to `"request"` for a new send and `"reply"` for a reply.
+For information that expects no answer, set `kind: "notice"`. These values are
+protocol conventions, not server-enforced restrictions.
+
+The plugin derives sender from the exact directory binding and saves the
+publication's idempotency key before sending. After an uncertain result, retry
+the saved key with identical content; do not make a fresh publication. Doorbell
+retains idempotency for seven days. Acceptance is a receipt, not proof of delivery
+or completed work.
 
 For direct public publication in an approved workflow, use the shared `agent-mail`
 source and fields `recipient`, `sender`, `thread`, `kind`. Follow the same sender,

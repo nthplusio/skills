@@ -46,6 +46,8 @@ needs `notifiers:read`.
   unbinds the directory. It keeps roles, inboxes, notifiers, and other bindings.
 - **Send** derives sender from the binding. A new conversation gets a generated
   thread; `reply: true` preserves the known incoming thread. Reply before ack.
+  New sends default to `kind: "request"`; replies default to `"reply"`. For
+  information that needs no answer, pass `kind: "notice"`.
   The result includes a `retry` key; use `/doorbell:send {"retry":"that-key"}`
   after an uncertain result to publish identical content. Server idempotency
   lasts seven days; after that, inspect history rather than blindly retrying.
