@@ -332,3 +332,18 @@ test('an observed unbinding invalidates standing authority even if the old bindi
   expect(f.questions[1]).toContain('Review only; do not merge.')
   expect((await $.prompt.submit(prompt())).context?.[0]).toContain('Review only; do not merge.')
 })
+
+test('join shows the effective cap when an invalid setting falls back to 3', { options: { autoContinue: true, autoContinueCap: 0 } }, async ($, on) => {
+  const f = connection(on)
+  await $.command.run(cmd('join', '{"role":"reviewer"}'))
+  expect(f.questions[0]).toContain('Automatic Stop continuation: true; cap: 3.')
+  f.state.items = ['first', 'second', 'third', 'fourth'].map(id => item(id))
+  await $.prompt.submit(prompt())
+  await $.command.run(cmd('inbox', 'ack'))
+  for (const id of ['second', 'third']) {
+    expect((await $.classic.Stop({ stop_hook_active: true })).block).toContain(`Review ${id}`)
+    await $.command.run(cmd('inbox', 'ack'))
+  }
+  expect(await $.classic.Stop({ stop_hook_active: true })).toEqual({})
+  expect(f.calls.filter(c => c.tool === 'lease_mcp_wakeup').map(c => c.args.signalId)).toEqual(['first', 'second', 'third'])
+})
