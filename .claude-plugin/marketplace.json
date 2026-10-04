@@ -10,6 +10,13 @@
       "description": "A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch.",
       "category": "productivity",
       "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/context-statusline"
+    },
+    {
+      "name": "doorbell",
+      "source": "./plugins/doorbell",
+      "description": "Directory-bound agent messaging using Doorbell's public MCP operations, local execution authority, and bounded optional continuation.",
+      "category": "productivity",
+      "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/doorbell"
     }
   ]
 }
