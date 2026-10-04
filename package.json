@@ -7,9 +7,15 @@
   "type": "module",
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
-    "check:builder": "node scripts/check-builder-agrees.mjs"
+    "check:builder": "node scripts/check-builder-agrees.mjs",
+    "test:doorbell": "claude plugin validate plugins/doorbell && claude plugin validate plugins/doorbell/skills && claude plugin test plugins/doorbell && node plugins/doorbell/tests/connected-mcp.mjs && tsc -p plugins/doorbell",
+    "test:plugins": "claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell"
   },
   "dependencies": {
     "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.289",
+    "typescript": "^7.0.2"
   }
 }
