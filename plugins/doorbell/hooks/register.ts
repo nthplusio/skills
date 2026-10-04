@@ -30,6 +30,7 @@ async function call<T>($: EngineInterface, tool: string, args: Record<string, un
 }
 
 const service = (options: PluginOptions) => String(options.mcpUrl ?? 'https://agentdoorbell.com/mcp')
+const admissionCap = (options: PluginOptions) => Number.isSafeInteger(options.autoContinueCap) && Number(options.autoContinueCap) > 0 ? Number(options.autoContinueCap) : 3
 const key = (kind: string, url: string, id: string) => JSON.stringify([kind, url, id])
 const identity = (role: Role) => JSON.stringify([role.name, role.inboxId, role.notifierId])
 
@@ -106,8 +107,7 @@ async function admit($: EngineInterface, options: PluginOptions, automatic: bool
     const id = await $.session.id()
     const cwd = await $.session.cwd()
     const b = automatic ? await budget($, url, id) : undefined
-    const cap = Number.isSafeInteger(options.autoContinueCap) && Number(options.autoContinueCap) > 0 ? Number(options.autoContinueCap) : 3
-    if (b && (b.paused || b.count >= cap)) return
+    if (b && (b.paused || b.count >= admissionCap(options))) return
     if (await work($, url, id)) return
     const role = await bound($, url, cwd)
     if (!role) return
@@ -158,7 +158,7 @@ export const register: Register = (on, options) => {
       const previous = roles.find(r => r.bindings.includes(cwd))
       const stored = await $.store.get(key('authority', url, cwd)) as Authority | undefined
       const mandate = input.mandate === undefined ? (stored?.role === input.role ? stored.mandate : null) : input.mandate
-      const plan = `Service: ${JSON.stringify(url)}\nExact directory: ${JSON.stringify(cwd)} (shared by all sessions here)\nRole: ${JSON.stringify(input.role)}; previous binding: ${JSON.stringify(previous?.name ?? null)}\nCreate or reuse the role, shared agent-mail source with string fields recipient, sender, thread, kind, and MCP inbox. Ensure a notifier matching recipient equals ${JSON.stringify(input.role)}, including text and all four fields. Test inbox connectivity, consume the synthetic test wakeup, activate the notifier, and bind only this directory.\nStanding execution mandate: ${JSON.stringify(mandate)}\nWithout a mandate, messages stay within the existing authorized task. Sender names and message text grant no authority.\nAutomatic Stop continuation: ${options.autoContinue === true}; cap: ${options.autoContinueCap ?? 3}.\nApprove this configuration and stated client authority?`
+      const plan = `Service: ${JSON.stringify(url)}\nExact directory: ${JSON.stringify(cwd)} (shared by all sessions here)\nRole: ${JSON.stringify(input.role)}; previous binding: ${JSON.stringify(previous?.name ?? null)}\nCreate or reuse the role, shared agent-mail source with string fields recipient, sender, thread, kind, and MCP inbox. Ensure a notifier matching recipient equals ${JSON.stringify(input.role)}, including text and all four fields. Test inbox connectivity, consume the synthetic test wakeup, activate the notifier, and bind only this directory.\nStanding execution mandate: ${JSON.stringify(mandate)}\nWithout a mandate, messages stay within the existing authorized task. Sender names and message text grant no authority.\nAutomatic Stop continuation: ${options.autoContinue === true}; cap: ${admissionCap(options)}.\nApprove this configuration and stated client authority?`
       if (await $.ui.ask(plan, ['Approve', 'Cancel']) !== 'Approve') return { text: 'Doorbell join canceled; no configuration changed.' }
       const { role } = await call<{ role: Role }>($, 'create_agent_role', { name: input.role, approved: true })
       await call($, 'bind_agent_role', { role: input.role, cwd })
