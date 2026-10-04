@@ -156,7 +156,7 @@ test('/doorbell:send derives sender, generates a thread, preserves a reply threa
   const first = await $.command.run(cmd('send', '{"recipient":"planner","text":"Review started"}'))
   const receipt = JSON.parse(first.text!)
   const publication = f.calls.find(c => c.tool === 'publish_mcp_message')!.args
-  expect(publication).toMatchObject({ sourceId: 'mail-source', text: 'Review started', fields: { recipient: 'planner', sender: 'reviewer', kind: 'message' } })
+  expect(publication).toMatchObject({ sourceId: 'mail-source', text: 'Review started', fields: { recipient: 'planner', sender: 'reviewer', kind: 'request' } })
   expect((publication.fields as Record<string, string>).thread).toMatch(/^[a-f0-9-]{36}$/)
   expect(publication.idempotencyKey).toMatch(/^[a-f0-9-]{36}$/)
   await $.command.run(cmd('send', JSON.stringify({ retry: receipt.retry })))
@@ -164,9 +164,11 @@ test('/doorbell:send derives sender, generates a thread, preserves a reply threa
   await $.command.run(cmd('inbox', 'handle'))
   await $.command.run(cmd('send', '{"recipient":"planner","text":"Review complete","reply":true}'))
   expect(f.calls.filter(c => c.tool === 'publish_mcp_message')[2]!.args.fields).toEqual({ recipient: 'planner', sender: 'reviewer', thread: 'incoming-thread', kind: 'reply' })
+  await $.command.run(cmd('send', '{"recipient":"planner","text":"No answer needed","kind":"notice"}'))
+  expect(f.calls.filter(c => c.tool === 'publish_mcp_message')[3]!.args.fields).toMatchObject({ kind: 'notice' })
   f.state.roles = []
   await $.command.run(cmd('send', '{"recipient":"planner","text":"Unbound"}'))
-  expect(f.calls.filter(c => c.tool === 'publish_mcp_message').length).toBe(3)
+  expect(f.calls.filter(c => c.tool === 'publish_mcp_message').length).toBe(4)
 })
 
 test('default-off Stop does not poll or lease after prompt handling', async ($, on) => {
