@@ -38,8 +38,10 @@ npx skills add nthplusio/skills --skill speak-clearly
 ## Claude Code plugins
 
 This repository is also a Claude Code plugin marketplace, named `nthplusio`.
-Plugins live in `plugins/`, outside the `skills/` container, so the pack
-builder never sees them; `.claude-plugin/marketplace.json` lists them.
+Plugins live in `plugins/`; `.claude-plugin/marketplace.json` lists them.
+The pack builder also discovers marketplace plugins' bundled skills. Mark a
+plugin-local skill with `metadata.internal: true` to exclude it from normal pack
+discovery while keeping it available inside Claude Code.
 
 ```
 /plugin marketplace add nthplusio/skills
@@ -49,6 +51,7 @@ builder never sees them; `.claude-plugin/marketplace.json` lists them.
 | Plugin | Description |
 | --- | --- |
 | [`context-statusline`](plugins/context-statusline/README.md) | A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch, collapsing to fit any terminal width. |
+| [`doorbell`](plugins/doorbell/README.md) | Directory-bound messaging through Doorbell's public MCP connection, with local execution authority, explicit leases, and bounded optional Stop continuation. |
 
 To add a plugin, put it in `plugins/<name>/` with its
 `.claude-plugin/plugin.json`, add an entry to `.claude-plugin/marketplace.json`,

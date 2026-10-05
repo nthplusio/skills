@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "doorbell": { "type": "http", "url": "${user_config.mcpUrl}" }
+  }
+}
