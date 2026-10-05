@@ -25,10 +25,12 @@ no credentials and has no separate OAuth implementation. Configuration commands
 need `configuration:write`, publication needs `messages:publish`, and receiving
 needs `notifiers:read`.
 
-The mod's own calls need no permission rules: `$.mcp.call` is not a tool call
-and opens no permission dialog. Claude's own calls to the lease tools
-(`renew_mcp_wakeup_lease`, `ack_mcp_wakeup`, `release_mcp_wakeup`) and to
-`publish_mcp_message` ask as any MCP tool does, unless you allow them.
+The mod's own calls need no permission rules. `$.mcp.call` runs as a tool call
+and meets the permission check, so the mod answers `PreToolUse` with `allow`
+for the eleven tools it calls itself, and only when the host reports the call
+as this plugin's own (`next.origin`). Claude's own calls to the same tools, such
+as `ack_mcp_wakeup` or `publish_mcp_message`, keep their normal prompt unless
+you allow them.
 
 If you already added the same MCP URL yourself, for example from Doorbell's
 install page, Claude Code hides the plugin's copy of the server. The mod finds

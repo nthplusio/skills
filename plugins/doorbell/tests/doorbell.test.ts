@@ -410,3 +410,14 @@ test('Doorbell running under another server name is called by that name, and its
   await $.tool.call({ tool: 'mcp__agent-doorbell__ack_mcp_wakeup', leaseId: 'lease-signal-1' })
   expect((await $.classic.Stop({ stop_hook_active: false })).block).toContain('next')
 })
+
+test('the permission hook approves none of its tools for a call another origin raised', async ($, on) => {
+  connection(on)
+  // A test's $.tool.call raises classic.PreToolUse beneath the plugin's hooks:
+  // an approval answers it there, and this spy beneath never sees the call.
+  const reached: string[] = []
+  on('classic.PreToolUse', ($, e) => { reached.push(e.tool); return {} })
+  const tools = ['mcp__plugin_doorbell_doorbell__list_agent_roles', 'mcp__plugin_doorbell_doorbell__publish_mcp_message', 'mcp__plugin_doorbell_doorbell__get_notifier']
+  for (const tool of tools) await $.tool.call({ tool } as never)
+  expect(reached).toEqual(tools)
+})
