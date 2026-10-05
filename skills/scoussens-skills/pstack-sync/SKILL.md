@@ -1,6 +1,15 @@
 ---
 name: pstack-sync
-description: Syncs pstack skills from cursor/plugins into this harness's shared skills, adding new, updating changed, and removing retired skills, and adapts Cursor-specific features to what the harness supports. Use when asked to sync or update pstack.
+description: >-
+  Sync the pstack skills from cursor/plugins into this harness's shared skills —
+  adding new, updating changed, and removing retired skills — and adapt
+  Cursor-specific features to what the harness supports, replaying recorded
+  adaptations so a fresh install does not re-adapt. Load this only when the
+  user explicitly asks to sync or update pstack — "sync pstack", "update
+  pstack", "pull the latest pstack skills", "install pstack for this harness".
+  Do not load it to install or edit one non-pstack skill, to sync skills from
+  another source, or to change what a pstack skill says upstream; answer those
+  directly instead.
 ---
 
 # pstack sync
@@ -31,3 +40,14 @@ Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <c
 7. **Commit**, if the directory is a git repository: run `status` first and commit with `pstack: sync to cursor/plugins@<short-sha>` as the subject and its output as the body.
 8. **Report.** Run `status` (after committing, add `--since HEAD~1`) and give the user its output verbatim: transforms applied, new and updated skills, profile changes, and anything outstanding. Add your security review findings and any proposed exclusions.
 9. **Publish and reload** as the profile's Destination says. Ask before any step that changes skills for other people (such as a push to a shared repository), naming the destination; act only after the user confirms.
+
+## Do not use this skill for
+
+- **Installing or editing a skill that is not from pstack.** The script manages
+  only skills it installed from `cursor/plugins` `pstack/skills`; others are
+  unmanaged and left alone.
+- **Syncing skills from another source.** `needs.json`, the harness profiles,
+  and `transform.json` describe pstack and nothing else.
+- **Changing what a pstack skill says upstream.** Adaptations change only how a
+  skill runs in this harness. A content change belongs in `cursor/plugins`, and
+  the next sync brings it in.

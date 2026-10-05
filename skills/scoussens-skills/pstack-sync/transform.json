@@ -11,7 +11,7 @@
           },
           {
             "find": "Take the runners from the `architect runners` line in the `pstack-models.mdc` rule, in place of the `arena runners` line. If the rule or that line is missing, use `claude-opus-5-5-max`, `gpt-5.6-sol-max`, `grok-4.7-xhigh-fast`. Alias and rejected entries follow the runner rules in the **arena** skill's Phase A.\n",
-            "replace": "Runners follow the **arena** skill's Phase A: three `Task` subagents on the parent model, each given a different design direction.\n"
+            "replace": "Runners follow the **arena** skill's Phase A: take the runners from the `architect runners` line in place of the `arena runners` line, one per entry (missing line: three `inherit` runners), each given a different design direction. Dispatch and rejected-value rules follow the **arena** skill's Phase A.\n"
           }
         ],
         "accepted": []
@@ -20,7 +20,7 @@
         "transforms": [
           {
             "find": "3. Pick the runners. Use the `arena runners` line in `~/.cursor/rules/pstack-models.mdc`. If the rule or that line is missing, default to one each on `claude-opus-5-5-max`, `gpt-5.6-sol-max`, `grok-4.7-xhigh-fast`. An `auto` or `inherit-parent` entry in this line or the cross-judge line means the parent model, so omit `model` for it. If the Task tool rejects a configured entry, run that seat on its family's default and say so. Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`. With no family match, use `claude-opus-5-5-max`. If it rejects a default, use the closest valid slug of the same family from its error message. Spawn more when the arena covers multiple design directions. Same model N times when the work is generation-bound rather than judgment-sensitive.\n",
-            "replace": "3. Pick the runners. Default to three `Task` subagents. Every runner runs on the parent model, and no per-role model config exists, so diversity comes from distinct prompts: give each runner a different angle or design direction on top of the shared task. For a genuine different-model candidate, run a seat as a `create_thread` with an `agent_mode` from `list_agent_modes`. Spawn more when the arena covers multiple design directions. Identical prompts N times when the work is generation-bound rather than judgment-sensitive.\n"
+            "replace": "3. Pick the runners. Use the `arena runners` line, one subagent per entry, so the list length sets the count. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. With no line, that is three `inherit` runners, so give each a different angle or design direction on top of the shared task. Collect `create_thread` runners with `wait_for_threads`, then `read_thread`. If dispatch rejects an entry (an unknown mode, or `oracle`, which runners do not use), run that seat as `inherit` and say so. Spawn more when the arena covers multiple design directions. Identical prompts N times when the work is generation-bound rather than judgment-sensitive.\n"
           },
           {
             "find": "Spawn all N subagents in one message with `run_in_background: true`, each with the task, the path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.\n",
@@ -28,7 +28,7 @@
           },
           {
             "find": "After all Phase B candidates complete, choose one model from the `arena cross-judge pool` line in `~/.cursor/rules/pstack-models.mdc`. If the rule or that line is missing, choose from `claude-opus-5-5-max`, `gpt-5.6-sol-max`, `grok-4.7-xhigh-fast`. Prefer a different model family from the parent's. Spawn one readonly judge subagent on that model. It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.\n",
-            "replace": "After all Phase B candidates complete, spawn one judge. Use `oracle` for a stronger-model judge, otherwise a `Task` subagent on the parent model, told \"read-only: do not edit files.\" It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.\n"
+            "replace": "After all Phase B candidates complete, choose one value from the `arena cross-judge pool` line (missing line: `inherit`), preferring one different from the parent's mode when possible, and dispatch one judge per that value (a rejected value runs as `inherit`; say so). A `Task` or `create_thread` judge is told \"read-only: do not edit files.\" It sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with the candidates themselves. Don't spawn the judge while candidates are still writing.\n"
           }
         ],
         "accepted": []
@@ -115,19 +115,19 @@
         "transforms": [
           {
             "find": "Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.\n",
-            "replace": "Every spawn below runs on the parent model. Amp has no per-role model config and `Task` takes no `model` parameter.\n"
+            "replace": "Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Each spawn below names its role line. A `create_thread` role is collected with `wait_for_threads`, then `read_thread`. If dispatch rejects a value (an unknown mode, or `oracle` for a non-judge role), run that role as `inherit` and say so. `oracle` is valid only for the explainer.\n"
           },
           {
             "find": "Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single message:\n\n- `subagent_type`: `generalPurpose`\n- `model`: the `how explorer` line, default `grok-4.7-xhigh-fast`\n- `readonly`: `true`\n",
-            "replace": "Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single message, one `Task` call each, so they run in parallel. Each prompt says \"read-only: do not edit files.\"\n"
+            "replace": "Decompose the question into 2 to 4 exploration angles, each a distinct slice of the subsystem. Spawn all explorers in a single message, one call each (the `how explorer` line), so they run in parallel. Each prompt says \"read-only: do not edit files.\"\n"
           },
           {
             "find": "Spawn one Task subagent that explores and explains in one pass:\n\n- `subagent_type`: `generalPurpose`\n- `model`: the `how explainer` line, default `claude-opus-5-5-max`\n- `readonly`: `true`\n",
-            "replace": "Spawn one Task subagent that explores and explains in one pass. The prompt says \"read-only: do not edit files.\"\n"
+            "replace": "Spawn one subagent (the `how explainer` line) that explores and explains in one pass. The prompt says \"read-only: do not edit files.\"\n"
           },
           {
             "find": "Once all explorers have returned, spawn one Task subagent to synthesize their findings into one explanation:\n\n- `subagent_type`: `generalPurpose`\n- `model`: the `how explainer` line, default `claude-opus-5-5-max`\n- `readonly`: `true`\n",
-            "replace": "Once all explorers have returned, spawn one Task subagent to synthesize their findings into one explanation. The prompt says \"read-only: do not edit files.\"\n"
+            "replace": "Once all explorers have returned, spawn one subagent (the `how explainer` line) to synthesize their findings into one explanation. The prompt says \"read-only: do not edit files.\"\n"
           }
         ],
         "accepted": []
@@ -136,15 +136,19 @@
         "transforms": [
           {
             "find": "Spawn one reviewer per configured model to adversarially review code changes. Each model gets the same prompt and rubric. The adversarial signal comes from model diversity, not assigned personas.\n",
-            "replace": "Spawn several reviewers to adversarially review code changes. Each reviewer gets the same prompt and rubric. Amp `Task` subagents all run on the parent model, so the adversarial signal comes from independent runs, each told to challenge the change from a distinct angle (correctness, security, maintainability), not assigned personas. For a genuine different-model review, run a reviewer as a `create_thread` with an `agent_mode` from `list_agent_modes`, or use `oracle` for a stronger-model reviewer.\n"
+            "replace": "Spawn one reviewer per configured entry to adversarially review code changes. Each reviewer gets the same prompt and rubric. The adversarial signal comes from independent runs on the configured modes, each told to challenge the change from a distinct angle (correctness, security, maintainability), not assigned personas.\n"
           },
           {
-            "find": "Launch all reviewers in a single message using the Task tool. Use the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`, one reviewer per entry, extending or shrinking the Reviewer A/B/C labels below to the configured entry count. If the rule or that line is missing, use the table defaults.\n\n| Subagent | Default model |\n|----------|---------------|\n| Reviewer A | `claude-opus-5-5-max` |\n| Reviewer B | `gpt-5.6-sol-max` |\n| Reviewer C | `grok-4.7-xhigh-fast` |\n",
-            "replace": "Launch all reviewers in a single message using the Task tool, so they run in parallel. Default to three, Reviewer A, B, and C. Every reviewer runs on the parent model, and no per-role model config exists. Use fewer or more labels to match the user's request.\n"
+            "find": "Launch all reviewers in a single message using the Task tool. Use the `interrogate reviewers` line in `~/.cursor/rules/pstack-models.mdc`, one reviewer per entry, extending or shrinking the Reviewer A/B/C labels below to the configured entry count. If the rule or that line is missing, use the table defaults.\n",
+            "replace": "Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool.\n"
+          },
+          {
+            "find": "| Subagent | Default model |\n|----------|---------------|\n| Reviewer A | `claude-opus-5-5-max` |\n| Reviewer B | `gpt-5.6-sol-max` |\n| Reviewer C | `grok-4.7-xhigh-fast` |\n",
+            "replace": "Launch all reviewers in a single message, so they run in parallel. Use the `interrogate reviewers` line, one reviewer per entry, extending or shrinking the Reviewer A/B/C labels below to the entry count. With no line, that is one `inherit` reviewer per label: default to three, A, B, and C, or as many as the user requests. Collect `create_thread` reviewers with `wait_for_threads`, then `read_thread`. If dispatch rejects an entry (an unknown mode, or `oracle`, which reviewers do not use), run that reviewer as `inherit` and say so.\n"
           },
           {
             "find": "- `subagent_type`: `generalPurpose`\n- `model`: the configured `interrogate reviewers` entry, or the table default with no configured line. For an `auto` or `inherit-parent` entry, omit `model` so that reviewer runs on the parent model.\n- `readonly`: `true`\n\nIf the Task tool rejects a configured entry, run that reviewer on the table default of its family and say so. Families go by prefix: `claude-*`, `gpt-*`, and `grok-*`. With no family match, use Reviewer A's default. If it rejects a table default, check the valid slugs in the Task tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with it, and open a separate PR to update the default table. Do not block the review on the slug issue. Never treat an alias entry as a rejected slug or apply either fallback to it.\n",
-            "replace": "- A `Task` call. The prompt says \"read-only: do not edit files.\"\n- A distinct angle line in the prompt (for example A: correctness and edge cases, B: security and failure modes, C: maintainability and design), on top of the shared template.\n"
+            "replace": "- A dispatch per its entry. The prompt says \"read-only: do not edit files.\"\n- A distinct angle line in the prompt (for example A: correctness and edge cases, B: security and failure modes, C: maintainability and design), on top of the shared template.\n"
           },
           {
             "find": "The same filled template goes to all reviewers, so every model applies the code-quality lens.\n",
@@ -160,7 +164,7 @@
           },
           {
             "find": "- Reviewer [label]: [model name], [N findings] (one bullet per reviewer)\n",
-            "replace": "- Reviewer [label]: [angle, or the `agent_mode` for a `create_thread` or `oracle` run], [N findings] (one bullet per reviewer)\n"
+            "replace": "- Reviewer [label]: [entry value, angle], [N findings] (one bullet per reviewer)\n"
           },
           {
             "find": "[Findings that should be addressed. For each: description, which models raised it, why it matters.]\n",
@@ -175,9 +179,7 @@
             "replace": "[Where did reviewers agree, where did they diverge, and what does the pattern of agreement/disagreement tell us?]\n"
           }
         ],
-        "accepted": [
-          "Task tool"
-        ]
+        "accepted": []
       },
       "maintain-verification-skill/SKILL.md": {
         "transforms": [
@@ -219,11 +221,11 @@
           },
           {
             "find": "- No `~/.cursor/rules/pstack-models.mdc` means `/setup-pstack` hasn't run for this user, so every role uses its default model.\n",
-            "replace": "- Amp has no per-role model config, so every role runs on the chat's model. A stronger-model review is `oracle`, and a run on another model is a `create_thread` with an `agent_mode`.\n"
+            "replace": "- No `## pstack models` section in `~/.config/amp/AGENTS.md` means `/setup-pstack` hasn't run for this user, so every role uses `inherit` (the chat's model).\n"
           },
           {
-            "find": "1. Install with `/add-plugin pstack` in chat, or from Customize in the sidebar.\n2. Run [`/setup-pstack`](../setup-pstack/SKILL.md). It asks for a reasoning budget, maps a model to each role, and writes a rule. The rule applies to new chats.\n3. Start a real task with `/poteto-mode`, a goal, and a check that can pass or fail.\n",
-            "replace": "1. Install the pstack skills in the workspace skills repository, or in a project's `.agents/skills/`. Run `reload_skills` so a running session sees them.\n2. Start a real task with `/poteto-mode`, a goal, and a check that can pass or fail.\n"
+            "find": "1. Install with `/add-plugin pstack` in chat, or from Customize in the sidebar.\n2. Run [`/setup-pstack`](../setup-pstack/SKILL.md). It asks for a reasoning budget, maps a model to each role, and writes a rule. The rule applies to new chats.\n",
+            "replace": "1. Install the pstack skills in the workspace skills repository, or in a project's `.agents/skills/`. Run `reload_skills` so a running session sees them.\n2. Run [`/setup-pstack`](../setup-pstack/SKILL.md). It asks for a budget, maps a model to each role, and writes the `## pstack models` section of `~/.config/amp/AGENTS.md`. The section applies to new threads.\n"
           },
           {
             "find": "Installing changes nothing until the user invokes a skill. Only `/setup-pstack` loads from the user's words. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them, per [`references/prompting.md`](references/prompting.md).\n",
@@ -231,11 +233,11 @@
           },
           {
             "find": "If cost is the worry, say where the tokens go and how to spend fewer. pstack spends extra tokens on subagents and review panels. Rerun `/setup-pstack` and pick a smaller budget or cheaper models. A role set to `auto` or `inherit-parent` runs on the chat's model, which saves tokens when the chat runs on Auto or a cheaper model. A shorter panel list runs fewer subagents, one for each entry. Save `/poteto-mode` for work that needs rigor.\n",
-            "replace": "If cost is the worry, say where the tokens go and how to spend fewer. pstack spends extra tokens on subagents and review panels. A shorter panel list runs fewer subagents, one for each entry. Save `/poteto-mode` for work that needs rigor.\n"
+            "replace": "If cost is the worry, say where the tokens go and how to spend fewer. pstack spends extra tokens on subagents and review panels. Rerun `/setup-pstack` and pick a smaller budget or cheaper modes. A role set to `inherit` runs on the chat's model, which saves tokens when the chat runs on a cheaper mode. A shorter panel list runs fewer subagents, one for each entry. Save `/poteto-mode` for work that needs rigor.\n"
           },
           {
             "find": "pstack is built for Cursor. Its skills use the Agent Skills format, so other tools can read them. But most workflow skills, including `/poteto-mode`, `/how`, `/why`, and `/pstack-teach`, spawn Cursor subagents with per-role models, and Custom Modes and `/loop` are Cursor features, so those parts may not work there.\n",
-            "replace": "pstack was written for Cursor and adapted to Amp. Its skills use the Agent Skills format. Subagents run through `Task` on the chat's model, and per-role model choice is not available.\n"
+            "replace": "pstack was written for Cursor and adapted to Amp. Its skills use the Agent Skills format. Per-role model choice lives in the `## pstack models` section of `~/.config/amp/AGENTS.md`, which `/setup-pstack` writes. A role set to `inherit` runs through `Task` on the chat's model, an agent-mode key runs through `create_thread`, and `oracle` uses the `oracle` tool.\n"
           },
           {
             "find": "Whether `/poteto-mode` stays on depends on how the user starts it:\n\n- Enter on `/poteto-mode` attaches the skill to one message. It fades as the chat moves on.\n- Option+Enter on Mac or Alt+Enter on Windows, or Use as Mode from the skill entry, makes it a Custom Mode. It stays in context every turn until the user exits the mode, and it stays out of casual turns.\n- Cursor's docs list Custom Modes in the Agents Window and the CLI. Elsewhere, start each new task with `/poteto-mode`.\n\nLink [Cursor's skills docs](https://cursor.com/docs/skills) when this comes up. Mid-chat, \"new task\" makes the mode match a fresh playbook. `/poteto-mode` already uses `poteto-agent` for the subagents its playbook steps spawn. To get the same style from a subagent of your own, spawn it with `subagent_type: \"poteto-agent\"`.\n",
@@ -248,6 +250,10 @@
           {
             "find": "| Pick a model for each role and a reasoning budget | [`/setup-pstack`](../setup-pstack/SKILL.md) |\n",
             "replace": ""
+          },
+          {
+            "find": "| Build a page whose buttons wake a Grok Bot over a webhook | [`/make-bot-ui`](../make-bot-ui/SKILL.md) |\n| Find their way around pstack | `/poteto-help` |\n",
+            "replace": "| Build a page whose buttons wake a Grok Bot over a webhook | [`/make-bot-ui`](../make-bot-ui/SKILL.md) |\n| Pick a model for each role and a budget | [`/setup-pstack`](../setup-pstack/SKILL.md) |\n| Find their way around pstack | `/poteto-help` |\n"
           },
           {
             "find": "- `/deslop`, `control-cli`, and `control-ui` ship in the `cursor-team-kit` plugin.\n- `/loop` and `/create-skill` are Cursor built-ins.\n",
@@ -271,7 +277,7 @@
           },
           {
             "find": "| A skill didn't load on its own | Only `/setup-pstack` loads from the user's words. The others load when the user types them or when `/poteto-mode` runs them, and it doesn't run every skill. |\n| Parallel agents overwrote each other | Give each agent its own worktree, or run them as cloud agents, which each get their own machine. |\n| An overnight run moved but finished nothing | `/loop` needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |\n",
-            "replace": "| A skill didn't load on its own | The skills here are not model-invoked. They load when the user types them or when `/poteto-mode` runs them, and it doesn't run every skill. |\n| Parallel agents overwrote each other | Give each agent its own worktree, or run them as orb threads, which each get their own machine. |\n| An overnight run moved but finished nothing | A thread schedule needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |\n"
+            "replace": "| A new model choice had no effect | The `## pstack models` section from `/setup-pstack` applies to new threads. Start one. In an orb the file lives in the orb. |\n| A skill didn't load on its own | The skills here are not model-invoked. They load when the user types them or when `/poteto-mode` runs them, and it doesn't run every skill. |\n| Parallel agents overwrote each other | Give each agent its own worktree, or run them as orb threads, which each get their own machine. |\n| An overnight run moved but finished nothing | A thread schedule needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |\n"
           }
         ],
         "accepted": [
@@ -335,11 +341,11 @@
           },
           {
             "find": "**Defaults for every `Task` call.** `run_in_background: true`, agent mode (readonly strips MCP), file pointers not inlined context, explicit model per role (configurable via `/setup-pstack`. Defaults `grok-4.7-xhigh-fast` for code, `claude-opus-5-5-max` for prose and judgment). Code delegates tier by difficulty. The hardest changes (cross-cutting design, gnarly concurrency, subtle algorithms) go to your strongest judgment model (`claude-opus-5-5-max`), whether the task needs judgment on vague intent or is a precisely specified sequence of steps to execute to the letter. Trivial mechanical edits go to your fast code model. Per-role lines in the `/setup-pstack` rule override these defaults and the model choices in the routed skills (`how`, `why`, `arena`, `swarm`, `architect`, `interrogate`, `reflect`). A role with no line keeps its default, and a role line of `inherit-parent` or `auto` runs that role on the parent chat model (omit Task `model`). Each code playbook's configured model comes from its line (`feature, refactoring`, `bug-fix`, `perf-issue`, or `hillclimb`), and the hardest changes read `hardest tasks`. Prose and judgment read `judgment and prose`.\n",
-            "replace": "**Defaults for every `Task` call.** Issue independent calls in one turn, pass file pointers not inlined context, and say \"read-only: do not edit files\" in the prompt of any review or investigation role (Task has no readonly parameter). Amp has no per-role model config, and `Task` subagents run on the parent model, so every role uses the parent model. Code delegates tier by difficulty in scope and brief, not in model. For the hardest changes (cross-cutting design, gnarly concurrency, subtle algorithms), ask `oracle` to review the plan or the diff. A run on another model is a `create_thread` with an `agent_mode` from `list_agent_modes`.\n"
+            "replace": "**Defaults for every `Task` call.** Issue independent calls in one turn, pass file pointers not inlined context, and say \"read-only: do not edit files\" in the prompt of any review or investigation role (Task has no readonly parameter). Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Each role's model is explicit and configurable via `/setup-pstack`. Each code playbook's role comes from its line (`feature, refactoring`, `bug-fix`, `perf-issue`, or `hillclimb`), and the hardest changes (cross-cutting design, gnarly concurrency, subtle algorithms) read `hardest tasks`. Prose and judgment read `judgment and prose`. Per-role lines override the model choices in the routed skills (`how`, `why`, `arena`, `swarm`, `architect`, `interrogate`, `reflect`). Code delegates tier by difficulty in scope and brief.\n"
           },
           {
             "find": "You own every subagent's work. Review the diff and write your own summary, don't pass through what it said. A second opinion is the same prompt against a different model. Agreement is high-signal.\n",
-            "replace": "You own every subagent's work. Review the diff and write your own summary, don't pass through what it said. A second opinion is the same prompt against a different model, run as a `create_thread` with another `agent_mode`, or as an `oracle` review. Agreement is high-signal.\n"
+            "replace": "You own every subagent's work. Review the diff and write your own summary, don't pass through what it said. A second opinion is the same prompt against a different model, such as an `oracle` review or a `create_thread` with another `agent_mode`. Agreement is high-signal.\n"
           },
           {
             "find": "- **Autonomous run.** A long task to drive to completion without stopping (\"run until done\", \"/loop until X\"). `playbooks/autonomous-run.md`.\n",
@@ -422,7 +428,7 @@
         "transforms": [
           {
             "find": "2. Binary-search the cause. Form the candidate hypotheses, then rule them out until one survives. Seed them with `how` over the affected subsystem and the **why** skill for regression history. Each pass, take the split that cuts the most remaining problem space, get runtime evidence, eliminate. When program state is unclear, add instrumentation or logging and read it as the code runs. Don't guess. Drive a long or stubborn hunt with Cursor's `/loop` command. Confirm the surviving *mechanism* with runtime evidence before the step-3 architect/interrogate fan-out.\n3. Plan the fix. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent using your configured bug-fix model (default `grok-4.7-xhigh-fast`) with a specific scope.\n",
-            "replace": "2. Binary-search the cause. Form the candidate hypotheses, then rule them out until one survives. Seed them with `how` over the affected subsystem and the **why** skill for regression history. Each pass, take the split that cuts the most remaining problem space, get runtime evidence, eliminate. When program state is unclear, add instrumentation or logging and read it as the code runs. Don't guess. Drive a long or stubborn hunt with a thread schedule (the **building-schedules** skill), with the repro as the stop condition. Confirm the surviving *mechanism* with runtime evidence before the step-3 architect/interrogate fan-out.\n3. Plan the fix. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent with a specific scope.\n"
+            "replace": "2. Binary-search the cause. Form the candidate hypotheses, then rule them out until one survives. Seed them with `how` over the affected subsystem and the **why** skill for regression history. Each pass, take the split that cuts the most remaining problem space, get runtime evidence, eliminate. When program state is unclear, add instrumentation or logging and read it as the code runs. Don't guess. Drive a long or stubborn hunt with a thread schedule (the **building-schedules** skill), with the repro as the stop condition. Confirm the surviving *mechanism* with runtime evidence before the step-3 architect/interrogate fan-out.\n3. Plan the fix. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent on the `bug-fix` line from the pstack models section (default `inherit`) with a specific scope. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool.\n"
           }
         ],
         "accepted": []
@@ -440,7 +446,7 @@
         "transforms": [
           {
             "find": "4. Delegate code-writing to a subagent using your configured feature model (default `grok-4.7-xhigh-fast`) with a specific scope (file paths, named data shape and its organizing structure per **principle-model-the-domain**, a state machine over scattered booleans, a table/registry over branching, a typed model over repeated shape assumptions, chosen before the delegate writes logic, and success criteria). When the implementation admits multiple valid shapes (error handling, abstraction layer, test structure), delegate via the **arena** skill instead so the runners surface the alternatives and the cross-judge guards the pick. Mandatory: no skip-with-reason escape, and Laziness Protocol does not override it (the gain is review separation, not lines saved). A subagent forbidden to spawn satisfies this by owning the diff directly with the same review separation. No \"standing by\" reply that waits on a nested agent. Comments per **Comments**. Surgical edits, re-ground against the source for upstream-derived files. Port shared-primitive improvements to all consumers and verify each. Commit liberally.\n",
-            "replace": "4. Delegate code-writing to a subagent with a specific scope (file paths, named data shape and its organizing structure per **principle-model-the-domain**, a state machine over scattered booleans, a table/registry over branching, a typed model over repeated shape assumptions, chosen before the delegate writes logic, and success criteria). When the implementation admits multiple valid shapes (error handling, abstraction layer, test structure), delegate via the **arena** skill instead so the runners surface the alternatives and the cross-judge guards the pick. Mandatory: no skip-with-reason escape, and Laziness Protocol does not override it (the gain is review separation, not lines saved). A subagent forbidden to spawn satisfies this by owning the diff directly with the same review separation. No \"standing by\" reply that waits on a nested agent. Comments per **Comments**. Surgical edits, re-ground against the source for upstream-derived files. Port shared-primitive improvements to all consumers and verify each. Commit liberally.\n"
+            "replace": "4. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Delegate code-writing to a subagent on the `feature, refactoring` line from the pstack models section (default `inherit`) with a specific scope (file paths, named data shape and its organizing structure per **principle-model-the-domain**, a state machine over scattered booleans, a table/registry over branching, a typed model over repeated shape assumptions, chosen before the delegate writes logic, and success criteria). When the implementation admits multiple valid shapes (error handling, abstraction layer, test structure), delegate via the **arena** skill instead so the runners surface the alternatives and the cross-judge guards the pick. Mandatory: no skip-with-reason escape, and Laziness Protocol does not override it (the gain is review separation, not lines saved). A subagent forbidden to spawn satisfies this by owning the diff directly with the same review separation. No \"standing by\" reply that waits on a nested agent. Comments per **Comments**. Surgical edits, re-ground against the source for upstream-derived files. Port shared-primitive improvements to all consumers and verify each. Commit liberally.\n"
           }
         ],
         "accepted": []
@@ -449,7 +455,7 @@
         "transforms": [
           {
             "find": "   - Hand the change to a subagent using your configured hillclimb model (default `grok-4.7-xhigh-fast`) with a tight scope. Supervise and review the diff rather than typing it (the **guard-the-context-window** principle skill). When several independent hypotheses are live, fan them to parallel subagents, each in its own worktree (the **separate-before-serializing-shared-state** principle skill).\n",
-            "replace": "   - Hand the change to a subagent with a tight scope. Supervise and review the diff rather than typing it (the **guard-the-context-window** principle skill). When several independent hypotheses are live, fan them to parallel subagents, each in its own worktree (the **separate-before-serializing-shared-state** principle skill).\n"
+            "replace": "   - Hand the change to a subagent on the `hillclimb` line from the pstack models section (default `inherit`) with a tight scope. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Supervise and review the diff rather than typing it (the **guard-the-context-window** principle skill). When several independent hypotheses are live, fan them to parallel subagents, each in its own worktree (the **separate-before-serializing-shared-state** principle skill).\n"
           }
         ],
         "accepted": []
@@ -462,7 +468,7 @@
           },
           {
             "find": "**Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked (the **prove-it-works** principle skill). That sentence is the verification rule. Every verification block opens with it. The live block is mandatory. Ten lanes at the PR head drive the real surface through its control skill, per the **swarm** skill, on the `swarm workers` model (default `grok-4.7-xhigh-fast`). Each lane is one box with a concrete scenario, the screenshot it saves, and its pass predicate. One lane is the **Regression lane against trunk.** It runs the same load-bearing scenario on trunk and head. If trunk does not have the feature, the lane records that fact and gates the behavior the diff adds plus the end state the user waits for instead of inventing a trunk result. The perf gate is dual-sided. Trunk and head must both produce the named metric. If trunk lacks the feature, also isolate the work the diff adds and set an absolute budget for that work plus the end-to-end state the user waits for. Do not claim a ratio between unlike scenarios. The perf block names the metric, the interleaved probe, the trunk baseline measured first, and the rule with the number that fails. A PR that changes an interaction is review-gated. The operator reviews it in chat with screenshots and a video before merge. A PR that changes no interaction writes `**Review gate.** None. <PR id> is not review-gated.` and no boxes under it.\n",
-            "replace": "**Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked (the **prove-it-works** principle skill). That sentence is the verification rule. Every verification block opens with it. The live block is mandatory. Ten lanes at the PR head drive the real surface through its control skill, per the **swarm** skill. Each lane is one box with a concrete scenario, the screenshot it saves, and its pass predicate. One lane is the **Regression lane against trunk.** It runs the same load-bearing scenario on trunk and head. If trunk does not have the feature, the lane records that fact and gates the behavior the diff adds plus the end state the user waits for instead of inventing a trunk result. The perf gate is dual-sided. Trunk and head must both produce the named metric. If trunk lacks the feature, also isolate the work the diff adds and set an absolute budget for that work plus the end-to-end state the user waits for. Do not claim a ratio between unlike scenarios. The perf block names the metric, the interleaved probe, the trunk baseline measured first, and the rule with the number that fails. A PR that changes an interaction is review-gated. The operator reviews it in chat with screenshots and a video before merge. A PR that changes no interaction writes `**Review gate.** None. <PR id> is not review-gated.` and no boxes under it.\n"
+            "replace": "**Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked (the **prove-it-works** principle skill). That sentence is the verification rule. Every verification block opens with it. The live block is mandatory. Ten lanes at the PR head drive the real surface through its control skill, per the **swarm** skill, on the `swarm workers` line from the pstack models section (default `inherit`). Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Each lane is one box with a concrete scenario, the screenshot it saves, and its pass predicate. One lane is the **Regression lane against trunk.** It runs the same load-bearing scenario on trunk and head. If trunk does not have the feature, the lane records that fact and gates the behavior the diff adds plus the end state the user waits for instead of inventing a trunk result. The perf gate is dual-sided. Trunk and head must both produce the named metric. If trunk lacks the feature, also isolate the work the diff adds and set an absolute budget for that work plus the end-to-end state the user waits for. Do not claim a ratio between unlike scenarios. The perf block names the metric, the interleaved probe, the trunk baseline measured first, and the rule with the number that fails. A PR that changes an interaction is review-gated. The operator reviews it in chat with screenshots and a video before merge. A PR that changes no interaction writes `**Review gate.** None. <PR id> is not review-gated.` and no boxes under it.\n"
           },
           {
             "find": "**Control skill.** Pick it by surface. Browser, Electron, and web UIs use `control-ui` from `cursor-team-kit`. CLIs and TUIs use `control-cli` from `cursor-team-kit`. Native mobile uses whatever simulator-driving skill the repo has. A PR that touches two surfaces gets lanes on both. A surface with no control skill is a risk in Appendix C, and its live block still names how each lane drives it.\n",
@@ -482,7 +488,7 @@
           },
           {
             "find": "**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on `<swarm workers model>` at the PR head, per the boot recipe.\n",
-            "replace": "**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes at the PR head, per the boot recipe.\n"
+            "replace": "**Verify, live.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Ten lanes on the `swarm workers` line (`<swarm workers value>`) at the PR head, per the boot recipe.\n"
           },
           {
             "find": "- [ ] Record a 30 to 60 second video of the change on a lane VM. Save it as `<media path>/<pr-id>-review.mp4`.\n",
@@ -539,7 +545,7 @@
         "transforms": [
           {
             "find": "3. Plan the fix from the trace. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent using your configured perf-issue model (default `grok-4.7-xhigh-fast`). Review the diff. Capture a post-fix trace.\n",
-            "replace": "3. Plan the fix from the trace. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent. Review the diff. Capture a post-fix trace.\n"
+            "replace": "3. Plan the fix from the trace. If it crosses a function boundary, `architect` first. Delegate implementation to a subagent on the `perf-issue` line from the pstack models section (default `inherit`). Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Review the diff. Capture a post-fix trace.\n"
           }
         ],
         "accepted": []
@@ -548,7 +554,7 @@
         "transforms": [
           {
             "find": "5. Move in small behavior-preserving steps, each keeping the pin green. For API reshapes, migrate every caller and delete the old API in the same wave (**principle-migrate-callers-then-delete-legacy-apis**). No compatibility shims, no parallel old-and-new paths. Spot-check every rename against the actual files. Renames silently miss usages in strings, prose, and back-references. Delegate the mechanical edits to a subagent using your configured refactoring model (default `grok-4.7-xhigh-fast`) with a specific scope (file paths, the names being moved, the behavior to hold).\n",
-            "replace": "5. Move in small behavior-preserving steps, each keeping the pin green. For API reshapes, migrate every caller and delete the old API in the same wave (**principle-migrate-callers-then-delete-legacy-apis**). No compatibility shims, no parallel old-and-new paths. Spot-check every rename against the actual files. Renames silently miss usages in strings, prose, and back-references. Delegate the mechanical edits to a subagent with a specific scope (file paths, the names being moved, the behavior to hold).\n"
+            "replace": "5. Move in small behavior-preserving steps, each keeping the pin green. For API reshapes, migrate every caller and delete the old API in the same wave (**principle-migrate-callers-then-delete-legacy-apis**). No compatibility shims, no parallel old-and-new paths. Spot-check every rename against the actual files. Renames silently miss usages in strings, prose, and back-references. Delegate the mechanical edits to a subagent on the `feature, refactoring` line from the pstack models section (default `inherit`) with a specific scope (file paths, the names being moved, the behavior to hold). Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool.\n"
           }
         ],
         "accepted": []
@@ -684,11 +690,11 @@
           },
           {
             "find": "One message, three `Task` calls, `subagent_type: generalPurpose`, with `model` set as below, agent mode (`readonly: false`). Reviewers need MCP access for context lookups (tickets, chat threads, observability traces referenced in the transcript). Readonly strips MCPs.\n",
-            "replace": "One message, three `Task` calls so they run in parallel. Reviewers need MCP access for context lookups (tickets, chat threads, observability traces referenced in the transcript), so do not restrict their tools; the templates already say not to modify files. Every reviewer and the synthesizer runs on the parent model, and no per-role model config exists. The lens comes from the prompt template.\n"
+            "replace": "One message, three dispatches so they run in parallel. Reviewers need MCP access for context lookups (tickets, chat threads, observability traces referenced in the transcript), so do not restrict their tools; the templates already say not to modify files. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Collect `create_thread` roles with `wait_for_threads`, then `read_thread`. If dispatch rejects a value (an unknown mode, or `oracle` for a reviewer), run that role as `inherit` and say so. `oracle` is valid only for the synthesizer.\n"
           },
           {
             "find": "Each reviewer and the synthesizer name a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.\n",
-            "replace": "| Lens | Prompt template |\n|---|---|\n| Judgment | `references/judgment-reviewer.md` |\n| Tooling | `references/tooling-reviewer.md` |\n| Divergent | `references/divergent-reviewer.md` |\n"
+            "replace": "| Lens | Role line | Prompt template |\n|---|---|---|\n| Judgment | `reflect judgment, divergent, synthesizer` | `references/judgment-reviewer.md` |\n| Tooling | `reflect tooling` | `references/tooling-reviewer.md` |\n| Divergent | `reflect judgment, divergent, synthesizer` | `references/divergent-reviewer.md` |\n"
           },
           {
             "find": "| Lens | Role line | Default `model` | Prompt template |\n|---|---|---|---|\n| Judgment | `reflect judgment, divergent, synthesizer` | `claude-opus-5-5-max` | `references/judgment-reviewer.md` |\n| Tooling | `reflect tooling` | `gpt-5.6-sol-max` | `references/tooling-reviewer.md` |\n| Divergent | `reflect judgment, divergent, synthesizer` | `claude-opus-5-5-max` | `references/divergent-reviewer.md` |\n\nPass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings in the `Task` response body.\n",
@@ -696,7 +702,7 @@
           },
           {
             "find": "One `Task` call, `subagent_type: generalPurpose`, with `model` from the `reflect judgment, divergent, synthesizer` line (default `claude-opus-5-5-max`), agent mode (`readonly: false`). The synthesizer's quality check includes spot-verifying citations, which can require MCP access. Readonly strips MCPs. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.\n",
-            "replace": "One `Task` call. The synthesizer's quality check includes spot-verifying citations, which can require MCP access, so do not restrict its tools. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.\n"
+            "replace": "One dispatch, per the `reflect judgment, divergent, synthesizer` line. With `oracle`, give the tool the synthesizer brief and the reviewers' outputs. The synthesizer's quality check includes spot-verifying citations, which can require MCP access, so do not restrict its tools. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.\n"
           },
           {
             "find": "- Substantive existing-skill edit (a new section, a new pattern table, more than ~10 lines): hand to Cursor's built-in `create-skill` skill and run its draft / test / iterate loop.\n- `tune description: <skill path>` (the skill exists but didn't trigger when it should have): hand to `create-skill` and run its description-optimization loop.\n- `new skill via create-skill: <kebab-name>`: hand creation to `create-skill`. Do not invent the shape ad hoc.\n",
@@ -777,11 +783,11 @@
           },
           {
             "find": "3. Set N from the user or derive it from the shape. N is total workers, not the cloud concurrency limit.\n4. Pick the worker model from the `swarm workers` line in `~/.cursor/rules/pstack-models.mdc`. If the rule or that line is missing, use `grok-4.7-xhigh-fast`. For `auto` or `inherit-parent`, omit `model` so the workers run on the parent model. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message. For a model race, name each arm's model up front.\n",
-            "replace": "3. Set N from the user or derive it from the shape. N is total workers, not the concurrency limit.\n4. Workers run on the parent model: Amp `Task` takes no `model` parameter and there is no per-role model config. For a model race, run each arm as a `create_thread` with its own `agent_mode` from `list_agent_modes`, and name each arm's mode up front.\n"
+            "replace": "3. Set N from the user or derive it from the shape. N is total workers, not the concurrency limit.\n4. Pick the worker mode from the `swarm workers` line (missing line: `inherit`). It is the default for every worker unless a race assigns another value per arm; name each arm's value up front. Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. `oracle` does not apply to workers. If dispatch rejects a value (an unknown mode or `oracle`), run that worker as `inherit` and say so.\n"
           },
           {
             "find": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.\n\nWhen a worker must start from a non-default pushed branch, pass `cloud_base_branch`.\n",
-            "replace": "Spawn all N workers in one message as `Task` calls so they run in parallel. Use `create_thread` (an orb thread) instead when a worker needs its own isolated environment, a different `agent_mode`, or must outlive this turn. When a worker must start from a non-default pushed branch, tell it the branch to check out, or pass the branch to `create_thread`.\n"
+            "replace": "Spawn all N workers in one message so they run in parallel: `Task` calls for `inherit`, `create_thread` for a mode (collect with `wait_for_threads`, then `read_thread`). Use `create_thread` (an orb thread) regardless of value when a worker needs its own isolated environment or must outlive this turn. When a worker must start from a non-default pushed branch, tell it the branch to check out, or pass the branch to `create_thread`.\n"
           }
         ],
         "accepted": []
@@ -790,7 +796,7 @@
         "transforms": [
           {
             "find": "Each spawn below names a role line in the `pstack-models.mdc` rule and a default. Set `model` to that line's value, or to the default if the rule or the line is missing. Leave `model` unset when the value is `auto` or `inherit-parent`. If the Task tool rejects a slug, use the default and say so. If it rejects the default, use the closest valid slug of the same family from its error message.\n",
-            "replace": "Every subagent below runs on the parent model. Amp has no per-role model config and `Task` takes no `model` parameter.\n"
+            "replace": "Dispatch each role per its line in the `## pstack models` section of `~/.config/amp/AGENTS.md` (missing line: `inherit`): `inherit` runs a `Task` subagent on the parent model, an agent-mode key runs `create_thread` with that `agent_mode`, and `oracle` uses the `oracle` tool. Each spawn below names its role line. A `create_thread` role is collected with `wait_for_threads`, then `read_thread`. If dispatch rejects a value (an unknown mode, or `oracle` for investigators), run that role as `inherit` and say so. `oracle` is valid only for the synthesizer.\n"
           },
           {
             "find": "If the target is vague (\"why do we do it this way?\" with no clear referent), make your best guess from conversation context (open files, recent edits, cursor location, what was just discussed). State your interpretation briefly so the user can redirect if you're off, then proceed.\n",
@@ -806,11 +812,11 @@
           },
           {
             "find": "- `subagent_type`: `generalPurpose`\n- `model`: the `why investigators` line, default `grok-4.7-xhigh-fast`\n- `readonly`: `false` (agent mode). **Do not use readonly/Ask mode.** It strips MCP access, which disables MCP-backed investigators entirely. Investigators still shouldn't write anything.\n",
-            "replace": "- A `Task` call. Amp `Task` subagents can call connected MCP tools via `tool_search` and `code_exec`.\n- Prompt: \"Do not edit files.\" Investigators query evidence sources only.\n"
+            "replace": "- Dispatch: the `why investigators` line. Subagents can call connected MCP tools via `tool_search` and `code_exec`.\n- Prompt: \"Do not edit files.\" Investigators query evidence sources only.\n"
           },
           {
             "find": "Spawn one synthesizer subagent:\n\n- `subagent_type`: `generalPurpose`\n- `model`: the `why synthesizer` line, default `claude-opus-5-5-max`\n- `readonly`: `false` (agent mode). The synthesizer's quality check spot-verifies citations, which can require MCP access. Readonly/Ask mode strips MCPs and defeats that.\n",
-            "replace": "Spawn one synthesizer `Task` subagent. Its quality check spot-verifies citations, which can require MCP access, so do not restrict its tools. Prompt: \"Do not edit files.\" For a stronger-model synthesis, run `oracle` on the investigator findings instead.\n"
+            "replace": "Spawn one synthesizer (the `why synthesizer` line). Its quality check spot-verifies citations, which can require MCP access, so do not restrict its tools. Prompt: \"Do not edit files.\" With `oracle`, give the tool the investigator findings and the synthesizer brief.\n"
           }
         ],
         "accepted": []
@@ -872,6 +878,67 @@
           {
             "find": "| <new pattern, no existing skill is a real home> | <draft a new skill via create-skill> | <new skill via create-skill: <kebab-name>> |\n",
             "replace": "| <new pattern, no existing skill is a real home> | <draft a new skill via building-skills> | <new skill via building-skills: <kebab-name>> |\n"
+          }
+        ],
+        "accepted": []
+      },
+      "setup-pstack/SKILL.md": {
+        "transforms": [
+          {
+            "find": "description: Configure which models pstack uses per role and at what reasoning budget. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /setup-pstack, \"configure pstack models\", \"pstack budget\", or changing pstack's model choices.\n",
+            "replace": "description: Configure which Amp agent mode pstack uses per role and at what budget. Detects your available agent modes and writes a `## pstack models` section in ~/.config/amp/AGENTS.md that overrides the skill defaults. Use for /setup-pstack, \"configure pstack models\", \"pstack budget\", or changing pstack's model choices.\n"
+          },
+          {
+            "find": "Write `~/.cursor/rules/pstack-models.mdc`, an always-applied rule that sets pstack's model per role.\n",
+            "replace": "Write the `## pstack models` section of `~/.config/amp/AGENTS.md`, which Amp loads into every session, to set pstack's model per role.\n"
+          },
+          {
+            "find": "### 1. Detect available models\n",
+            "replace": "### 1. Detect available modes\n"
+          },
+          {
+            "find": "Enumerate the model slugs you can pass to a `Task` subagent in this session. That is the dependable source. If Cursor also exposes a models API or CLI that lists the user's entitled models, prefer it for completeness. If you cannot detect any, ask the user to paste the slugs they have access to. Never write a real slug you have not confirmed is available. The aliases `inherit-parent` and `auto` are always valid even though they are not detected slugs.\n",
+            "replace": "Call `list_agent_modes` (from the `amp` module; find it with `tool_search \"list agent modes\"`). It returns the built-in modes (`low`, `medium`, `high`, `ultra`) and any plugin modes, each with its `Key` and `Type`. Those keys are the dependable source. The aliases `inherit` and `oracle` are always valid even though they are not modes. `inherit` means the role runs on the parent chat's model. `oracle` means the role uses the `oracle` tool, and only judge, synthesizer, and explainer roles may take it. Never write a mode key `list_agent_modes` did not return.\n"
+          },
+          {
+            "find": "The default role-to-model mapping is the rule shape shown in step 5 below. If `~/.cursor/rules/pstack-models.mdc` already exists, read it and treat its `# budget` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it.\n",
+            "replace": "The default role-to-value mapping is the section shape shown in step 5 below. If `~/.config/amp/AGENTS.md` already has a `## pstack models` section, read it and treat its `budget:` line and its role values as the current choices. Otherwise start from those defaults. A line whose role is not in step 5, such as `how critics`, is from a retired role. Drop it.\n"
+          },
+          {
+            "find": "**(a) Ask for a budget.** Prefer AskQuestion over free text. Offer these four options with these exact labels, and name the current budget when the rule records one.\n",
+            "replace": "**(a) Ask for a budget.** This skill is an explicit configuration request, so `ask_user_choice` (2-5 options) is appropriate, or ask in the reply. Offer these four options with these exact labels, and name the current budget when the section records one.\n"
+          },
+          {
+            "find": "- `unlimited — keep max`\n- `large — xhigh reasoning`\n- `medium — high reasoning`\n- `small — medium reasoning`\n",
+            "replace": "- `unlimited — any mode`\n- `large — up to high`\n- `medium — up to medium`\n- `small — up to low`\n"
+          },
+          {
+            "find": "**(b) Apply it.** Build the working table from the skill defaults, and on a re-run keep any role you changed by family, list, or alias (`inherit-parent`, `auto`). `unlimited` leaves every effort as in that table. `large`, `medium`, and `small` set the effort token of every real slug, panel entries included, to `xhigh`, `high`, or `medium`. The effort token is the last token, or the one before a trailing `fast`, on the ladder `max` > `xhigh` > `high` > `medium` > `low`. If the result is not a detected slug, use the same family's detected slug with the highest effort at or below the target, else mark the role as needing a choice. `inherit-parent` and `auto` do not change. So `small` turns `claude-opus-5-5-max` into `claude-opus-5-5-medium`, and `grok-4.7-xhigh-fast` into `grok-4.7-medium-fast`.\n",
+            "replace": "**(b) Apply it.** The budget is the highest built-in mode a role may use, on the ladder `low` < `medium` < `high` < `ultra`: `unlimited` allows any, `large` caps at `high`, `medium` at `medium`, `small` at `low`. Build the working table from the defaults, and on a re-run keep each role the user changed. A role set to a built-in mode above the cap drops to the cap. `inherit` and `oracle` do not change. Plugin modes have fixed effort, so they cannot be capped. Keep them only under `unlimited`. Under any other budget, mark a role that uses one as needing a choice.\n"
+          },
+          {
+            "find": "**(c) Show the roles and confirm.** Show every role with its model, marking any real slug not in the detected set as needing a choice. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected models plus `inherit-parent` and `auto` (both mean: this role runs on the parent chat model, which is how Auto users stay on Auto) as the options. Prefer AskQuestion over free text. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a list, and one subagent runs per entry, alias entries included, so the list length sets the count. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model family differs from the parent's when possible. `swarm workers` is the default model for every worker unless a race or comparison assigns another model per arm.\n",
+            "replace": "**(c) Show the roles and confirm.** Show every role with its value, marking any role that needs a choice and any mode `list_agent_modes` did not return. Also list each line step 2 dropped. Ask whether to accept as-is or change specific roles, offering the detected modes plus `inherit` (this role runs on the parent chat model) and, for judge, synthesizer, and explainer roles, `oracle` as the options. Use `ask_user_choice` or ask in the reply. For panel roles (arena runners, architect runners, interrogate reviewers) the value is a comma-separated list, and one subagent runs per entry, so the list length sets the count. `arena cross-judge pool` is also a list, but Arena selects one value from it whose model differs from the parent's when possible. `swarm workers` is the default for every worker unless a race or comparison assigns another per arm.\n"
+          },
+          {
+            "find": "Every real slug written must be in the detected set. `inherit-parent` and `auto` always pass. If a chosen real slug is not available, stop and ask again.\n",
+            "replace": "Every mode key written must be in the `list_agent_modes` result. `inherit` always passes, and `oracle` passes only on judge, synthesizer, and explainer roles. If a chosen value fails, stop and ask again.\n"
+          },
+          {
+            "find": "### 5. Write the rule\n",
+            "replace": "### 5. Write the section\n"
+          },
+          {
+            "find": "Write `~/.cursor/rules/pstack-models.mdc` with `alwaysApply: true`, a `# budget` line with the chosen label and its target effort, and one line per role, using the same labels poteto-mode uses. Overwrite the whole file so re-runs stay idempotent. Shape:\n",
+            "replace": "Replace the `## pstack models` section of `~/.config/amp/AGENTS.md` with the shape below, creating the file if it is missing. The section runs from its heading to the next `## ` heading or the end of the file. Leave everything else in the file untouched, so re-runs stay idempotent. Use the same role names poteto-mode uses. The `budget:` line holds the chosen label. Shape (every role defaults to `inherit`):\n"
+          },
+          {
+            "find": "---\ndescription: pstack per-role model choices (overrides skill defaults)\nalwaysApply: true\n---\n# pstack model configuration. One line per role. Delete a line to fall back to the skill default.\n# `inherit-parent` or `auto` as a value: the role runs on the parent chat model (omit Task `model`). Alias entries in a panel list still count toward its fan-out.\n# budget: unlimited (max)\nfeature, refactoring: grok-4.7-xhigh-fast\nbug-fix: grok-4.7-xhigh-fast\nperf-issue: grok-4.7-xhigh-fast\nhillclimb: grok-4.7-xhigh-fast\njudgment and prose: claude-opus-5-5-max\nhardest tasks: claude-opus-5-5-max\nhow explorer: grok-4.7-xhigh-fast\nhow explainer: claude-opus-5-5-max\nwhy investigators: grok-4.7-xhigh-fast\nwhy synthesizer: claude-opus-5-5-max\nreflect tooling: gpt-5.6-sol-max\nreflect judgment, divergent, synthesizer: claude-opus-5-5-max\narena runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast\narena cross-judge pool: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast\nswarm workers: grok-4.7-xhigh-fast\narchitect runners: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast\ninterrogate reviewers: claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast\n",
+            "replace": "## pstack models\n\n<!-- pstack per-role models, written by /setup-pstack. Values: `inherit` = run on the parent chat's model; an Amp agent-mode key (low, medium, high, ultra, or a plugin mode) = run via create_thread with that agent_mode; `oracle` = use the oracle tool (judge, synthesizer, and explainer roles only). Panel roles take a comma list, one subagent per entry. A missing line means `inherit`. -->\nbudget: unlimited — any mode\nfeature, refactoring: inherit\nbug-fix: inherit\nperf-issue: inherit\nhillclimb: inherit\njudgment and prose: inherit\nhardest tasks: inherit\nhow explorer: inherit\nhow explainer: inherit\nwhy investigators: inherit\nwhy synthesizer: inherit\nreflect tooling: inherit\nreflect judgment, divergent, synthesizer: inherit\narena runners: inherit, inherit, inherit\narena cross-judge pool: inherit\nswarm workers: inherit\narchitect runners: inherit, inherit, inherit\ninterrogate reviewers: inherit, inherit, inherit\n"
+          },
+          {
+            "find": "Tell the user the rule was written and that it applies to new sessions. Re-running this skill updates it.\n",
+            "replace": "Tell the user the section was written and that it applies to new threads. In an orb the file lives in the orb, so say where it wrote (`~/.config/amp/AGENTS.md` inside it). Re-running this skill updates it.\n"
           }
         ],
         "accepted": []

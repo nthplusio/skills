@@ -33,15 +33,15 @@
     },
     {
       "id": "role-model-config",
-      "uses": "setup-pstack writes a role -> model mapping that arena, swarm, interrogate, how, why, reflect, and architect read.",
+      "uses": "setup-pstack writes a role -> model mapping (with a budget) that every session loads; arena, architect, swarm, interrogate, how, why, reflect, poteto-mode, and the implementation playbooks dispatch each role on its configured model.",
       "cursor": [
         "~/.cursor/rules/pstack-models.mdc"
       ],
       "markers": [
         "pstack-models"
       ],
-      "question": "Can skills choose a model per subagent role, and where could that mapping persist?",
-      "fallback": "Every role uses the parent model; drop the config read and say so once."
+      "question": "How can this harness persist a per-role model choice that every session reads, and honor it when dispatching that role? If no single feature does both, combine others (persistent-rules to store it, model-selection to honor it).",
+      "fallback": "Only when no combination works: every role uses the parent model; setup-pstack is proposed for exclusion."
     },
     {
       "id": "model-selection",
