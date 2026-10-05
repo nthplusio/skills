@@ -25,6 +25,22 @@ no credentials and has no separate OAuth implementation. Configuration commands
 need `configuration:write`, publication needs `messages:publish`, and receiving
 needs `notifiers:read`.
 
+The mod's own calls need no permission rules: `$.mcp.call` is not a tool call
+and opens no permission dialog. Claude's own calls to the lease tools
+(`renew_mcp_wakeup_lease`, `ack_mcp_wakeup`, `release_mcp_wakeup`) and to
+`publish_mcp_message` ask as any MCP tool does, unless you allow them.
+
+If you already added the same MCP URL yourself, for example from Doorbell's
+install page, Claude Code hides the plugin's copy of the server. The mod finds
+the server under your name through `$.mcp.connect`, so it keeps working;
+authenticate whichever one `/mcp` lists.
+
+A warning names what failed: sign-in, a server awaiting approval, a disabled
+server, an organization policy, a server not yet connected, a timeout, or a
+refused call. Warnings never repeat text the server sent. A session that has
+just started may report the server as not connected until Claude Code finishes
+connecting to it; retry after `/mcp` shows it connected.
+
 ## Commands
 
 ```text

@@ -17,7 +17,7 @@ function connection(on: On) {
   const warnings: string[] = []
   const questions: string[] = []
   const saved = new Map<string, unknown>()
-  const state = { roles: [{ ...ROLE, bindings: [...ROLE.bindings] }], items: [item('signal-1')], error: '', answer: 'Approve', machine: 'machine-a', session: 'session-a', readError: false, hang: false, paginate: false }
+  const state = { roles: [{ ...ROLE, bindings: [...ROLE.bindings] }], items: [item('signal-1')], error: '', answer: 'Approve', machine: 'machine-a', session: 'session-a', readError: false, hang: false, paginate: false, connect: { isConnected: true, server: 'plugin:doorbell:doorbell' } as { isConnected: true; server: string } | { isConnected: false; reason: 'unlisted' | 'unapproved' | 'disabled' | 'policy' | 'auth' | 'failed'; message: string }, servers: [] as string[], hangConnect: false }
   const clock = mock.clock(on, { now: Date.parse('2026-10-04T12:00:00Z') })
   let reached: () => void
   const started = new Promise<void>(resolve => { reached = resolve })
@@ -36,7 +36,12 @@ function connection(on: On) {
   on('prompt.submit', ($, e) => ({ text: e.text, context: e.context, origin: e.origin }))
   on('classic.Stop', () => ({}))
   on('classic.SessionStart', () => ({}))
+  on('mcp.connect', ($, e) => {
+    if (state.hangConnect) { reached(); return new Promise(() => {}) }
+    return e.server === 'doorbell' ? { value: state.connect } : { value: { isConnected: false as const, reason: 'unlisted' as const, message: 'not in this manifest' } }
+  })
   on('mcp.call', ($, e) => {
+    state.servers.push(e.server)
     calls.push({ tool: e.tool, args: e.args ?? {} })
     reached()
     if (state.hang) return new Promise(() => {})
@@ -348,4 +353,60 @@ test('join shows the effective cap when an invalid setting falls back to 3', { o
   }
   expect(await $.classic.Stop({ stop_hook_active: true })).toEqual({})
   expect(f.calls.filter(c => c.tool === 'lease_mcp_wakeup').map(c => c.args.signalId)).toEqual(['first', 'second', 'third'])
+})
+
+const refusals = [
+  ['auth', 'needs sign-in'],
+  ['unapproved', 'waiting for approval'],
+  ['disabled', 'is disabled'],
+  ['policy', 'policy blocks'],
+  ['failed', 'not connected'],
+] as const
+for (const [reason, says] of refusals) {
+  test(`a server that cannot connect (${reason}) says why, calls nothing, and writes no configuration`, { options: { autoContinue: true } }, async ($, on) => {
+    const f = connection(on)
+    f.state.connect = { isConnected: false, reason, message: 'PRIVATE_TEXT from the host' }
+    const join = await $.command.run(cmd('join', JSON.stringify({ role: 'reviewer', mandate: null })))
+    expect(join.text).toContain(says)
+    expect(join.text).not.toContain('PRIVATE_TEXT')
+    expect(f.questions).toEqual([])
+    const r = await $.prompt.submit(prompt())
+    expect(r.text).toBe('Continue my approved review')
+    expect(r.context).toBeUndefined()
+    expect(f.warnings.join(' ')).toContain(says)
+    expect(f.warnings.join(' ')).not.toContain('PRIVATE_TEXT')
+    expect(f.calls).toEqual([])
+    expect(f.saved.size).toBe(1)
+  })
+}
+
+test('a server still connecting at the deadline reports not connected, never an unknown outcome', { options: { autoContinue: true } }, async ($, on) => {
+  const f = connection(on)
+  f.state.hangConnect = true
+  const pending = $.prompt.submit(prompt())
+  await f.started
+  await f.clock.advance(4001)
+  const r = await pending
+  expect(r.context).toBeUndefined()
+  expect(f.warnings.join(' ')).toContain('not connected')
+  expect(f.warnings.join(' ')).not.toContain('outcome is unknown')
+  expect(f.calls).toEqual([])
+})
+
+test('a refused call names the tool without repeating the server text', { options: { autoContinue: true } }, async ($, on) => {
+  const f = connection(on)
+  f.state.error = 'refusal PRIVATE_TEXT'
+  const r = await $.command.run(cmd('inbox'))
+  expect(r.text).toContain('refused list_agent_roles')
+  expect(r.text).not.toContain('PRIVATE_TEXT')
+})
+
+test('Doorbell running under another server name is called by that name, and its lease tools are still observed', { options: { autoContinue: true } }, async ($, on) => {
+  const f = connection(on)
+  f.state.connect = { isConnected: true, server: 'agent-doorbell' }
+  expect((await $.prompt.submit(prompt())).context?.[0]).toContain('signal-1')
+  expect(new Set(f.state.servers)).toEqual(new Set(['agent-doorbell']))
+  f.state.items = [item('next')]
+  await $.tool.call({ tool: 'mcp__agent-doorbell__ack_mcp_wakeup', leaseId: 'lease-signal-1' })
+  expect((await $.classic.Stop({ stop_hook_active: false })).block).toContain('next')
 })
