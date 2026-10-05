@@ -185,7 +185,24 @@ async function finish($: EngineInterface, options: PluginOptions, action: string
   return `Doorbell lease ${w.leaseId}: ${action}.`
 }
 
+// The tools this mod calls itself. In practice $.mcp.call runs as a tool call
+// and meets the permission check, so a session in auto or dontAsk mode denies
+// it. The mod approves only these, and only for calls it raised: the host sets
+// next.origin, so a model's call to the same tool keeps its normal prompt.
+const OWN_TOOLS = new Set([
+  'list_agent_roles', 'create_agent_role', 'bind_agent_role', 'unbind_agent_role',
+  'peek_mcp_pending', 'lease_mcp_wakeup', 'renew_mcp_wakeup_lease', 'ack_mcp_wakeup',
+  'release_mcp_wakeup', 'list_mcp_message_sources', 'publish_mcp_message',
+])
+const PLUGIN = 'doorbell'
+
 export const register: Register = (on, options) => {
+  on('classic.PreToolUse', async ($, e, next) => {
+    const tool = typeof e.tool === 'string' && e.tool.startsWith('mcp__') ? e.tool.slice(e.tool.lastIndexOf('__') + 2) : ''
+    if (next.origin.plugin === PLUGIN && OWN_TOOLS.has(tool)) return { allow: true }
+    return next(e)
+  })
+
   on('command.run', { command: 'doorbell:join' }, async ($, e) => {
     try {
       const input = JSON.parse(e.args) as { role?: string; mandate?: string | null }

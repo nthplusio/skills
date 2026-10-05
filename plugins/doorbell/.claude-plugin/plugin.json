@@ -1,6 +1,6 @@
 {
   "name": "doorbell",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Directory-bound agent messaging through Doorbell's public MCP connection, with local authority and bounded continuation.",
   "author": { "name": "nthplusio" },
   "repository": "https://github.com/nthplusio/skills",
