@@ -50,5 +50,8 @@
       ],
       "files": []
     }
+  ],
+  "history": [
+    "Iteration 1 (1 sample per eval; runs in detached worktrees at origin/main so the baseline could not find the skill; reports blinded A/B and graded blind against ground truth from the workflow files; totals from visualize-spec/evals/aggregate.py): skill preferred 3 of 3; assertions 21/21 vs 19/21; accuracy 5.00 vs 4.00, actionability 5.00 vs 4.33, contract_safety 5.00 vs 4.67. Baseline misses: labels_estimates on latency (savings stated without labels) and counts_strict_update_reruns on minutes (said re-runs were negligible). Both configurations kept every deploy-gate contract, so those assertions do not discriminate and should be sharpened or replaced next iteration. Notable differences: on latency the skill declined to start a Postgres container to measure cleanup cost and said so, while the baseline started and removed one unasked; on minutes the skill found draft-PR runs (34 of 136, 585 minutes) and proved 66 of 69 main pushes re-tested a tree that had already passed, which the baseline asserted without counting. Both read the org billing API, so no_rates_from_memory passed both ways. Residual blinding tell: with-skill command logs reference a collector script the baselines never used. Harness note: subagents cannot write report files here, so runs returned reports as messages and the orchestrator saved them."
   ]
 }
