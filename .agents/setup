@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+printf '\nCheck the orb toolchain\n'
+node -e '
+  if (Number(process.versions.node.split(".")[0]) < 22) {
+    console.error("The Claude Code dependency requires Node.js 22 or later.");
+    process.exit(1);
+  }
+  console.log(`Node.js ${process.version}`);
+'
+npm --version
+
+# Amp provides Node.js and npm. Matching snapshots skip setup; stale snapshots
+# reuse npm's download cache while npm ci restores the exact lockfile versions.
+printf '\nInstall locked dependencies, including development tools\n'
+TIMEFORMAT='Dependency installation: %3R seconds'
+time npm ci --include=dev --include=optional --prefer-offline --no-audit --no-fund
+
+# The fixture generates the Claude API types that Doorbell's tsconfig extends.
+# It uses disposable configuration and a local MCP server, with no model call.
+printf '\nPrepare Doorbell plugin API types\n'
+TIMEFORMAT='Plugin API preparation: %3R seconds'
+time PATH="$PWD/node_modules/.bin:$PATH" node plugins/doorbell/tests/connected-mcp.mjs

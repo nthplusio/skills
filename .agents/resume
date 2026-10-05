@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Dependencies and generated types survive activation and pause/resume.
+# This repository has no runtime authentication or services to reconnect.
+printf 'Orb ready; no runtime services to reconnect.\n'
