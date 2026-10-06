@@ -1,5 +1,6 @@
-import type { On, PromptOrigin } from 'claude-code'
+import type { On, PromptOrigin, PromptSubmitInput, RenderElement } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 const cmd = (name: string, args = '') => ({ command: `doorbell:${name}`, args, origin: { kind: 'composer' } as const, presentation: { isFullscreen: false, columns: 80 } })
 const prompt = (origin: PromptOrigin = { kind: 'composer' }) => ({ text: 'Continue my approved review', wait: false, origin })
@@ -17,7 +18,9 @@ function connection(on: On) {
   const warnings: string[] = []
   const questions: string[] = []
   const saved = new Map<string, unknown>()
-  const state = { roles: [{ ...ROLE, bindings: [...ROLE.bindings] }], items: [item('signal-1')], error: '', answer: 'Approve', machine: 'machine-a', session: 'session-a', readError: false, hang: false, paginate: false, connect: { isConnected: true, server: 'plugin:doorbell:doorbell' } as { isConnected: true; server: string } | { isConnected: false; reason: 'unlisted' | 'unapproved' | 'disabled' | 'policy' | 'auth' | 'failed'; message: string }, servers: [] as string[], hangConnect: false }
+  const submitted: PromptSubmitInput[] = []
+  const toasts: string[] = []
+  const state = { receipts: [] as unknown[], roles: [{ ...ROLE, bindings: [...ROLE.bindings] }], items: [item('signal-1')], error: '', answer: 'Approve', machine: 'machine-a', session: 'session-a', readError: false, hang: false, paginate: false, connect: { isConnected: true, server: 'plugin:doorbell:doorbell' } as { isConnected: true; server: string } | { isConnected: false; reason: 'unlisted' | 'unapproved' | 'disabled' | 'policy' | 'auth' | 'failed'; message: string }, servers: [] as string[], hangConnect: false }
   const clock = mock.clock(on, { now: Date.parse('2026-10-04T12:00:00Z') })
   let reached: () => void
   const started = new Promise<void>(resolve => { reached = resolve })
@@ -33,7 +36,8 @@ function connection(on: On) {
     questions.push(e.questions[0]!.question)
     return { result: { answers: { [e.questions[0]!.question]: state.answer } } }
   })
-  on('prompt.submit', ($, e) => ({ text: e.text, context: e.context, origin: e.origin }))
+  on('prompt.submit', ($, e) => { submitted.push(e); return { text: e.text, context: e.context, origin: e.origin } })
+  on('ui.toast', ($, e) => { toasts.push(e.text); return { value: undefined } })
   on('classic.Stop', () => ({}))
   on('classic.SessionStart', () => ({}))
   on('mcp.connect', ($, e) => {
@@ -57,12 +61,13 @@ function connection(on: On) {
       : e.tool === 'peek_mcp_pending' ? { destinationId: 'inbox-r', items: state.paginate ? state.items.slice(Number(e.args?.cursor ?? 0), Number(e.args?.cursor ?? 0) + 2) : state.items, ...(state.paginate && !e.args?.cursor && state.items.length > 2 ? { nextCursor: '2' } : {}) }
       : e.tool === 'create_agent_role' ? { created: false, role: state.roles[0] }
       : e.tool === 'list_mcp_message_sources' ? [{ id: 'mail-source', name: 'agent-mail' }]
+      : e.tool === 'get_mcp_message_history' ? state.receipts
       : e.tool === 'publish_mcp_message' ? { receiptId: 'receipt-1', routingOutcome: 'routed', duplicate: false }
       : e.tool === 'renew_mcp_wakeup_lease' ? { leaseId: e.args?.leaseId, expiresAt: '2026-10-04T12:45:00Z' }
       : {}
     return { value: { content: [{ type: 'text', text: JSON.stringify(result) }], isError: false } }
   })
-  return { calls, warnings, questions, saved, state, started, clock }
+  return { calls, warnings, questions, saved, state, started, clock, submitted, toasts }
 }
 
 test('/doorbell:inbox shows available and held work without consuming it', async ($, on) => {
@@ -420,4 +425,171 @@ test('the permission hook approves none of its tools for a call another origin r
   const tools = ['mcp__plugin_doorbell_doorbell__list_agent_roles', 'mcp__plugin_doorbell_doorbell__publish_mcp_message', 'mcp__plugin_doorbell_doorbell__get_notifier']
   for (const tool of tools) await $.tool.call({ tool } as never)
   expect(reached).toEqual(tools)
+})
+
+// The inbox view: a band above the prompt and a pane, polled every 15 s.
+type Fixture = ReturnType<typeof connection>
+const PANE = 'doorbell-inbox'
+const SECRET = /Review signal|Secret text/
+const receipt = (signal: string, fields: { sender: string; recipient: string; thread: string; kind?: string }, at: string, notifierId = 'notifier-r') => ({
+  id: `receipt-${signal}`, sourceId: 'mail-source', text: `Secret text ${signal}`, fields: { kind: 'request', ...fields }, acceptedAt: at,
+  signals: [{ id: signal, status: 'delivered', notifierId }],
+})
+async function start($: Engine, on: On, f: Fixture) {
+  on('session.start', ($, e) => ({ cwd: e.cwd }))
+  on('ui.open', () => ({ value: { isPlaced: true as const } }))
+  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return h(Text, null, 'engine') as RenderElement })
+  await $.session.start({ cwd: '/work/repo', surface: 'terminal', isInteractive: true })
+  await f.clock.settle()
+}
+const pane = ($: Engine) => $.ui.mount({ plugin: 'doorbell', surface: 'terminal', component: 'Pane', requestId: PANE, props: { title: 'Doorbell', isFocused: false, bodyColumns: 80, placement: 'dock' } as never })
+const band = ($: Engine) => $.ui.mount({ plugin: 'doorbell', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, view: {} } as never })
+const texts = async (ui: { findAll: (q: { type: string }) => Promise<{ text: string }[]> }) => (await ui.findAll({ type: 'Text' })).map(t => t.text).join('\n')
+const held = (holder: string) => ({ lease: { holder, expiresAt: '2026-10-04T12:10:00Z' } })
+
+test('the inbox view only reads: polling never leases, acknowledges, or touches the budget', async ($, on) => {
+  const f = connection(on)
+  await start($, on, f)
+  await $.command.run(cmd('inbox', 'view'))
+  await f.clock.advance(15000)
+  await f.clock.advance(15000)
+  expect([...new Set(f.calls.map(c => c.tool))].sort()).toEqual(['get_mcp_message_history', 'list_agent_roles', 'list_mcp_message_sources', 'peek_mcp_pending'])
+  expect(f.calls.filter(c => c.tool === 'list_agent_roles').length).toBeGreaterThanOrEqual(3)
+  expect([...f.saved.keys()].filter(k => /budget|work/.test(k))).toEqual([])
+  expect(f.warnings).toEqual([])
+})
+
+const states: [string, (f: Fixture) => void, RegExp, RegExp | null][] = [
+  ['unbound', f => { f.state.roles[0]!.bindings = [] }, /not bound/, null],
+  ['empty', f => { f.state.items = [] }, /No waiting messages/, null],
+  ['waiting N', f => { f.state.items.push(item('signal-2')) }, /2 waiting/, /2 waiting/],
+  ['leased by this session', f => { f.state.items = [item('signal-1', held('session-a'))] }, /leased by this session, expires in 10m/, /leased by this session/],
+  ['held elsewhere', f => { f.state.items = [item('signal-1', held('session-b'))] }, /1 held elsewhere/, /1 held elsewhere/],
+]
+for (const [name, setup, inPane, inBand] of states) {
+  test(`the view draws the ${name} state without message text`, async ($, on) => {
+    const f = connection(on)
+    setup(f)
+    await start($, on, f)
+    await $.command.run(cmd('inbox', 'view'))
+    const p = await pane($)
+    expect(await texts(p)).toMatch(inPane)
+    expect(await texts(p)).not.toMatch(SECRET)
+    const b = await band($)
+    const drawn = await texts(b)
+    expect(drawn).toContain('engine')
+    if (inBand) expect(drawn).toMatch(inBand)
+    else expect(drawn).toBe('engine')
+    expect(drawn).not.toMatch(SECRET)
+    expect(f.warnings).toEqual([])
+  })
+}
+
+test('the view shows connecting, without warnings or backoff, until the server first answers', async ($, on) => {
+  const f = connection(on)
+  f.state.connect = { isConnected: false, reason: 'failed', message: 'still starting' } as never
+  await start($, on, f)
+  await $.command.run(cmd('inbox', 'view'))
+  const p = await pane($)
+  expect(await texts(p)).toMatch(/Connecting to Doorbell/)
+  await f.clock.advance(15000)
+  await f.clock.advance(15000)
+  f.state.connect = { isConnected: true, server: 'plugin:doorbell:doorbell' }
+  await f.clock.advance(15000)
+  expect(await texts(p)).toMatch(/1 waiting/)
+  expect(f.warnings).toEqual([])
+})
+
+test('the pane lists live threads, then the five latest settled threads of this role', async ($, on) => {
+  const f = connection(on)
+  const out = (n: number) => receipt(`sent-${n}`, { sender: 'reviewer', recipient: 'planner', thread: `settled-${n}`, kind: 'reply' }, `2026-10-04T11:0${n}:00Z`, 'notifier-p')
+  f.state.receipts = [
+    receipt('signal-1', { sender: 'planner', recipient: 'reviewer', thread: 'incoming-thread' }, '2026-10-04T11:58:00Z'),
+    ...[1, 2, 3, 4, 5, 6].map(out),
+    receipt('other', { sender: 'planner', recipient: 'builder', thread: 'not-ours' }, '2026-10-04T11:59:00Z', 'notifier-b'),
+  ]
+  await start($, on, f)
+  await $.command.run(cmd('inbox', 'view'))
+  const p = await pane($)
+  // Live first, then settled newest first: settled-6 was 54 minutes ago, settled-1 (59m) is cut.
+  const rows = (await p.findAll({ type: 'Text' })).map((t: { text: string }) => t.text).filter((t: string) => /^(waiting|delivered) /.test(t))
+  expect(rows.map((r: string) => r.split(/\s+/).at(-1))).toEqual(['2m', '54m', '55m', '56m', '57m', '58m'])
+  expect(rows[0]).toMatch(/^waiting\s+← planner\s+request\s+2m$/)
+  expect(rows[1]).toMatch(/^delivered\s+→ planner\s+reply\s+54m$/)
+  expect(await texts(p)).not.toMatch(SECRET)
+})
+
+test('Handle leases once through explicit admission and starts a turn with the lease context, leaving the budget alone', async ($, on) => {
+  const f = connection(on)
+  f.state.items = []
+  await start($, on, f)
+  await $.prompt.submit(prompt())
+  const budget = [...f.saved.entries()].find(([k]) => k.includes('budget'))
+  f.state.items = [item('signal-1'), item('signal-2')]
+  await $.command.run(cmd('inbox', 'view'))
+  const p = await pane($)
+  await Promise.all([p.press({ key: 'handle' }), p.press({ key: 'handle' })])
+  await f.clock.settle()
+  expect(f.calls.filter(c => c.tool === 'lease_mcp_wakeup').map(c => c.args.signalId)).toEqual(['signal-1'])
+  const turns = f.submitted.filter(s => s.origin.kind === 'plugin')
+  expect(turns.length).toBe(1)
+  expect(turns[0]!.origin).toMatchObject({ kind: 'plugin', name: 'doorbell' })
+  expect(turns[0]!.text).toContain('Doorbell client policy')
+  expect(turns[0]!.text).toContain('lease-signal-1')
+  expect(f.toasts.some(t => /already holds|No available/.test(t))).toBe(true)
+  expect([...f.saved.entries()].find(([k]) => k.includes('budget'))).toEqual(budget)
+  expect(await texts(p)).toMatch(/leased by this session/)
+  expect(await p.find({ key: 'handle' })).toBeUndefined()
+})
+
+test('Handle is refused while this session already holds a lease', async ($, on) => {
+  const f = connection(on)
+  f.state.items = [item('signal-1'), item('signal-2')]
+  await start($, on, f)
+  await $.command.run(cmd('inbox', 'handle'))
+  await $.command.run(cmd('inbox', 'view'))
+  expect(await (await pane($)).find({ key: 'handle' })).toBeUndefined()
+  expect(await (await band($)).find({ key: 'handle' })).toBeUndefined()
+  expect(f.calls.filter(c => c.tool === 'lease_mcp_wakeup').length).toBe(1)
+})
+
+test('a prompt the plugin submits itself runs no automatic admission and warns about nothing', async ($, on) => {
+  const f = connection(on)
+  const r = await $.prompt.submit(prompt({ kind: 'plugin', name: 'doorbell' }))
+  expect(r.context).toBeUndefined()
+  expect(f.calls.filter(c => c.tool === 'lease_mcp_wakeup')).toEqual([])
+  expect(f.warnings).toEqual([])
+})
+
+test('polling backs off after failures, warns once per kind without server text, and recovers', async ($, on) => {
+  const f = connection(on)
+  await start($, on, f)
+  await $.command.run(cmd('inbox', 'view'))
+  const polls = () => f.calls.filter(c => c.tool === 'list_agent_roles').length
+  f.state.error = 'private server detail'
+  const before = polls()
+  await f.clock.advance(15000) // fails: next in 30 s
+  expect(polls()).toBe(before + 1)
+  await f.clock.advance(15000)
+  expect(polls()).toBe(before + 1)
+  await f.clock.advance(15000) // fails: next in 60 s
+  expect(polls()).toBe(before + 2)
+  await f.clock.advance(45000)
+  expect(polls()).toBe(before + 2)
+  await f.clock.advance(15000)
+  expect(polls()).toBe(before + 3)
+  expect(f.warnings.length).toBe(1)
+  expect(f.warnings[0]).toContain('refused list_agent_roles')
+  expect(f.warnings.join('\n')).not.toContain('private server detail')
+  const p = await pane($)
+  expect(await texts(p)).toMatch(/Doorbell refused list_agent_roles/)
+  expect(await texts(p)).not.toContain('private server detail')
+  for (let i = 0; i < 6; i++) await f.clock.advance(300000)
+  expect(f.warnings.length).toBe(1)
+  f.state.error = ''
+  await f.clock.advance(300000)
+  const recovered = polls()
+  await f.clock.advance(15000)
+  expect(polls()).toBe(recovered + 1)
+  expect(await texts(p)).toMatch(/1 waiting/)
 })

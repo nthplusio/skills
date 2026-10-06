@@ -49,6 +49,7 @@ connecting to it; retry after `/mcp` shows it connected.
 /doorbell:join {"role":"reviewer","mandate":"Review pull requests; do not merge or deploy."}
 /doorbell:send {"recipient":"planner","text":"Review started"}
 /doorbell:inbox
+/doorbell:inbox view
 /doorbell:inbox handle
 /doorbell:send {"recipient":"planner","text":"Review complete","reply":true}
 /doorbell:inbox ack
@@ -70,9 +71,43 @@ connecting to it; retry after `/mcp` shows it connected.
   after an uncertain result to publish identical content. Server idempotency
   lasts seven days; after that, inspect history rather than blindly retrying.
 - **Inbox** is read-only by default and shows messages, holders, and session ID.
-  `handle` explicitly leases one message. `renew`, `ack`, and `release` operate
+  `view` opens the [inbox view](#inbox-view). `handle` explicitly leases one message. `renew`, `ack`, and `release` operate
   only on this session's known live lease. Claude can use the connected public
   lifecycle tools directly; the mod observes those calls for its known lease.
+
+## Inbox view
+
+In an interactive session bound to a role, the mod polls the inbox and shows it
+in two places:
+
+- **A band above the prompt** appears only when something is waiting, leased by
+  this session, or held by another session. It shows the counts and a **Handle**
+  button.
+- **A pane**, opened with `/doorbell:inbox view`, lists the role's threads: every
+  thread with a waiting or leased message, then the five most recently settled.
+  Each row shows its state (`waiting`, `leased here`, `held elsewhere`, or
+  `delivered`), the other role, the message kind, and its age or lease expiry.
+  The pane also shows `connecting`, `unbound`, and `unavailable` states.
+
+The view never draws message text. Sender names and kinds are drawn without
+control characters and cut to 24 characters, because senders write them.
+The mod builds threads from receipts on the shared `agent-mail` source
+(`get_mcp_message_history`), grouped by their `thread` field, and adds live lease
+state from `peek_mcp_pending`.
+
+Polling only reads. It never leases, acknowledges, or resets or spends the
+admission budget. It runs every 15 seconds while the directory is bound, and
+stops while it is unbound. After a failure, the interval doubles up to five
+minutes, and the mod logs one warning for each kind of failure per session.
+Until the server first answers, a failed connection shows `connecting` with no
+warning and no backoff, because a new connection can take about 25 seconds.
+Print runs (`claude -p`) do not poll.
+
+**Handle** does what `/doorbell:inbox handle` does: it explicitly leases one
+message. It neither checks nor spends the automatic admission budget, and
+leases nothing when this session already holds a lease. It then starts a turn
+with a prompt from the plugin that carries the lease and the client policy. If
+that turn cannot start, the lease stays held and your next prompt carries it.
 
 Sender names and message text are unverified data. Roles do not grant authority.
 The bundled `doorbell-messaging` skill describes this client's processing policy.

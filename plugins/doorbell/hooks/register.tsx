@@ -1,4 +1,6 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, McpToolResult, PluginOptions, Register, Timer } from 'claude-code'
+import type { InboxThread, InboxThreadState, InboxView } from '../types'
 
 type Role = { name: string; inboxId: string | null; notifierId: string | null; active: boolean; bindings: string[] }
 type Pending = { signalId: string; synthetic: boolean; expired: boolean; lease?: { holder: string; expiresAt: string }; wakeup: unknown }
@@ -185,6 +187,81 @@ async function finish($: EngineInterface, options: PluginOptions, action: string
   return `Doorbell lease ${w.leaseId}: ${action}.`
 }
 
+// The inbox view. It only reads: polling never leases, acknowledges, or
+// touches the budget. Threads are receipts on the shared source grouped by
+// their thread field, with live lease state laid over them from peek.
+type Receipt = { fields?: Record<string, unknown>; acceptedAt?: unknown; signals?: { id?: unknown; notifierId?: unknown }[] }
+type WakeupFields = { body?: { events?: { data?: { fields?: Record<string, unknown> } }[] } }
+const PANE = 'doorbell-inbox'
+const POLL_MS = 15000
+const MAX_POLL_MS = 300000
+const SETTLED_THREADS = 5
+const RANK: Record<InboxThreadState, number> = { 'leased-here': 0, waiting: 1, 'held-elsewhere': 2, delivered: 3 }
+const STATE_LABEL: Record<InboxThreadState, string> = { 'leased-here': 'leased here', waiting: 'waiting', 'held-elsewhere': 'held elsewhere', delivered: 'delivered' }
+const view = atom({ plugin: 'doorbell', key: 'view' } as const, { state: 'connecting' } as InboxView)
+
+// Sender names and kinds are claims a sender wrote, drawn in the person's
+// terminal: drop control characters and cap the length. Message text is never drawn.
+const label = (value: unknown) => (typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, 24) : '') || '?'
+
+function threads(role: Role, items: Pending[], receipts: Receipt[], session: string, now: number): InboxThread[] {
+  const live = new Map<string, Pick<InboxThread, 'state' | 'expiresAt'>>()
+  for (const i of items) {
+    if (i.synthetic || i.expired) continue
+    const lease = i.lease && Date.parse(i.lease.expiresAt) > now ? i.lease : undefined
+    live.set(i.signalId, lease ? { state: lease.holder === session ? 'leased-here' : 'held-elsewhere', expiresAt: lease.expiresAt } : { state: 'waiting' })
+  }
+  const rows = new Map<string, InboxThread>()
+  const add = (row: InboxThread) => {
+    const prev = rows.get(row.thread)
+    if (!prev) return void rows.set(row.thread, row)
+    const latest = (row.at ?? '') > (prev.at ?? '') ? row : prev
+    const best = RANK[row.state] < RANK[prev.state] ? row : prev
+    rows.set(row.thread, { ...latest, state: best.state, expiresAt: best.expiresAt })
+  }
+  const seen = new Set<unknown>()
+  for (const r of receipts) {
+    const f = r.fields ?? {}
+    const outgoing = f.sender === role.name
+    if ((!outgoing && f.recipient !== role.name) || typeof f.thread !== 'string' || typeof r.acceptedAt !== 'string') continue
+    let status: Pick<InboxThread, 'state' | 'expiresAt'> = { state: 'delivered' }
+    for (const s of r.signals ?? []) {
+      if (s.notifierId !== role.notifierId) continue
+      seen.add(s.id)
+      const l = typeof s.id === 'string' ? live.get(s.id) : undefined
+      if (l && RANK[l.state] < RANK[status.state]) status = l
+    }
+    add({ thread: f.thread, peer: label(outgoing ? f.recipient : f.sender), outgoing, kind: label(f.kind), at: r.acceptedAt, ...status })
+  }
+  // Live work whose receipt history did not include it still shows.
+  for (const i of items) {
+    const l = live.get(i.signalId)
+    if (!l || seen.has(i.signalId)) continue
+    const f = (i.wakeup as WakeupFields | undefined)?.body?.events?.[0]?.data?.fields ?? {}
+    add({ thread: typeof f.thread === 'string' ? f.thread : i.signalId, peer: label(f.sender), outgoing: false, kind: label(f.kind), ...l })
+  }
+  const newest = (a: InboxThread, b: InboxThread) => (b.at ?? '').localeCompare(a.at ?? '')
+  const all = [...rows.values()]
+  return [
+    ...all.filter(t => t.state !== 'delivered').sort((a, b) => RANK[a.state] - RANK[b.state] || newest(a, b)),
+    ...all.filter(t => t.state === 'delivered').sort(newest).slice(0, SETTLED_THREADS),
+  ]
+}
+
+function span(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`
+}
+
+function summary(v: Extract<InboxView, { state: 'ready' }>, now: number) {
+  const parts = [
+    ...(v.leasedHere ? [`leased by this session, expires in ${span(Date.parse(v.leasedHere.expiresAt) - now)}`] : []),
+    ...(v.waiting ? [`${v.waiting} waiting`] : []),
+    ...(v.heldElsewhere ? [`${v.heldElsewhere} held elsewhere`] : []),
+  ]
+  return parts.join(' · ')
+}
+
 // The tools this mod calls itself. In practice $.mcp.call runs as a tool call
 // and meets the permission check, so a session in auto or dontAsk mode denies
 // it. The mod approves only these, and only for calls it raised: the host sets
@@ -193,10 +270,126 @@ const OWN_TOOLS = new Set([
   'list_agent_roles', 'create_agent_role', 'bind_agent_role', 'unbind_agent_role',
   'peek_mcp_pending', 'lease_mcp_wakeup', 'renew_mcp_wakeup_lease', 'ack_mcp_wakeup',
   'release_mcp_wakeup', 'list_mcp_message_sources', 'publish_mcp_message',
+  'get_mcp_message_history',
 ])
 const PLUGIN = 'doorbell'
 
+// The view's polling state, for this load of the module.
+const polling = { started: false, connected: false, failures: 0, timer: undefined as Timer | undefined, refreshing: undefined as Promise<boolean> | undefined, sourceId: undefined as string | undefined, warned: new Set<FailureKind>() }
+// A lease the Handle button took but could not start a turn for: the next prompt carries it.
+let handed: string | undefined
+
+async function show($: EngineInterface, next: InboxView) {
+  await update($, view, () => next)
+}
+
+// Resolves whether to keep polling: not while the directory is unbound.
+async function poll($: EngineInterface, options: PluginOptions): Promise<boolean> {
+  try {
+    const url = service(options)
+    const role = await bound($, url, await $.session.cwd())
+    if (!role) { await show($, { state: 'unbound' }); return false }
+    const { items } = await peek($, role.inboxId)
+    polling.sourceId ??= (await call<{ id: string; name: string }[]>($, 'list_mcp_message_sources')).find(s => s.name === 'agent-mail')?.id
+    const receipts = polling.sourceId ? await call<unknown>($, 'get_mcp_message_history', { id: polling.sourceId }) : []
+    const id = await $.session.id()
+    const now = await $.clock.now()
+    const list = threads(role, items, Array.isArray(receipts) ? receipts : [], id, now)
+    const live = items.filter(i => !i.synthetic && !i.expired)
+    const leased = (i: Pending) => i.lease && Date.parse(i.lease.expiresAt) > now
+    const w = await work($, url, id)
+    const mine = live.find(i => leased(i) && i.lease!.holder === id)?.lease
+    await show($, {
+      state: 'ready', role: role.name, threads: list,
+      waiting: live.filter(i => !leased(i)).length,
+      heldElsewhere: live.filter(i => leased(i) && i.lease!.holder !== id).length,
+      leasedHere: w ? { expiresAt: w.expiresAt } : mine ? { expiresAt: mine.expiresAt } : null,
+    })
+    polling.connected = true
+    polling.failures = 0
+  } catch (error) {
+    const kind = error instanceof DoorbellError ? error.kind : 'unknown'
+    // The source may have been replaced; look it up again next time.
+    polling.sourceId = undefined
+    // A fresh connection can take about 25 seconds: until the server first
+    // answers, "not connected" means connecting, so no warning and no backoff.
+    if (kind === 'unavailable' && !polling.connected) { await show($, { state: 'connecting' }); return true }
+    polling.failures += 1
+    const reason = explain(error)
+    if (!polling.warned.has(kind)) { polling.warned.add(kind); $.ui.log(reason) }
+    await show($, { state: 'unavailable', reason })
+  }
+  return true
+}
+
+// One poll at a time; a caller during a poll waits for that one.
+async function refresh($: EngineInterface, options: PluginOptions) {
+  const keep = await (polling.refreshing ??= poll($, options).finally(() => { polling.refreshing = undefined }))
+  polling.timer?.cancel()
+  polling.timer = keep ? $.clock.after(Math.min(POLL_MS * 2 ** polling.failures, MAX_POLL_MS), () => { void refresh($, options) }) : undefined
+}
+
+// The view's Handle button: the explicit admission /doorbell:inbox handle
+// uses, then a turn of its own. A plugin's prompt carries no context, and this
+// plugin's prompt.submit hook does not see its own prompt, so the lease and
+// policy go in the prompt text, as Stop's continuation puts them in its block.
+async function handle($: EngineInterface, options: PluginOptions) {
+  try {
+    const context = await admit($, options, false)
+    if (!context) { $.ui.toast('No waiting Doorbell message, or this session already holds one.'); return }
+    await refresh($, options)
+    await $.prompt.submit({ text: `Handle this Doorbell message within your approved authority.\n${context}` }).catch(() => {
+      handed = context
+      $.ui.log('Doorbell leased a message but could not start a turn. Your next prompt carries the lease; or run /doorbell:inbox release.')
+    })
+  } catch (error) { $.ui.log(explain(error)) }
+}
+
 export const register: Register = (on, options) => {
+  on('session.start', async ($, e, next) => {
+    // Interactive sessions only: a -p run has nobody to show the view to.
+    if (e.isInteractive) { polling.started = true; void refresh($, options) }
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const v = await read($, view)
+    if (v.state === 'connecting') return <Text dimColor>Connecting to Doorbell. A first connection can take about 25 seconds.</Text>
+    if (v.state === 'unbound') return <Text>This directory is not bound to a Doorbell role. Run /doorbell:join to bind it.</Text>
+    if (v.state === 'unavailable') return <Text color="yellow">{v.reason}</Text>
+    const now = await $.clock.now()
+    return (
+      <Box flexDirection="column">
+        <Text bold>Doorbell · {v.role}</Text>
+        <Text>{summary(v, now) || 'No waiting messages.'}</Text>
+        {v.threads.map(t => (
+          <Text key={`thread:${t.thread}`} dimColor={t.state === 'delivered'}>
+            {`${STATE_LABEL[t.state].padEnd(15)}${t.outgoing ? '→' : '←'} ${t.peer.padEnd(25)}${t.kind.padEnd(11)}${t.expiresAt ? `expires in ${span(Date.parse(t.expiresAt) - now)}` : t.at ? span(now - Date.parse(t.at)) : ''}`}
+          </Text>
+        ))}
+        {v.waiting > 0 && !v.leasedHere && <Button key="handle" label="Handle next" onPress={() => handle($, options)} />}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const v = await read($, view)
+    if (e.props.hasSurvey || v.state !== 'ready' || !(v.waiting || v.leasedHere || v.heldElsewhere)) return next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const line = `✉ Doorbell ${v.role} · ${summary(v, await $.clock.now())} `
+    // Draw above the band beneath, not instead of it: another mod may draw there.
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text>{line}</Text>
+          {v.waiting > 0 && !v.leasedHere && <Button key="handle" label="Handle" onPress={() => handle($, options)} />}
+        </Box>
+        {await next(e)}
+      </Box>
+    )
+  })
+
   on('classic.PreToolUse', async ($, e, next) => {
     const tool = typeof e.tool === 'string' && e.tool.startsWith('mcp__') ? e.tool.slice(e.tool.lastIndexOf('__') + 2) : ''
     if (next.origin.plugin === PLUGIN && OWN_TOOLS.has(tool)) return { allow: true }
@@ -220,6 +413,7 @@ export const register: Register = (on, options) => {
       const { role } = await call<{ role: Role }>($, 'create_agent_role', { name: input.role, approved: true })
       await call($, 'bind_agent_role', { role: input.role, cwd })
       await $.store.set(key('authority', url, cwd), { identity: identity(role), machine: await machine($), role: role.name, mandate })
+      if (polling.started) void refresh($, options)
       return { text: `Doorbell role ${role.name} bound to ${cwd}. Local mandate: ${JSON.stringify(mandate)}.` }
     } catch (error) { const text = explain(error); $.ui.log(text); return { text } }
   })
@@ -278,16 +472,22 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    const context = [...(e.context ?? []), ...(handed ? [handed] : [])]
+    handed = undefined
     try {
       if (e.origin.kind === 'composer' || e.origin.kind === 'bridge') {
         const k = key('budget', service(options), await $.session.id())
         await $.store.set(k, { version: 1, count: 0, paused: false })
         unsafeBudgets.delete(k)
       }
-      const context = await admit($, options, true)
-      if (context) return next({ ...e, context: [...(e.context ?? []), context] })
+      // Should the plugin's own Handle prompt reach this hook, its work was
+      // admitted explicitly already. Automatic admission would find the lease
+      // held, or warn about a budget no human prompt has set yet.
+      const own = e.origin.kind === 'plugin' && e.origin.name === PLUGIN
+      const admitted = own ? undefined : await admit($, options, true)
+      if (admitted) context.push(admitted)
     } catch (error) { $.ui.log(explain(error)) }
-    return next(e)
+    return next(context.length > (e.context?.length ?? 0) ? { ...e, context } : e)
   })
 
   on('classic.Stop', async ($, e, next) => {
@@ -336,7 +536,12 @@ export const register: Register = (on, options) => {
         const context = await admit($, options, false)
         return { text: context ? 'Doorbell work leased for explicit handling.' : 'No available work, or this session already holds a live lease.', context: context ? [context] : undefined }
       }
-      if (e.args.trim()) return { text: 'Use /doorbell:inbox [handle|renew|ack|release].' }
+      if (e.args.trim() === 'view') {
+        await $.ui.open({ id: PANE, title: 'Doorbell' })
+        await refresh($, options)
+        return { text: 'Doorbell inbox view opened. It refreshes every 15 seconds.' }
+      }
+      if (e.args.trim()) return { text: 'Use /doorbell:inbox [view|handle|renew|ack|release].' }
       const cwd = await $.session.cwd()
       const role = await bound($, service(options), cwd)
       if (!role) return { text: 'This exact directory is not bound to an active Doorbell role.' }

@@ -1,6 +1,6 @@
 ---
 description: Inspect the bound Doorbell inbox; optionally handle, renew, acknowledge, or release this session's work.
-argument-hint: "[handle|renew|ack|release]"
+argument-hint: "[view|handle|renew|ack|release]"
 ---
 
 The Doorbell mod handles this command. If the mod is unavailable, report that
