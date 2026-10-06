@@ -1,0 +1,234 @@
+{
+  "_doc": "Features pstack relies on. Single source of truth for sync.py markers and for harness profiles (harness/<harness>.md rows are keyed by id).",
+  "needs": [
+    {
+      "id": "skill-locations",
+      "uses": "Install, find, and create skills (project-local, personal, plugin-provided); verification skills are generated into the project.",
+      "cursor": [
+        ".cursor/skills/",
+        "~/.cursor/skills/",
+        "~/.cursor/plugins/"
+      ],
+      "markers": [
+        "~?/?\\.cursor/(?:skills|plugins)\\b[\\w./*<>-]*"
+      ],
+      "question": "Where does this harness discover project skills and personal skills, and how does a running session pick up a new one?",
+      "fallback": "Use the harness's project skill directory; tell the user to restart if there is no reload."
+    },
+    {
+      "id": "persistent-rules",
+      "uses": "Always-applied instructions (user-wide and project) that every session reads.",
+      "cursor": [
+        "~/.cursor/rules/*.mdc",
+        ".cursor/rules/*.mdc",
+        "alwaysApply: true"
+      ],
+      "markers": [
+        "~?/?\\.cursor/rules\\b[\\w./*<>-]*",
+        "\\.mdc\\b",
+        "\\balwaysApply\\b"
+      ],
+      "question": "Which file does this harness load into every session, user-wide and per project?",
+      "fallback": "The project's agent instructions file (AGENTS.md or equivalent)."
+    },
+    {
+      "id": "role-model-config",
+      "uses": "setup-pstack writes a role -> model mapping (with a budget) that every session loads; arena, architect, swarm, interrogate, how, why, reflect, poteto-mode, and the implementation playbooks dispatch each role on its configured model.",
+      "cursor": [
+        "~/.cursor/rules/pstack-models.mdc"
+      ],
+      "markers": [
+        "pstack-models"
+      ],
+      "question": "How can this harness persist a per-role model choice that every session reads, and honor it when dispatching that role? If no single feature does both, combine others (persistent-rules to store it, model-selection to honor it).",
+      "fallback": "Only when no combination works: every role uses the parent model; setup-pstack is proposed for exclusion."
+    },
+    {
+      "id": "model-selection",
+      "uses": "Pick a specific model (often a different family) for a subagent, runner, or judge.",
+      "cursor": [
+        "Task tool model: parameter",
+        "slugs like claude-opus-5-5-max, gpt-5.6-sol-max, grok-4.7-xhigh-fast"
+      ],
+      "markers": [
+        "\\b(?:claude|gpt|grok|gemini)-[\\w.]+-(?:max|fast|xhigh\\w*)\\b",
+        "\\b(?:[Dd]ifferent|[Mm]ultiple|single) models?\\b"
+      ],
+      "question": "Can the agent start a subagent or separate run on a named model, and how are models named?",
+      "fallback": "Run on the parent model; where cross-family judgment matters, use any stronger-model reviewer the harness offers."
+    },
+    {
+      "id": "subagents",
+      "uses": "Fan out parallel workers, reviewers, explorers, and judges, each with its own prompt.",
+      "cursor": [
+        "Task tool",
+        "subagent_type"
+      ],
+      "markers": [
+        "\\bTask tool\\b",
+        "\\bsubagent_type\\b"
+      ],
+      "question": "Does the harness have a subagent tool, can calls run in parallel, and what parameters does it take?",
+      "fallback": "Do the work sequentially in the main thread, one role at a time."
+    },
+    {
+      "id": "readonly-subagents",
+      "uses": "Reviewers and explorers that must not edit files.",
+      "cursor": [
+        "readonly: true on a Task call"
+      ],
+      "markers": [
+        "\\b[Rr]eadonly(?: subagent|: true)"
+      ],
+      "question": "Can a subagent be restricted to read-only, by parameter or by instruction?",
+      "fallback": "State 'read-only: do not edit files' in the subagent prompt."
+    },
+    {
+      "id": "ask-user",
+      "uses": "Ask the user a structured multiple-choice question mid-run.",
+      "cursor": [
+        "AskQuestion"
+      ],
+      "markers": [
+        "\\bAskQuestion\\b"
+      ],
+      "question": "Does the harness have a structured question tool?",
+      "fallback": "Ask in the reply and wait for the answer."
+    },
+    {
+      "id": "transcripts",
+      "uses": "Read past or current chat transcripts (recall, reflect, eval, session pickup, decision-log audits, worktree audit).",
+      "cursor": [
+        "~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl"
+      ],
+      "markers": [
+        "agent-transcripts",
+        "~?/?\\.cursor/projects\\b[\\w./*<>-]*"
+      ],
+      "question": "Can the agent search and read past conversations, and where are they stored?",
+      "fallback": "Use the current conversation and git history; ask the user for links to prior sessions."
+    },
+    {
+      "id": "loop",
+      "uses": "Repeat a task until a check passes, including overnight runs.",
+      "cursor": [
+        "/loop"
+      ],
+      "markers": [
+        "(?<![\\w/])/loop\\b"
+      ],
+      "question": "Can the harness rerun or resume an agent on a schedule or until a condition holds?",
+      "fallback": "Run the loop inside the session until the check passes or the budget ends."
+    },
+    {
+      "id": "background-agents",
+      "uses": "Hand work to an agent that runs remotely or after the session ends.",
+      "cursor": [
+        "cloud agents"
+      ],
+      "markers": [
+        "[Cc]loud[- ]agents?"
+      ],
+      "question": "Can the agent start an independent agent run elsewhere (cloud, new thread, background job)?",
+      "fallback": "Do the work in this session, or give the user a prompt to start it themselves."
+    },
+    {
+      "id": "worktrees",
+      "uses": "Find and audit git worktrees the harness created.",
+      "cursor": [
+        ".cursor/worktrees/<repo>/<name>"
+      ],
+      "markers": [
+        "~?/?\\.cursor/worktrees\\b[\\w./*<>-]*"
+      ],
+      "question": "Does the harness create git worktrees, and where?",
+      "fallback": "Use `git worktree list` only."
+    },
+    {
+      "id": "modes",
+      "uses": "poteto-mode is a Cursor Custom Mode with its own frontmatter (mode, icon, color, reminder).",
+      "cursor": [
+        "Custom Modes",
+        "frontmatter mode: true, icon, color, reminder"
+      ],
+      "markers": [
+        "Custom Modes?",
+        "(?m)^(?:mode|icon|color|reminder):"
+      ],
+      "question": "Does the harness have modes, and does it read any of these frontmatter keys with a different meaning?",
+      "fallback": "Remove the keys; the skill is invoked like any other."
+    },
+    {
+      "id": "invocation-control",
+      "uses": "Hide a skill from the model so only the user can start it.",
+      "cursor": [
+        "disable-model-invocation: true",
+        "user-invocable"
+      ],
+      "markers": [
+        "(?m)^(?:disable-model-invocation|user-invocable):"
+      ],
+      "question": "Does the harness honor disable-model-invocation (or an equivalent)?",
+      "fallback": "Keep the key; if ignored, the skill is simply model-visible."
+    },
+    {
+      "id": "bugbot",
+      "uses": "Triage and wait on Cursor Bugbot PR review comments.",
+      "cursor": [
+        "Bugbot"
+      ],
+      "markers": [
+        "\\b[Bb]ugbot\\b"
+      ],
+      "question": "Does the repository use Bugbot? It is a GitHub app, independent of the agent harness.",
+      "fallback": "Keep as written."
+    },
+    {
+      "id": "cursor-product",
+      "uses": "Prose naming Cursor as the product the user is in.",
+      "cursor": [
+        "Cursor"
+      ],
+      "markers": [
+        "\\bCursor\\b"
+      ],
+      "question": "Does the sentence still hold with this harness's name, or does it describe a Cursor-only behavior?",
+      "fallback": "Name the harness, or cut the sentence if it only matters in Cursor."
+    },
+    {
+      "id": "companion-skills",
+      "uses": "Hand off to skills that ship outside pstack: Cursor built-ins (create-skill, babysit) and other Cursor plugins (cursor-team-kit: deslop, control-cli, control-ui).",
+      "cursor": [
+        "create-skill",
+        "cursor-team-kit",
+        "/deslop",
+        "control-cli",
+        "control-ui"
+      ],
+      "markers": [
+        "\\bcursor-team-kit\\b",
+        "\\bcreate-skill\\b",
+        "\\bdeslop\\b",
+        "\\bcontrol-(?:cli|ui)\\b"
+      ],
+      "question": "Does the harness have a skill that does the same job as each companion skill?",
+      "fallback": "Name the harness skill with the same job; otherwise cut the hand-off and say the skill is unavailable."
+    },
+    {
+      "id": "custom-subagents",
+      "uses": "Named subagent definitions pstack ships in pstack/agents/ (poteto-agent, Comment Sicko) that skills dispatch by name.",
+      "cursor": [
+        "poteto-agent",
+        "Comment Sicko",
+        "pstack/agents/*.md"
+      ],
+      "markers": [
+        "\\bpoteto-agent\\b",
+        "\\bComment Sicko\\b",
+        "\\bcomment-sicko\\b"
+      ],
+      "question": "Can the harness define named subagents with their own instructions, and where?",
+      "fallback": "Dispatch a generic subagent and put the role's instructions in its prompt."
+    }
+  ]
+}
