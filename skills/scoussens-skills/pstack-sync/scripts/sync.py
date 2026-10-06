@@ -168,8 +168,14 @@ def apply_file_transforms(text, transforms):
         if text.count(t["find"]) == 1:
             text = text.replace(t["find"], t["replace"])
         else:
-            stale.append(t["find"][:120])
+            stale.append({"find": t["find"], "replace": t["replace"]})
     return text, stale
+
+
+def upstream_diff(old, new, path):
+    """Unified diff of a file's rendered upstream text between two syncs."""
+    return "".join(difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True),
+                                        f"a/{path}", f"b/{path}", n=1))
 
 
 def hunks(base, new):
@@ -294,6 +300,20 @@ def cmd_sync(a, st):
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
               "needs_security_review": [], "needs_adaptation": {}}
     new_skills = {}
+    prev_fetched = []
+
+    def previous_blob(obj):
+        """A blob from the previous sync's commit, or None if it can no longer be fetched."""
+        if not prev_fetched and st.manifest.get("commit"):
+            prev_fetched.append(True)
+            try:
+                ensure_commit(st.manifest["commit"])
+            except subprocess.CalledProcessError:
+                pass
+        try:
+            return read_blobs([obj])[obj]
+        except (subprocess.CalledProcessError, ValueError, IndexError):
+            return None
 
     def flag(target, rel, pending):
         report["needs_adaptation"].setdefault(target, {})[rel] = pending
@@ -340,6 +360,13 @@ def cmd_sync(a, st):
             pending = {k: v for k, v in (("stale_transforms", stale), ("needs", todo)) if v}
             if pending:
                 flag(target, rel, pending)
+                old_obj = recorded.get(rel, {}).get("upstream")
+                if stale and old_obj and old_obj != obj:
+                    old = previous_blob(old_obj)
+                    if old is not None and b"\0" not in old[:8192]:
+                        old_base = base_render(key, rel, old, target, renames, st.tf)
+                        report["needs_adaptation"][target][rel] = {
+                            **pending, "upstream_diff": upstream_diff(old_base, base, f"{target}/{rel}")}
             if current != new:
                 changed = True
                 if rel.startswith("scripts/") or rel == "mcp.json" or (
