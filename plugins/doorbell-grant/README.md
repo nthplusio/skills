@@ -46,3 +46,8 @@ npm run test:doorbell-grant
 
 The tests load stand-in plugins named `doorbell` and `other` that ask the
 permission check about a tool, and check the verdicts.
+
+The script's `tsc` step needs the API types Claude Code writes into
+`.claude-plugin/types/` when it loads the plugin, and `claude plugin test`
+does not write them. In a fresh checkout, run `npm run test:plugins`: doorbell's
+connected check loads both plugins before this script runs.
