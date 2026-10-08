@@ -14,7 +14,7 @@ description: >-
 Keep owners moving and make the state of their work scannable. You own
 coordination and the status record; ticket owners own implementation.
 
-## 1. Read setup and choose the dashboard destination
+## 1. Read setup and recover the run
 
 On resume, use the harness-restored conversation and accessible run files to
 recover the finish line, owners, decisions, and prior evidence assessments
@@ -37,26 +37,10 @@ redo discovery for every run. Configuration describes tools, not permissions.
 If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
-**On every invocation, ask where the HTML dashboard should live.** Offer the
-usable local or hosted destinations from the configuration, with their
-audiences. If the user's invocation already chooses one, confirm that choice
-rather than asking again. Ask this separately from shared-action approval
-questions so each answer has one scope. Save this run's confirmed choice,
-local path, and published artifact ID/URL in its status record, not in the
-harness configuration.
-
-Generate from the bundled template and update the same artifact in place.
-Publishing the dashboard does not authorize uploading underlying private
-proof, publishing code, or publishing skills. Use accessible proof links for
-the chosen audience, or identify proof retained privately without a broken
-local link. Follow the selected host's artifact instructions. In a remote
-sandbox, a local file still needs a supported preview or portal to be viewable
-by the user; a sandbox-local URL is not a delivery link.
-
-**Done when** the runner has read a suitable configuration, the user has chosen
-a destination, and this run has a stable local status/dashboard location. On
-resume, existing ownership and decisions are restored and any evidence gaps
-are visible before new work is assigned.
+**Done when** the runner has read a suitable configuration and knows the confirmed
+working-state location. On resume, existing ownership and decisions are restored
+and evidence gaps are visible before assigning work. Coordination can proceed
+while dashboard presentation awaits the user's choice in step 5.
 
 ## 2. Establish the finish line and ownership
 
@@ -154,7 +138,30 @@ use separate directories. These files are local working state, not a separate
 recovery system. Keep status, generated HTML, and retained proof outside Git,
 including when the user chooses a custom location.
 
-Use the data contract in [dashboard data](references/dashboard-data.md) and run:
+Use the data contract in [dashboard data](references/dashboard-data.md).
+
+Resolve presentation separately from coordination on each invocation:
+
+- If no destination is chosen and the user requests only a consequential
+  decision, defer the destination question and keep presentation **unselected**.
+  An unanswered destination question has the same outcome. Save `destination`,
+  `local_path`, `artifact_id`, and `artifact_url` as `null` with a nonempty
+  `presentation.hold` explaining the missing confirmation. Continue coordination
+  and update the local status record; leave dashboard generation, writes and
+  hosting held. An old page stays unchanged and is not the current display.
+- Otherwise, confirm a destination chosen in the invocation or restored user
+  instruction, or ask one focused destination question offering usable configured
+  destinations and their audiences. Ask separately from shared-action approvals.
+  A template value, existing path, or configured option is not a user answer.
+- After an actual destination choice, save its values and clear the presentation
+  hold. Generate from the bundled template and update that same artifact in place.
+  Only this branch runs the renderer below.
+
+Publishing the dashboard does not authorize uploading underlying private proof,
+publishing code, or publishing skills. Use accessible proof links for its audience,
+or identify privately retained proof. Follow the selected host's instructions.
+In a remote sandbox, local HTML needs a supported preview or portal for the user;
+a sandbox-local URL is not a delivery link.
 
 ```bash
 python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html>
@@ -188,9 +195,9 @@ milestones. Say what changed, what needs attention, and the recommendation where
 applicable. Link the dashboard; leave routine receipts and investigation detail
 there. Honor harness progress requirements with brief updates.
 
-**Done when** the stable dashboard presents the actual current record and its
-proof is accessible or clearly marked private. The user can scan task state
-without reading the coordinator conversation.
+**Done when** the selected dashboard presents the current record with accessible
+or clearly private proof, or the record explicitly holds unselected presentation
+without writing HTML. A presentation hold does not hold unrelated owner work.
 
 ## 6. Close completed owners and finish the run
 
@@ -202,9 +209,10 @@ milestones are not reasons to keep a completed owner open.
 
 Before closure, retain the result, usable proof, exact work location, limitations,
 and continuation instructions outside any context that closure makes inaccessible.
-Update the dashboard, then use the configured close/archive operation and record
-its actual result. Never delete evidence to clean up. If closure is unsupported
-or fails, record **complete, closure unavailable/pending**, not **closed**.
+Update the status record and any selected dashboard, then use the configured
+close/archive operation and record its actual result. Never delete evidence to
+clean up. If closure is unsupported or fails, record **complete, closure
+unavailable/pending**, not **closed**.
 
 Keep the owner reference after closure. Resume that owner for later follow-up
 when supported; otherwise transfer ownership explicitly using the retained
@@ -212,5 +220,5 @@ handoff. Closure does not make a ticket ownerless.
 
 **Done when** all assigned milestones are verified, known obligations are settled,
 completed owners have been closed or have truthful closure limitations, and the
-dashboard matches that result. The final chat states the actual delivery state,
-remaining limitations, and dashboard location without repeating its audit trail.
+status matches that result. The final chat states actual delivery, limitations,
+and the dashboard location or presentation hold without repeating its audit trail.
