@@ -9,7 +9,8 @@
     "validate": "node scripts/validate-skills.mjs",
     "check:builder": "node scripts/check-builder-agrees.mjs",
     "test:doorbell": "claude plugin validate plugins/doorbell && claude plugin validate plugins/doorbell/skills && claude plugin test plugins/doorbell && node plugins/doorbell/tests/connected-mcp.mjs && tsc -p plugins/doorbell",
-    "test:plugins": "claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell"
+    "test:doorbell-grant": "claude plugin validate plugins/doorbell-grant && claude plugin test plugins/doorbell-grant && tsc -p plugins/doorbell-grant",
+    "test:plugins": "claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell-grant && npm run test:doorbell"
   },
   "dependencies": {
     "yaml": "^2.9.0"

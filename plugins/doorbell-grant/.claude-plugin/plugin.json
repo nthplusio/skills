@@ -1,0 +1,9 @@
+{
+  "name": "doorbell-grant",
+  "version": "0.1.0",
+  "description": "Approves the doorbell plugin's own read-only inbox calls at the permission check, so its background refresh works in auto mode.",
+  "author": { "name": "nthplusio" },
+  "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/doorbell-grant",
+  "repository": "https://github.com/nthplusio/skills",
+  "license": "MIT"
+}

@@ -1,11 +1,12 @@
 {
   "name": "doorbell",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Directory-bound agent messaging through Doorbell's public MCP connection, with local authority and bounded continuation.",
   "author": { "name": "nthplusio" },
   "repository": "https://github.com/nthplusio/skills",
   "license": "MIT",
   "types": "./types/index.d.ts",
+  "dependencies": ["doorbell-grant"],
   "userConfig": {
     "mcpUrl": { "type": "string", "title": "Doorbell MCP URL", "description": "Service used by Claude Code's authenticated MCP connection.", "default": "https://agentdoorbell.com/mcp" },
     "autoContinue": { "type": "boolean", "title": "Automatically continue for inbox work", "description": "Allow Stop to admit work within your approved authority and admission cap.", "default": false },
