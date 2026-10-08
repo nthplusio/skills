@@ -2,36 +2,38 @@
 name: setting-up-orchestration
 description: >-
   Discovers an agent harness's work-owner, subagent, evidence-transfer, skill,
-  and artifact capabilities and saves a local JSON configuration. Use when
-  asked to set up orchestration, configure sessions or teammates for coordinated
-  work, or repair a missing or unsuitable orchestration configuration. Use
-  running-orchestration to coordinate an actual run, not this skill alone.
+  and artifact capabilities, confirms storage choices, and saves a local JSON
+  configuration. Use when asked to set up orchestration, configure sessions or
+  teammates for coordinated work, or repair a missing or unsuitable configuration.
+  Use running-orchestration to coordinate an actual run, not this skill alone.
 ---
 
 # Setting up orchestration
 
-Write the harness configuration that `running-orchestration` reads. Record
-usable capabilities, not assumptions based on another harness's vocabulary.
+Write the harness configuration that `running-orchestration` reads. Discover
+tool facts yourself; confirm the user's choices before saving new settings.
 
-## 1. Locate the configuration
+## 1. Read existing settings
 
-Use an explicitly supplied configuration path or `ORCHESTRATION_CONFIG` first.
-Otherwise use:
+Use personal settings by default. An explicitly selected project/team
+configuration takes precedence for that context without changing personal
+defaults. Locate the selected file through a supplied path or
+`ORCHESTRATION_CONFIG` first. Otherwise look at:
 
 - Linux/macOS: `${XDG_CONFIG_HOME:-$HOME/.config}/nthplusio/orchestration/<harness-id>/config.json`.
 - Windows: `%APPDATA%\nthplusio\orchestration\<harness-id>\config.json`.
 
-Resolve the path for this machine. Keep the configuration outside Git and the
-installed skill directory. If the user chooses a path inside a worktree,
-exclude it locally and confirm it is neither tracked nor staged. Preserve
-unrelated configuration and user changes.
+These paths are proposals when no settings exist, not permission to save them.
+Resolve paths for this machine and read the selected file if available. Preserve
+unrelated settings and user changes.
 
-Read a saved configuration before changing it. Update only capabilities whose
-record is missing or contradicted by the available tools or environment. A
-different project or a new run is not itself a reason to redo setup.
+Reuse saved choices unless the user changes them or says they were never
+confirmed. Update only capability facts that are missing or contradicted by
+the available tools or environment. A different project or new run alone does
+not require setup again; an explicit override selects that context's settings.
 
-**Done when** the configuration path and harness identity are known, and a
-saved configuration has been read if one exists.
+**Done when** the harness and selected configuration source are known, existing
+settings have been read, and any unconfirmed storage choices are identified.
 
 ## 2. Discover capabilities
 
@@ -78,12 +80,30 @@ or permission. A different harness needs its own mapping.
 limitation. Unsupported ownership must remain visible, not be disguised as
 helper-based orchestration.
 
-## 3. Save and check the JSON
+## 3. Confirm storage choices
 
-Fill the template with discovered values. Use an absolute local `run_root`
-outside repositories for per-run status, dashboards, retained proof, and
-handoffs. Choose a user-owned state directory, not a shared runtime directory.
-Use a separate run subdirectory for each coordinator.
+Separate discovered capabilities from preferences. Ask one focused question
+proposing the configuration path and `run_root` together when either is still
+unconfirmed. Wait for confirmation before writing configuration or run files.
+Explain that `run_root` holds local status, dashboard files, retained proof,
+and handoffs. Prefer an absolute user-owned state directory, with a separate
+run subdirectory for each coordinator. A path the user already supplied or
+confirmed needs no repeat question.
+
+Keep this machine's configuration and run files outside Git and the installed
+skill directory. If a chosen path is inside a worktree, exclude it locally and
+verify it is neither tracked nor staged. The runner asks separately where to
+present each run's dashboard; a working directory does not select a host or
+authorize publication.
+
+Conversation recovery follows the harness's own rules. These local files are
+working state, not a backup promised to other machines or harnesses.
+
+**Done when** both paths are confirmed and any local exclusion is established.
+
+## 4. Save and check the JSON
+
+Fill the template with discovered capabilities and the confirmed `run_root`.
 
 Save the JSON at the path from step 1, then run:
 
@@ -97,5 +117,5 @@ you inspected. If setup exposes a missing capability needed for the user's
 goal, name that limitation and the smallest decision needed to proceed.
 
 **Done when** the stored JSON passes the checker and its operation descriptions
-match the harness. Reply with its path and material limitations. The runner
-reads this file; it does not reconstruct configuration from chat history.
+match the harness. Reply with both paths and material limitations. Distinguish
+the structural check from operational proof. The runner reads the resulting JSON.

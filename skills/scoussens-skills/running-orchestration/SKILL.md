@@ -16,11 +16,20 @@ coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and choose the dashboard destination
 
+On resume, use the harness-restored conversation and accessible run files to
+recover the finish line, owners, decisions, and prior evidence assessments
+before assigning work. Reuse the existing run and its IDs. If local display
+files are missing, rebuild them from that context and retrievable artifacts.
+Keep unavailable proof explicit and retrieve existing receipts before deciding
+whether a check is needed. Conversation recovery follows the harness's rules.
+
 Locate the configuration using the explicit path or `ORCHESTRATION_CONFIG`,
 then the per-harness default documented by `setting-up-orchestration`. Read
 the stored JSON. If it is missing, malformed, has an unsupported version, or
 describes capabilities unavailable in this execution context, load that skill
-to create or repair it. Read the resulting file, not a remembered setup summary.
+to create or repair it using confirmed settings. Read the resulting file, not
+a remembered capability summary. Explicit project/team settings take precedence
+over personal defaults; leave the personal configuration unchanged.
 
 Use its owner/helper terminology, operations, skill propagation, evidence
 transfer, and `run_root`. Resolve only a material capability mismatch; do not
@@ -43,7 +52,9 @@ sandbox, a local file still needs a supported preview or portal to be viewable
 by the user; a sandbox-local URL is not a delivery link.
 
 **Done when** the runner has read a suitable configuration, the user has chosen
-a destination, and this run has a stable local status/dashboard location.
+a destination, and this run has a stable local status/dashboard location. On
+resume, existing ownership and decisions are restored and any evidence gaps
+are visible before new work is assigned.
 
 ## 2. Establish the finish line and ownership
 
@@ -134,9 +145,10 @@ and any repeated validation has a named reason recorded before execution.
 ## 5. Maintain one visual status record
 
 Keep `<run_root>/<run-id>/status.json` as this run's current record. One
-coordinator writes it. Reuse that run directory when resuming; unrelated runs
-use separate directories. Keep configuration, status, generated HTML, and
-retained proof outside Git, including when the user chooses a custom location.
+coordinator writes it. Reuse accessible run files when resuming; unrelated runs
+use separate directories. These files are local working state, not a separate
+recovery system. Keep status, generated HTML, and retained proof outside Git,
+including when the user chooses a custom location.
 
 Use the data contract in [dashboard data](references/dashboard-data.md) and run:
 

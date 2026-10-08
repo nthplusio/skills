@@ -1,7 +1,7 @@
 # Representative orchestration cases
 
-These historical orchestration failure patterns test the runner's reusable
-decisions. They are not current ticket status or extra standing authorization.
+These cases cover historical failure patterns and confirmed setup/resume
+choices. They are not current ticket status or extra standing authorization.
 
 | Situation | Coordinator action | Mistake this prevents |
 | --- | --- | --- |
@@ -14,6 +14,9 @@ decisions. They are not current ticket status or extra standing authorization.
 | An approved merge would also trigger a broader automatic deployment. | Describe the indirect effect and obtain the missing scope before that action. | Treating merge permission as permission for an unapproved deployment consequence. |
 | A worker becomes idle with required CI or a requested review still outstanding. | Treat it as unfinished and route the next action. | Closing an owner because its agent stopped talking. |
 | An owner finishes its assignment and all known obligations. | Capture durable proof/work location/handoff, update status, close it with the harness operation, and retain its owner reference. | Leaving completed owners open or losing evidence when closing them. |
+| Tool capabilities are known, but configuration and working-directory paths have not been chosen. | Propose both local paths in one focused question and wait before saving settings. | Treating a discovered capability or a suggested default as a user choice. |
+| An explicit project/team configuration overrides personal defaults. | Use the selected local JSON and its saved choices; leave personal settings unchanged. | Reconfirming unchanged choices or overwriting personal defaults with project settings. |
+| The harness restores the conversation, but local display files are missing. | Restore owners, decisions, IDs, and scoped evidence assessments from accessible context. Retrieve missing receipts and rebuild the display, with remaining gaps explicit. | Reassigning owners, replaying sufficient checks, or introducing a separate recovery service because display files are absent. |
 
 The runnable local checks validate JSON and HTML contracts. The prompts in
 `evals/evals.json` test the agent's decisions. Running the former does not mean
