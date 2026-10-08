@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "harness": {
+    "id": "REPLACE_WITH_HARNESS_ID",
+    "name": "REPLACE_WITH_HARNESS_NAME",
+    "context": "REPLACE_WITH_EXECUTION_CONTEXT",
+    "owner_term": "REPLACE_WITH_OWNER_TERM",
+    "helper_term": "REPLACE_WITH_HELPER_TERM"
+  },
+  "owners": {
+    "launch": null,
+    "inspect": null,
+    "message": null,
+    "collect": null,
+    "close": null,
+    "resume": null,
+    "workspace_model": "unknown"
+  },
+  "helpers": {
+    "invoke": null,
+    "collect": null,
+    "blocks_caller": null,
+    "follow_up": null
+  },
+  "skills": {
+    "load": null,
+    "brief": "Pass applicable shared instructions explicitly; do not assume inheritance.",
+    "shared": []
+  },
+  "evidence": {
+    "transfer": null,
+    "retain_before_close": null
+  },
+  "artifacts": [],
+  "run_root": "REPLACE_WITH_ABSOLUTE_LOCAL_STATE_DIRECTORY",
+  "limitations": []
+}
