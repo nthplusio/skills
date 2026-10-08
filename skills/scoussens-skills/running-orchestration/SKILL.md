@@ -40,8 +40,10 @@ instead of substituting blocking helpers and claiming concurrent ownership.
 **On every invocation, ask where the HTML dashboard should live.** Offer the
 usable local or hosted destinations from the configuration, with their
 audiences. If the user's invocation already chooses one, confirm that choice
-rather than asking again. Save this run's choice, local path, and published
-artifact ID/URL in its status record, not in the harness configuration.
+rather than asking again. Ask this separately from shared-action approval
+questions so each answer has one scope. Save this run's confirmed choice,
+local path, and published artifact ID/URL in its status record, not in the
+harness configuration.
 
 Generate from the bundled template and update the same artifact in place.
 Publishing the dashboard does not authorize uploading underlying private
