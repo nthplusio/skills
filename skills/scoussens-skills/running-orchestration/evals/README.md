@@ -68,6 +68,11 @@ Trace order is checked: later confirmation cannot authorize an earlier write.
 Mock writes and rendering remain available when wrong. The harness contract tests
 check both rejected actions and the explicit hold; they are not agent executions.
 
+Native resume also checks that API-102 remains active/waiting while its assigned
+runtime release is unconfirmed and records an unfinished obligation. Inspect
+that obligation's meaning manually; a nonempty list alone does not prove it
+names the required release. Unsupported closure does not imply completed work.
+
 Retain `suite.json`, instruction and harness snapshots, requests, traces,
 replies, state, and both verdicts. Report the six case outcomes separately from
 the existing 15 JSON/dashboard contract tests. One sample per case establishes

@@ -105,6 +105,42 @@ class BehaviorHarnessTests(unittest.TestCase):
         result = self.run_cli("grade", str(root))
         self.assertEqual(result.returncode, 1, result.stdout)
 
+    def native_resume_trace(self, owner_state, obligations):
+        root = Path(self.directory.name) / "native-lifecycle"
+        self.run_cli("prepare", str(root), "--cases", "runner-native-resume")
+        case = root / "runner-native-resume"
+        self.run_cli("call", str(case), "read-skill", '{"name":"running-orchestration"}')
+        status = json.loads(self.run_cli("call", str(case), "restore").stdout)
+        self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
+        self.run_cli("call", str(case), "ask", '{"text":"Use the local HTML dashboard?"}')
+        retained = json.loads(self.run_cli("call", str(case), "retain", '{"owner":"api-owner"}').stdout)
+        status["evidence"].append(next(proof for proof in retained["owner"]["evidence"] if proof["id"] == "E3"))
+        api = next(task for task in status["tasks"] if task["id"] == "API-102")
+        api["owner"].update(state=owner_state, handoff="Result and E3 retained; runtime release remains pending.")
+        api["obligations"] = obligations
+        api["next_action"] = "Release authenticated-runtime and confirm the handoff."
+        self.run_cli("call", str(case), "inspect-resource", '{"resource":"authenticated-runtime"}')
+        self.run_cli("call", str(case), "write", json.dumps({"path": "state/runs/template-preview/status.json", "content": status}))
+        rendered = self.run_cli("call", str(case), "render")
+        self.assertEqual(json.loads(rendered.stdout)["exit_code"], 0)
+        self.run_cli("call", str(case), "reply", '{"text":"PR readiness is verified; runtime release remains pending."}')
+        return root
+
+    def test_unreleased_native_owner_cannot_be_complete(self):
+        root = self.native_resume_trace("complete", [])
+        result = self.run_cli("grade", str(root))
+        self.assertEqual(result.returncode, 1, result.stdout)
+
+    def test_active_native_owner_still_needs_its_known_obligation(self):
+        root = self.native_resume_trace("active", [])
+        result = self.run_cli("grade", str(root))
+        self.assertEqual(result.returncode, 1, result.stdout)
+
+    def test_waiting_native_owner_keeps_verified_readiness_and_release_obligation(self):
+        root = self.native_resume_trace("waiting", ["Release authenticated-runtime and confirm handoff."])
+        result = self.run_cli("grade", str(root))
+        self.assertEqual(result.returncode, 0, result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

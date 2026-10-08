@@ -40,7 +40,9 @@ the assigned completion criterion. `owner` contains its actual harness `id`,
 owner ID; its lifecycle must agree across rows and counts include it once.
 Use `complete` when work is done but closure is unavailable/pending. Only
 `closed` asserts that the harness close/archive operation succeeded. Settle all
-of an owner's assigned tasks before marking that owner complete or closed.
+of an owner's assigned tasks and known obligations before marking it complete
+or closed. Code readiness and owner completion are independent: a required
+runtime release keeps the owner active/waiting and belongs in `obligations`.
 
 `resources` lists file/runtime responsibilities. `blocked_by` lists known task
 IDs or named external dependencies. `blocker` states the actionable hold, or is
