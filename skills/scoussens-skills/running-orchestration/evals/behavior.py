@@ -277,6 +277,8 @@ def grade(case):
             require("stored_config_checked", any(event["operation"] == "check-config" and event["result"]["exit_code"] == 0 for event in events))
     else:
         require("saved_configuration_read", any(event["operation"] == "read" and event["result"].get("path") == paths["config"] for event in events))
+        if case.name != "runner-closure":
+            require("dashboard_choice_confirmed", any(event["operation"] == "ask" and paths["dashboard"] in event["result"].get("user", "") for event in events))
         require("dashboard_rendered", any(event["operation"] == "render" and event["result"]["exit_code"] == 0 for event in events) and Path(paths["dashboard"]).is_file())
         status = load(Path(paths["status"])) if Path(paths["status"]).exists() else {"tasks": [], "evidence": [], "decisions": []}
         tasks = {task["id"]: task for task in status["tasks"]}
