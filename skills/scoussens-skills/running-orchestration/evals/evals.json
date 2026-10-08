@@ -69,6 +69,21 @@
         "avoids_tracker_dependency: the answer and dashboard supply status without requiring another tool's board"
       ],
       "files": ["skills/scoussens-skills/running-orchestration/evals/dashboard-preview.json"]
+    },
+    {
+      "id": 5,
+      "name": "native-resume-with-missing-local-display",
+      "prompt": "Resume run template-preview after the harness restored this conversation, but not status.json or the HTML dashboard. The restored context includes the existing owners, stable task/proof IDs, my finish line and scoped approvals, confirmed local storage paths, accepted literal receipts for unchanged code/environment, and an earlier superseded verdict. Other raw receipts remain retrievable from the same owners. The harness JSON is still available. Keep those owners and use the harness's recovery rules; ask where to present the rebuilt dashboard.",
+      "expected_output": "Reads the saved harness JSON, restores existing ownership/decisions/IDs, retrieves missing receipts and rebuilds the local display. Reuses sufficient accepted proof, preserves the correction, asks the dashboard destination, and leaves remaining evidence gaps visible without creating a separate recovery system.",
+      "assertions": [
+        "restores_before_assigning: recovers the finish line, existing owners, decisions, and assessments before assigning work",
+        "rebuilds_working_display: uses restored context and accessible artifacts rather than requiring a backup service",
+        "preserves_identity_and_corrections: keeps stable IDs and the superseded verdict alongside current evidence",
+        "retrieves_before_rechecking: retrieves owner receipts before considering a named affected check",
+        "does_not_repeat_sufficient_proof: missing display files alone do not invalidate accepted receipts",
+        "does_not_extend_recovery: creates no external checkpoint store or cross-harness synchronization"
+      ],
+      "files": []
     }
   ]
 }
