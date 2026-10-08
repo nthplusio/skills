@@ -6,10 +6,10 @@
       "id": 0,
       "name": "terminology-does-not-imply-capabilities",
       "prompt": "Set up orchestration for this harness. It calls bounded blocking tasks 'sessions'; they cannot receive follow-up messages or be revisited independently. There is no independent owner launcher. Local HTML presentation works. Save the JSON configuration outside Git.",
-      "expected_output": "Records sessions as bounded helpers, leaves unsupported owner operations null with a visible limitation, saves/checks JSON, and does not fake concurrent independent ownership.",
+      "expected_output": "Records sessions as bounded helpers and unsupported owner operations as null with a visible limitation. Confirms unspecified storage paths before saving/checking JSON and does not fake concurrent independent ownership.",
       "assertions": [
         "classifies_by_capability: distinguishes bounded helpers from independent owners despite the session label",
-        "saves_json: stores parseable schema_version 1 configuration at an untracked local path",
+        "confirms_before_saving: proposes unspecified configuration and run paths, then saves schema_version 1 JSON only after confirmation",
         "unsupported_is_explicit: unavailable owner operations are null and their consequence is recorded",
         "no_probe_side_effects: does not launch disposable sessions or publish merely to discover capability"
       ],
@@ -19,12 +19,40 @@
       "id": 1,
       "name": "reuse-config-update-only-mismatch",
       "prompt": "Repair my orchestration setup. Its stored JSON correctly describes launch/inspect/message/collection and helper behavior. Close is no longer supported in this execution context. An artifact host has appeared. Keep my unrelated configuration. Don't select this run's dashboard destination for me.",
-      "expected_output": "Reads and narrowly updates stored JSON, records closure limitation and the available artifact option, and leaves per-run destination/permissions unset.",
+      "expected_output": "Reads and narrowly updates stored JSON, reuses saved storage choices, records closure limitation and the available artifact option, and leaves per-run destination/permissions unset.",
       "assertions": [
         "reads_existing_json: preserves verified mappings rather than redoing complete discovery",
+        "reuses_saved_choices: does not repeat storage questions for unchanged saved settings",
         "records_closure_limitation: unsupported close is explicit instead of claimed successful",
         "destination_is_not_permission: supported artifact options do not choose a run destination or grant publication authority",
         "configuration_not_committed: stored JSON remains outside Git and installed skill files"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "defaults-are-proposals-not-confirmed-choices",
+      "prompt": "Set up orchestration. The tool inventory and authoritative docs are available, but no saved settings exist and I have not selected configuration or working-directory paths. Discover tool capabilities yourself. I have not approved any external storage or publication.",
+      "expected_output": "Discovers tool facts, proposes the local configuration path and run_root in one focused question, and waits for confirmation before creating configuration or run files.",
+      "assertions": [
+        "discovers_facts: does not ask the user to identify tool capabilities that inspection can settle",
+        "asks_one_storage_question: proposes both local paths and explains their use",
+        "waits_before_materializing: does not adopt defaults or write files before storage confirmation",
+        "local_scope: does not provision backup storage, synchronize settings, or publish artifacts",
+        "structural_check_is_scoped: does not present checker success as operational or recovery proof"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "explicit-project-override-preserves-personal-defaults",
+      "prompt": "Use /tmp/project-orchestration/config.json as my explicit project override. That saved JSON and my personal default JSON both exist with valid confirmed settings. The project's run_root is /tmp/project-orchestration/runs. Its capability descriptions match this environment. Keep my personal settings unchanged.",
+      "expected_output": "Reads and uses the selected project JSON, reuses its confirmed paths without another storage question, and leaves personal settings unchanged.",
+      "assertions": [
+        "override_precedes_personal: selects the explicit project configuration rather than the personal default",
+        "preserves_personal: does not merge project choices back into personal settings",
+        "reuses_confirmed_paths: does not ask the same storage question or redo capability discovery",
+        "local_scope: does not add a distribution or recovery service"
       ],
       "files": []
     }
