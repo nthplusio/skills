@@ -201,18 +201,25 @@ without writing HTML. A presentation hold does not hold unrelated owner work.
 
 ## 6. Close completed owners and finish the run
 
-An owner is complete when its assigned finish line is proven and its **known
-obligations** are settled. Required CI, requested review, needed approval, or
-assigned follow-up counts even before the next message arrives. Idle, blocked,
-and awaiting approval are not completed. Hypothetical future work and unrequested
-milestones are not reasons to keep a completed owner open.
+Decide completion before checking whether the harness can close an owner:
 
-Before closure, retain the result, usable proof, exact work location, limitations,
-and continuation instructions outside any context that closure makes inaccessible.
-Update the status record and any selected dashboard, then use the configured
-close/archive operation and record its actual result. Never delete evidence to
-clean up. If closure is unsupported or fails, record **complete, closure
-unavailable/pending**, not **closed**.
+- Reconcile **known obligations** from assignments, next actions, resource
+  handoffs and owner messages into `obligations`. An empty saved list does not
+  prove those obligations settled. Required CI/review, needed approval and
+  assigned follow-up count even before the next message arrives.
+- While any assigned work or obligation remains, keep the owner **active** or
+  **waiting**. Verified PR readiness stays verified. For example, a prepared
+  patch with runtime release still pending is review-ready, but its owner is
+  waiting for that release, not complete. Skip the completion/closure branch.
+- Once the assigned finish line is proven and known obligations are settled,
+  retain the result, usable proof, exact work location, limitations and
+  continuation instructions outside context that closure makes inaccessible.
+  Mark the owner **complete**, update status and any selected dashboard, then
+  close it when supported and record the actual result. Only this completed
+  branch may record **complete, closure unavailable/pending** instead of **closed**.
+
+Hypothetical future work and unrequested milestones do not keep a completed
+owner open. Never delete evidence to clean up.
 
 Keep the owner reference after closure. Resume that owner for later follow-up
 when supported; otherwise transfer ownership explicitly using the retained
