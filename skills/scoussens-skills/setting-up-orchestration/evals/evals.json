@@ -1,6 +1,6 @@
 {
   "skill_name": "setting-up-orchestration",
-  "note": "Capability-discovery evaluations, not live owner launches or publication. Local contract tests are in the companion runner's evals/test_dashboard.py.",
+  "note": "Capability-discovery evaluations, not live owner launches or publication. The companion running-orchestration/evals/README.md describes isolated candidate execution and retained action traces. JSON/dashboard contract tests are separate from behavioral proof.",
   "evals": [
     {
       "id": 0,
