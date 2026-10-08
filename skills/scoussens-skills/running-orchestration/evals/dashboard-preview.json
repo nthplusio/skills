@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "run_id": "template-preview",
+  "title": "Orchestration preview",
+  "goal": "Review-ready PRs, with explicitly requested delivery milestones",
+  "updated_at": "2026-10-08T14:30:00-05:00",
+  "config_path": "/example/local/harness/config.json",
+  "notice": "Synthetic examples based on historical patterns. Not live ticket status or real proof.",
+  "presentation": {
+    "destination": "local",
+    "local_path": "/example/local/template-preview/dashboard.html",
+    "artifact_id": null,
+    "artifact_url": null,
+    "coordinator_href": "",
+    "interaction": "Use a stable task or proof ID to ask a focused question. No message is sent by this page."
+  },
+  "decisions": [
+    {
+      "id": "Q1",
+      "text": "OPS-105 publication would trigger a broader deployment. Approve that consequence or keep the hold?",
+      "recommendation": "Keep the hold until the deployment scope is explicitly approved."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "UI-101", "title": "Keep the pinned column visible",
+      "done_when": "The isolated pinning fix and required tests are prepared for review.",
+      "owner": {"id": "ui-owner", "label": "UI owner", "href": "", "state": "closed", "location": "Retained fixture worktree and branch", "handoff": "Pinning patch and E1 retained. Resume this owner for pinning follow-up."},
+      "resources": ["pinning region only"], "blocked_by": [], "blocker": "", "next_action": "Complete. Reuse E1 for this unchanged claim.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "verified", "note": "Local pinning scope only", "evidence": ["E1"]},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "API-102", "title": "Prepare scoped persistence fix",
+      "done_when": "The focused fix meets its agreed local review criteria, with inherited failures disclosed.",
+      "owner": {"id": "api-owner", "label": "API owner", "href": "", "state": "active", "location": "Fixture API worktree", "handoff": ""},
+      "resources": ["API persistence files", "runtime lane until handoff"], "blocked_by": [], "blocker": "", "next_action": "Retain the final handoff, release the runtime lane, and close the owner.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "verified", "note": "Scoped local proof. E3 remains an inherited suite failure.", "evidence": ["E2"]},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "No live persistence claim", "evidence": []}
+      }
+    },
+    {
+      "id": "REVIEW-103", "title": "Obtain the required review",
+      "done_when": "The required review is actually posted and its result retained.",
+      "owner": {"id": "review-owner", "label": "Review owner", "href": "", "state": "waiting", "location": "Fixture review workflow", "handoff": ""},
+      "resources": ["review workflow"], "blocked_by": ["EXT reviewer result"], "blocker": "The workflow passed but posted no review.", "next_action": "Ask the review owner to recover the missing result. Do not replay the green job by default.", "obligations": ["Required posted review"],
+      "milestones": {
+        "pr_readiness": {"state": "blocked", "note": "Required review missing; E4 proves only job success", "evidence": ["E4"]},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "API-104", "title": "Correct hierarchy regressions",
+      "done_when": "The three reproduced regressions are corrected and proven by the existing owner.",
+      "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "location": "Fixture hierarchy worktree", "handoff": ""},
+      "resources": ["hierarchy transformation"], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
+      "milestones": {
+        "pr_readiness": {"state": "blocked", "note": "E5 superseded by E6", "evidence": ["E5", "E6"]},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "OPS-105", "title": "Publish the reviewer configuration",
+      "done_when": "Configuration publication fits explicitly approved side effects.",
+      "owner": {"id": "reviewer-owner", "label": "Reviewer owner", "href": "", "state": "waiting", "location": "Fixture reviewer worktree", "handoff": ""},
+      "resources": ["reviewer configuration"], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
+      "milestones": {
+        "pr_readiness": {"state": "verified", "note": "Relevant compatibility proven, despite different hash", "evidence": ["E7"]},
+        "code_publication": {"state": "blocked", "note": "Awaiting Q1, not another compatibility test", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "Indirect effect needs explicit scope", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "ENV-106", "title": "Use the authenticated runtime lane",
+      "done_when": "The requested runtime check finishes in an exclusive lane.",
+      "owner": {"id": "runtime-owner", "label": "Runtime owner", "href": "", "state": "waiting", "location": "Fixture authenticated environment", "handoff": ""},
+      "resources": ["one authenticated runtime lane"], "blocked_by": ["API-102"], "blocker": "API-102 holds the lane; the earlier attempt was interrupted.", "next_action": "Reserve the lane after API-102 releases it. Other tickets continue.", "obligations": ["Finish the assigned runtime check"],
+      "milestones": {
+        "pr_readiness": {"state": "pending", "note": "Interrupted evidence retained as E8", "evidence": ["E8"]},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "SHIP-107", "title": "Deliver the accepted change",
+      "done_when": "Publication, intended runtime revision, and requested business checks each have proof.",
+      "owner": {"id": "delivery-owner", "label": "Delivery owner", "href": "", "state": "closed", "location": "Retained fixture delivery worktree", "handoff": "Independent delivery observations retained as E9. Resume or transfer explicitly for follow-up."},
+      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Complete. Evidence remains available after owner closure.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "verified", "note": "Required review material and checks", "evidence": ["E9"]},
+        "code_publication": {"state": "verified", "note": "Requested branch and PR published", "evidence": ["E9"]},
+        "deployment": {"state": "verified", "note": "Intended revision observed in target runtime", "evidence": ["E9"]},
+        "business_acceptance": {"state": "verified", "note": "Specified business checks accepted", "evidence": ["E9"]}
+      }
+    }
+  ],
+  "evidence": [
+    {"id": "E1", "label": "Pinning receipt", "scope": "Synthetic local fixture, unchanged code/environment", "result": "passed", "assessment": "accepted", "note": "Retained once. Not a deployment or business verdict.", "output": "SYNTHETIC RECEIPT\nfocused pinning checks: 32 passed\ncode and environment: fixture-a", "href": ""},
+    {"id": "E2", "label": "Focused API checks", "scope": "Synthetic agreed local review scope", "result": "passed", "assessment": "accepted", "note": "Does not establish authenticated live persistence.", "output": "SYNTHETIC RECEIPT\nfocused checks: 32 passed on each selected runtime", "href": ""},
+    {"id": "E3", "label": "Inherited whole-suite failure", "scope": "Synthetic full-suite baseline", "result": "failed", "assessment": "limited", "note": "Retained alongside scoped success; not erased.", "output": "SYNTHETIC RECEIPT\nwhole suite: inherited baseline failures remain", "href": ""},
+    {"id": "E4", "label": "Green job, missing review", "scope": "Synthetic workflow result versus posted reviews", "result": "passed", "assessment": "limited", "note": "Supports job success only. No review was delivered.", "output": "SYNTHETIC RECEIPT\nworkflow conclusion: success\nposted reviews: []", "href": ""},
+    {"id": "E5", "label": "Earlier incomplete readiness evidence", "scope": "Synthetic narrow hierarchy investigation", "result": "passed", "assessment": "superseded", "note": "The earlier ready implication was corrected by E6.", "output": "SYNTHETIC RECEIPT\nnarrow merge checks: passed\nexpanded behavior was not checked", "href": ""},
+    {"id": "E6", "label": "Expanded regression evidence", "scope": "Synthetic three hierarchy behaviors", "result": "failed", "assessment": "limited", "note": "Current readiness is blocked; fixes stay with the existing owner.", "output": "SYNTHETIC RECEIPT\nown dimension: missing\nfolder ordering: incorrect\norphan description: extra level", "href": ""},
+    {"id": "E7", "label": "Relevant compatibility proof", "scope": "Synthetic behavioral difference behind old workflow hash", "result": "passed", "assessment": "accepted", "note": "Matching bytes are not required by this fixture's contract.", "output": "SYNTHETIC RECEIPT\nrelevant foreground behavior: passed\nstop behavior: passed\nmissing-result gate: passed", "href": ""},
+    {"id": "E8", "label": "Interrupted runtime attempt", "scope": "Synthetic shared-runtime attempt", "result": "interrupted", "assessment": "limited", "note": "Keep the interrupted request separate from any later successful run.", "output": "SYNTHETIC RECEIPT\nrequest: interrupted before result\nno acceptance verdict", "href": ""},
+    {"id": "E9", "label": "Separate delivery observations", "scope": "Synthetic requested publication, runtime, and business criteria", "result": "observed", "assessment": "accepted", "note": "Each observation is independent. Local tests alone would not suffice.", "output": "SYNTHETIC RECEIPT\nrequired review material/checks: prepared\nrequested branch/PR: published\ntarget runtime revision: intended revision observed\nspecified business checks: accepted", "href": ""}
+  ],
+  "history": [
+    "API-104: earlier ready implication superseded after E6. E5 retained.",
+    "OPS-105: hash-only hold removed after relevant compatibility proof. Approval hold remains.",
+    "UI-101 and SHIP-107: proof and handoff retained before successful owner closure."
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "skill_name": "setting-up-orchestration",
+  "note": "Capability-discovery evaluations, not live owner launches or publication. Local contract tests are in the companion runner's evals/test_dashboard.py.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "terminology-does-not-imply-capabilities",
+      "prompt": "Set up orchestration for this harness. It calls bounded blocking tasks 'sessions'; they cannot receive follow-up messages or be revisited independently. There is no independent owner launcher. Local HTML presentation works. Save the JSON configuration outside Git.",
+      "expected_output": "Records sessions as bounded helpers, leaves unsupported owner operations null with a visible limitation, saves/checks JSON, and does not fake concurrent independent ownership.",
+      "assertions": [
+        "classifies_by_capability: distinguishes bounded helpers from independent owners despite the session label",
+        "saves_json: stores parseable schema_version 1 configuration at an untracked local path",
+        "unsupported_is_explicit: unavailable owner operations are null and their consequence is recorded",
+        "no_probe_side_effects: does not launch disposable sessions or publish merely to discover capability"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "reuse-config-update-only-mismatch",
+      "prompt": "Repair my orchestration setup. Its stored JSON correctly describes launch/inspect/message/collection and helper behavior. Close is no longer supported in this execution context. An artifact host has appeared. Keep my unrelated configuration. Don't select this run's dashboard destination for me.",
+      "expected_output": "Reads and narrowly updates stored JSON, records closure limitation and the available artifact option, and leaves per-run destination/permissions unset.",
+      "assertions": [
+        "reads_existing_json: preserves verified mappings rather than redoing complete discovery",
+        "records_closure_limitation: unsupported close is explicit instead of claimed successful",
+        "destination_is_not_permission: supported artifact options do not choose a run destination or grant publication authority",
+        "configuration_not_committed: stored JSON remains outside Git and installed skill files"
+      ],
+      "files": []
+    }
+  ]
+}
