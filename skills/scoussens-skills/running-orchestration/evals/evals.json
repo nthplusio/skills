@@ -1,6 +1,6 @@
 {
   "skill_name": "running-orchestration",
-  "note": "Read-only evaluation prompts using synthetic historical patterns. No platform checks, shared mutations, or real owner launches are needed. These are agent-behavior evaluations, separate from test_dashboard.py's executable JSON/HTML checks.",
+  "note": "Evaluation prompts using synthetic historical patterns. See README.md for isolated candidate execution through behavior.py and retained action traces. No live platform checks, shared mutations, or real owner launches are needed. Agent behavior, mock-harness tests, and test_dashboard.py's JSON/HTML contracts are separate results.",
   "evals": [
     {
       "id": 0,

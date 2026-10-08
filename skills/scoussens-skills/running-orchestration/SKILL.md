@@ -77,7 +77,9 @@ commits and needed setup before assigning work that depends on them.
 
 Separate conflicting work first through checkouts, file responsibilities, or
 environments. When sharing is necessary, designate one writer or reserve a
-runtime window. Only conflicting work waits. Transfer ownership explicitly
+runtime window. Confirm release of a shared resource before assigning it to
+another owner. Conversation closure proves closure, not release of its runtime
+or file reservations. Only conflicting work waits. Transfer ownership explicitly
 before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
