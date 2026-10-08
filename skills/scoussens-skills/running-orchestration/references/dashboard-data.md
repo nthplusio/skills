@@ -17,6 +17,10 @@ without fetching data or calling harness tools. See the synthetic
   `interaction` describes a configured native comment/message mechanism or says
   to paste copied questions. Copying is not delivery. Setup lists destinations;
   this record stores the user's choice.
+  Before that choice, set `destination`, `local_path`, `artifact_id` and
+  `artifact_url` to `null` and record a nonempty `hold` explaining the missing
+  confirmation. This is a status-only record; keep HTML generation/writes held.
+  Clear `hold` after confirmation. A template destination is not confirmation.
 - `notice`: optional visible qualification, such as a historical-preview label.
 - `decisions`: objects with stable `id`, `text`, and `recommendation` strings.
 - `tasks`: the current task rows.
