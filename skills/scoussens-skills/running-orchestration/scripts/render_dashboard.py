@@ -177,6 +177,8 @@ def render(data, hosted=False):
             not isinstance(discussion.get(key), str) or not discussion[key].strip() for key in ("owner_id", "label")
         )):
             raise ValueError(f"{item['id']}: discussion needs an owner_id and label")
+        if "requires_human" in discussion:
+            raise ValueError(f"{item['id']}: requires_human belongs on the decision, alongside discussion")
         human = item.get("requires_human", False)
         if not isinstance(human, bool):
             raise ValueError(f"{item['id']}: requires_human must be boolean")

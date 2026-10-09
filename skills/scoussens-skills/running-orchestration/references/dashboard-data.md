@@ -40,6 +40,25 @@ without fetching data or calling harness tools. See the synthetic
   once here or through an accessible conversation receipt, then remove it from
   `decisions`. An answered question is not proof its resulting action completed.
 
+A human-only decision uses this shape. `requires_human` belongs on the decision,
+alongside `discussion`:
+
+```json
+{
+  "id": "Q3",
+  "text": "Complete the existing sign-in dialog.",
+  "recommendation": "Answer in the runtime owner conversation.",
+  "task_ids": ["ENV-106"],
+  "unblocks": "Runtime sign-in",
+  "requires_human": true,
+  "discussion": {
+    "owner_id": "runtime-owner",
+    "label": "Runtime owner",
+    "href": "https://example.org/conversations/runtime-owner"
+  }
+}
+```
+
 Task/proof/decision IDs use letters, numbers, underscores, or hyphens and start
 with a letter or number. Keep IDs unchanged when updating the artifact. The
 template uses them for selection, links, host comments, and copyable questions.
