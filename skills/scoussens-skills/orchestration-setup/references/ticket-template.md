@@ -1,35 +1,37 @@
-# Discover and confirm tickets
+# Confirm ticket policy and prepare splits
 
-Use this before binding work owners to tickets. A ticket is the repository's
+Setup uses the policy section. Run uses the confirmed policy, default layout
+when selected, and split rules. A ticket is the repository's
 confirmed, stable work record for one independently verifiable outcome.
 
-## Discover facts, then resolve choices
+## Confirm project policy in setup
 
-Read repository guidance, contribution docs, issue templates and representative
-tickets through read-only tools. Identify the tracker, record type, stable-ID
-convention, required fields and existing acceptance-criteria format. Inspect
-existing owner assignments too. A conversation title is a clue, not proof of
-its original ticket binding.
+Read saved discovery's repository conventions. Retrieve referenced guidance,
+templates, or representative tickets when needed to settle a preference.
+Discovery owns facts about the tracker, record type, stable IDs, required fields,
+and existing acceptance-criteria format.
 
-Reuse choices explicitly supplied by the user or retained in the restored run.
+Reuse choices explicitly supplied by the user or already confirmed in setup.
 Otherwise ask one focused question at a time, offering the discovered convention
 and a recommendation. Resolve only what remains unknown:
 
 1. Which established tracker and record type should count as a ticket here?
    If none exists, offer a local Markdown ticket with a stable ID and confirm
    its location and ID convention before creating records.
-2. Which ticket definition and layout should this run use? Prefer the
+2. Which ticket definition and layout should this project use? Prefer the
    repository's existing template. When it lacks one, propose the default below.
    Confirm the acceptance-criteria limit as part of that template choice.
-3. For a ticket with an unclear outcome, scope or proof, ask the specific missing
-   question before assigning it. Draft a proposed split when the ticket instead
-   has independent outcomes or exceeds the confirmed criterion limit.
 
 Record the confirmed repository, tracker/local source, definition/template,
-criterion limit and actual confirmation source in the run record or restored
-conversation. Keep repository choices separate from harness tool capabilities.
-A suggested default or unanswered question remains a proposal. Continue work on
-already defined tickets while affected definitions or splits await answers.
+criterion limit, and actual confirmation source in `project.ticket_policy`.
+Keep repository choices separate from harness capabilities. A suggested default
+or unanswered question remains a proposal.
+
+During a run, use that policy without another project interview. For a ticket
+with an unclear outcome, scope, or proof, resolve that ticket's missing choice
+before assignment. Continue unrelated tickets while affected definitions or
+splits await answers. Inspect original owner assignments before reuse. A
+conversation title is a clue, not proof of its original ticket binding.
 
 ## Default ticket layout
 

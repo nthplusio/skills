@@ -1,0 +1,11 @@
+{
+  "skill_name": "orchestration-discovery",
+  "evals": [{
+    "id": 0,
+    "name": "discovery-without-preferences",
+    "prompt": "Discover the current product's orchestration capabilities and repository conventions. Save repository discovery.json with inspected sources and the actual observation time. Do not interview me about preferences, save setup, launch owners or publish anything.",
+    "expected_output": "Saves validated observations only, with no preference questions or setup writes.",
+    "assertions": ["sources_and_time_retained", "no_durable_interview", "discovery_checker_passes"],
+    "files": []
+  }]
+}
