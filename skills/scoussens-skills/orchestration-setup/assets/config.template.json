@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "discovery_file": "discovery.json",
+  "project": {
+    "ticket_policy": {
+      "source": "REPLACE_WITH_CONFIRMED_TICKET_SOURCE",
+      "location": "REPLACE_WITH_CONFIRMED_TICKET_LOCATION",
+      "definition": "One independently verifiable outcome",
+      "template": "REPLACE_WITH_CONFIRMED_TEMPLATE_PATH_OR_LAYOUT",
+      "id_convention": "REPLACE_WITH_CONFIRMED_STABLE_ID_CONVENTION",
+      "criteria_limit": 5,
+      "confirmed_from": "REPLACE_WITH_USER_CONFIRMATION_SOURCE"
+    },
+    "shared_skills": []
+  },
+  "harnesses": {
+    "REPLACE_WITH_DISCOVERED_HARNESS_NAME": {
+      "run_root": "runs/REPLACE_WITH_LOCAL_DIRECTORY_NAME",
+      "shared_skills": [],
+      "defaults": {
+        "finish_line": "review-ready PRs",
+        "destination": null,
+        "interval_seconds": 60
+      },
+      "confirmed_from": "REPLACE_WITH_USER_CONFIRMATION_SOURCE"
+    }
+  }
+}

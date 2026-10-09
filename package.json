@@ -8,6 +8,7 @@
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
     "check:builder": "node scripts/check-builder-agrees.mjs",
+    "test:orchestration": "python3 -B -m unittest discover -s skills/scoussens-skills/orchestration-run/evals -v",
     "test:doorbell": "claude plugin validate plugins/doorbell && claude plugin validate plugins/doorbell/skills && claude plugin test plugins/doorbell && node plugins/doorbell/tests/connected-mcp.mjs && tsc -p plugins/doorbell",
     "test:plugins": "claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell"
   },

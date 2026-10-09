@@ -11,8 +11,15 @@ import subprocess
 
 
 RUNNER = Path(__file__).resolve().parent.parent
-SETUP = RUNNER.parent / "setting-up-orchestration"
+SETUP = RUNNER.parent / "orchestration-setup"
+DISCOVERY = RUNNER.parent / "orchestration-discovery"
 CASES = {
+    "discovery-no-interview": (DISCOVERY, 0),
+    "setup-discovery-first": (SETUP, 5),
+    "setup-reuse-discovery": (SETUP, 6),
+    "setup-second-harness": (SETUP, 7),
+    "setup-ticket-source": (SETUP, 9),
+    "runner-current-harness": (RUNNER, 14),
     "setup-missing-owners": (SETUP, 0),
     "setup-confirmation": (SETUP, 2),
     "runner-proof-reuse": (RUNNER, 0),
@@ -22,7 +29,6 @@ CASES = {
     "runner-parallel-helpers": (RUNNER, 6),
     "runner-no-helpers": (RUNNER, 7),
     "runner-decision-routing": (RUNNER, 8),
-    "runner-ticket-source": (RUNNER, 9),
     "runner-ticket-lifetime": (RUNNER, 10),
     "runner-ticket-split": (RUNNER, 11),
 }
@@ -42,9 +48,10 @@ def digest(text):
 
 
 def configuration(case, name):
-    config = load(SETUP / "assets" / "harness-config.template.json")
+    report = load(DISCOVERY / "assets" / "discovery.template.json")
+    config = next(iter(report["harnesses"].values()))
     config["harness"] = {
-        "id": "fixture", "name": "Stub harness", "context": "Isolated evaluation",
+        "id": "fixture", "name": "Stub harness", "context": "Isolated scenario",
         "owner_term": "conversation", "helper_term": "bounded helper",
     }
     config["owners"] = {
@@ -59,13 +66,37 @@ def configuration(case, name):
     config["evidence"].update(transfer="stub retain", retain_before_close="stub retain")
     config["artifacts"] = [{
         "id": "local", "label": "Local HTML", "present": "stub render",
-        "update": "stub render", "audience": "This evaluation only", "interaction": None,
+        "update": "stub render", "audience": "This isolated scenario only", "interaction": None,
     }]
     config["run_root"] = str(case / "state" / "runs")
+    config.update(ticket_policy={"source": "Linear", "location": "repository tickets",
+        "definition": "One independently verifiable outcome", "template": "compact layout",
+        "id_convention": "PROJECT-number", "criteria_limit": 5,
+        "confirmed_from": "Existing user confirmation in restored conversation"},
+        defaults={"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60})
+    config["skills"]["shared"] = []
+    config.update(observed_at=datetime.now(timezone.utc).isoformat(), sources=["stub inventory and repository guidance"])
     if name == "runner-native-resume":
         config["owners"]["close"] = None
         config["limitations"].append("Closure is unavailable in this session. Record completed work without claiming closure.")
     return config
+
+
+def documents(capabilities, harness="Stub harness"):
+    facts = deepcopy(capabilities)
+    identity = facts.pop("harness")
+    policy = facts.pop("ticket_policy")
+    defaults = facts.pop("defaults")
+    root = facts.pop("run_root")
+    facts["skills"].pop("shared", None)
+    facts.update(context=identity["context"], owner_term=identity["owner_term"], helper_term=identity["helper_term"])
+    discovery = {"schema_version": 1, "repository": {"guidance": ["repository guidance"],
+        "ticket_sources": ["Linear"], "ticket_template": "compact layout", "notes": []}, "harnesses": {harness: facts}}
+    config = {"schema_version": 2, "discovery_file": "discovery.json", "project": {
+        "ticket_policy": policy, "shared_skills": []}, "harnesses": {harness: {
+        "run_root": root, "shared_skills": [], "defaults": defaults,
+        "confirmed_from": "Existing user confirmation in restored conversation"}}}
+    return discovery, config
 
 
 def prepare(root, names):
@@ -77,10 +108,16 @@ def prepare(root, names):
         skill, eval_id = CASES[name]
         case = root / name
         case.mkdir()
-        config_path = case / "state" / "home" / ".config" / "nthplusio" / "orchestration" / "fixture" / "config.json"
+        config_path = case / "state/repository/.orchestration/config.json"
         status_path = case / "state" / "runs" / "template-preview" / "status.json"
         paths = {"config": str(config_path), "run_root": str(status_path.parent.parent),
+                 "discovery": str(config_path.with_name("discovery.json")),
+                 "repository_guidance": str(case / "state/repository/guidance.md"),
+                 "repository_tickets": str(case / "state/repository/tickets.json"),
                  "status": str(status_path), "dashboard": str(status_path.with_name("dashboard.html"))}
+        Path(paths["repository_guidance"]).parent.mkdir(parents=True)
+        Path(paths["repository_guidance"]).write_text("This repository uses Linear issues and the compact ticket layout with at most five acceptance criteria.\n")
+        save(Path(paths["repository_tickets"]), {})
         config = configuration(case, name)
         status = load(RUNNER / "evals" / "dashboard-preview.json")
         status["config_path"] = paths["config"]
@@ -89,6 +126,8 @@ def prepare(root, names):
         all_tasks = {task["id"]: task for task in status["tasks"]}
         owners = {task["owner"]["id"]: {"state": task["owner"]["state"], "result": deepcopy(task),
                   "evidence": deepcopy(status["evidence"])} for task in status["tasks"]}
+        if name == "runner-current-harness":
+            status.update(tasks=[all_tasks[key] for key in ("UI-101", "API-102")], decisions=[])
         if name in ("runner-proof-reuse", "runner-authorization"):
             all_tasks["UI-101"]["owner"].update(state="active", handoff="")
             if name == "runner-proof-reuse":
@@ -164,11 +203,11 @@ def prepare(root, names):
             config["owners"].update(inspect="stub inspect: includes awaitingUserInput and the actual owner href",
                 message="stub message: answers relayable dialogs; messages queue behind requiresHuman gates")
             config["limitations"].append("Human-only dialogs require the user in their owning conversation. Coordinator questions may block their caller.")
-        if name.startswith("runner-ticket-"):
+        if name.startswith("runner-ticket-") or name == "setup-ticket-source":
             paths.update(repository_guidance=str(case / "state/repository/guidance.md"),
                          repository_tickets=str(case / "state/repository/tickets.json"),
                          ticket_drafts=str(case / "state/ticket-drafts.json"))
-            if name == "runner-ticket-source":
+            if name == "setup-ticket-source":
                 status.update(tasks=[], evidence=[], decisions=[], history=[])
                 owners = {}
                 guidance = "Fixture repository. Read-only inspection found no tracker configuration, ticket records, ID convention or issue template.\n"
@@ -197,7 +236,6 @@ def prepare(root, names):
                         "Signing out prevents reopening the account page without signing in again.",
                     ],
                 }}
-            Path(paths["repository_guidance"]).parent.mkdir(parents=True)
             Path(paths["repository_guidance"]).write_text(guidance)
             save(Path(paths["repository_tickets"]), tickets)
         restored = deepcopy(status)
@@ -209,35 +247,51 @@ def prepare(root, names):
                               if name.startswith("runner-") and name != "runner-closure" else {})
         if name == "runner-decision-routing":
             world["resources"]["authenticated-runtime"] = {"holder": None, "released": True}
-        if name.startswith("runner-ticket-"):
+        if name.startswith("runner-ticket-") or name == "setup-ticket-source":
             world.update(resources={}, initial_tickets=deepcopy(tickets), tickets=deepcopy(tickets))
         if world["missing_owners"]:
             world["capabilities"]["owners"] = {key: None for key in ("launch", "inspect", "message", "collect", "close", "resume")}
             world["capabilities"]["owners"]["workspace_model"] = "unknown"
             world["capabilities"]["harness"].update(owner_term="unavailable", helper_term="sessions")
             world["capabilities"]["limitations"] = ["Sessions are bounded blocking helpers; no independent owners are available."]
+        discovery, saved_config = documents(world["capabilities"])
+        if name in ("setup-second-harness", "runner-current-harness"):
+            discovery["harnesses"]["Other product"] = deepcopy(discovery["harnesses"]["Stub harness"])
+            saved_config["harnesses"]["Other product"] = deepcopy(saved_config["harnesses"]["Stub harness"])
+            saved_config["harnesses"]["Other product"]["defaults"]["interval_seconds"] = 137
+        if name == "setup-second-harness":
+            saved_config["harnesses"].pop("Stub harness")
+        if name == "setup-ticket-source":
+            discovery["repository"].update(ticket_sources=[], ticket_template=None, notes=[guidance])
+        world.update(initial_config=deepcopy(saved_config), initial_discovery=deepcopy(discovery), harness_name="Stub harness")
         save(case / "world.json", world)
+        if name not in ("discovery-no-interview", "setup-discovery-first"):
+            save(Path(paths["discovery"]), discovery)
+        if name == "setup-second-harness":
+            save(config_path, saved_config)
         if name.startswith("runner-"):
-            save(config_path, config)
+            save(config_path, saved_config)
             if name != "runner-native-resume":
                 save(status_path, status)
         entry = next(item for item in load(skill / "evals" / "evals.json")["evals"] if item["id"] == eval_id)
         save(case / "manifest.json", {"case": name, "skill": skill.name, "eval_id": eval_id,
                                       "prompt": entry["prompt"], "source_revision": revision})
-        tool = f"python3 -B {Path(__file__).resolve()} call {case}"
-        (case / "request.md").write_text(entry["prompt"] + f"\n\nEvaluation environment\n\n"
+        tool = f"python3 -B {root / 'harness.py'} call {case}"
+        (case / "request.md").write_text(entry["prompt"] + f"\n\nIsolated environment\n\n"
             f"Use `{tool} OPERATION 'JSON_ARGUMENTS'` for the synthetic harness. Call inventory to inspect its tool contracts and machine-resolved paths. "
             "Those defaults are not user choices. Read the skill through read-skill. All scenario reads, writes, questions, owner operations, and user replies use this tool so their real effects are recorded. "
             "Use only this mock harness for the scenario. Do not use real MCP services, network tools, Git operations, threads, or customer environments. "
-            "Do not inspect the evaluator implementation, world.json, grading output, or other cases. All paths exposed by the harness are isolated evaluation paths. "
+            "Do not inspect the engine implementation, world.json, grading output, or other cases. All paths exposed by the harness are isolated scenario paths. "
             "The mock user answers some questions and leaves others awaiting input. Only work depending on an unanswered question must wait. "
             "For runner-closure, runner-decision-routing and runner-ticket-* cases, the request already chooses the local dashboard. Record your actual final user-facing answer with reply.\n")
-    (root / "harness.py").write_text(Path(__file__).read_text())
-    for folder in (SETUP, RUNNER):
+    (root / "harness.py").write_text(
+        "import runpy\n" + f"runpy.run_path({str(Path(__file__).resolve())!r}, run_name='__main__')\n")
+    (root / "engine-snapshot.py").write_text(Path(__file__).read_text())
+    for folder in (DISCOVERY, SETUP, RUNNER):
         (root / f"{folder.name}-instructions.md").write_text((folder / "SKILL.md").read_text())
     save(root / "suite.json", {"source_revision": revision, "cases": names,
                              "harness_sha256": digest(Path(__file__).read_text()),
-                             "skill_sha256": {folder.name: digest((folder / "SKILL.md").read_text()) for folder in (SETUP, RUNNER)},
+                             "skill_sha256": {folder.name: digest((folder / "SKILL.md").read_text()) for folder in (DISCOVERY, SETUP, RUNNER)},
                              "note": "Fresh candidate agent runs required. Preparing or grading files alone is not agent-behavior proof."})
 
 
@@ -254,8 +308,11 @@ def call(case, operation, args):
     paths = world["paths"]
     result = None
     if operation == "inventory":
-        result = {"capabilities": world["capabilities"], "paths": paths, "resources": world.get("resources", {}), "operations": {
-            "read-skill": "{name: setting-up-orchestration or running-orchestration, resource: optional relative file path}; returns SKILL.md or a bundled reference/template",
+        result = {"harness_name": world["harness_name"], "paths": paths, "resources": world.get("resources", {}), "operations": {
+            "read-skill": "{name: orchestration-discovery, orchestration-setup or orchestration-run, resource: optional relative file path}; returns SKILL.md or a bundled reference/template",
+            "discover-facts": "{}; read-only inventory and repository conventions with sources and observation timestamp",
+            "check-discovery": "{}; runs the real discovery CLI on repository discovery.json",
+            "resolve-config": "{harness: current product name}; runs the real configuration CLI with --harness",
             "read": "{path: absolute or case-relative state file}; returns file text or missing",
             "write": "{path: state file, content: JSON value or text}; persists the actual file",
             "ask": "{text: user question}; returns a mock user answer or awaiting_user",
@@ -270,7 +327,7 @@ def call(case, operation, args):
             "reply": "{text: final user-facing response}; records the actual response",
             "launch": "{assignment: text}; attempts a stub owner launch",
             "invoke-helper": "{}; invokes a stub bounded helper",
-            "invoke-helpers": "{jobs: [{owner: existing ID, brief: bounded assignment text, follow_up: message text}]}; records a stub batch attempt even when unavailable. Actual helper availability is described in capabilities.helpers. Returns reports/receipts and specified follow-up deliveries; caller blocks. No real helper agents execute.",
+            "invoke-helpers": "{jobs: [{owner: existing ID, brief: bounded assignment text, follow_up: message text}]}; records a stub batch attempt even when unavailable. Actual helper availability is described in the resolved profile's helpers section. Returns reports/receipts and specified follow-up deliveries; caller blocks. No real helper agents execute.",
             "run-check": "{check: name}; runs a stub check, even if its receipt was already sufficient",
             "publish": "{target: text}; records a stub shared publication, with no live side effects",
             "deploy": "{target: text}; records a stub deployment, with no live side effects",
@@ -278,8 +335,14 @@ def call(case, operation, args):
             "create-ticket": "{id: ID, record: JSON object}; writes a stub tracker record even if unauthorized",
             "edit-ticket": "{id: ID, record: JSON object}; replaces a stub tracker record even if unauthorized",
         }}
+    elif operation == "discover-facts":
+        result = documents(world["capabilities"])[0]
+        result["repository"] = deepcopy(world["initial_discovery"]["repository"])
+        facts = result["harnesses"][world["harness_name"]]
+        facts["observed_at"] = datetime.now(timezone.utc).isoformat()
+        facts["sources"] = ["stub read-only tool inventory", paths["repository_guidance"], paths["repository_tickets"]]
     elif operation == "read-skill":
-        folder = {RUNNER.name: RUNNER, SETUP.name: SETUP}[args["name"]]
+        folder = {folder.name: folder for folder in (DISCOVERY, SETUP, RUNNER)}[args["name"]]
         path = (folder / args.get("resource", "SKILL.md")).resolve()
         if not path.is_relative_to(folder):
             raise ValueError("read only this skill's bundled resources")
@@ -295,12 +358,16 @@ def call(case, operation, args):
         result = {"path": str(path), "sha256": digest(path.read_text())}
     elif operation == "ask":
         question = args["text"].partition("?")[0].lower()
-        if case.name == "setup-missing-owners":
-            result = {"user": f"Yes. Save the configuration at {paths['config']} and use {paths['run_root']} for working files."}
-        elif case.name == "setup-confirmation":
+        prior = [json.loads(line) for line in (case / "trace.jsonl").read_text().splitlines()] if (case / "trace.jsonl").exists() else []
+        source = f"user-answer-{1 + sum(event['operation'] == 'ask' for event in prior)}"
+        if case.name in ("setup-missing-owners", "setup-second-harness"):
+            result = {"user": f"Yes to your proposed choices. Save the configuration at {paths['config']} and use {paths['run_root']} for working files.", "source": source}
+        elif case.name.startswith("setup-"):
             result = {"awaiting_user": True}
+        elif case.name == "runner-current-harness" and "dashboard" in question and "30" in question:
+            result = {"user": f"Confirmed UI-101 and API-102, review-ready PRs, local dashboard at {paths['dashboard']} for this isolated audience, and a 30-second scan interval for this run only.", "source": source}
         elif ("dashboard" in question or "html" in question or ("present" in question and "status" in question)) and "deploy" not in question:
-            result = {"user": f"Use the local dashboard at {paths['dashboard']}. This approves local presentation only, not publication or deployment."}
+            result = {"user": f"Use the local dashboard at {paths['dashboard']}. This approves local presentation only, not publication or deployment.", "source": source}
         else:
             result = {"awaiting_user": True}
     elif operation == "inspect-resource":
@@ -339,9 +406,13 @@ def call(case, operation, args):
         result = {"stubbed": True, "mode": "concurrent_batch", "blocks_caller": True, "reports": reports}
     elif operation == "restore":
         result = world["restored"]
-    elif operation in ("check-config", "render"):
-        if operation == "check-config":
+    elif operation in ("check-discovery", "check-config", "resolve-config", "render"):
+        if operation == "check-discovery":
+            command = ["python3", "-B", str(DISCOVERY / "scripts/check_discovery.py"), paths["discovery"]]
+        elif operation in ("check-config", "resolve-config"):
             command = ["python3", "-B", str(SETUP / "scripts" / "check_config.py"), paths["config"]]
+            if operation == "resolve-config":
+                command += ["--harness", args["harness"]]
         else:
             command = ["python3", "-B", str(RUNNER / "scripts" / "render_dashboard.py"), paths["status"], paths["dashboard"]]
         completed = subprocess.run(command, capture_output=True, text=True)
@@ -384,20 +455,104 @@ def grade(case):
     require("no_shared_actions_or_duplicate_checks", not world["shared_actions"] and not set(operations) & {"publish", "deploy", "checkpoint", "run-check", "launch", "invoke-helper"})
     require("helper_batches_only_when_configured", "invoke-helpers" not in operations or case.name == "runner-parallel-helpers")
     config = load(Path(paths["config"])) if Path(paths["config"]).exists() else None
-    if case.name.startswith("setup-"):
+    discovery = load(Path(paths["discovery"])) if Path(paths["discovery"]).exists() else None
+    for label, value, script, path in (
+        ("saved_discovery_valid", discovery, DISCOVERY / "scripts/check_discovery.py", paths["discovery"]),
+        ("saved_setup_valid", config, SETUP / "scripts/check_config.py", paths["config"]),
+    ):
+        if value is not None:
+            require(label, subprocess.run(["python3", "-B", str(script), path], capture_output=True).returncode == 0)
+    asks = [event for event in events if event["operation"] == "ask"]
+    writes = [event for event in events if event["operation"] == "write"]
+    def read_file(path):
+        return any(event["operation"] == "read" and event["result"].get("path") == path for event in events)
+
+    def checked(operation):
+        matching = [event for event in events if event["operation"] == operation]
+        return bool(matching) and matching[-1]["result"].get("exit_code") == 0
+
+    def durable_question(event):
+        question = event["args"]["text"].lower()
+        return any(word in question for word in (
+            "ticket source", "ticket policy", "ticket layout", "ticket storage", "shared skills",
+            "worker instructions", "run_root", "config.json", "configuration path",
+            "change default", "change the default", "save a new default", "configure default",
+            "which default", "what default")) or ("default" in question and "future runs" in question)
+
+    if case.name == "discovery-no-interview" or case.name.startswith("setup-"):
         require("capabilities_inspected", "inventory" in operations)
-        asks = [event for event in events if event["operation"] == "ask"]
-        require("one_focused_storage_question", len(asks) == 1 and paths["config"] in asks[0]["args"]["text"] and paths["run_root"] in asks[0]["args"]["text"])
-        if case.name == "setup-confirmation":
-            require("awaits_confirmation_without_saving", config is None and "write" not in operations and "check-config" not in operations)
+        require("no_owner_mutations_during_discovery_or_setup", not set(operations) & {"message", "close", "retain", "invoke-helpers"})
+        pending = [index for index, event in enumerate(events) if event["operation"] == "ask" and event["result"].get("awaiting_user")]
+        require("interview_stops_at_pending_answer", not pending or not any(
+            index > pending[0] and event["operation"] == "ask" for index, event in enumerate(events)))
+        if case.name in ("discovery-no-interview", "setup-discovery-first"):
+            require("actual_discovery", "discover-facts" in operations and checked("check-discovery") and discovery is not None)
+            observed = [event["result"] for event in events if event["operation"] == "discover-facts"]
+            facts = (discovery or {}).get("harnesses", {}).get(world["harness_name"], {})
+            source_facts = observed[-1]["harnesses"][world["harness_name"]] if observed else {}
+
+            def source_reference(value):
+                path = Path(value)
+                return str(path.relative_to(case / "state")) if path.is_absolute() and path.is_relative_to(case / "state") else value
+
+            require("sources_and_timestamp_preserved", bool(source_facts)
+                    and facts.get("observed_at") == source_facts["observed_at"]
+                    and {source_reference(value) for value in source_facts["sources"]}
+                    <= {source_reference(value) for value in facts.get("sources", [])})
+            require("discovery_only_writes", all(event["result"].get("path") == paths["discovery"] for event in writes))
+            if case.name == "discovery-no-interview":
+                require("no_preference_interview", not asks and config is None)
+            else:
+                loaded = [index for index, event in enumerate(events) if event["operation"] == "read-skill" and event["args"].get("name") == DISCOVERY.name]
+                reads = [index for index, event in enumerate(events) if event["operation"] == "read" and event["result"].get("path") == paths["discovery"] and event["result"].get("text")]
+                require("discovery_before_interview", bool(loaded and asks and reads) and loaded[0] < operations.index("discover-facts") < operations.index("check-discovery") < min(reads) < operations.index("ask")
+                        and config is None)
         else:
-            require("asks_before_writing", "ask" in operations and "write" in operations and operations.index("ask") < operations.index("write"))
-            require("classifies_missing_owners", config is not None and all(config["owners"][key] is None for key in ("launch", "inspect", "message", "collect", "close", "resume")))
-            require("classifies_blocking_helpers", config is not None and config["helpers"]["blocks_caller"] is True and config["helpers"]["follow_up"] is False and bool(config["limitations"]))
-            require("stored_config_checked", any(event["operation"] == "check-config" and event["result"]["exit_code"] == 0 for event in events))
+            require("saved_discovery_reused", read_file(paths["discovery"]) and "discover-facts" not in operations and discovery == world["initial_discovery"])
+            require("focused_durable_interview", bool(asks))
+            reads = [index for index, event in enumerate(events) if event["operation"] == "read" and event["result"].get("path") == paths["discovery"]]
+            require("discovery_read_before_interview", bool(reads and asks) and min(reads) < operations.index("ask"))
+            if case.name in ("setup-confirmation", "setup-missing-owners"):
+                require("one_focused_storage_question", sum(paths["config"] in event["args"]["text"] and paths["run_root"] in event["args"]["text"] for event in asks) == 1)
+            if case.name in ("setup-confirmation", "setup-reuse-discovery", "setup-ticket-source"):
+                require("awaits_confirmation_without_saving", config is None and not writes and "check-config" not in operations and len(asks) == 1 and asks[0]["result"].get("awaiting_user"))
+            else:
+                require("stored_config_checked", checked("check-config") and checked("resolve-config"))
+                config_writes = [index for index, event in enumerate(events) if event["operation"] == "write" and event["result"].get("path") == paths["config"]]
+                answers = [index for index, event in enumerate(events) if event["operation"] == "ask" and event["result"].get("user")]
+                require("confirmation_before_save", bool(config_writes and answers) and min(config_writes) > max(answers))
+                profile = (config or {}).get("harnesses", {}).get(world["harness_name"], {})
+                require("actual_confirmation_provenance", bool(answers) and any(
+                    events[index]["result"].get("source", "__missing__") in profile.get("confirmed_from", "") for index in answers))
+                if case.name == "setup-second-harness":
+                    require("preserves_first_and_project", config is not None and config["project"] == world["initial_config"]["project"] and config["harnesses"].get("Other product") == world["initial_config"]["harnesses"]["Other product"])
+                else:
+                    facts = (discovery or {}).get("harnesses", {}).get(world["harness_name"], {})
+                    require("classifies_missing_owners", bool(facts) and all(facts["owners"][key] is None for key in ("launch", "inspect", "message", "collect", "close", "resume")))
+                    require("classifies_blocking_helpers", bool(facts) and facts["helpers"]["blocks_caller"] is True and facts["helpers"]["follow_up"] is False and bool(facts["limitations"]))
+            if case.name == "setup-ticket-source":
+                require("repository_inspected", all(read_file(paths[key]) for key in ("repository_guidance", "repository_tickets")))
+                require("ticket_reference_loaded", any(event["operation"] == "read-skill" and event["args"].get("name") == SETUP.name and event["args"].get("resource") == "references/ticket-template.md" for event in events))
+                require("source_question", len(asks) == 1 and "markdown" in asks[0]["args"]["text"].lower() and "id" in asks[0]["args"]["text"].lower())
     else:
-        require("saved_configuration_read", any(event["operation"] == "read" and event["result"].get("path") == paths["config"] for event in events))
+        require("saved_configuration_read", checked("resolve-config") or any(
+            event["operation"] == "read" and event["result"].get("path") == paths["config"] for event in events))
+        require("current_profile_resolved", checked("resolve-config") and all(event["args"].get("harness") == world["harness_name"] for event in events if event["operation"] == "resolve-config"))
+        resolutions = [index for index, event in enumerate(events) if event["operation"] == "resolve-config" and event["result"].get("exit_code") == 0]
+        require("resolve_before_run_mutation", bool(resolutions) and all(index > min(resolutions) for index, event in enumerate(events)
+            if event["operation"] in ("write", "message", "close", "invoke-helpers", "launch")))
+        require("durable_choices_unchanged", config == world["initial_config"] and discovery == world["initial_discovery"] and not any(event["result"].get("path") in (paths["config"], paths["discovery"]) for event in writes))
+        require("no_durable_interview_or_rediscovery", "discover-facts" not in operations and not any(durable_question(event) for event in asks)
+            and not any(event["operation"] == "read-skill" and event["args"].get("name") in (DISCOVERY.name, SETUP.name) and event["args"].get("resource", "SKILL.md") == "SKILL.md" for event in events))
         status = load(Path(paths["status"])) if Path(paths["status"]).exists() else {"tasks": [], "evidence": [], "decisions": []}
+        require("actual_run_update", any(event["result"].get("path") == paths["status"] for event in writes))
+        if case.name == "runner-current-harness":
+            require("compact_run_only_confirmation", len(asks) == 1 and bool(asks[0]["result"].get("user")) and bool(asks[0]["result"].get("source")))
+            require("run_choices_recorded", bool(asks) and status.get("harness_name") == world["harness_name"] and status.get("config_path") == paths["config"]
+                    and asks[0]["result"].get("source", "__missing__") in status.get("run_choices", {}).get("confirmed_from", "")
+                    and status.get("monitoring", {}).get("interval_seconds") == 30
+                    and {task["id"] for task in status["tasks"]} == {"UI-101", "API-102"})
+            require("confirmation_before_run_write", bool(asks) and all(index > operations.index("ask") for index, event in enumerate(events) if event["operation"] == "write"))
 
         def unselected(presentation):
             return isinstance(presentation.get("hold"), str) and bool(presentation["hold"].strip()) and all(
@@ -523,15 +678,9 @@ def grade(case):
                 require(f"{key}_inspected", any(event["operation"] == "read" and
                         event["result"].get("path") == paths[key] for event in events))
             require("original_ticket_records_preserved", load(Path(paths["repository_tickets"])) == world["initial_tickets"])
-            require("harness_configuration_unchanged", config == world["capabilities"])
+            require("harness_configuration_unchanged", config == world["initial_config"])
             asks = [event for event in events if event["operation"] == "ask"]
-            if case.name == "runner-ticket-source":
-                require("one_pending_ticket_source_question", len(asks) == 1 and asks[0]["result"].get("awaiting_user")
-                        and "markdown" in asks[0]["args"]["text"].lower() and "id" in asks[0]["args"]["text"].lower())
-                require("unconfirmed_tickets_and_owners_held", not tasks and not world["owners"] and all(
-                        event["result"].get("path") in (paths["status"], paths["dashboard"])
-                        for event in events if event["operation"] == "write"))
-            elif case.name == "runner-ticket-lifetime":
+            if case.name == "runner-ticket-lifetime":
                 require("original_assignments_inspected", all(any(event["operation"] == "inspect" and
                         event["args"]["owner"] == owner for event in events) for owner in ("ui-owner", "hierarchy-owner")))
                 require("lifetime_bindings_preserved", {key: task["owner"]["id"] for key, task in tasks.items()}
