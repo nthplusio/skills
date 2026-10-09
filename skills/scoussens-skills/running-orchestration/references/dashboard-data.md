@@ -23,7 +23,10 @@ without fetching data or calling harness tools. See the synthetic
   Clear `hold` after confirmation. A template destination is not confirmation.
 - `notice`: optional visible qualification, such as a historical-preview label.
 - `decisions`: pending questions in priority order, with stable `id`, `text`,
-  and `recommendation` strings. Include `task_ids` naming affected tasks,
+  and `recommendation` strings. Include `task_ids` naming affected assigned rows
+  that already exist in `tasks`. For unassigned tickets or proposed children,
+  name their IDs in the decision text and leave `task_ids` empty until assigned;
+  keep approval pending without inventing an owner or a matrix row. Include
   `unblocks` describing the work an answer enables, and `discussion` containing
   the authoritative conversation's actual `owner_id`, readable `label`, and
   `href`. An unavailable link is empty; show the owner handle instead. Set

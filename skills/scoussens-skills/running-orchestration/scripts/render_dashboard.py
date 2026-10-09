@@ -205,7 +205,7 @@ def render(data, hosted=False):
     for item in decisions.values():
         affected = item.get("task_ids", [])
         if not isinstance(affected, list) or any(key not in tasks for key in affected):
-            raise ValueError(f"{item['id']}: unknown affected task")
+            raise ValueError(f"{item['id']}: unknown affected task; task_ids must name assigned rows in tasks. Name unassigned tickets in the decision text and leave task_ids empty.")
         discussion = item.get("discussion", {})
         if not isinstance(discussion, dict) or (discussion and any(
             not isinstance(discussion.get(key), str) or not discussion[key].strip() for key in ("owner_id", "label")
