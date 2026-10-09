@@ -23,6 +23,7 @@ class Page(HTMLParser):
         super().__init__()
         self.ids = []
         self.rows = {}
+        self.contexts = {}
         self.row = None
         self.feed(html)
 
@@ -30,6 +31,10 @@ class Page(HTMLParser):
         attrs = dict(attrs)
         if "id" in attrs:
             self.ids.append(attrs["id"])
+        if "data-context" in attrs:
+            packet = json.loads(attrs["data-context"])
+            key = packet["decision"]["id"] if "decision" in packet else packet["tasks"][0]["id"]
+            self.contexts[key] = packet
         if tag == "tr" and attrs.get("id", "").startswith("row-"):
             self.row = attrs["id"]
             self.rows[self.row] = []
@@ -82,15 +87,14 @@ class DashboardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unfinished milestone"):
             render(self.data)
 
-    def test_shared_owner_counts_once_and_cannot_be_partially_closed(self):
+    def test_one_owner_cannot_be_assigned_to_two_tickets_even_after_closure(self):
         first, second = self.data["tasks"][:2]
-        first["owner"]["state"] = "active"
         second["owner"]["id"] = first["owner"]["id"]
-        html = render(self.data)
-        self.assertIn('<b>2</b><span>active owners</span>', html)
-        second["owner"]["state"] = "closed"
-        with self.assertRaisesRegex(ValueError, "conflicting lifecycle states"):
-            render(self.data)
+        for state in ("active", "closed"):
+            with self.subTest(first_owner_state=state):
+                first["owner"]["state"] = state
+                with self.assertRaisesRegex(ValueError, "API-102: owner ui-owner is already bound to another ticket"):
+                    render(self.data)
 
     def test_completed_but_unclosed_owner_is_visible(self):
         self.data["tasks"][0]["owner"]["state"] = "complete"
@@ -121,6 +125,66 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("In orchestration run template-preview, decision Q1:", html)
         self.assertIn('data-copy-id="UI-101"', html)
         self.assertIn("Copy does not send", html)
+
+    def test_copied_context_is_scoped_and_keeps_work_owner_distinct_from_answer_route(self):
+        self.data["tasks"][4]["owner"]["href"] = "https://example.org/reviewer-owner"
+        contexts = Page(render(self.data)).contexts
+        packet = contexts["Q1"]
+        self.assertEqual(packet["run_id"], "template-preview")
+        self.assertEqual(packet["snapshot_time"], "2026-10-08T14:30:00-05:00")
+        self.assertEqual([task["id"] for task in packet["tasks"]], ["OPS-105"])
+        task = packet["tasks"][0]
+        self.assertEqual(task["owner"]["id"], "reviewer-owner")
+        self.assertEqual(packet["answer_route"]["owner_id"], "fixture-coordinator")
+        self.assertEqual(task["milestones"]["pr_readiness"]["evidence"], ["E7"])
+        self.assertEqual(task["milestones"]["code_publication"]["state"], "blocked")
+        self.assertEqual(task["milestones"]["deployment"]["state"], "not_requested")
+        self.assertIn("unapproved", task["blocker"])
+        self.assertIn("no approval", packet["approval_constraints"])
+        self.assertEqual(packet["decision"]["task_ids"], ["OPS-105"])
+        self.assertEqual(contexts["OPS-105"]["answer_route"], {
+            "owner_id": "reviewer-owner", "label": "Reviewer owner",
+            "href": "https://example.org/reviewer-owner",
+        })
+        self.assertNotIn("decision", contexts["OPS-105"])
+
+    def test_decision_questions_route_to_their_owners_and_name_human_only_gates(self):
+        self.data["decisions"] = [
+            {"id": "Q-local", "text": "Choose the description format?", "recommendation": "Use full labels.",
+             "task_ids": ["API-104"], "unblocks": "Description formatting",
+             "discussion": {"owner_id": "hierarchy-owner", "label": "Hierarchy owner",
+                            "href": "https://example.org/discuss-hierarchy"}},
+            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime thread.",
+             "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in", "requires_human": True,
+             "discussion": {"owner_id": "runtime-owner", "label": "Runtime owner",
+                            "href": "https://example.org/runtime-input"}},
+        ]
+        html = render(self.data, hosted=True)
+        self.assertIn('href="https://example.org/discuss-hierarchy">Open discussion</a>', html)
+        self.assertIn('href="https://example.org/runtime-input">Answer in thread</a>', html)
+        self.assertIn('href="#task-API-104">API-104</a>', html)
+        self.assertIn("Unblocks: Description formatting", html)
+        self.assertIn('data-discussion-owner="hierarchy-owner"', html)
+        self.assertIn('data-requires-human="true"', html)
+        self.assertIn("Human-only gate. A forwarded message cannot answer it.", html)
+        self.assertIn('data-copy-id="Q-gate"', html)
+
+    def test_decision_route_validation_and_legacy_coordinator_fallback(self):
+        decision = {"id": "Q-old", "text": "Keep publication held?", "recommendation": "Keep the hold."}
+        self.data["decisions"] = [decision]
+        self.assertIn('data-discussion-owner=""', render(self.data))
+        for fields, expected in (
+            ({"requires_human": True}, "human-only gate needs a discussion owner"),
+            ({"requires_human": "true"}, "requires_human must be boolean"),
+            ({"task_ids": ["MISSING"]}, "unknown affected task"),
+            ({"discussion": {"owner_id": "runtime-owner", "label": "Runtime owner", "href": "javascript:bad()"}}, "unsupported link scheme"),
+            ({"discussion": {"owner_id": "runtime-owner", "label": "Runtime owner", "requires_human": True}},
+             "requires_human belongs on the decision"),
+        ):
+            with self.subTest(fields=fields):
+                self.data["decisions"] = [{**decision, **fields}]
+                with self.assertRaisesRegex(ValueError, expected):
+                    render(self.data, hosted=True)
 
     def test_text_is_escaped_and_not_reprocessed_as_a_template(self):
         self.data["title"] = '<script>alert("title")</script> {{ROWS}}'
