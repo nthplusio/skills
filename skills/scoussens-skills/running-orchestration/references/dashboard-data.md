@@ -12,6 +12,14 @@ without fetching data or calling harness tools. See the synthetic
 - `title`, `goal`: short plain-language strings.
 - `updated_at`: actual ISO 8601 timestamp, with timezone.
 - `config_path`: absolute path of the stored harness JSON this run reads.
+- `monitoring`: required for new coordinated runs; older records can omit it
+  until resumed. `mode` describes the selected configured mechanism.
+  `interval_seconds` is the positive scan interval; `last_checked_at` is the
+  actual latest scan timestamp, or `null` before inspection. `next_check_at` is
+  the next scan deadline, or `null` when no continued execution or authorized
+  wake will perform it. `hold` is `null` during normal monitoring, or names the
+  actual pause/limitation and answer/resume route. This records step 3's cycle;
+  the renderer neither schedules checks nor establishes their execution.
 - `presentation`: chosen destination ID, local HTML path, and hosted artifact
   ID/URL if any. `coordinator_href` links back to the coordinator where supported;
   `interaction` describes a configured native comment/message mechanism or says
@@ -74,6 +82,10 @@ assigned completion criterion. `owner` contains its actual harness `id`, `label`
 optional `href`, `state`, `location`, and `handoff`. Its state is `active`,
 `waiting`, `complete`, or `closed`. An owner ID belongs to exactly one ticket;
 the renderer rejects duplicate owner IDs across rows, including closed owners.
+For monitored runs, `owner.last_checked_at` records that owner's actual latest
+state inspection with timezone, or `null` while uninspected. An unchanged scan
+can advance this timestamp without changing activity or reassessing its proof.
+Retain unanswered scoped follow-ups in the blocker/next action and history.
 Retain the original ticket binding in the row and any replacement handoff/history.
 Inspect the owner's original assignment before reuse; the renderer cannot prove
 historical bindings outside this record. Record confirmed repository ticket-policy

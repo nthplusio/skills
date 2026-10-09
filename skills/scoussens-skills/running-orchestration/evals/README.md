@@ -23,6 +23,21 @@ routing cases, and repository ticket-definition/ownership cases:
 | `runner-ticket-lifetime` | Runner 10 | Inspect original assignments, keep a closed owner on its original ticket, and send a new phase to the same ticket's existing owner. |
 | `runner-ticket-split` | Runner 11 | Preserve the parent and all seven criteria in two bounded proposals; await split approval without tracker writes or owner launches. |
 
+The additional monitoring prompts are not wired into this mock harness:
+
+- Setup 4 checks discovery of notification coverage, bounded waits and wake
+  authorization while preserving confirmed settings.
+- Runner 12 requires a clock-aware fixture that changes owner state after each
+  timed wait and delivers one completion reply. It checks silent input detection,
+  idle-owner follow-up, repeated dashboard updates and a human-only exit.
+- Runner 13 checks immediate inspection after an overdue scan and a truthful
+  manual-resume limitation when continued monitoring is unavailable.
+
+Run those prompts with controlled tool responses and retain the waits, state
+observations, follow-ups and record/dashboard writes in order. Until then they
+are evaluation specifications, not executed behavioral coverage. Configuration
+contract tests validate the optional version 1 monitoring section separately.
+
 ## Prepare and execute
 
 Run from a Git checkout. Choose a new absolute directory outside the checkout

@@ -22,6 +22,11 @@
     "blocks_caller": null,
     "follow_up": null
   },
+  "monitoring": {
+    "notifications": null,
+    "wait": null,
+    "wake": null
+  },
   "skills": {
     "load": null,
     "brief": "Pass applicable shared instructions explicitly; do not assume inheritance.",
