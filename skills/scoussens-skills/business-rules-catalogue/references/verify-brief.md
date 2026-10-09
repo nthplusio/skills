@@ -5,15 +5,16 @@ is `{WORK}/BRIEF.md`; read it for what a rule is, the style and the flag
 types. Business owners will review these rules and engineers will change code
 because of the flags, so a wrong claim costs real work. You are an independent
 **checker**: re-read the code each rule cites and reach your own verdict. Leave
-the repository unchanged.
+the repository unchanged. Check only rules another reader extracted. If you
+were their extractor, return the assignment for reassignment rather than
+calling your own reread independent verification.
 
 Your input is a JSON list. Each item has `worker`, `area`, `module`, `key` and
 the full `rule`, and one of two cases applies:
 
 - `check_flags` lists indices into `rule.flags`. Verify each listed flag
   against its evidence lines and against the other side it names (the
-  glossary, a decision record, a docstring or another code path). Check the
-  rule's statement too.
+  glossary, a decision record, a docstring or another code path).
 - `sample: true` marks a random unflagged rule. Check its `statement`,
   `applies_when`, `exceptions`, `example` and `on_violation` against the code
   in `engineering`.
@@ -21,7 +22,10 @@ the full `rule`, and one of two cases applies:
 Settle each claim from what the code does: conditions, query text, defaults,
 raised errors and constants. Follow calls as far as the claim needs. Confirm
 that `engineering` line ranges point at the deciding code, and correct any
-range that is off by more than a few lines.
+range that misses it. For both flagged and sampled rules, check the statement,
+trigger, exceptions, example and violation outcome. A branch boundary is a
+useful check: find inputs on both sides, and confirm the claimed outcomes.
+Comments or a passing test alone cannot prove what the enforcing code does.
 
 Verdicts:
 
@@ -54,7 +58,11 @@ item:
 
 `rule_revision` holds only the fields to change, for example
 `{"statement": "...", "engineering": [...]}`. `flags` lists only the flags in
-`check_flags`, so it is empty for samples.
+`check_flags`, so it is empty for samples. Retain `worker`, `area` and `key`
+exactly from each input. Use one verdict per input and `[]` for an empty batch.
+Revisions can change title, statement, applies_when, exceptions, example,
+on_violation, engineering, surfaces, terms or confidence. Revise flags through
+their separate verdicts, and keep rule identity and stage unchanged.
 
 Prove the file parses before you finish:
 `python3 -c "import json;json.load(open('<your output>'))"`. Then reply with
