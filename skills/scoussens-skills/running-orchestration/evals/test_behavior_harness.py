@@ -105,6 +105,40 @@ class BehaviorHarnessTests(unittest.TestCase):
         result = self.run_cli("grade", str(root))
         self.assertEqual(result.returncode, 1, result.stdout)
 
+    def test_helper_batch_returns_receipts_and_actual_follow_ups(self):
+        root = Path(self.directory.name) / "helpers"
+        self.run_cli("prepare", str(root), "--cases", "runner-parallel-helpers")
+        jobs = [
+            {"owner": "review-owner", "brief": "Assess E4; follow up for the missing review only.", "follow_up": "Recover the required posted review."},
+            {"owner": "hierarchy-owner", "brief": "Assess E5/E6; follow up for the three regressions only.", "follow_up": "Correct the three reported regressions."},
+        ]
+        result = self.run_cli("call", str(root / "runner-parallel-helpers"), "invoke-helpers", json.dumps({"jobs": jobs}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        batch = json.loads(result.stdout)
+        self.assertTrue(batch["blocks_caller"])
+        self.assertEqual(batch["mode"], "concurrent_batch")
+        self.assertEqual([
+            (report["owner"], [proof["id"] for proof in report["report"]["evidence"]], report["follow_up"])
+            for report in batch["reports"]
+        ], [
+            ("review-owner", ["E4"], {"delivered": "review-owner", "text": "Recover the required posted review."}),
+            ("hierarchy-owner", ["E5", "E6"], {"delivered": "hierarchy-owner", "text": "Correct the three reported regressions."}),
+        ])
+
+    def test_unconfigured_helper_batch_still_runs_but_grader_rejects_it(self):
+        root = Path(self.directory.name) / "missing-helpers"
+        self.run_cli("prepare", str(root), "--cases", "runner-no-helpers")
+        case = root / "runner-no-helpers"
+        result = self.run_cli("call", str(case), "invoke-helpers", json.dumps({"jobs": [
+            {"owner": "review-owner", "brief": "Wrongly delegate despite absent capability", "follow_up": "Wrong delegated request"},
+        ]}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["reports"][0]["follow_up"],
+                         {"delivered": "review-owner", "text": "Wrong delegated request"})
+        self.assertEqual(self.run_cli("grade", str(root)).returncode, 1)
+        outcome = json.loads((root / "mechanical-results.json").read_text())[0]
+        self.assertFalse(outcome["checks"]["helper_batches_only_when_configured"])
+
     def native_resume_trace(self, owner_state, obligations):
         root = Path(self.directory.name) / "native-lifecycle"
         self.run_cli("prepare", str(root), "--cases", "runner-native-resume")

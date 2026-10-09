@@ -52,8 +52,11 @@ Record the actual supported operations in
 - Owners: launch, inspect, message, collect results, close/archive, and resume.
   Record whether their workspaces are shared, isolated, or selectable.
 - Helpers: invocation and collection, whether they block their caller, and
-  whether they can receive follow-up messages. A blocking helper is not an
-  independently addressable owner.
+  whether they can receive follow-up messages. In `invoke`/`collect`, describe
+  the verified concurrent-invocation mechanism and any known limits, including
+  whether the caller waits for a batch. Record unavailable or unverified
+  concurrency in `limitations`. Blocking the caller does not establish whether
+  helper calls can overlap, and a blocking helper is not an independent owner.
 - Skills: loading and the supported way to pass relevant instructions to an
   owner or helper. Record baseline shared skills when the user's guidance
   establishes them. Neither orchestration skill belongs in that list.

@@ -5,7 +5,7 @@ does not launch agents, call customer services, or publish anything. The
 candidate must execute the request; generating fixtures or grading untouched
 files is not a behavioral evaluation.
 
-The first suite uses six existing prompts:
+The suite includes the original six prompts and two coordinator-helper cases:
 
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |
@@ -15,6 +15,8 @@ The first suite uses six existing prompts:
 | `runner-authorization` | Runner 2 | Keep unrelated work moving, reserve the occupied runtime, ask about indirect deployment, and perform no unauthorized publication. Confirm presentation or explicitly hold selection and HTML writes. |
 | `runner-closure` | Runner 3 | Retain B's proof and update status before actual closure; leave idle A open while required CI runs. |
 | `runner-native-resume` | Runner 5 | Restore native context and stable IDs, retrieve missing proof, preserve corrections, and claim no new closure when unsupported. |
+| `runner-parallel-helpers` | Runner 6 | Automatically batch independent report assessments and scoped follow-ups; incorporate returned proof once while the coordinator owns status and authorization. |
+| `runner-no-helpers` | Runner 7 | Coordinate directly when bounded helpers are absent; do not invent capability or replacement owners. |
 
 ## Prepare and execute
 
@@ -73,8 +75,16 @@ runtime release is unconfirmed and records an unfinished obligation. Inspect
 that obligation's meaning manually; a nonempty list alone does not prove it
 names the required release. Unsupported closure does not imply completed work.
 
+The helper cases evaluate the candidate coordinator's delegation decisions,
+briefs, proof use and status updates. `invoke-helpers` is a stub batch endpoint;
+it returns literal reports and records specified follow-ups, not real helper
+agent executions or measured concurrency. Inspect briefs for separate scopes,
+skill propagation and retained coordinator authority, and inspect replies for
+truthful blocking behavior. An unavailable batch can still execute in the mock
+so the grader rejects attempted use rather than the mock preventing the mistake.
+
 Retain `suite.json`, instruction and harness snapshots, requests, traces,
-replies, state, and both verdicts. Report the six case outcomes separately from
+replies, state, and both verdicts. Report each executed case separately from
 the existing 15 JSON/dashboard contract tests. One sample per case establishes
 only that observed run, not reliability across models or live integrations.
 

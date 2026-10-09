@@ -87,6 +87,23 @@ Choose one completion mechanism per owner, such as a reply or a wait/join;
 do not double-collect merely to obtain the same report. An idle owner may be
 waiting for input, not finished. Route findings and follow-up fixes to its owner.
 
+When several substantial coordination jobs are independent, automatically use
+bounded helpers concurrently through the configured mechanism. For example,
+helpers can assess different owners' incoming proof or send scoped follow-ups
+to those existing owners. Handle simple status updates yourself. Helpers assist
+the coordinator; they do not become ticket owners or additional coordinators.
+
+Give each helper a separate owner/evidence scope, existing receipts, allowed
+follow-ups, and the briefing/skill instructions from step 2. Keep authorization,
+cross-ticket conflicts, resource allocation, and the status/dashboard writes with
+the coordinator. Collect proof-backed findings, actual follow-up results, and
+remaining decisions, then incorporate them once using step 4's proof rules.
+
+Use verified helper capabilities: concurrent calls may overlap while their caller
+still waits for the batch. Claim background responsiveness only when the harness
+supports it. If helpers or concurrent invocation are unavailable, coordinate
+directly; record a material limitation without holding unrelated owner work.
+
 Resolve ordinary technical blockers and owner disagreements with evidence.
 Escalate unresolved scope, expected behavior, or acceptable-risk choices, and
 shared actions outside granted approval. Pause affected work while independent
