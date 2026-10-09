@@ -23,6 +23,7 @@ FILES = {
     "docs/GLOSSARY.md": "# Glossary\n\n**Order**:\nA purchase a customer places.\n\n"
                         "**Invoice**:\nThe bill for one order.\n\n**Fee**:\nA charge added to an order.\n",
     "docs/adr/001-free-shipping.md": "# Free shipping above 100\n",
+    "docs/executable-policy.yaml": "free_shipping_minimum: 99.99\n",
     "services/orders/package.json": '{"name": "orders"}\n',
     "services/orders/src/shipping.ts": "export function fee(total: number) {\n  if (total >= 99.99) return 0;\n"
                                        "  return 4.95;\n}\n",
@@ -91,6 +92,14 @@ class BrEndToEnd(unittest.TestCase):
         run = json.loads((self.work / "run.json").read_text())
         self.assertEqual(run["links"]["file"], "https://github.com/acme/shop/blob/{commit}/{path}")
 
+        # Changes after init cannot acquire citations to the old commit.
+        (self.repo / "infra/deploy.ts").write_text("changed again\n")
+        self.assertIn("Source changed", self.w("survey", ok=False).stderr)
+        git(self.repo, "checkout", "--", "infra/deploy.ts")
+        git(self.repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-qm", "moved")
+        self.assertIn("Source changed", self.w("survey", ok=False).stderr)
+        git(self.repo, "checkout", "--detach", run["commit"])
+
         # survey drafts areas from package roots and top-level folders, leaving tests out.
         self.w("survey")
         draft = json.loads((self.work / "scope.draft.json").read_text())
@@ -125,6 +134,14 @@ class BrEndToEnd(unittest.TestCase):
         codes = {a["id"]: a["code"] for a in scope["areas"]}
 
         # partition owns every in-scope file exactly once and renders prompts and the brief.
+        nested_skip = {"id": "routing", "code": "RT", "title": "Routing", "tier": "skip",
+                       "paths": ["services/orders/src/routes.ts"], "summary": "Routing only."}
+        (self.work / "scope.json").write_text(json.dumps({**scope, "areas": scope["areas"] + [nested_skip]}))
+        self.w("partition")
+        self.assertNotIn("services/orders/src/routes.ts",
+                         [l for f in (self.work / "files").glob("W*.txt") for l in f.read_text().splitlines()])
+        (self.work / "scope.json").write_text(json.dumps(scope))
+        self.w("partition", "--force")
         out = self.w("partition").stdout
         self.assertIn("0 errors", out)
         owned = sorted(l for f in (self.work / "files").glob("W*.txt") for l in f.read_text().split())
@@ -165,6 +182,21 @@ class BrEndToEnd(unittest.TestCase):
         (self.work / "out" / "W2.json").write_text(json.dumps(w2))
         self.assertIn("0 errors", self.w("check").stdout)
 
+        for file, lines, role, message in (("missing.ts", "1", "decides", "tracked file"),
+                                           ("services/orders/src/shipping.ts", "2-99", "decides", "outside the file"),
+                                           ("services/orders/src/shipping.ts", "3-2", "decides", "outside the file"),
+                                           ("services/orders/src/shipping.ts", "2-3", "calls", "no deciding code")):
+            invalid = json.loads(json.dumps(w1))
+            invalid["areas"][0]["modules"][0]["rules"][0]["engineering"] = [
+                {"file": file, "lines": lines, "role": role}]
+            (self.work / "out" / "W1.json").write_text(json.dumps(invalid))
+            self.assertIn(message, self.w("check", ok=False).stdout)
+        duplicate = json.loads(json.dumps(w1))
+        duplicate["areas"][0]["modules"][1]["rules"] = [duplicate["areas"][0]["modules"][0]["rules"][0]]
+        (self.work / "out" / "W1.json").write_text(json.dumps(duplicate))
+        self.assertIn("area-unique key", self.w("check", ok=False).stdout)
+        (self.work / "out" / "W1.json").write_text(json.dumps(w1))
+
         # A module a reader skipped shows up as a coverage warning; an unknown stage is an error.
         dropped = json.loads(json.dumps(w1))
         dropped["areas"][0]["modules"].pop()
@@ -175,14 +207,39 @@ class BrEndToEnd(unittest.TestCase):
         self.assertNotEqual(self.w("check", ok=False).returncode, 0)
         (self.work / "out" / "W1.json").write_text(json.dumps(w1))
 
-        # The second read samples the flagged rule; its verdicts are applied at build.
+        # Build requires a complete second read, not merely parseable output.
+        self.assertIn("No second-read batches", self.w("build", ok=False).stderr)
+        (self.work / "verify" / "out99.json").write_text("[]")
         self.w("batches")
+        self.assertFalse((self.work / "verify" / "out99.json").exists())
         sampled = [x for f in (self.work / "verify").glob("in*.json") for x in json.loads(f.read_text())]
         self.assertIn("free-shipping", [x["key"] for x in sampled if not x.get("sample")])
-        (self.work / "verify" / "out1.json").write_text(json.dumps([
-            {"area": oid, "key": "free-shipping", "rule_verdict": "needs-revision",
-             "rule_revision": {"statement": "Orders of `99.99` or more ship free, before tax."},
-             "flags": [{"index": 0, "verdict": "refuted", "note": "The ADR was superseded."}]}]))
+        self.assertIn("Missing checker output", self.w("build", ok=False).stderr)
+        for batch in sorted((self.work / "verify").glob("in*.json")):
+            verdicts = []
+            for item in json.loads(batch.read_text()):
+                v = {k: item[k] for k in ("worker", "area", "key")}
+                v.update(rule_verdict="correct", rule_revision=None,
+                         flags=[{"index": i, "verdict": "confirmed"} for i in item["check_flags"]])
+                if item["key"] == "free-shipping":
+                    v.update(rule_verdict="needs-revision",
+                             rule_revision={"statement": "Orders of `99.99` or more ship free, before tax."},
+                             flags=[{"index": 0, "verdict": "refuted", "note": "The ADR was superseded."}])
+                verdicts.append(v)
+            batch.with_name(batch.name.replace("in", "out", 1)).write_text(json.dumps(verdicts))
+
+        output = self.work / "verify" / "out1.json"
+        good = json.loads(output.read_text())
+        for bad in ([], good + good, [{**good[0], "flags": []}, *good[1:]],
+                    [{**good[0], "rule_verdict": "unknown"}, *good[1:]]):
+            output.write_text(json.dumps(bad))
+            self.assertNotEqual(self.w("build", ok=False).returncode, 0)
+        output.write_text(json.dumps(good))
+        changed = json.loads(json.dumps(w1))
+        changed["areas"][0]["modules"][0]["rules"][0]["statement"] = "Changed after sampling."
+        (self.work / "out" / "W1.json").write_text(json.dumps(changed))
+        self.assertIn("changed after sampling", self.w("build", ok=False).stderr)
+        (self.work / "out" / "W1.json").write_text(json.dumps(w1))
 
         self.w("build")
         cat = json.loads((self.work / "build" / "catalogue.json").read_text())
@@ -192,6 +249,7 @@ class BrEndToEnd(unittest.TestCase):
         self.assertEqual(by_key["free-shipping"]["statement"], "Orders of `99.99` or more ship free, before tax.")
         self.assertEqual(by_key["free-shipping"]["flags"], [])
         self.assertEqual(cat["meta"]["verification"]["flags_removed"], 1)
+        self.assertEqual(cat["meta"]["verification"]["rules_checked"], 5)
         self.assertEqual(cat["glossary"], {"Order": "A purchase a customer places."})
         self.assertNotIn(iid, [a["id"] for a in cat["areas"] if a["tier"] == "skip"])
         self.assertEqual({a["id"] for a in cat["areas"]}, {oid, bid, did, iid})
@@ -222,6 +280,8 @@ class BrEndToEnd(unittest.TestCase):
 
         # Hosted delivery needs a recorded destination first.
         self.assertNotEqual(self.w("publish-prep", ok=False).returncode, 0)
+        self.w("record", "--destination", "docstash")
+        self.assertNotEqual(self.w("publish-prep", ok=False).returncode, 0)
         self.w("record", "--destination", "docstash", "--audience", "private")
         out = self.w("publish-prep").stdout
         self.assertIn("audience: private", out)
@@ -233,6 +293,23 @@ class BrEndToEnd(unittest.TestCase):
         self.w("record", "--share-url", "https://example.com/catalogue")
         self.w("note", "--out", str(note_path))
         self.assertIn("https://example.com/catalogue", note_path.read_text())
+        self.assertIn("does not estimate the error rate among unchecked rules", note_path.read_text())
+
+        # Explicit policy files can override both unknown format and skipped-folder heuristics.
+        policy = {"id": "policy", "code": "PO", "title": "Policy", "tier": "business",
+                  "paths": ["docs/executable-policy.yaml"], "summary": "Executable policy."}
+        extra = {**scope, "areas": scope["areas"] + [policy], "include": ["docs/executable-policy.yaml"]}
+        (self.work / "scope.json").write_text(json.dumps(extra))
+        self.w("survey")
+        self.w("partition", "--force")
+        self.assertIn("docs/executable-policy.yaml",
+                      [l for f in (self.work / "files").glob("W*.txt") for l in f.read_text().splitlines()])
+        (self.work / "scope.json").write_text(json.dumps({**extra, "exclude": ["docs/executable-policy.yaml"]}))
+        self.w("partition", "--force")
+        self.assertNotIn("docs/executable-policy.yaml",
+                         [l for f in (self.work / "files").glob("W*.txt") for l in f.read_text().splitlines()])
+        (self.work / "scope.json").write_text(json.dumps(scope))
+        self.w("partition", "--force")
 
 
 class BrHelpers(unittest.TestCase):

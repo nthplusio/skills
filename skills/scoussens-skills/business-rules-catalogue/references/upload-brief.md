@@ -51,11 +51,9 @@ Leave saving and sharing to the coordinator: call no `stash`,
 ## Upload a group
 
 `{WORK}/publish/plan.json` lists upload groups. Each item in your group has
-`file`, `payload` (a path), `prefix`, `suffix`, `placeholder` and `fnv`. Other
-workers upload other groups into the same app at the same time, and
-concurrent `edit_app` calls on one app can drop each other's edits. The
-template re-reads your files after writing and re-applies an edit that was
-dropped.
+`file`, `payload` (a path), `prefix`, `suffix`, `placeholder` and `fnv`.
+The coordinator is the sole writer. Complete one group before starting the
+next, because concurrent `edit_app` calls can drop each other's edits.
 
 Fill in the template from your group and send it as one `code_exec` call:
 
@@ -73,33 +71,24 @@ for (const f of prepared) {
   const h = fnv(f.content);
   if (h !== f.fnv) throw new Error(`hash mismatch before upload for ${f.file}: got ${h}, want ${f.fnv}`);
 }
-const readHash = async (f) => { try { const d = await read_document({ slug, file: f.file }); return { h: fnv(d.content || ""), isPlaceholder: (d.content || "").trim() === f.placeholder }; } catch (e) { return { h: "", err: String(e) }; } };
-const log = [];
-let attempts = 0;
-for (let round = 0; round < 8; round++) {
-  const todo = [];
-  for (const f of prepared) {
-    const r = await readHash(f);
-    if (r.h === f.fnv) continue;
-    if (r.isPlaceholder) todo.push(f); else log.push(`${f.file}: unexpected content (hash ${r.h}${r.err ? ", " + r.err : ""})`);
-  }
-  if (!todo.length) {
-    // Re-check a few times: a concurrent edit that started before ours can still land after it.
-    let stable = true;
-    for (let i = 0; i < 6 && stable; i++) for (const f of prepared) if ((await readHash(f)).h !== f.fnv) stable = false;
-    if (stable) break; else continue;
-  }
-  attempts++;
-  try { await edit_app({ slug, edits: todo.map((f) => ({ file: f.file, old_string: f.placeholder, new_string: f.content })), description: `Upload ${todo.map((f) => f.file).join(", ")}` }); }
-  catch (e) { log.push(`edit error: ${String(e).slice(0, 300)}`); }
-  for (let i = 0; i < round + 1; i++) await readHash(prepared[0]); // short back-off
+const readHash = async (f) => {
+  const d = await read_document({ slug, file: f.file });
+  return { h: fnv(d.content || ""), isPlaceholder: (d.content || "").trim() === f.placeholder };
+};
+const todo = [];
+for (const f of prepared) {
+  const r = await readHash(f);
+  if (r.h === f.fnv) continue;
+  if (!r.isPlaceholder) throw new Error(`${f.file}: unexpected content (hash ${r.h})`);
+  todo.push(f);
 }
+if (todo.length) await edit_app({ slug, edits: todo.map((f) => ({ file: f.file, old_string: f.placeholder, new_string: f.content })), description: `Upload ${todo.map((f) => f.file).join(", ")}` });
 const final = [];
 for (const f of prepared) final.push({ file: f.file, ok: (await readHash(f)).h === f.fnv });
-text({ final, attempts, log });
+text({ final });
 ```
 
-Reply with `final`, `attempts` and `log` for your files. If a file shows
-`ok: false` and the log says "unexpected content", stop and report it: that
-file holds something other than your placeholder or your content, and only
-the coordinator decides what to do with it.
+Reply with `final`. If a call fails, its write may still have landed. Re-read
+the group before retrying; the template skips content whose hash already
+matches. If a file has unexpected content, stop and report it rather than
+overwriting it. Only the coordinator decides what to do with that file.

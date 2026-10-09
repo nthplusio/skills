@@ -31,8 +31,11 @@ A run delivers:
 - the **saved scope**: the confirmed areas and reader assignments, so the next
   run skips discovery.
 
-Reading runs as parallel helpers: readers (step 4 sizes them), four checkers,
-and upload helpers when a host needs them. A large repository takes dozens.
+Partition readers by file ownership, then assign independent checkers. Use
+parallel helpers when available; otherwise run reader assignments sequentially
+and obtain the second read from another agent invocation or a human checker.
+The extractor cannot certify its own output as independently checked. Hold the
+final build when an independent checker is unavailable.
 
 ## The explorer is settled
 
@@ -52,9 +55,11 @@ a change.
 BR="python3 -B <this skill's folder>/scripts/br.py"
 ```
 
-It needs `git` and `python3`. `node` lets `publish-prep` prove the upload
-plan, and a browser tool covers step 7. Helpers must be able to run in
-parallel. Every command after `init` takes `--work <dir>`.
+It needs `git` and Python 3.9 or later. `node` lets `publish-prep` prove the
+upload plan, and a browser tool covers step 7. Resolve `<this skill's folder>`
+from the installed skill, not from the target repository's layout. Quote paths
+containing spaces; invoke `python3 -B "<skill>/scripts/br.py"` directly when
+the shell cannot expand `$BR` safely. Every command after `init` takes `--work`.
 
 ## Step 1 — Pin the commit
 
@@ -63,7 +68,10 @@ $BR init --repo <path inside the repository>
 ```
 
 `init` refuses uncommitted changes to tracked files, because every citation
-names a commit. It also:
+names a commit. Use a separate clean checkout when the user's working tree is
+dirty; leave their changes untouched. Survey, partition, check, batches and
+build also reject source changes after init. Readers and checkers read that
+same checkout. It also:
 - creates a work directory outside the repository, under
   `$XDG_STATE_HOME/business-rules/` by default, or at `--work`;
 - loads a saved scope from `<repo>/.business-rules/` or from `--scope-dir`;
@@ -95,19 +103,19 @@ an area, skipped ones included.
 
 ## Step 3 — Confirm scope and delivery at one checkpoint
 
-Read [references/destinations.md](references/destinations.md) and list the
-destinations you can deliver to from this session. Then send one message
-containing the scope table survey printed (area, tier, size, one-line reason),
-the stages, and up to three questions:
+If the user asked only where the business logic lives, ask for scope
+confirmation, report the confirmed scope and stop.
+
+For a catalogue run, read
+[references/destinations.md](references/destinations.md) and list the available
+destinations. Send one message containing the scope table survey printed
+(area, tier, size, one-line reason), the stages, and up to three questions:
 1. what to change in the scope;
-2. the explorer's destination and audience;
+2. local or published explorer, its location or provider, and its audience;
 3. where the note and the saved scope go.
 
 Ask only what the user has not already answered. Wait for the answers, then
 record them with `$BR record`.
-
-If the user asked only where the business logic lives, report the confirmed
-scope and stop.
 
 **Done when** the user has confirmed the scope, and each delivery choice is
 recorded or **held**: an unanswered destination means build locally and
@@ -129,7 +137,7 @@ reader.
 
 ## Step 5 — Read
 
-Launch every reader in one parallel batch, each with this prompt:
+Launch the reader assignments, in parallel when available, with this prompt:
 
 ```text
 You are reader W3. Read <work>/prompts/W3.md and follow it exactly.
@@ -149,13 +157,18 @@ through a reader.
 - every rule flagged *contradicts docs* or *inconsistent*;
 - five unflagged rules per reader, chosen at random.
 
-Launch one checker per batch, each with this prompt:
+Assign each batch to a checker who did not extract its rules, with this prompt:
 
 ```text
 You are checker N. Read <work>/verify/VERIFY.md and follow it exactly. Your input is <work>/verify/inN.json; write <work>/verify/outN.json.
 ```
 
-**Done when** every `outN.json` parses. `build` applies the verdicts.
+**Done when** every `outN.json` covers its input exactly once, including every
+requested flag verdict. Empty batches take `[]`. `build` rejects missing,
+duplicate, mismatched or invalid verdicts and applies accepted corrections.
+Changing reader output requires re-running batches and the second read;
+`batches` clears old checker outputs. Report the checked counts, not an
+estimated error rate among unchecked rules.
 
 ## Step 7 — Build and inspect
 
@@ -176,8 +189,20 @@ In each state, check three things:
 Inspect every screenshot. Reload after a rebuild, because browsers keep the
 old files.
 
-**Done when** all five states pass and the screenshots are in
-`<work>/shots/`.
+Verify review behavior on both `site/` and `bundle.html`. Enter a reviewer,
+mark a rule Wrong, type a correction and export immediately as JSON, CSV and
+Markdown. Each export must contain the latest text. Type on one rule and
+navigate immediately; reload and confirm the note stayed with that rule.
+Import JSON, confirm newer reviews win and older ones leave local corrections
+unchanged, and reject another commit or malformed review. Walk the tree with
+arrow keys and operate export/import by keyboard. Confirm citation URLs name
+the pinned commit. Use states present in this catalogue; when no flag exists,
+inspect an unflagged rule and state why the flagged/filter cases do not apply.
+
+**Done when** the applicable visual states and review checks pass, screenshots
+are inspected and retained at a user-accessible location, and failures or
+unavailable browser checks are named. See the repeatable checks in
+[references/verification.md](references/verification.md).
 
 ## Step 8 — Write the note
 
