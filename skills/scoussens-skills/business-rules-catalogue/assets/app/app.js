@@ -385,8 +385,8 @@
       against the code: ${v.rules_correct} correct as written, ${v.rules_revised} needing a correction and
       ${v.rules_removed} wrong. Of ${plural(v.flags_checked, "flag")} re-checked, ${v.flags_confirmed} held,
       ${v.flags_revised} were reworded and ${v.flags_removed} were removed.</p>
-      <p>In the re-checked set, ${Math.round((100 * v.rules_revised) / v.rules_checked)}% of rules needed a correction;
-      expect a similar share among the rest. Finding those is what this review is for. Rules marked <span class="pill okpill">Second read ✓</span> have been re-checked.
+      <p>The checked set includes a targeted review of flagged rules and a random sample of unflagged rules.
+      It does not estimate the error rate among unchecked rules. Rules marked <span class="pill okpill">Second read ✓</span> have been re-checked.
       <span class="pill inferredpill">Inferred</span> means the reader had to infer the rule across calls they did
       not fully trace.</p></div>`;
   }
