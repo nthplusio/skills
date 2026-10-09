@@ -45,16 +45,18 @@ Fill [`assets/discovery.template.json`](assets/discovery.template.json).
 Each harness entry records the observation time, inspected sources, and:
 
 - Owners. Describe launch, inspect, message, collect, close/archive, and resume.
-  Record shared, isolated, or selectable workspaces. Describe pending user-input
-  visibility, human-only gates, whether messages answer or queue, and direct
-  conversation links or navigation by handle.
+  Record shared, isolated, or selectable workspaces. Distinguish passive state
+  and conversation reads from operations that wake owners or request reports.
+  Describe pending user-input visibility, human-only gates, whether messages
+  answer or queue, and direct conversation links or navigation by handle.
 - Helpers. Describe invocation, collection, caller blocking, and follow-up.
   Record the verified concurrent-invocation mechanism and its limits. A blocking
   batch may overlap helper calls while still holding the coordinator. Blocking
   alone establishes neither concurrency nor independent ownership.
 - Monitoring. Describe notification coverage and lifetime, bounded waits with
   timeout arguments and caller behavior, and wake after the coordinator yields.
-  Keep inspection separate from completion collection. Record any authorization
+  Distinguish native notifications from owner-authored status messages. Keep
+  inspection separate from completion collection. Record any authorization
   requirement and whether monitoring requires an active turn or manual resume.
 - Skills. Describe loading and instruction propagation. Shared skill choices
   belong to setup, including any baseline required by repository/user guidance.

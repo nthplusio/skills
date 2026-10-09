@@ -233,8 +233,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
         self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
         self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: the user chose leaf labels; local formatting only."}')
-        self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Continue the rest of your existing local assignment."}')
-        self.run_cli("call", str(case), "message", '{"owner":"ui-owner","text":"Continue your independent assignment."}')
+        self.run_cli("call", str(case), "inspect", '{"owner":"ui-owner"}')
         status["decisions"] = [item for item in status["decisions"] if item["id"] != "Q4"]
         for item in status["decisions"]:
             owner = {"Q1": "fixture-coordinator", "Q2": "hierarchy-owner", "Q3": "runtime-owner"}[item["id"]]
@@ -247,6 +246,10 @@ class BehaviorHarnessTests(unittest.TestCase):
         self.run_cli("call", str(case), "render")
         self.run_cli("call", str(case), "reply", '{"text":"Q1-Q3 remain pending; Q4 was relayed once."}')
         self.assertEqual(self.run_cli("grade", str(root)).returncode, 0)
+        self.run_cli("call", str(case), "message", '{"owner":"ui-owner","text":"Send a routine progress update."}')
+        self.assertEqual(self.run_cli("grade", str(root)).returncode, 1)
+        checks = json.loads((root / "mechanical-results.json").read_text())[0]["checks"]
+        self.assertFalse(checks["independent_ui_owner_keeps_moving"])
         status["decisions"][2]["requires_human"] = False
         next(task for task in status["tasks"] if task["id"] == "API-102")["owner"]["state"] = "active"
         self.run_cli("call", str(case), "write", json.dumps({"path": status_path, "content": status}))

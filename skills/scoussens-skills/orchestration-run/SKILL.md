@@ -101,8 +101,9 @@ from setup and this run explicitly, excluding all three orchestration skills. Ow
 may load additional role-specific skills and use bounded helpers. Pass relevant
 instructions to those helpers too; do not assume inheritance or launch recursive
 coordinators. Use the harness's supported briefing mechanism if direct skill
-loading is unavailable. Include step 3's decision routing in owner briefs so
-owners can discuss ticket-local choices with the user and report the outcome.
+loading is unavailable. Include step 3's status collection and decision routing
+in owner briefs so owners can discuss ticket-local choices with the user and
+record the outcome in their own conversations.
 
 **Done when** run choices are confirmed, every assigned row is one ticket with
 one lifetime-bound owner, and each owner has a checkable finish
@@ -112,20 +113,28 @@ or proof lives.
 
 ## 3. Keep owners moving within authorization
 
-Use the configured inspection, messaging, and result-collection operations.
-Choose one completion mechanism per owner, such as a reply or a wait/join;
-collect each completion report once. Status inspection is a separate operation
-and continues even when completion arrives by reply.
+Own routine status collection. Owners implement their tickets and leave results
+and proof in their conversations or artifacts. Assign no heartbeat, reporting
+schedule, or promise to update the coordinator.
+
+Use configured passive inspection to read native activity and pending-input
+state first, then relevant conversation content when needed. An operation that
+wakes an owner or requests a report is a follow-up under cycle step 2, not passive
+inspection. Prefer passive result retrieval; when completion needs a reply or
+wait/join, choose one mechanism per owner and collect each result once. Status
+inspection continues independently of completion collection.
 
 ### Coordination cycle
 
-Select monitoring from the confirmed configuration. Use notifications for
+Select monitoring from the confirmed configuration. Use native notifications for
 prompt checks and a bounded wait for periodic scans. Without notifications,
 use timed inspection. Use a configured wake mechanism after the turn ends only
 within explicit authorization for scheduled or background monitoring. Otherwise
 keep the coordinator active through bounded waits. When neither continued
 execution nor an authorized wake is available, inspect once, record the manual
 resume limitation, and hand back the current snapshot.
+Owners raise genuine blockers and necessary questions through their normal
+workflow; they need not separately notify the coordinator.
 
 Use the confirmed run interval, falling back to setup's default when already
 confirmed for this run. Save the selected mechanism, interval, actual last check,
@@ -140,14 +149,17 @@ Repeat this cycle while assigned work or known obligations remain:
 1. Inspect every unfinished owner on startup/resume and at each scan deadline.
    On a notification, check the affected owner promptly. Include pending input,
    activity, blockers, and outstanding obligations. Reuse a fresh observation
-   from the same cycle; retrieve only new reports or changed evidence.
-2. Route findings and scoped next actions to the existing owner. An idle owner
-   with obligations needs a follow-up, not closure. For an active owner that
-   misses a promised update or check deadline, request a progress/blocker report
-   once and track the unanswered request. Unchanged status alone does not prove
-   a stall. Keep pending follow-ups visible rather than resending every scan.
-   Use the routing rules below for decisions and human-only gates; continue
-   unrelated work and escalate material problems with a recommendation.
+   from the same cycle; retrieve only new results or changed evidence. When
+   progress remains unclear, record it as unknown with the actual check time
+   while retaining observed activity. Silence or unchanged state alone does not
+   prove a stall.
+2. Route actionable findings and scoped next actions to the existing owner. An
+   idle owner with obligations is unfinished, not complete. Message an active
+   owner only when a specific fact missing after inspection prevents coordination
+   or concrete evidence of a problem requires intervention. Record that reason
+   before one scoped request. Keep unanswered follow-ups visible rather than
+   resending every scan. Use the routing rules below for decisions and human-only
+   gates; continue unrelated work and escalate material problems with a recommendation.
 3. Assess new proof under step 4, maintain the record and selected dashboard
    under step 5, and reconcile completion/closure under step 6. Record each
    owner's actual check time. Refresh the record and selected dashboard after
@@ -196,8 +208,9 @@ and link or harness handle. Surface several independent decisions together
 instead of serial blocking coordinator dialogs. The user can discuss a local
 choice in its owner thread or give quick answers by ID to the coordinator.
 Relay exact user answers to the discussion owner when the harness permits it.
-An owner can apply a local answer within existing authorization and report the
-answer, source and outcome; the user need not repeat it to the coordinator.
+An owner can apply a local answer within existing authorization and record the
+answer, source and outcome in its conversation for inspection; the user need
+not repeat it to the coordinator.
 Record the decision and scope once, and remove it from the pending queue.
 Answering changes the decision queue, not the owner's activity status. Update
 owner activity from inspected state or an actual progress report; a delivery

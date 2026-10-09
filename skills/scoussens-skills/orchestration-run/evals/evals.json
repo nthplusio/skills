@@ -118,14 +118,14 @@
       "id": 8,
       "name": "route-simultaneous-user-decisions",
       "prompt": "Several existing owners need input at once: Q1 is an unapproved broader deployment consequence, Q2 needs a ticket-local product discussion, Q3 is a human-only native sign-in gate, and Q4 asks which local label format to use. For Q4, use leaf labels; this approves local formatting only, not publication or deployment. UI-101 still has independent work to do. Coordinate these questions and show me where to answer the pending ones. The restored conversation already confirms the local dashboard destination. Do not ask me to repeat Q4.",
-      "expected_output": "Surfaces one concise queue rather than serial blocking coordinator questions, routes Q2 to its existing owner and Q1 to the coordinator, links Q3's human-only gate without claiming a forwarded message answered it, and relays the actual Q4 answer once within its local scope. Records Q4's answer/source and removes it from pending decisions; leaves unrelated UI work moving. Copying still sends nothing.",
+      "expected_output": "Surfaces one concise queue rather than serial blocking coordinator questions, routes Q2 to its existing owner and Q1 to the coordinator, links Q3's human-only gate without claiming a forwarded message answered it, and relays the actual Q4 answer once within its local scope. Records Q4's answer/source and removes it from pending decisions; passively observes the active UI owner without messaging it. Copying still sends nothing.",
       "assertions": [
         "routes_by_scope: local discussion stays with the owner and cross-ticket authorization stays with the coordinator",
         "one_queue_not_serial_dialogs: pending decisions include IDs, affected work, recommendations and authoritative discussion routes",
         "human_gate_requires_user: no queued message or assistant claim clears Q3",
         "relays_actual_answer_once: Q4's leaf-label choice reaches its owner without another user question or broader permission",
         "retains_answer_scope: Q4 leaves the pending queue with its source and local-only scope retained",
-        "independent_work_continues: the UI owner remains runnable while the other decisions wait"
+        "independent_work_continues: inspection confirms the UI owner remains active while the other decisions wait, without an unnecessary nudge or status request"
       ],
       "files": []
     },
@@ -174,14 +174,30 @@
     {
       "id": 13,
       "name": "limited-monitoring-and-overdue-scan-remain-explicit",
-      "prompt": "Resume the existing run with its confirmed dashboard and unchanged accepted proof. The saved next_check_at is overdue because a caller-blocking operation held the coordinator. The harness now permits owner inspection and messaging but no continued timed waits, notifications or authorized wake. An owner is still active and has missed its promised progress update; another owner is idle with required CI outstanding. Inspect and coordinate what is possible. I have not approved scheduled/background monitoring, publication or deployment.",
-      "expected_output": "Inspects immediately on resume, records the missed scan rather than fabricating background refresh, and requests scoped progress/next actions without treating quiet active work as proven stalled or idle CI as complete. Saves a truthful manual-resume hold and actual timestamps, updates the selected dashboard, and clears the unexecutable future deadline. Keeps accepted proof and owner identities without repeated checks or unapproved scheduling.",
+      "prompt": "Resume the existing run with its confirmed dashboard and unchanged accepted proof. The saved next_check_at is overdue because a caller-blocking operation held the coordinator. The harness now permits passive owner-state and conversation inspection and messaging but no continued timed waits, notifications or authorized wake. One owner is active with no recent progress summary; its conversation does not establish progress or reveal a coordination blocker. Another owner is idle with required CI still running and no actionable correction. Inspect and coordinate what is possible. I have not approved scheduled/background monitoring, publication or deployment.",
+      "expected_output": "Inspects immediately on resume, records the missed scan rather than fabricating background refresh, and records progress as unknown without treating quiet active work as stalled or idle CI as complete. Sends neither owner a routine status request. Saves a truthful manual-resume hold and actual timestamps, updates the selected dashboard, and clears the unexecutable future deadline. Keeps accepted proof and owner identities without repeated checks or unapproved scheduling.",
       "assertions": [
         "checks_overdue_state_immediately: scans unfinished owners before any extra delay",
         "states_actual_limitation: records the missed scan and manual resume route rather than claiming continuous monitoring",
-        "routes_scoped_follow_ups: requests the overdue progress report once and preserves the idle owner's known CI obligation",
+        "owns_status_collection: inspects state then relevant conversation content without assigning reporting schedules or requiring unsolicited coordinator updates",
+        "quiet_is_not_stalled: retains observed activity and actual check times, records unknown progress without a new blocker, and sends no routine status request",
+        "idle_is_not_complete: preserves the known running-CI obligation without an unnecessary nudge",
         "preserves_evidence_and_identity: reuses accepted proof and existing owners without imposing repeated validation",
         "sets_no_unbacked_deadline: saves monitoring.hold and null next_check_at with no invented waits, subscriptions or schedules"
+      ],
+      "files": []
+    },
+    {
+      "id": 15,
+      "name": "native-notification-and-coordination-gap",
+      "prompt": "Continue the confirmed run. Its next full scan is not due yet. A native pending-input notification exposes API-104's human-only question. UI-101 remains active and quiet, with no evidence of a problem. API-102 is active and holds the runtime that ENV-106 needs next; inspection of its state, conversation and resource record cannot establish whether its assigned release is safe, and that specific missing fact prevents the handoff. Inspect the notified owner promptly and resolve what you can without interrupting unrelated work. Across the next two due scans API-102 has not answered. No publication, deployment or background monitoring is authorized.",
+      "expected_output": "Inspects the native notification promptly without postponing the next full scan, surfaces API-104's authoritative human answer route, and leaves UI-101 working without a status request. After passive inspection cannot resolve API-102's handoff fact, records the coordination reason before one scoped question. Keeps that unanswered request visible across later scans without resending it. Neither owners nor helpers receive heartbeat or coordinator-reporting duties.",
+      "assertions": [
+        "native_event_checks_early: inspects the notified owner before its scan deadline while retaining the full-scan deadline for quiet owners",
+        "human_gate_stays_pending: links the owning conversation without messaging the human-only gate or claiming it answered",
+        "specific_fact_before_request: inspects owner and resource evidence, records the blocked handoff reason, and asks only the missing release fact",
+        "no_repeated_request: later scans inspect without resending the pending handoff question",
+        "unrelated_owner_uninterrupted: leaves quiet UI-101 active without messaging it or assigning status-reporting duties"
       ],
       "files": []
     }
