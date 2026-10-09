@@ -18,15 +18,13 @@
     <span id="progressLabel"></span>
     <span class="bar wide"><span id="progressBar"></span></span>
     <button id="nextUnreviewedTop" type="button">Next unreviewed</button>
-    <details class="menu" id="exportMenu">
-      <summary>Export / import</summary>
-      <div class="menu-body">
-        <button type="button" data-export="csv">Export CSV</button>
-        <button type="button" data-export="md">Export Markdown</button>
-        <button type="button" data-export="json">Export JSON</button>
-        <label class="filebtn">Import JSON<input id="importFile" type="file" accept="application/json,.json"></label>
-      </div>
-    </details>
+    <button id="exportToggle" type="button" popovertarget="exportMenu">Export / import</button>
+    <div class="menu-body" id="exportMenu" popover>
+      <button type="button" data-export="csv">Export CSV</button>
+      <button type="button" data-export="md">Export Markdown</button>
+      <button type="button" data-export="json">Export JSON</button>
+      <label class="filebtn">Import JSON<input id="importFile" type="file" accept="application/json,.json"></label>
+    </div>
     <span id="toast" class="toast" role="status"></span>
   </div>
 </header>

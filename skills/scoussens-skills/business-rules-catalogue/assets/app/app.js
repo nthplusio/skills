@@ -159,7 +159,7 @@
   function progressBar(ruleIds, cls) {
     const done = ruleIds.filter((id) => statusOf(id) !== "unreviewed").length;
     const pct = ruleIds.length ? Math.round((done / ruleIds.length) * 100) : 0;
-    return `<span class="bar ${cls || ""}" title="${done} of ${ruleIds.length} reviewed"><span style="width:${pct}%"></span></span>`;
+    return `<span class="bar ${cls || ""}" title="${done} of ${ruleIds.length} reviewed"><span style="inline-size:${pct}%"></span></span>`;
   }
   const dot = (ruleId) => `<span class="dot dot-${statusOf(ruleId)}" title="${esc(VERDICT_LABEL[statusOf(ruleId)])}"></span>`;
   // Stage colours come from a fixed palette by position, so any repository's stages get distinct colours.
@@ -210,7 +210,7 @@
     const done = RULES.filter((r) => statusOf(r.id) !== "unreviewed").length;
     $("#totals").textContent = `${plural(total, "rule")} · ${plural(META.counts.flags || 0, "flag")}`;
     $("#progressLabel").textContent = `Reviewed ${done}/${total}`;
-    $("#progressBar").style.width = `${total ? (done / total) * 100 : 0}%`;
+    $("#progressBar").style.inlineSize = `${total ? (done / total) * 100 : 0}%`;
   }
   function renderBanner() {
     const loaded = D.loaded || [];
@@ -233,17 +233,17 @@
     const note = s.note;
     const entries = s.entries || [];
     const title = s.description + (entries.length ? `\nEntry points: ${entries.join(" · ")}` : "");
-    const dags = entries.length ? `<div class="dags" title="Entry points">${entries.map(esc).join("<br>")}</div>` : "";
+    const dags = entries.length ? `<div class="dags" title="Entry points">${entries.map((entry) => esc(entry).replace(/([/_])/g, "$1<wbr>")).join("<br>")}</div>` : "";
     return `<div class="stagecell ${extraClass || ""}"><button type="button" class="stagebox ${stageClass(stageId)}${active}" data-stage="${esc(stageId)}" title="${esc(title)}" aria-pressed="${!!active}">
       <span class="stagelabel">${esc(s.label)}</span>
       <span class="stagecounts">${plural(ids.length, "rule")} · ⚑${countFlagged(ids)}</span>
-      ${progressBar(ids)}${loop}${note ? `<span class="lanenote">${esc(note)}</span>` : ""}</button>${extraClass ? "" : dags}</div>`;
+      ${progressBar(ids)}<span class="stageextra">${loop}${note ? `<span class="lanenote">${esc(note)}</span>` : ""}</span></button>${extraClass ? "" : dags}</div>`;
   }
   function renderMap() {
     const main = MAP_ORDER.map((id, i) => (i ? `<div class="arrow" aria-hidden="true">→</div>` : "") + stageBox(id)).join("");
     const lanes = SIDE_STAGES.map((s) => {
       const from = Math.max(0, MAP_ORDER.indexOf(s.laneFrom));
-      return `<div class="lane" style="margin-left: calc(${from} * (100% / ${MAP_ORDER.length || 1}))">${stageBox(s.id, "lanebox")}</div>`;
+      return `<div class="lane" style="margin-inline-start: calc(${from} * (100% / ${MAP_ORDER.length || 1}))">${stageBox(s.id, "lanebox")}</div>`;
     }).join("");
     const bands = BAND_STAGES.map((s) => `<div class="band">${stageBox(s.id, "bandbox")}</div>`).join("");
     $("#map").innerHTML = `<div class="mapgrid">
@@ -293,7 +293,7 @@
     const glyph = hasKids ? `<span class="glyph" aria-hidden="true">${open ? "⊟" : "⊞"}</span>` : `<span class="glyph-space"></span>`;
     const cls = ["node", `node-${n.type}`, isSelected(n) ? "selected" : "", state.focus === n.id ? "focused" : ""].join(" ");
     out.push(`<div class="${cls}" role="treeitem" id="tn-${esc(cssId(n.id))}" data-node="${esc(n.id)}" aria-level="${depth + 1}"` +
-      (hasKids ? ` aria-expanded="${open}"` : "") + ` aria-selected="${isSelected(n)}" style="padding-left:${depth * 16 + 6}px">` +
+      (hasKids ? ` aria-expanded="${open}"` : "") + ` aria-selected="${isSelected(n)}" style="padding-inline-start:${depth + .375}rem">` +
       `${glyph}<span class="label">${nodeLabel(n)}</span><span class="badges">${nodeBadges(n)}</span></div>`);
     if (open) n.children.forEach((c) => renderNode(c, depth + 1, out));
   }
@@ -385,8 +385,8 @@
       against the code: ${v.rules_correct} correct as written, ${v.rules_revised} needing a correction and
       ${v.rules_removed} wrong. Of ${plural(v.flags_checked, "flag")} re-checked, ${v.flags_confirmed} held,
       ${v.flags_revised} were reworded and ${v.flags_removed} were removed.</p>
-      <p>In the re-checked set, ${Math.round((100 * v.rules_revised) / v.rules_checked)}% of rules needed a correction;
-      expect a similar share among the rest. Finding those is what this review is for. Rules marked <span class="pill okpill">Second read ✓</span> have been re-checked.
+      <p>The checked set includes a targeted review of flagged rules and a random sample of unflagged rules.
+      It does not estimate the error rate among unchecked rules. Rules marked <span class="pill okpill">Second read ✓</span> have been re-checked.
       <span class="pill inferredpill">Inferred</span> means the reader had to infer the rule across calls they did
       not fully trace.</p></div>`;
   }
@@ -564,7 +564,7 @@
     afterReviewChange(id);
     const note = $("#note");
     if (note && reviews[id] && (reviews[id].verdict === "wrong" || reviews[id].verdict === "unsure") && !note.value) {
-      note.scrollIntoView({ block: "center", behavior: "smooth" });
+      note.scrollIntoView({ block: "center" });
       note.focus({ preventScroll: true });
     }
   }
@@ -572,15 +572,16 @@
     const id = state.sel.id;
     const prev = reviews[id] || { verdict: "" };
     reviews[id] = { verdict: prev.verdict || "", note, reviewer: reviewer || prev.reviewer || "", at: new Date().toISOString() };
-    afterReviewChange(id, true);
+    if (!reviews[id].verdict && !note) delete reviews[id];
+    saveReviews();
+    $("#saved").innerHTML = savedText(reviews[id]);
   }
-  function afterReviewChange(id, quiet) {
+  function afterReviewChange(id) {
     saveReviews();
     renderHeader();
     renderMap();
     if (state.filters.status) recomputeMatches();
     renderTree();
-    if (quiet) { $("#saved").innerHTML = savedText(reviews[id]); return; }
     document.querySelectorAll("[data-verdict]").forEach((b) => {
       const on = reviews[id] && reviews[id].verdict === b.dataset.verdict;
       b.classList.toggle("on", !!on);
@@ -648,7 +649,7 @@
       lines.push(`## ${label}`, "");
       group.forEach((r) => {
         const m = moduleById.get(r.m) || {};
-        lines.push(`### ${r.id} ${r.t}`, "", `Module: \`${m.package}/${m.path}\``, "", `> ${String(r.s).replace(/\n/g, "\n> ")}`, "");
+        lines.push(`### ${r.id} ${r.t}`, "", `Module: \`${m.path}\``, "", `> ${String(r.s).replace(/\n/g, "\n> ")}`, "");
         lines.push(`**Reviewer note:** ${reviews[r.id].note || "(none)"}`, "");
         if ((r.fl || []).length) lines.push(`**Flags:** ${flagText(r)}`, "");
       });
@@ -656,22 +657,30 @@
     download(`${fileBase()}.md`, lines.join("\n"), "text/markdown;charset=utf-8");
   }
   function exportJSON() {
-    const body = { reviewer, exportedAt: new Date().toISOString(), commit: META.commit, reviews };
+    const body = { reviewer, exportedAt: new Date().toISOString(), project: PROJECT.slug, commit: META.commit, reviews };
     download(`${fileBase()}.json`, JSON.stringify(body, null, 2), "application/json");
   }
   function importJSON(file) {
     file.text().then((text) => {
       const parsed = JSON.parse(text);
-      if (parsed.commit && META.commit && parsed.commit !== META.commit) {
-        toast(`Not imported: that file reviews commit ${String(parsed.commit).slice(0, 9)}, this catalogue is commit ${COMMIT_SHORT}, and rule IDs differ between commits.`);
+      if (parsed.commit !== META.commit || (parsed.project && parsed.project !== PROJECT.slug)) {
+        toast("Not imported: use a JSON export from this project and commit. Rule IDs differ between catalogues.");
         return;
       }
-      const incoming = parsed.reviews || parsed;
+      const incoming = parsed.reviews;
+      if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) throw new Error("Invalid reviews");
+      const entries = Object.entries(incoming);
+      if (entries.some(([id, r]) => !ruleById.has(id) || !r ||
+        !["", ...VERDICTS].includes(r.verdict) || typeof r.note !== "string" ||
+        typeof r.reviewer !== "string" || typeof r.at !== "string" || !Number.isFinite(Date.parse(r.at)))) {
+        throw new Error("Invalid review entry");
+      }
       let n = 0;
-      Object.keys(incoming).forEach((id) => {
-        const r = incoming[id];
-        if (!r || typeof r !== "object") return;
-        if (!reviews[id] || String(r.at || "") > String(reviews[id].at || "")) { reviews[id] = r; n++; }
+      entries.forEach(([id, r]) => {
+        if (!reviews[id] || Date.parse(r.at) > Date.parse(reviews[id].at)) {
+          reviews[id] = { verdict: r.verdict, note: r.note, reviewer: r.reviewer, at: r.at };
+          n++;
+        }
       });
       saveReviews();
       toast(`Imported ${n} review${n === 1 ? "" : "s"}`);
@@ -744,7 +753,6 @@
     let t;
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   }
-  const saveNoteDebounced = debounce((v) => setNote(v), 500);
   const isTyping = (el) => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 
   function onDetailClick(e) {
@@ -783,7 +791,7 @@
     chip.setAttribute("aria-expanded", "true");
     const term = chip.dataset.term;
     const def = GLOSSARY[term];
-    box.innerHTML = `<div class="termbox"><b>${esc(term)}</b>: ${def ? rich(def) : `<span class="muted">No definition in CONTEXT.md.</span>`}</div>`;
+    box.innerHTML = `<div class="termbox"><b>${esc(term)}</b>: ${def ? rich(def) : `<span class="muted">No definition in the project glossary.</span>`}</div>`;
   }
   function onGlobalKey(e) {
     if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -796,7 +804,7 @@
     $("#tree").addEventListener("keydown", onTreeKey);
     $("#tree").addEventListener("focus", () => { if (!state.focus) { state.focus = visibleNodeIds()[0]; renderTree(); } });
     $("#detail").addEventListener("click", onDetailClick);
-    $("#detail").addEventListener("input", (e) => { if (e.target.id === "note") saveNoteDebounced(e.target.value); });
+    $("#detail").addEventListener("input", (e) => { if (e.target.id === "note") setNote(e.target.value); });
     $("#detail").addEventListener("keydown", (e) => { if (e.target.id === "namePromptInput" && e.key === "Enter") saveNameFromPrompt(); });
     $("#map").addEventListener("click", (e) => {
       const b = e.target.closest("[data-stage]");
@@ -813,9 +821,9 @@
     $("#nextUnreviewedTop").addEventListener("click", () => navigate("unreviewed"));
     document.querySelectorAll("[data-export]").forEach((b) => b.addEventListener("click", () => {
       ({ csv: exportCSV, md: exportMarkdown, json: exportJSON })[b.dataset.export]();
-      $("#exportMenu").open = false;
+      $("#exportMenu").hidePopover();
     }));
-    $("#importFile").addEventListener("change", (e) => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ""; $("#exportMenu").open = false; });
+    $("#importFile").addEventListener("change", (e) => { if (e.target.files[0]) importJSON(e.target.files[0]); e.target.value = ""; $("#exportMenu").hidePopover(); });
     document.addEventListener("keydown", onGlobalKey);
     window.addEventListener("hashchange", () => { readHash(); refreshAll(); });
   }
