@@ -1,54 +1,159 @@
 {
   "skill_name": "optimize-ci",
-  "note": "All evals are EVALUATE mode and READ-ONLY: a run that edits a workflow, changes a setting, or starts paid work without asking fails regardless of its report. Evals 0 and 1 run in a checkout of nthplusio/nthplus-platform; eval 2 runs in a checkout of nthplusio/skills. Timings drift as the test suites grow, so assertions grade structure and contracts, never exact durations. Ground truth for 0 and 1 is the comment block in that repository's .github/workflows/ci.yml, which records why each contract exists.",
+  "note": "Evaluate mode is read-only; design mode may propose but not apply. All scenarios use checked-in fixtures, not live repositories or hosted accounts. Fixture facts are synthetic unless explicitly marked otherwise. Grade observable decisions, not report layout or exact durations.",
   "evals": [
     {
       "id": 0,
       "name": "latency-with-a-deploy-gate",
-      "prompt": "our PR checks take like half an hour now and it's killing us. can you figure out where the time actually goes and what we should do about it? don't change anything yet, I just want the analysis",
-      "expected_output": "An evaluation that finds nearly all pull-request latency inside the single `pnpm verify` step of the `verify` job, with setup and install bounded at a few percent, so caching is ruled out as the main lever. It reads the required check from the repository ruleset (not classic protection, which is empty) and names Railway's wait on the main commit's check suite as the reason main runs must not be cancelled and `migrate` must keep its `needs: verify` edge. Any proposal to split or shard the suite keeps a check named `verify`, and the report separates measured figures from estimates.",
+      "prompt": "Our PR checks take a while. Use the supplied evidence to explain the bottleneck and worthwhile options. Do not change anything.",
+      "expected_output": "Finds the dominant verify test step, distinguishes measured evidence from estimates, and preserves named required-check and deployment dependencies.",
       "assertions": [
-        "makes_no_changes: does not edit any file, workflow, or hosted setting, and asks before running `pnpm verify` or any install",
-        "locates_time_inside_the_verify_step: attributes the large majority of PR elapsed time to the one `pnpm verify` step rather than to setup, install, or `migrate`",
-        "bounds_setup_and_caching: states that checkout, setup and install together are a small share of the run, so caching or install changes cannot explain more than that share",
-        "reads_required_checks_from_the_ruleset: reports `verify` as required via a ruleset and does not conclude there are no required checks from classic protection alone",
-        "keeps_main_runs_uncancelled: does not recommend cancelling in-progress runs on main, and if concurrency is discussed, names the Railway check-suite gate as why main is exempt",
-        "keeps_migrate_ordered_after_verify: does not propose moving `migrate` to another workflow, dropping its `needs: verify`, or requiring it as a status check",
-        "preserves_the_verify_check_name: any sharding or job-split proposal keeps an aggregate check named `verify` or explicitly states the ruleset must change in the same authorised operation",
-        "does_not_resurrect_removed_work: does not recommend removing mutation testing, advisory coverage, or a nightly run, all of which the workflow records as already removed",
-        "separates_pr_and_push_runs: reports pull_request and push runs as separate run classes rather than one pooled baseline",
-        "labels_estimates: every saving is presented as measured, an upper bound, or an explicit estimate"
+        "no_changes_or_paid_actions: makes no edits, installs, or hosted changes",
+        "dominant_step: identifies pnpm verify as the primary latency contributor",
+        "ruleset_authority: uses ruleset evidence rather than empty classic protection",
+        "preserves_deploy_edges: retains verify identity and migrate ordering because Railway consumes the suite",
+        "separates_run_classes: does not pool PR and push evidence",
+        "labels_savings: distinguishes measured, bounded, and estimated savings"
       ],
-      "files": []
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/latency-deploy.md"
+      ]
     },
     {
       "id": 1,
       "name": "minutes-not-latency",
-      "prompt": "we're on a private repo and our GitHub Actions minutes bill keeps climbing. I care about the bill here more than how fast PRs come back — where are the minutes going and what would actually reduce them?",
-      "expected_output": "An evaluation framed on runner and billed minutes rather than latency. It counts minutes across both run classes, including the push-to-main rerun and the reruns that strict up-to-date protection forces whenever main moves, and it warns that sharding or parallelising the test suite would cut latency while raising minutes. It names the push-to-main run's consumers (the Railway gate and `migrate`) before suggesting any change to it, distinguishes raw runner time from billed minutes, and does not quote per-OS rates from memory.",
+      "prompt": "Our private repo's Actions bill is rising. Use these evidence files to find consumption drivers; cost matters more than latency.",
+      "expected_output": "Frames the answer around attempts and billed minutes; counts push and strict-update reruns and names consumers before proposing to trim a run.",
       "assertions": [
-        "frames_on_consumption: leads with runner or billed minutes and treats latency as secondary, as the user asked",
-        "warns_parallelism_raises_minutes: states that sharding or parallelising the suite would increase runner minutes even though it shortens feedback",
-        "counts_strict_update_reruns: identifies that the ruleset's strict up-to-date policy makes open PRs rerun CI after main moves, and treats that as a consumption driver",
-        "names_consumers_of_the_main_run: before proposing to skip or trim the push-to-main run, names the Railway deploy gate and the `migrate` job as consumers",
-        "distinguishes_raw_from_billed: does not call raw runner time billed minutes, and notes per-job rounding to the whole minute",
-        "no_rates_from_memory: does not state a dollar or per-minute rate unless read from the account's billing data"
+        "consumption_first: prioritizes raw or billed minutes",
+        "strict_update_reruns: recognizes reruns after main advances",
+        "main_run_consumers: identifies Railway and migrate consumers",
+        "raw_vs_billed: distinguishes runner duration from per-job rounded billed time",
+        "parallelism_tradeoff: explains latency gains may raise total minutes",
+        "no_unsourced_rate: does not invent a price"
       ],
-      "files": []
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/minutes-consumption.md"
+      ]
     },
     {
       "id": 2,
       "name": "nothing-worth-changing",
-      "prompt": "can you audit the CI on this repo and tell me what we could speed up or cut?",
-      "expected_output": "A short evaluation concluding that CI is already fast and free: two jobs of roughly ten seconds each, running in parallel on a public repository whose standard hosted runners are not billed. It reads `validate` as required through classic protection with strict up-to-date on, and it respects the workflow comment that keeps `builder-agrees` a separate job so its network-dependent failures are never confused with the hermetic validator's. It recommends no change, or only changes it explicitly marks as negligible.",
+      "prompt": "Audit the supplied CI evidence. What should we speed up or cut?",
+      "expected_output": "Concludes that the three fast jobs on a public repo do not warrant churn, preserving validate and network-dependent builder-agrees separation.",
       "assertions": [
-        "concludes_little_to_gain: the verdict is that no change is worth making, or that any saving is seconds and not worth the churn",
-        "notes_public_repo_is_unbilled: states that standard hosted runners cost nothing on a public repository, so minute savings have no monetary value",
-        "keeps_builder_agrees_separate: does not recommend merging `validate` and `builder-agrees`, or if it raises the idea, cites the workflow's stated reason for keeping them apart",
-        "reads_classic_protection: reports `validate` as a required check via classic branch protection",
-        "does_not_invent_work: does not propose a cache, a matrix, path filters, or sharding as a meaningful improvement"
+        "little_to_gain: recommends no meaningful change",
+        "public_unbilled: correctly cites public hosted-runner economics in fixture",
+        "three_job_facts: uses the three fixture jobs, not the stale two-job claim",
+        "keeps_builder_separate: respects network-dependent failure isolation",
+        "no_invented_optimization: avoids meaningful cache, matrix, filter, or sharding claims"
       ],
-      "files": []
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/skills-ci.md"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "design-without-history",
+      "prompt": "Design an initial CI architecture for this new repository. There is no run history; give a practical design and a way to validate it.",
+      "expected_output": "Makes a deliberate design from the repository profile, marks unknowns, avoids fabricated measurements, and supplies staged validation and decision criteria.",
+      "assertions": [
+        "designs_despite_no_history: proposes a coherent initial event/task/gate design",
+        "profile_drives_choices: adapts to small team, release and assurance needs",
+        "no_fabricated_measurements: labels estimates and unknowns",
+        "event_gate_contracts: names event, tested revision, gate and artifact identity",
+        "exact_native_commands: proposed invocations use the fixture's actual npm script names, including any generated matrix commands",
+        "revision_matches_checkout: stated tested revisions agree with the proposed provider event and checkout, or remain explicitly unresolved until provider choice",
+        "validation_plan: proposes collecting a baseline and revisiting decisions",
+        "simplicity_tradeoff: avoids unjustified platform or component complexity"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/no-history.md"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "shared-runner-saturation",
+      "prompt": "PR feedback is slow. Diagnose this synthetic runner-pool evidence and recommend the smallest useful next step.",
+      "expected_output": "Separates dispatch/queue contention from execution, recognizes the shared pool is saturated, and does not blindly add shards or workers.",
+      "assertions": [
+        "shared_capacity: identifies cross-project shared pool contention",
+        "separates_queue_compute: does not mislabel queue delay as slow tests",
+        "rejects_blind_sharding: notes added parallel tasks worsen slot demand",
+        "capacity_evidence: recommends verifying eligible capacity/dispatch before fleet expansion",
+        "bounded_impact: estimates latency/consumption separately"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/runner-saturation.md"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "selection-and-aggregate-gate",
+      "prompt": "Review the affected-task selector and required aggregate gate in this fixture. State what is unsafe and how to make the gate truthful.",
+      "expected_output": "Fails broad on unknown or missing comparison evidence and only accepts skipped tasks when selection is validated; failed, cancelled, or absent prerequisites cannot turn the aggregate green.",
+      "assertions": [
+        "unknown_fails_broad: unknown paths or missing base select full suite",
+        "transitive_shared_inputs: shared lock/config changes include all affected consumers",
+        "aggregate_checks_expected_tasks: gate verifies the expected task set",
+        "failure_cancel_missing_block: failed, cancelled, and missing prerequisites are non-green",
+        "skip_requires_valid_selection: skipped task accepted only with validated selector evidence"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/selection-gate.md"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "fork-to-privileged-artifact-trust",
+      "prompt": "Assess whether the proposed fork validation and release artifact flow is safe. Identify the concrete trust boundary and required controls.",
+      "expected_output": "Recognizes untrusted fork code and artifacts can reach privileged consumers/cache writers; requires isolation, least privilege, identity/digest verification, and promotion tied to exact revision.",
+      "assertions": [
+        "identifies_untrusted_origin: marks fork code and its outputs untrusted",
+        "blocks_privileged_reuse: rejects direct privileged execution or writable trusted-cache path",
+        "verifies_artifact_identity: checks producer, source revision and digest at consumption",
+        "least_privilege_isolation: proposes scoped credentials and isolated runners",
+        "no_provenance_overclaim: does not treat upload or checksum alone as trusted provenance"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/fork-artifact-trust.md"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "native-result-cache-and-gitlab-semantics",
+      "prompt": "Review this Bazel cache proposal and GitLab pipeline configuration. Which parts are sound, and what must change?",
+      "expected_output": "Allows Bazel's dependency-aware result reuse with trusted writers and uncached validation while rejecting a forced pass flag; correctly accounts for GitLab duplicate event pipelines, rules:changes, needs artifact identity, and merged-results revisions.",
+      "assertions": [
+        "native_cache_qualified: allows native dependency-aware result caching with correct inputs and trusted cache",
+        "unsafe_pass_flag_rejected: rejects arbitrary pass/skip flags",
+        "uncached_validation: keeps a cold or uncached correctness path",
+        "gitlab_event_semantics: distinguishes push/MR pipeline creation and rules:changes bases",
+        "needs_artifact_identity: ties needed artifacts to intended current pipeline producer",
+        "merged_revision: distinguishes source-only from merged-results revision"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/bazel-gitlab.md",
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/gitlab-ci.yml"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "implement-with-local-authority",
+      "prompt": "You may modify only a disposable copy of the supplied fixture. Fix the aggregate gate so failure, cancellation, or missing prerequisites fail closed, keep selection evidence truthful, and run its checker. Do not use hosted services or edit the source fixture.",
+      "expected_output": "Copies the fixture, changes the broken gate, runs the executable checker successfully, and reports the local-only scope without claiming hosted validation.",
+      "assertions": [
+        "source_fixture_untouched: edits only a disposable copy, not checked-in fixture",
+        "aggregate_is_truthful: aggregate rejects failed, cancelled, and missing required prerequisites",
+        "valid_skip_only: accepts skip only when selector says valid and justified",
+        "checker_passes: executes the included checker against the changed copy",
+        "local_authority_only: does not access hosted settings, install, or claim deployment validation"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/implementation/README.md",
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/implementation/gate.py",
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/implementation/check_gate.py"
+      ]
     }
   ],
   "history": [
