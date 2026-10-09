@@ -100,6 +100,8 @@ the renderer rejects duplicate owner IDs across rows, including closed owners.
 For monitored runs, `owner.last_checked_at` records that owner's actual latest
 state inspection with timezone, or `null` while uninspected. An unchanged scan
 can advance this timestamp without changing activity or reassessing its proof.
+When inspection leaves progress unknown, state that in `next_action` or `history`
+and retain the observed `owner.state`; unknown progress is not a blocker by itself.
 Retain unanswered scoped follow-ups in the blocker/next action and history.
 Retain the original ticket binding in the row and any replacement handoff/history.
 Inspect the owner's original assignment before reuse; the renderer cannot prove

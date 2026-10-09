@@ -61,9 +61,9 @@ Resolve project choices first, then the current harness profile:
    Propose `.orchestration/config.json` with `runs/<harness-directory>` relative to
    its directory. An absolute local path or `~/...` is also supported.
 4. Run defaults. Confirm the default finish line, preferred available destination
-   or `null` for no preference, and scan interval. Propose review-ready PRs and
-   60 seconds if guidance supplies none. Explain active-turn or manual-resume
-   limits from discovery. For destinations with verified embedded refresh,
+   or `null` for no preference, and the coordinator's scan interval. Propose
+   review-ready PRs and 60 seconds if guidance supplies none. Explain active-turn
+   or manual-resume limits from discovery. For destinations with verified embedded refresh,
    explain that the dashboard reloads at the run interval, including during dialogs.
    A preference is not run approval or permission to wake the coordinator after yielding.
 
