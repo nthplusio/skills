@@ -1,21 +1,40 @@
 ---
-name: running-orchestration
+name: orchestration-run
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
   milestone, repeatedly checks owner status, reuses retained proof, and maintains
-  one visual HTML dashboard.
-  Use when asked to orchestrate multiple tickets, keep work-owner conversations
-  moving, or resume a coordinated run. Uses setting-up-orchestration for a local
-  harness JSON configuration. Do not use for a single implementation assignment
-  or bounded subagent task.
+  one HTML dashboard using repository setup for the current harness. Use for
+  /orchestration-run, orchestrating multiple tickets, or resuming a coordinated
+  run. Confirms only run-specific choices. Calls orchestration-setup when setup
+  is missing or unsuitable. Do not use for a single implementation assignment.
 ---
 
-# Running orchestration
+# Orchestration run
 
 Keep owners moving and make the state of their work scannable. You own
 coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and recover the run
+
+Identify the current harness name from runtime context. Read
+`<repository-root>/.orchestration/config.json`, or the explicit path or
+`ORCHESTRATION_CONFIG`. Resolve its saved profile with:
+
+```bash
+python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --harness '<current harness name>'
+```
+
+Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
+`run_root`. The name selects the profile. Neither the model nor the working
+directory selects another harness's settings. Install all three orchestration
+skills together so their referenced resources are available.
+
+If setup or saved discovery is missing, malformed, lacks this harness, or has a
+material context mismatch, load `orchestration-setup`. That skill owns discovery
+and the durable interview. Hold affected assignments until its output validates.
+Keep unrelated saved profiles intact. A new run with valid setup needs neither
+tool rediscovery nor a project/harness interview. Configuration describes tools
+and preferences, not permission for shared actions.
 
 On resume, use the harness-restored conversation and accessible run files to
 recover the finish line, owners, decisions, and prior evidence assessments
@@ -23,38 +42,32 @@ before assigning work. Reuse the existing run and its IDs. If local display
 files are missing, rebuild them from that context and retrievable artifacts.
 Keep unavailable proof explicit and retrieve existing receipts before deciding
 whether a check is needed. Conversation recovery follows the harness's rules.
-
-Locate the configuration using the explicit path or `ORCHESTRATION_CONFIG`,
-then the per-harness default documented by `setting-up-orchestration`. Read
-the stored JSON. Load that skill to create or repair missing, malformed, or
-unsupported configuration, unavailable capability mappings, or missing monitoring
-facts needed for repeated inspection. Reuse confirmed settings. Read the resulting
-file, not a remembered capability summary. Explicit project/team settings take
-precedence over personal defaults; leave the personal configuration unchanged.
-
-Use its owner/helper terminology, operations, skill propagation, evidence
-transfer, and `run_root`. Resolve only a material capability mismatch; do not
-redo discovery for every run. Configuration describes tools, not permissions.
 If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
-**Done when** the runner has read a suitable configuration and knows the confirmed
-working-state location. On resume, existing ownership and decisions are restored
-and evidence gaps are visible before assigning work. Coordination can proceed
-while dashboard presentation awaits the user's choice in step 5.
+**Done when** the current harness resolves to valid setup. On resume, ownership,
+choices, and proof assessments are restored before assigning work.
 
 ## 2. Establish the finish line and ownership
 
-Use the user's named milestone. Without one, default to **review-ready PRs**:
-implementation and the needed proof and review material are prepared. This
-does not mean a PR is published, reviewed, merged, deployed, or business-accepted.
-State the finish line once and record what proves it for each task.
+For a new run, propose one compact confirmation using the user's request and
+profile defaults. Include selected tickets, finish line, dashboard destination
+and audience, and scan interval. Ask only for unresolved run choices. A complete
+explicit request already confirms them. A request for only a consequential
+decision can defer presentation as step 5 describes. Save confirmed values in
+this run with the supplied answer receipt or actual message link, leaving setup
+defaults unchanged. On resume, reuse saved choices and
+ask only about a requested change or missing run choice.
 
-Before assigning or reusing owners, read [ticket discovery and the default
-template](references/ticket-template.md). Discover the repository's ticket
-conventions and confirm unresolved choices one focused question at a time.
-Record the confirmed policy and its source in this run, not the harness config.
-While a choice or proposed split awaits approval, hold only its assignments.
+The default review-ready finish line means implementation and needed proof/review
+material are prepared. It does not mean published, reviewed, merged, deployed, or
+business-accepted. Record what proves the confirmed finish line for each task.
+
+Use setup's confirmed ticket policy. Inspect selected tickets against it, not
+the repository's general configuration again. For an unclear ticket, resolve
+its missing outcome or proof before assignment. For independent outcomes or too
+many criteria, use [split proposals](../orchestration-setup/references/ticket-template.md)
+and await approval. Hold only affected assignments.
 
 Each persistent work owner is bound to one ticket for its lifetime. Each ticket
 has one accountable persistent owner. Inspect existing owners' original tickets
@@ -84,15 +97,15 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding both orchestration skills. Owners
+from setup and this run explicitly, excluding all three orchestration skills. Owners
 may load additional role-specific skills and use bounded helpers. Pass relevant
 instructions to those helpers too; do not assume inheritance or launch recursive
 coordinators. Use the harness's supported briefing mechanism if direct skill
 loading is unavailable. Include step 3's decision routing in owner briefs so
 owners can discuss ticket-local choices with the user and report the outcome.
 
-**Done when** the repository's ticket policy is confirmed, every assigned row is
-one ticket with one lifetime-bound owner, and each owner has a checkable finish
+**Done when** run choices are confirmed, every assigned row is one ticket with
+one lifetime-bound owner, and each owner has a checkable finish
 line and resource/dependency boundaries. Unconfirmed definitions or splits are
 explicitly held; unrelated owners can begin without guessing where input code
 or proof lives.
@@ -114,8 +127,8 @@ keep the coordinator active through bounded waits. When neither continued
 execution nor an authorized wake is available, inspect once, record the manual
 resume limitation, and hand back the current snapshot.
 
-Default to a 60-second scan interval unless the user or harness limits require
-another cadence. Save the selected mechanism, interval, actual last check,
+Use the confirmed run interval, falling back to setup's default when already
+confirmed for this run. Save the selected mechanism, interval, actual last check,
 next check deadline, and any monitoring hold in the run record, not the harness
 configuration. Bound each wait by the next scan deadline. Resume with an
 immediate scan; a missed deadline or a new notification needs no extra wait.
@@ -246,10 +259,13 @@ coordinator writes it. Reuse accessible run files when resuming; unrelated runs
 use separate directories. These files are local working state, not a separate
 recovery system. Keep status, generated HTML, and retained proof outside Git,
 including when the user chooses a custom location.
+Record `harness_name`, `config_path`, and the actual run-choice confirmation in
+the record. A resume in a different harness needs explicit ownership/evidence
+transfer; selecting its setup profile alone does not transfer an existing run.
 
 Use the data contract in [dashboard data](references/dashboard-data.md).
 
-Resolve presentation separately from coordination on each invocation:
+Use the run-specific presentation choice confirmed in step 2 or restored on resume:
 
 - If no destination is chosen and the user requests only a consequential
   decision, defer the destination question and keep presentation **unselected**.
@@ -258,10 +274,10 @@ Resolve presentation separately from coordination on each invocation:
   `presentation.hold` explaining the missing confirmation. Continue coordination
   and update the local status record; leave dashboard generation, writes and
   hosting held. An old page stays unchanged and is not the current display.
-- Otherwise, confirm a destination chosen in the invocation or restored user
-  instruction, or ask one focused destination question offering usable configured
-  destinations and their audiences. Ask separately from shared-action approvals.
-  A template value, existing path, or configured option is not a user answer.
+- Otherwise, reuse the confirmed destination without asking again. If still
+  missing, ask one focused question offering available destinations and audiences.
+  Ask separately from shared-action approvals. A setup preference, template
+  value, or existing path alone is not a run-specific user answer.
 - After an actual destination choice, save its values and clear the presentation
   hold. Generate from the bundled template and update that same artifact in place.
   Only this branch runs the renderer below.

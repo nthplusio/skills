@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "guidance": [],
+    "ticket_sources": [],
+    "ticket_template": null,
+    "notes": []
+  },
+  "harnesses": {
+    "REPLACE_WITH_DISCOVERED_HARNESS_NAME": {
+      "context": "REPLACE_WITH_EXECUTION_CONTEXT",
+      "observed_at": "REPLACE_WITH_ISO_TIMESTAMP",
+      "sources": [],
+      "owner_term": "REPLACE_WITH_OWNER_TERM",
+      "helper_term": "REPLACE_WITH_HELPER_TERM",
+      "owners": {
+        "launch": null,
+        "inspect": null,
+        "message": null,
+        "collect": null,
+        "close": null,
+        "resume": null,
+        "workspace_model": "unknown"
+      },
+      "helpers": {
+        "invoke": null,
+        "collect": null,
+        "blocks_caller": null,
+        "follow_up": null
+      },
+      "monitoring": {
+        "notifications": null,
+        "wait": null,
+        "wake": null
+      },
+      "skills": {
+        "load": null,
+        "brief": "Pass applicable instructions explicitly; do not assume inheritance."
+      },
+      "evidence": {
+        "transfer": null,
+        "retain_before_close": null
+      },
+      "artifacts": [],
+      "limitations": []
+    }
+  }
+}

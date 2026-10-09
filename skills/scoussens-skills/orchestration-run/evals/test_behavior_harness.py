@@ -63,8 +63,9 @@ class BehaviorHarnessTests(unittest.TestCase):
         status_path = case / "state/runs/template-preview/status.json"
         status = json.loads(status_path.read_text())
         for operation, arguments in (
-            ("read-skill", {"name": "running-orchestration"}),
+            ("read-skill", {"name": "orchestration-run"}),
             ("read", {"path": status["config_path"]}),
+            ("resolve-config", {"harness": "Stub harness"}),
             ("ask", {"text": "Approve the broader automatic deployment, or keep publication held?"}),
         ):
             self.run_cli("call", str(case), operation, json.dumps(arguments))
@@ -167,7 +168,8 @@ class BehaviorHarnessTests(unittest.TestCase):
         result = self.run_cli("call", str(case), "ask", json.dumps({"text": question}))
         self.assertEqual(json.loads(result.stdout), {
             "user": f"Use the local dashboard at {case / 'state/runs/template-preview/dashboard.html'}. "
-                    "This approves local presentation only, not publication or deployment."
+                    "This approves local presentation only, not publication or deployment.",
+            "source": "user-answer-1",
         })
         combined = self.run_cli("call", str(case), "ask", json.dumps({
             "text": "Approve the local dashboard and the broader automatic deployment?"
@@ -178,9 +180,10 @@ class BehaviorHarnessTests(unittest.TestCase):
         root = Path(self.directory.name) / "native-lifecycle"
         self.run_cli("prepare", str(root), "--cases", "runner-native-resume")
         case = root / "runner-native-resume"
-        self.run_cli("call", str(case), "read-skill", '{"name":"running-orchestration"}')
+        self.run_cli("call", str(case), "read-skill", '{"name":"orchestration-run"}')
         status = json.loads(self.run_cli("call", str(case), "restore").stdout)
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
+        self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
         self.run_cli("call", str(case), "ask", '{"text":"Use the local HTML dashboard?"}')
         retained = json.loads(self.run_cli("call", str(case), "retain", '{"owner":"api-owner"}').stdout)
         status["evidence"].append(next(proof for proof in retained["owner"]["evidence"] if proof["id"] == "E3"))
@@ -225,9 +228,10 @@ class BehaviorHarnessTests(unittest.TestCase):
         root = Path(self.directory.name) / "decision-grade"
         self.run_cli("prepare", str(root), "--cases", "runner-decision-routing")
         case = root / "runner-decision-routing"
-        self.run_cli("call", str(case), "read-skill", '{"name":"running-orchestration"}')
+        self.run_cli("call", str(case), "read-skill", '{"name":"orchestration-run"}')
         status = json.loads(self.run_cli("call", str(case), "restore").stdout)
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
+        self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
         self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: the user chose leaf labels; local formatting only."}')
         self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Continue the rest of your existing local assignment."}')
         self.run_cli("call", str(case), "message", '{"owner":"ui-owner","text":"Continue your independent assignment."}')
@@ -305,6 +309,169 @@ class BehaviorHarnessTests(unittest.TestCase):
             checks = json.loads((root / "mechanical-results.json").read_text())[0]["checks"]
             self.assertEqual(checks["split_approval_awaited"], expected)
             status["decisions"] = []
+
+    def boundary_case(self, name, suffix=""):
+        root = Path(self.directory.name) / (name + suffix)
+        prepared = self.run_cli("prepare", str(root), "--cases", name)
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        case = root / name
+        world = json.loads((case / "world.json").read_text())
+        stage = "orchestration-discovery" if name.startswith("discovery-") else (
+            "orchestration-run" if name.startswith("runner-") else "orchestration-setup")
+        self.action(case, "read-skill", name=stage)
+        inventory = self.action(case, "inventory")
+        self.assertEqual(inventory["harness_name"], "Stub harness")
+        self.assertNotIn("capabilities", inventory)
+        return root, case, world
+
+    def action(self, case, operation, **args):
+        result = self.run_cli("call", str(case), operation, json.dumps(args))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def outcome(self, root):
+        self.run_cli("grade", str(root))
+        return json.loads((root / "mechanical-results.json").read_text())[0]
+
+    def test_discovery_saves_real_validated_facts_and_rejects_interview(self):
+        root, case, world = self.boundary_case("discovery-no-interview")
+        facts = self.action(case, "discover-facts")
+        facts["repository"]["notes"].append("The inspected repository uses the compact layout.")
+        facts["harnesses"]["Stub harness"]["limitations"].append("Monitoring requires manual resume.")
+        facts["harnesses"]["Stub harness"]["sources"] = [
+            "stub read-only tool inventory", "repository/guidance.md", "repository/tickets.json",
+            "discover-facts read-only observations",
+        ]
+        self.action(case, "write", path=world["paths"]["discovery"], content=facts)
+        self.assertEqual(self.action(case, "check-discovery")["exit_code"], 0)
+        self.action(case, "reply", text="Saved sourced observations; no setup preferences chosen.")
+        self.assertTrue(self.outcome(root)["passed"])
+        self.action(case, "ask", text="Which default finish line do you prefer?")
+        self.assertFalse(self.outcome(root)["checks"]["no_preference_interview"])
+        facts["harnesses"]["Stub harness"]["sources"] = []
+        self.action(case, "write", path=world["paths"]["discovery"], content=facts)
+        self.assertEqual(self.action(case, "check-discovery")["exit_code"], 1)
+        self.assertFalse(self.outcome(root)["checks"]["sources_and_timestamp_preserved"])
+
+    def test_setup_discovery_precedes_interview_and_late_discovery_cannot_repair_order(self):
+        for early in (False, True):
+            with self.subTest(early=early):
+                root, case, world = self.boundary_case("setup-discovery-first", str(early))
+                if early:
+                    self.action(case, "ask", text="Use local Markdown tickets with stable IDs?")
+                self.action(case, "read-skill", name="orchestration-discovery")
+                facts = self.action(case, "discover-facts")
+                self.action(case, "write", path=world["paths"]["discovery"], content=facts)
+                self.action(case, "check-discovery")
+                self.action(case, "read", path=world["paths"]["discovery"])
+                if not early:
+                    self.action(case, "ask", text="Use the discovered Linear ticket policy?")
+                self.action(case, "reply", text="Discovery saved; setup awaits your ticket-policy answer.")
+                self.assertEqual(self.outcome(root)["passed"], not early)
+                if not early:
+                    self.action(case, "ask", text="Which shared skills should workers load?")
+                    self.assertFalse(self.outcome(root)["checks"]["interview_stops_at_pending_answer"])
+
+    def test_setup_reuses_discovery_and_rejects_repeating_it(self):
+        root, case, world = self.boundary_case("setup-reuse-discovery")
+        self.action(case, "read", path=world["paths"]["discovery"])
+        self.action(case, "ask", text="Use the discovered Linear ticket policy?")
+        self.action(case, "reply", text="Awaiting ticket-policy confirmation; setup is not saved.")
+        self.assertTrue(self.outcome(root)["passed"])
+        self.action(case, "discover-facts")
+        self.assertFalse(self.outcome(root)["checks"]["saved_discovery_reused"])
+
+    def test_second_profile_preserves_first_policy_and_confirmation_source(self):
+        root, case, world = self.boundary_case("setup-second-harness")
+        self.action(case, "read", path=world["paths"]["discovery"])
+        self.action(case, "read", path=world["paths"]["config"])
+        answer = self.action(case, "ask", text=f"Use {world['paths']['run_root']} with no extra shared skills and review-ready PRs, no preferred destination, 60 seconds?")
+        config = world["initial_config"]
+        config["harnesses"]["Stub harness"] = {
+            "run_root": world["paths"]["run_root"], "shared_skills": [],
+            "defaults": {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60},
+            "confirmed_from": answer["source"]}
+        self.action(case, "write", path=world["paths"]["config"], content=config)
+        self.assertEqual(self.action(case, "check-config")["exit_code"], 0)
+        self.assertEqual(self.action(case, "resolve-config", harness="Stub harness")["exit_code"], 0)
+        self.action(case, "reply", text="Added the current profile; existing project policy and other profile unchanged.")
+        self.assertTrue(self.outcome(root)["passed"])
+        config["harnesses"]["Stub harness"]["confirmed_from"] = "template proposal"
+        self.action(case, "write", path=world["paths"]["config"], content=config)
+        self.assertFalse(self.outcome(root)["checks"]["actual_confirmation_provenance"])
+        config["harnesses"]["Other product"]["defaults"]["interval_seconds"] = 60
+        self.action(case, "write", path=world["paths"]["config"], content=config)
+        self.assertFalse(self.outcome(root)["checks"]["preserves_first_and_project"])
+
+    def test_missing_ticket_policy_is_setup_interview_not_run_interview(self):
+        root, case, world = self.boundary_case("setup-ticket-source")
+        for key in ("discovery", "repository_guidance", "repository_tickets"):
+            self.action(case, "read", path=world["paths"][key])
+        self.action(case, "read-skill", name="orchestration-setup", resource="references/ticket-template.md")
+        self.action(case, "ask", text="Use local Markdown tickets with stable IDs as the ticket source?")
+        self.action(case, "reply", text="Ticket source remains unconfirmed; no setup or assignments saved.")
+        self.assertTrue(self.outcome(root)["passed"])
+        self.action(case, "write", path=world["paths"]["config"], content=world["initial_config"])
+        self.assertFalse(self.outcome(root)["checks"]["awaits_confirmation_without_saving"])
+
+    def test_current_profile_run_only_confirmation_and_durable_negative_controls(self):
+        root, case, world = self.boundary_case("runner-current-harness")
+        paths = world["paths"]
+        resolved = self.action(case, "resolve-config", harness="Stub harness")
+        self.assertEqual(resolved["exit_code"], 0)
+        self.assertEqual(json.loads(resolved["stdout"])["defaults"]["interval_seconds"], 60)
+        answer = self.action(case, "ask", text="Confirm UI-101/API-102, the default finish line of review-ready PRs, local dashboard for this isolated audience and 30-second scans for this run, leaving saved defaults unchanged?")
+        status = json.loads(Path(paths["status"]).read_text())
+        status.update(harness_name="Stub harness", run_choices={"confirmed_from": answer["source"]},
+            monitoring={"mode": "manual", "interval_seconds": 30, "last_checked_at": None,
+                "next_check_at": None, "hold": "Manual resume required; no continued monitoring."})
+        self.action(case, "write", path=paths["status"], content=status)
+        self.assertEqual(self.action(case, "render")["exit_code"], 0)
+        self.action(case, "reply", text="Run choices confirmed for this product; setup defaults unchanged.")
+        self.assertTrue(self.outcome(root)["passed"])
+        self.action(case, "resolve-config", harness="Other product")
+        self.assertFalse(self.outcome(root)["checks"]["current_profile_resolved"])
+        self.action(case, "ask", text="Which shared skills and default interval should setup use?")
+        self.assertFalse(self.outcome(root)["checks"]["no_durable_interview_or_rediscovery"])
+        self.action(case, "write", path=paths["config"], content=world["initial_config"])
+        self.assertFalse(self.outcome(root)["checks"]["durable_choices_unchanged"])
+
+    def test_missing_owners_remain_explicit_in_version_two_setup(self):
+        root, case, world = self.boundary_case("setup-missing-owners")
+        paths = world["paths"]
+        self.action(case, "read", path=paths["discovery"])
+        self.action(case, "ask", text=f"Save setup at {paths['config']} and runtime files at {paths['run_root']}?")
+        answer = self.action(case, "ask", text="Use review-ready PRs, no preferred destination, and a 60-second default interval?")
+        config = world["initial_config"]
+        config["harnesses"]["Stub harness"]["confirmed_from"] = answer["source"]
+        self.action(case, "write", path=paths["config"], content=config)
+        self.assertEqual(self.action(case, "check-config")["exit_code"], 0)
+        self.assertEqual(self.action(case, "resolve-config", harness="Stub harness")["exit_code"], 0)
+        self.action(case, "reply", text="Setup saved; blocking sessions cannot own independently revisitable tickets.")
+        self.assertTrue(self.outcome(root)["passed"])
+        config["schema_version"] = 1
+        self.action(case, "write", path=paths["config"], content=config)
+        self.assertEqual(self.action(case, "check-config")["exit_code"], 1)
+        self.assertEqual(self.action(case, "resolve-config", harness="Stub harness")["exit_code"], 1)
+        self.assertFalse(self.outcome(root)["checks"]["saved_setup_valid"])
+
+    def test_storage_proposals_stay_unconfirmed_until_the_user_answers(self):
+        root, case, world = self.boundary_case("setup-confirmation")
+        paths = world["paths"]
+        self.action(case, "read", path=paths["discovery"])
+        self.action(case, "ask", text=f"Save setup at {paths['config']} and runtime files at {paths['run_root']}?")
+        self.action(case, "reply", text="Storage proposal awaits your answer; no setup saved.")
+        self.assertTrue(self.outcome(root)["passed"])
+        self.action(case, "write", path=paths["config"], content=world["initial_config"])
+        self.assertFalse(self.outcome(root)["checks"]["awaits_confirmation_without_saving"])
+
+    def test_all_stages_are_hashed_and_untouched_cases_fail(self):
+        root = Path(self.directory.name) / "all-stages"
+        self.assertEqual(self.run_cli("prepare", str(root)).returncode, 0)
+        suite = json.loads((root / "suite.json").read_text())
+        self.assertEqual(set(suite["skill_sha256"]), {"orchestration-discovery", "orchestration-setup", "orchestration-run"})
+        self.assertEqual(self.run_cli("grade", str(root)).returncode, 1)
+        self.assertTrue(all(not outcome["passed"] for outcome in json.loads((root / "mechanical-results.json").read_text())))
 
 
 if __name__ == "__main__":

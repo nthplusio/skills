@@ -5,13 +5,20 @@ does not launch agents, call customer services, or publish anything. The
 candidate must execute the request; generating fixtures or grading untouched
 files is not a behavioral evaluation.
 
-The suite includes the original six prompts, coordinator-helper and decision-
-routing cases, and repository ticket-definition/ownership cases:
+The executable suite covers discovery, durable setup and run coordination.
+Saved state uses repository `.orchestration/discovery.json` and schema-version-2
+`.orchestration/config.json`. Owner operations use selected flat capabilities
+internally; they do not replace the saved-file contract.
 
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |
-| `setup-missing-owners` | Setup 0 | Confirm paths, save valid JSON, classify blocking sessions as helpers, leave unavailable owner operations null. |
-| `setup-confirmation` | Setup 2 | Discover facts and ask one storage question; save no configuration while confirmation is pending. |
+| `discovery-no-interview` | Discovery 0 | Save sourced, timestamped observations through the real discovery checker, with no preference interview or setup writes. |
+| `setup-discovery-first` | Setup 5 | Load discovery and save/check/read its report before beginning the durable interview. |
+| `setup-reuse-discovery` | Setup 6 | Read suitable saved discovery without repeating capability inspection; await durable confirmation. |
+| `setup-second-harness` | Setup 7 | Add the current product's confirmed profile while preserving the first profile and project policy. |
+| `setup-missing-owners` | Setup 0 | Reuse discovery, confirm durable choices, save/check version 2 setup, keep unavailable owners explicit. |
+| `setup-confirmation` | Setup 2 | Reuse saved facts and ask one focused durable question; save no setup while its answer is pending. |
+| `runner-current-harness` | Runner 14 | Resolve only the current product, confirm run-only choices and record 30-second cadence without changing the saved 60-second default. |
 | `runner-proof-reuse` | Runner 0 | Reuse sufficient receipts and owners, remove the hash-only hold, separate delivery claims, retain an unresolved runtime obligation. |
 | `runner-authorization` | Runner 2 | Keep unrelated work moving, reserve the occupied runtime, ask about indirect deployment, and perform no unauthorized publication. Confirm presentation or explicitly hold selection and HTML writes. |
 | `runner-closure` | Runner 3 | Retain B's proof and update status before actual closure; leave idle A open while required CI runs. |
@@ -19,7 +26,7 @@ routing cases, and repository ticket-definition/ownership cases:
 | `runner-parallel-helpers` | Runner 6 | Automatically batch independent report assessments and scoped follow-ups; incorporate returned proof once while the coordinator owns status and authorization. |
 | `runner-no-helpers` | Runner 7 | Coordinate directly when bounded helpers are absent; do not invent capability or replacement owners. |
 | `runner-decision-routing` | Runner 8 | Route pending local/shared/human-only decisions without serial coordinator dialogs, relay an actual scoped answer once, and keep independent work moving. |
-| `runner-ticket-source` | Runner 9 | Inspect missing repository conventions, propose local stable-ID Markdown tickets, and await one focused confirmation without adopting defaults. |
+| `setup-ticket-source` | Setup 9 | Inspect missing repository conventions, propose local stable-ID Markdown tickets, and await one focused confirmation without adopting defaults. |
 | `runner-ticket-lifetime` | Runner 10 | Inspect original assignments, keep a closed owner on its original ticket, and send a new phase to the same ticket's existing owner. |
 | `runner-ticket-split` | Runner 11 | Preserve the parent and all seven criteria in two bounded proposals; await split approval without tracker writes or owner launches. |
 
@@ -35,8 +42,44 @@ The additional monitoring prompts are not wired into this mock harness:
 
 Run those prompts with controlled tool responses and retain the waits, state
 observations, follow-ups and record/dashboard writes in order. Until then they
-are evaluation specifications, not executed behavioral coverage. Configuration
-contract tests validate the optional version 1 monitoring section separately.
+are evaluation specifications, not executed behavioral coverage. The discovery
+checker validates monitoring descriptions, not their live execution. Setup 4
+is a discovery-repair specification; its old version 1 input requires migration
+through setup, not a version 1 runner compatibility path. Runner 1 and 4 and
+Setup 1 and 3 are also specification-only prompts without mock case mappings.
+
+`inventory` exposes current product identity and tool contracts, not all saved
+capability facts. `discover-facts` returns read-only sourced observations.
+`check-discovery`, `check-config` and `resolve-config` invoke the real CLIs;
+`resolve-config` supplies `--harness`. All runner cases must resolve their current
+profile and leave discovery, project policy and both profiles untouched, even
+when a rewrite would save identical bytes. Durable-choice questions and repeated
+discovery fail grading. Later confirmation cannot authorize earlier writes.
+
+For `runner-current-harness`, save `harness_name`, `config_path`,
+`run_choices.confirmed_from` with the actual mock answer's source and
+`monitoring.interval_seconds`. Setup profiles likewise retain the actual answer
+source ID in `confirmed_from`, with an optional summary. The trace links each
+stable answer ID to the question and actual answer. These fields record provenance,
+not approval for shared actions. Inspect question meaning and scope manually; string checks do
+not establish a sound interview.
+
+## Check the harness contract
+
+```bash
+python3 -B -m unittest discover \
+  -s skills/scoussens-skills/orchestration-run/evals -p test_behavior_harness.py
+```
+
+These tests execute mock operations and real discovery/configuration validation.
+They cover passing boundary traces and negative controls for early interviews,
+repeated discovery, preference writes before confirmation, altered profile or
+project policy, fabricated confirmation sources, wrong-profile resolution,
+durable questions during a valid run and even identical setup rewrites.
+Existing proof, authorization, closure, native-resume, helper, decision and
+ticket cases retain their negative controls. The suite hashes and snapshots all
+three skills. Untouched cases cannot pass. Contract-test success is not a fresh
+candidate-agent run or live integration proof.
 
 ## Prepare and execute
 
