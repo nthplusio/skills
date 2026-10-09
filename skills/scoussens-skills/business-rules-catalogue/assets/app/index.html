@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business rules</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="banner" class="banner" hidden></div>
+<header class="topbar">
+  <div class="topline">
+    <h1 id="title">Business rules</h1>
+    <span id="totals" class="muted"></span>
+    <label class="reviewer">Reviewer <input id="reviewer" type="text" placeholder="Your name" autocomplete="name"></label>
+  </div>
+  <div class="topline">
+    <span id="progressLabel"></span>
+    <span class="bar wide"><span id="progressBar"></span></span>
+    <button id="nextUnreviewedTop" type="button">Next unreviewed</button>
+    <details class="menu" id="exportMenu">
+      <summary>Export / import</summary>
+      <div class="menu-body">
+        <button type="button" data-export="csv">Export CSV</button>
+        <button type="button" data-export="md">Export Markdown</button>
+        <button type="button" data-export="json">Export JSON</button>
+        <label class="filebtn">Import JSON<input id="importFile" type="file" accept="application/json,.json"></label>
+      </div>
+    </details>
+    <span id="toast" class="toast" role="status"></span>
+  </div>
+</header>
+
+<section class="container" id="mapContainer">
+  <div class="container-header">
+    <h2>Lifecycle map</h2>
+    <button id="mapToggle" type="button" class="chevron" aria-expanded="true" aria-controls="map" title="Hide or dock the map"><span class="chev" aria-hidden="true"></span><span id="mapToggleText">Hide</span></button>
+  </div>
+  <div id="map" class="map"></div>
+</section>
+
+<main class="panes">
+  <aside class="treepane">
+    <div class="filters">
+      <input id="search" type="search" placeholder="Search rules, modules, areas" aria-label="Search">
+      <div class="filter-row">
+        <select id="fStage" aria-label="Stage"></select>
+        <select id="fStatus" aria-label="Status">
+          <option value="">Any status</option>
+          <option value="unreviewed">Unreviewed</option>
+          <option value="correct">Correct</option>
+          <option value="wrong">Wrong</option>
+          <option value="unsure">Unsure</option>
+        </select>
+        <select id="fFlag" aria-label="Flags"></select>
+      </div>
+      <div class="filter-row">
+        <label><input id="fInferred" type="checkbox"> Inferred only</label>
+        <button id="clearFilters" type="button">Clear</button>
+        <span id="count" class="muted"></span>
+      </div>
+    </div>
+    <div id="tree" class="tree" role="tree" tabindex="0" aria-label="Business rules"></div>
+  </aside>
+  <section id="detail" class="detail" aria-live="polite"></section>
+</main>
+
+<!-- BR:DATA-SCRIPTS -->
+<script src="app.js"></script>
+</body>
+</html>
