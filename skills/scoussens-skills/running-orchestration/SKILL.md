@@ -49,12 +49,25 @@ implementation and the needed proof and review material are prepared. This
 does not mean a PR is published, reviewed, merged, deployed, or business-accepted.
 State the finish line once and record what proves it for each task.
 
-Locate existing owners before launching replacements. Keep a ticket's owner
-through investigation, fixes, and PR preparation. Start another owner for an
-independent review, a different required environment, or a separate assignment,
-not simply a new phase. Prefix ticket-owned conversation titles with their
-ticket IDs; use a short outcome label for work without a ticket. A ticket is
-not a prerequisite for orchestration.
+Before assigning or reusing owners, read [ticket discovery and the default
+template](references/ticket-template.md). Discover the repository's ticket
+conventions and confirm unresolved choices one focused question at a time.
+Record the confirmed policy and its source in this run, not the harness config.
+While a choice or proposed split awaits approval, hold only its assignments.
+
+Each persistent work owner is bound to one ticket for its lifetime. Each ticket
+has one accountable persistent owner. Inspect existing owners' original tickets
+before reuse, including closed owners. Keep the same owner through investigation,
+fixes, review preparation and that ticket's later follow-up. Closure does not
+free an owner for a different ticket. Prefix its conversation title with the
+ticket ID. The coordinator and bounded helpers are not ticket-owned workers.
+
+Use bounded helpers for assistance within a ticket. Separately owned review,
+environment work or another independent outcome needs its own ticket and owner.
+Locate that ticket's existing owner before launching another. When the harness
+cannot resume the original owner, use an explicit handoff to its replacement
+for the same ticket and retain the original binding. There is one current owner,
+not two competing owners. A new phase alone needs neither a new ticket nor owner.
 
 Record each task's owner handle/link, work location, files and runtime resources,
 dependencies, completion criterion, and next action. Different workspaces do
@@ -77,9 +90,11 @@ coordinators. Use the harness's supported briefing mechanism if direct skill
 loading is unavailable. Include step 3's decision routing in owner briefs so
 owners can discuss ticket-local choices with the user and report the outcome.
 
-**Done when** every task has one accountable owner, a checkable finish line,
-and clear resource/dependency boundaries. Each owner can begin without guessing
-where its input code or proof lives.
+**Done when** the repository's ticket policy is confirmed, every assigned row is
+one ticket with one lifetime-bound owner, and each owner has a checkable finish
+line and resource/dependency boundaries. Unconfirmed definitions or splits are
+explicitly held; unrelated owners can begin without guessing where input code
+or proof lives.
 
 ## 3. Keep owners moving within authorization
 

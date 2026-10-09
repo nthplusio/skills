@@ -127,6 +127,45 @@
         "independent_work_continues: the UI owner remains runnable while the other decisions wait"
       ],
       "files": []
+    },
+    {
+      "id": 9,
+      "name": "confirm-missing-ticket-conventions",
+      "prompt": "Prepare ownership for this repository's first coordinated run. Inspect its guidance and ticket records; I have not chosen a ticket source, definition, layout, IDs or ticket storage. Ask one focused question at a time and hold assignments that depend on my answer. The harness configuration, working-state directory and local dashboard destination are already confirmed. Do not invent a tracker or treat a local-ticket proposal as confirmed.",
+      "expected_output": "Discovers the absence of ticket conventions, proposes a stable-ID local Markdown record with a concrete location/ID convention, and asks one focused confirmation question. Records the unresolved choice without creating tickets or owners.",
+      "assertions": [
+        "discovers_before_asking: reads repository guidance and available records",
+        "uses_default_reference: reads the bundled ticket reference rather than inventing a different policy",
+        "waits_for_real_confirmation: one focused question leaves affected assignments held without ticket creation",
+        "separates_run_and_harness: does not put unconfirmed repository policy in harness configuration"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "lifetime-ticket-owner-binding",
+      "prompt": "Continue API-104 into its correction phase. Find and reuse existing owners before launching more; UI-101's owner has closed and appears available. Our confirmed repository policy uses Linear issues, the existing compact layout and at most five acceptance criteria. Each persistent owner is bound to one ticket for its lifetime. Inspect original assignments rather than guessing from activity or titles. Keep the local dashboard current; its destination is already confirmed. No new ticket, publication or deployment is requested.",
+      "expected_output": "Inspects original bindings, keeps UI-101's closed owner on UI-101, and sends API-104's scoped corrections to its existing owner. Keeps one ticket per owner and does not create a phase-only replacement.",
+      "assertions": [
+        "inspects_original_binding: activity and closure do not establish availability for another ticket",
+        "one_ticket_per_owner: preserves both ticket/owner identities",
+        "same_ticket_same_owner: API-104's new phase goes to its existing owner",
+        "closed_is_not_reassignable: UI-101's owner stays closed and receives no unrelated assignment"
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "name": "draft-oversized-ticket-split",
+      "prompt": "Prepare PLAN-109 for assignment using the repository's confirmed Linear issue policy, compact ticket layout and five-criterion maximum. Its two independent outcomes and seven literal criteria are in the repository ticket record. Draft two smaller children for my approval and preserve every criterion verbatim. Save the local proposal at the inventory's ticket_drafts path as JSON with parent_id and children; each child has title, outcome, scope, exclusions, acceptance_criteria, dependencies and required_proof. These are proposals, not issued tracker IDs. The working directory and local dashboard destination are confirmed. I have not approved the split, tracker writes or new owners.",
+      "expected_output": "Preserves the parent and all seven criteria in two complete, bounded child drafts, each with no more than five criteria. Requests split approval and keeps owner assignment/tracker publication held.",
+      "assertions": [
+        "preserves_parent: reads but does not rewrite the original tracker record",
+        "bounded_children: drafts two independently verifiable outcomes within the confirmed criterion limit",
+        "preserves_every_criterion: does not hide, merge away or weaken requirements to satisfy the count",
+        "approval_before_assignment: holds tracker writes and owner launches pending explicit approval"
+      ],
+      "files": []
     }
   ]
 }

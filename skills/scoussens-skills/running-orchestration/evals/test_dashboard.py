@@ -87,15 +87,14 @@ class DashboardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unfinished milestone"):
             render(self.data)
 
-    def test_shared_owner_counts_once_and_cannot_be_partially_closed(self):
+    def test_one_owner_cannot_be_assigned_to_two_tickets_even_after_closure(self):
         first, second = self.data["tasks"][:2]
-        first["owner"]["state"] = "active"
         second["owner"]["id"] = first["owner"]["id"]
-        html = render(self.data)
-        self.assertIn('<b>2</b><span>active owners</span>', html)
-        second["owner"]["state"] = "closed"
-        with self.assertRaisesRegex(ValueError, "conflicting lifecycle states"):
-            render(self.data)
+        for state in ("active", "closed"):
+            with self.subTest(first_owner_state=state):
+                first["owner"]["state"] = state
+                with self.assertRaisesRegex(ValueError, "API-102: owner ui-owner is already bound to another ticket"):
+                    render(self.data)
 
     def test_completed_but_unclosed_owner_is_visible(self):
         self.data["tasks"][0]["owner"]["state"] = "complete"

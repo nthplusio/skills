@@ -78,6 +78,8 @@ An operation is a description of the verified tool or command and its important
 arguments, not executable configuration. Use `null` for an unsupported operation
 and explain the consequence in `limitations`. Never put credentials, current
 tickets, shared-action approvals, or a chosen run destination in this file.
+Repository ticket definitions and tracker choices belong to the runner's ticket
+discovery, not this harness-wide configuration.
 
 For example, an Amp configuration may map independently addressable owners to
 `create_thread` and helpers to `Task`. Verify the tools available in the

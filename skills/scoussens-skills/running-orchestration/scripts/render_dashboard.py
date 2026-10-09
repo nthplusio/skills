@@ -85,8 +85,8 @@ def render(data, hosted=False):
             raise ValueError(f"{task['id']}: owner needs its actual harness ID")
         if task["owner"]["state"] not in ("active", "waiting", "complete", "closed"):
             raise ValueError(f"{task['id']}: invalid owner state")
-        if owner_id in owners and owners[owner_id] != task["owner"]["state"]:
-            raise ValueError(f"{task['id']}: one owner cannot have conflicting lifecycle states")
+        if owner_id in owners:
+            raise ValueError(f"{task['id']}: owner {owner_id} is already bound to another ticket; use that ticket's owner or a separate owner")
         owners[owner_id] = task["owner"]["state"]
         for key in MILESTONES:
             phase = task["milestones"][key]
