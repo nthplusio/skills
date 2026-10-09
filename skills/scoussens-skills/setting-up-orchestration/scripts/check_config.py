@@ -25,6 +25,16 @@ def check(config):
             value = config[section][field]
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{section}.{field} must be an operation description or null")
+    if "monitoring" in config:
+        monitoring = config["monitoring"]
+        if not isinstance(monitoring, dict):
+            raise ValueError("monitoring must describe notifications, wait, and wake operations")
+        for field in ("notifications", "wait", "wake"):
+            if field not in monitoring:
+                raise ValueError(f"monitoring.{field} must be an operation description or null")
+            value = monitoring[field]
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"monitoring.{field} must be an operation description or null")
     if config["owners"]["workspace_model"] not in ("shared", "isolated", "selectable", "unknown"):
         raise ValueError("owners.workspace_model must describe workspace sharing")
     for field in ("blocks_caller", "follow_up"):

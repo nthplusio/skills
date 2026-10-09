@@ -1,10 +1,10 @@
 ---
 name: setting-up-orchestration
 description: >-
-  Discovers an agent harness's work-owner, subagent, evidence-transfer, skill,
-  and artifact capabilities, confirms storage choices, and saves a local JSON
-  configuration. Use when asked to set up orchestration, configure sessions or
-  teammates for coordinated work, or repair a missing or unsuitable configuration.
+  Discovers an agent harness's work-owner, helper, monitoring, evidence-transfer,
+  skill, and artifact capabilities, confirms storage choices, and saves a local
+  JSON configuration. Use when asked to set up orchestration, configure sessions
+  or teammates for coordinated work, or repair a missing or unsuitable configuration.
   Use running-orchestration to coordinate an actual run, not this skill alone.
 ---
 
@@ -62,6 +62,18 @@ Record the actual supported operations in
   whether the caller waits for a batch. Record unavailable or unverified
   concurrency in `limitations`. Blocking the caller does not establish whether
   helper calls can overlap, and a blocking helper is not an independent owner.
+- Monitoring: in `monitoring.notifications`, describe owner-state/input events
+  or messages that reach the coordinator, their coverage, and whether they
+  interrupt a wait or require an active conversation. In `monitoring.wait`,
+  describe a bounded event wait or timed pause, its timeout arguments, whether
+  it blocks the caller, and how the coordinator continues afterward. Keep status
+  inspection separate from completion collection. In `monitoring.wake`, describe
+  any supported mechanism that resumes the coordinator after its turn ends,
+  including lifetime and authorization requirements. Notifications alone do not
+  guarantee periodic inspection. Record unavailable operations as `null` and
+  explain whether monitoring requires an active coordinator or manual resume.
+  Discovering a wake mechanism grants no permission to create a schedule or
+  subscription. Cadence and the selected monitoring mode belong to each run.
 - Skills: loading and the supported way to pass relevant instructions to an
   owner or helper. Record baseline shared skills when the user's guidance
   establishes them. Neither orchestration skill belongs in that list.
@@ -85,6 +97,11 @@ For example, an Amp configuration may map independently addressable owners to
 `create_thread` and helpers to `Task`. Verify the tools available in the
 session, including how results and closure work; this example grants no access
 or permission. A different harness needs its own mapping.
+
+Version 1 configurations without `monitoring` remain structurally valid. When
+a run needs repeated inspection, discover and save this missing capability
+section once using the existing confirmed storage choices. Missing facts are
+undiscovered; an explicit `null` means the operation is unavailable.
 
 **Done when** each needed capability has a supported operation or an explicit
 limitation. Unsupported ownership must remain visible, not be disguised as

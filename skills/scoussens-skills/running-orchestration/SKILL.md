@@ -2,7 +2,8 @@
 name: running-orchestration
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
-  milestone, reuses retained proof, and maintains one visual HTML dashboard.
+  milestone, repeatedly checks owner status, reuses retained proof, and maintains
+  one visual HTML dashboard.
   Use when asked to orchestrate multiple tickets, keep work-owner conversations
   moving, or resume a coordinated run. Uses setting-up-orchestration for a local
   harness JSON configuration. Do not use for a single implementation assignment
@@ -25,11 +26,11 @@ whether a check is needed. Conversation recovery follows the harness's rules.
 
 Locate the configuration using the explicit path or `ORCHESTRATION_CONFIG`,
 then the per-harness default documented by `setting-up-orchestration`. Read
-the stored JSON. If it is missing, malformed, has an unsupported version, or
-describes capabilities unavailable in this execution context, load that skill
-to create or repair it using confirmed settings. Read the resulting file, not
-a remembered capability summary. Explicit project/team settings take precedence
-over personal defaults; leave the personal configuration unchanged.
+the stored JSON. Load that skill to create or repair missing, malformed, or
+unsupported configuration, unavailable capability mappings, or missing monitoring
+facts needed for repeated inspection. Reuse confirmed settings. Read the resulting
+file, not a remembered capability summary. Explicit project/team settings take
+precedence over personal defaults; leave the personal configuration unchanged.
 
 Use its owner/helper terminology, operations, skill propagation, evidence
 transfer, and `run_root`. Resolve only a material capability mismatch; do not
@@ -100,8 +101,58 @@ or proof lives.
 
 Use the configured inspection, messaging, and result-collection operations.
 Choose one completion mechanism per owner, such as a reply or a wait/join;
-do not double-collect merely to obtain the same report. An idle owner may be
-waiting for input, not finished. Route findings and follow-up fixes to its owner.
+collect each completion report once. Status inspection is a separate operation
+and continues even when completion arrives by reply.
+
+### Coordination cycle
+
+Select monitoring from the confirmed configuration. Use notifications for
+prompt checks and a bounded wait for periodic scans. Without notifications,
+use timed inspection. Use a configured wake mechanism after the turn ends only
+within explicit authorization for scheduled or background monitoring. Otherwise
+keep the coordinator active through bounded waits. When neither continued
+execution nor an authorized wake is available, inspect once, record the manual
+resume limitation, and hand back the current snapshot.
+
+Default to a 60-second scan interval unless the user or harness limits require
+another cadence. Save the selected mechanism, interval, actual last check,
+next check deadline, and any monitoring hold in the run record, not the harness
+configuration. Bound each wait by the next scan deadline. Resume with an
+immediate scan; a missed deadline or a new notification needs no extra wait.
+Event-driven checks leave the next full-scan deadline unchanged so busy owners
+cannot postpone inspection of quiet ones.
+
+Repeat this cycle while assigned work or known obligations remain:
+
+1. Inspect every unfinished owner on startup/resume and at each scan deadline.
+   On a notification, check the affected owner promptly. Include pending input,
+   activity, blockers, and outstanding obligations. Reuse a fresh observation
+   from the same cycle; retrieve only new reports or changed evidence.
+2. Route findings and scoped next actions to the existing owner. An idle owner
+   with obligations needs a follow-up, not closure. For an active owner that
+   misses a promised update or check deadline, request a progress/blocker report
+   once and track the unanswered request. Unchanged status alone does not prove
+   a stall. Keep pending follow-ups visible rather than resending every scan.
+   Use the routing rules below for decisions and human-only gates; continue
+   unrelated work and escalate material problems with a recommendation.
+3. Assess new proof under step 4, maintain the record and selected dashboard
+   under step 5, and reconcile completion/closure under step 6. Record each
+   owner's actual check time. Refresh the record and selected dashboard after
+   each periodic scan and meaningful event, including an unchanged scan's real
+   timestamp. Keep retained proof assessments; inspection is not a rerun of tests.
+4. If obligations remain, wait for a notification or the next scan deadline,
+   then repeat. Long helper calls and caller-blocking dialogs delay inspection;
+   record a missed check honestly and scan when control returns. The dashboard
+   stays a snapshot while the coordinator cannot write it.
+
+Exit when all assignments and known obligations are settled, the user pauses
+the run, only human answers can unblock remaining work, or the harness cannot
+continue monitoring. Before yielding, save the actual hold and answer/resume
+route. Keep `next_check_at` only when continued execution or an authorized wake
+will perform that check; otherwise set it to `null`. A completion notification
+does not end monitoring of other owners.
+
+### Helpers, decisions, and authorization
 
 When several substantial coordination jobs are independent, automatically use
 bounded helpers concurrently through the configured mechanism. For example,
@@ -153,8 +204,11 @@ write, access/secrets change, push, merge, or deployment. Include indirect
 effects such as auto-merge or an automatic deployment before seeking approval.
 Ask again only when the action exceeds the granted scope.
 
-**Done when** runnable work continues, every pending decision has a clear answer
-route, and requested shared actions fit recorded authorization.
+**Cycle complete when** each due owner has a fresh observation or an explicit
+inspection limitation, findings have an action/answer route, the record and
+selected dashboard are current, and the next check or actual hold is recorded.
+Continue cycles until an exit condition above is met; shared actions must fit
+recorded authorization throughout.
 
 ## 4. Consume proof once
 
@@ -225,9 +279,9 @@ python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboa
 ```
 
 The renderer checks the display contract, not the truth of supplied evidence.
-Update the record when an owner reports a meaningful change, a dependency or
-approval changes, a verdict is corrected, or an owner closes. Show a compact
-task/owner matrix with four distinct milestone indicators and one decision queue.
+Refresh at step 3's cycle boundaries, including dependency/approval changes,
+corrected verdicts and owner closure. Show a compact task/owner matrix with four
+distinct milestone indicators and one decision queue.
 Selecting a task opens its blocker, next action, and proof in a bounded dialog.
 Selecting a decision opens its focused dialog. Default to a closed dialog on
 initial load unless the user requests a selected decision up front. Keep unblock

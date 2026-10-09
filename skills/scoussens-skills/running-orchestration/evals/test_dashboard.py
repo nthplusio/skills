@@ -216,6 +216,7 @@ class ConfigTests(unittest.TestCase):
         self.config["limitations"] = ["No independently addressable owners available"]
 
     def test_json_roundtrip_retains_unsupported_capabilities_without_faking_owners(self):
+        self.config["monitoring"]["wait"] = "Timed pause with timeout_seconds; blocks caller and resumes this turn."
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
             path.write_text(json.dumps(self.config))
@@ -225,6 +226,25 @@ class ConfigTests(unittest.TestCase):
             self.assertIsNone(stored["owners"]["launch"])
             self.assertEqual(stored["harness"]["owner_term"], "session")
             self.assertEqual(stored["limitations"], ["No independently addressable owners available"])
+            self.assertEqual(stored["monitoring"], {
+                "notifications": None,
+                "wait": "Timed pause with timeout_seconds; blocks caller and resumes this turn.",
+                "wake": None,
+            })
+
+    def test_monitoring_is_optional_for_old_configs_but_complete_when_present(self):
+        legacy = deepcopy(self.config)
+        del legacy["monitoring"]
+        check(legacy)
+        check(self.config)
+        for monitoring in (None, [], {}, {"notifications": None, "wait": None},
+                           {"notifications": None, "wait": 60, "wake": None},
+                           {"notifications": None, "wait": None, "wake": "  "}):
+            with self.subTest(monitoring=monitoring):
+                invalid = deepcopy(self.config)
+                invalid["monitoring"] = monitoring
+                with self.assertRaisesRegex(ValueError, "monitoring"):
+                    check(invalid)
 
     def test_shared_skills_exclude_both_orchestration_roles(self):
         self.config["skills"]["shared"] = ["speak-clearly"]
