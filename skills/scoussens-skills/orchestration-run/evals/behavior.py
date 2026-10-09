@@ -67,7 +67,9 @@ def configuration(case, name):
     config["artifacts"] = [{
         "id": "local", "label": "Local HTML", "present": "stub render",
         "update": "stub render", "audience": "This isolated scenario only", "interaction": None,
+        "auto_refresh": None,
     }]
+    config["limitations"].append("The mock renderer writes static HTML only; no browser or automatic refresh is exercised.")
     config["run_root"] = str(case / "state" / "runs")
     config.update(ticket_policy={"source": "Linear", "location": "repository tickets",
         "definition": "One independently verifiable outcome", "template": "compact layout",
