@@ -5,8 +5,8 @@ does not launch agents, call customer services, or publish anything. The
 candidate must execute the request; generating fixtures or grading untouched
 files is not a behavioral evaluation.
 
-The suite includes the original six prompts, two coordinator-helper cases and
-a simultaneous-decision routing case:
+The suite includes the original six prompts, coordinator-helper and decision-
+routing cases, and repository ticket-definition/ownership cases:
 
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |
@@ -19,6 +19,9 @@ a simultaneous-decision routing case:
 | `runner-parallel-helpers` | Runner 6 | Automatically batch independent report assessments and scoped follow-ups; incorporate returned proof once while the coordinator owns status and authorization. |
 | `runner-no-helpers` | Runner 7 | Coordinate directly when bounded helpers are absent; do not invent capability or replacement owners. |
 | `runner-decision-routing` | Runner 8 | Route pending local/shared/human-only decisions without serial coordinator dialogs, relay an actual scoped answer once, and keep independent work moving. |
+| `runner-ticket-source` | Runner 9 | Inspect missing repository conventions, propose local stable-ID Markdown tickets, and await one focused confirmation without adopting defaults. |
+| `runner-ticket-lifetime` | Runner 10 | Inspect original assignments, keep a closed owner on its original ticket, and send a new phase to the same ticket's existing owner. |
+| `runner-ticket-split` | Runner 11 | Preserve the parent and all seven criteria in two bounded proposals; await split approval without tracker writes or owner launches. |
 
 ## Prepare and execute
 
@@ -57,6 +60,12 @@ checks. It inspects recorded actions and actual files, not the candidate's
 assurance that it followed the skill. Mock publication, checks, and closure
 are allowed to succeed even when wrong, so the grader can detect those
 mistakes without causing live effects.
+
+Ticket cases expose read-only repository facts through isolated files. Stub
+tracker writes still succeed when unauthorized and fail grading. Inspect the
+source question's actual location/ID proposal, original owner bindings, child
+outcomes, proof and pending approval manually. Criterion-count and verbatim-
+preservation checks do not establish that two children have independent outcomes.
 
 Inspect each `trace.jsonl`, `reply.md`, and final state too. Record a separate
 manual verdict citing the relevant events or exact claims. Check that questions

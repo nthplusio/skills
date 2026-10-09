@@ -65,14 +65,19 @@ template uses them for selection, links, host comments, and copyable questions.
 
 ## Task fields
 
-`id` is a stable ticket or task ID, `title` is the outcome, and `done_when` names
-the assigned completion criterion. `owner` contains its actual harness `id`,
-`label`, optional `href`, `state`, `location`, and `handoff`. Its state is
-`active`, `waiting`, `complete`, or `closed`. Multiple tickets may share an
-owner ID; its lifecycle must agree across rows and counts include it once.
+Each row represents one ticket in the repository's confirmed ticket source.
+`id` is its stable ticket ID, `title` is the outcome, and `done_when` names the
+assigned completion criterion. `owner` contains its actual harness `id`, `label`,
+optional `href`, `state`, `location`, and `handoff`. Its state is `active`,
+`waiting`, `complete`, or `closed`. An owner ID belongs to exactly one ticket;
+the renderer rejects duplicate owner IDs across rows, including closed owners.
+Retain the original ticket binding in the row and any replacement handoff/history.
+Inspect the owner's original assignment before reuse; the renderer cannot prove
+historical bindings outside this record. Record confirmed repository ticket-policy
+choices and their source in `history`, without adding them to the harness config.
 Use `complete` when work is done but closure is unavailable/pending. Only
 `closed` asserts that the harness close/archive operation succeeded. Settle all
-of an owner's assigned tasks and known obligations before marking it complete
+of its ticket's assigned work and known obligations before marking it complete
 or closed. Code readiness and owner completion are independent: a required
 runtime release keeps the owner active/waiting and belongs in `obligations`.
 

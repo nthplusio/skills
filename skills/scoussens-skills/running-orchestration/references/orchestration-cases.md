@@ -20,6 +20,9 @@ choices. They are not current ticket status or extra standing authorization.
 | Several owners need unrelated user decisions. | Show one prioritized queue with recommendations, affected work and direct discussion routes. Local choices stay with their owners; cross-ticket choices stay with the coordinator. | Serializing every conversation behind a coordinator's blocking dialog. |
 | The user answers a local choice in its owner conversation or by ID to the coordinator. | Apply or relay the actual answer within its scope, retain its source once, and remove the answered item from the pending queue. | Asking the user to repeat it or treating a local answer as broad publication permission. |
 | An owner is stopped at a human-only native input gate. | Link the user to that conversation and keep the decision pending until the gate is actually answered. | Claiming a queued message, clipboard action or helper can satisfy the gate. |
+| A closed owner appears available for an unrelated ticket. | Inspect its original binding and locate or assign the unrelated ticket's own owner. Reopen the closed owner only for its original ticket's follow-up. | Treating closure as permission to repurpose an owner. |
+| Repository ticket conventions are missing or not yet confirmed. | Discover available facts, propose a local stable-ID ticket if needed, and ask one focused question at a time. Hold only affected assignments. | Treating a suggested ticket format as a settled user choice. |
+| A ticket combines independent outcomes or exceeds the confirmed criterion limit. | Preserve the parent and draft smaller children for approval, with all outcomes and proof retained. | Silently rewriting shared tickets or hiding extra outcomes inside five broad criteria. |
 
 The runnable local checks validate JSON and HTML contracts. The prompts in
 `evals/evals.json` test the agent's decisions. Running the former does not mean
