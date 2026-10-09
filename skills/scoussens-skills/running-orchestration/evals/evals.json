@@ -84,6 +84,34 @@
         "does_not_extend_recovery: creates no external checkpoint store or cross-harness synchronization"
       ],
       "files": []
+    },
+    {
+      "id": 6,
+      "name": "parallel-coordinator-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment, which has not yet been done for this run. Establish each review-readiness verdict and send the existing owners concrete scoped follow-ups. Preserve reported failures and the earlier superseded verdict without replaying checks. Update the current status and ask where to present it. Publication and deployment are not requested.",
+      "expected_output": "Automatically batches independent report assessment and scoped owner follow-ups through verified concurrent bounded helpers. Keeps the coordinator as the only status/dashboard writer and authority for authorization, resource allocation and cross-ticket decisions. Incorporates inspectable helper results without repeating their assessment. Distinguishes a blocking batch from background responsiveness.",
+      "assertions": [
+        "uses_helpers_automatically: dispatches independent substantial coordination work concurrently without another permission question",
+        "bounds_helper_work: gives separate owner/proof scopes, applicable instructions and only scoped follow-up authority",
+        "preserves_existing_ownership: helpers assist the coordinator rather than launching replacement ticket owners",
+        "coordinator_writes_status: only the coordinator incorporates results into the status/dashboard",
+        "collects_proof_not_assurances: uses returned receipts and actual follow-up results without replaying sufficient checks",
+        "scopes_blocking_behavior: does not claim the coordinator stayed responsive during a blocking invocation"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "coordinate-without-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment for this run. Establish review-readiness verdicts, send scoped follow-ups to those existing owners, preserve the failure and superseded receipts, and update status. The saved configuration and inventory confirm that bounded helper invocation is unavailable; independently addressable ticket owners still work. Ask where to present the dashboard. Publication and deployment are not requested.",
+      "expected_output": "Coordinates directly with the existing owners, keeps proof and current status accurate, and explains the missing helper capability without blocking work or substituting new ticket owners for bounded helpers.",
+      "assertions": [
+        "continues_without_helpers: handles reports and follow-ups directly rather than holding the run",
+        "uses_actual_capabilities: invokes no unavailable helpers and invents no parallel or background execution",
+        "keeps_owner_identity: starts no replacement ticket owners or additional coordinators",
+        "preserves_proof_and_authority: retains failures, keeps required review incomplete and grants no publication or deployment approval"
+      ],
+      "files": []
     }
   ]
 }

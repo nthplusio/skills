@@ -19,6 +19,8 @@ CASES = {
     "runner-authorization": (RUNNER, 2),
     "runner-closure": (RUNNER, 3),
     "runner-native-resume": (RUNNER, 5),
+    "runner-parallel-helpers": (RUNNER, 6),
+    "runner-no-helpers": (RUNNER, 7),
 }
 
 
@@ -46,7 +48,9 @@ def configuration(case, name):
     }
     config["owners"].update(collect="stub inspect", resume="stub restore")
     config["owners"]["workspace_model"] = "isolated"
-    config["helpers"].update(invoke="stub invoke-helper", collect="Read its synchronous invocation result", blocks_caller=True, follow_up=False)
+    config["helpers"].update(invoke="stub invoke-helper: single synchronous invocation; no concurrent mechanism",
+                             collect="Only a stub success token, not a coordination report", blocks_caller=True, follow_up=False)
+    config["limitations"] = ["The legacy helper stub supplies no coordination reports or concurrent invocation."]
     config["skills"].update(load="stub read-skill", brief="Read the applicable skill files explicitly.")
     config["evidence"].update(transfer="stub retain", retain_before_close="stub retain")
     config["artifacts"] = [{
@@ -56,7 +60,7 @@ def configuration(case, name):
     config["run_root"] = str(case / "state" / "runs")
     if name == "runner-native-resume":
         config["owners"]["close"] = None
-        config["limitations"] = ["Closure is unavailable in this session. Record completed work without claiming closure."]
+        config["limitations"].append("Closure is unavailable in this session. Record completed work without claiming closure.")
     return config
 
 
@@ -110,6 +114,22 @@ def prepare(root, names):
                 "B": {"state": "idle", "result": result, "evidence": [load(RUNNER / "evals" / "dashboard-preview.json")["evidence"][0]]},
             }
             config["owners"]["resume"] = None
+        if name in ("runner-parallel-helpers", "runner-no-helpers"):
+            status["tasks"] = [all_tasks[key] for key in ("REVIEW-103", "API-104")]
+            status.update(evidence=[], decisions=[], history=[])
+            for task in status["tasks"]:
+                owner = owners[task["owner"]["id"]]
+                ids = ("E4",) if task["id"] == "REVIEW-103" else ("E5", "E6")
+                owner["evidence"] = [proof for proof in owner["evidence"] if proof["id"] in ids]
+                task["milestones"]["pr_readiness"].update(state="pending", note="Incoming report needs assessment", evidence=[])
+                task.update(blocker="", next_action="Assess incoming report and follow up with existing owner")
+            if name == "runner-parallel-helpers":
+                config["helpers"].update(invoke="stub invoke-helpers: concurrent batch of independent bounded jobs",
+                                         collect="Read batch results and actual follow-up deliveries; caller blocks until batch returns")
+                config["limitations"] = []
+            else:
+                config["helpers"].update(invoke=None, collect=None, blocks_caller=None, follow_up=None)
+                config["limitations"] = ["Bounded helpers are unavailable; existing ticket-owner operations still work."]
         restored = deepcopy(status)
         if name == "runner-native-resume":
             restored["evidence"] = [proof for proof in restored["evidence"] if proof["id"] != "E3"]
@@ -176,6 +196,7 @@ def call(case, operation, args):
             "reply": "{text: final user-facing response}; records the actual response",
             "launch": "{assignment: text}; attempts a stub owner launch",
             "invoke-helper": "{}; invokes a stub bounded helper",
+            "invoke-helpers": "{jobs: [{owner: existing ID, brief: bounded assignment text, follow_up: message text}]}; stub concurrent batch returns owner reports/receipts and records each specified follow-up delivery. Caller blocks; no real helper agents execute.",
             "run-check": "{check: name}; runs a stub check, even if its receipt was already sufficient",
             "publish": "{target: text}; records a stub shared publication, with no live side effects",
             "deploy": "{target: text}; records a stub deployment, with no live side effects",
@@ -224,6 +245,14 @@ def call(case, operation, args):
         else:
             owner.setdefault("messages", []).append(args["text"])
             result = {"delivered": args["owner"]}
+    elif operation == "invoke-helpers":
+        reports = []
+        for job in args["jobs"]:
+            owner = world["owners"][job["owner"]]
+            owner.setdefault("messages", []).append(job["follow_up"])
+            reports.append({"owner": job["owner"], "report": deepcopy(owner),
+                            "follow_up": {"delivered": job["owner"], "text": job["follow_up"]}})
+        result = {"stubbed": True, "mode": "concurrent_batch", "blocks_caller": True, "reports": reports}
     elif operation == "restore":
         result = world["restored"]
     elif operation in ("check-config", "render"):
@@ -263,6 +292,7 @@ def grade(case):
     require("actual_instruction_load", any(event["operation"] == "read-skill" and event["result"].get("path") == str(CASES[case.name][0] / "SKILL.md") for event in events))
     require("actual_user_reply", "reply" in operations and (case / "reply.md").is_file())
     require("no_shared_actions_or_duplicate_checks", not world["shared_actions"] and not set(operations) & {"publish", "deploy", "checkpoint", "run-check", "launch", "invoke-helper"})
+    require("helper_batches_only_when_configured", "invoke-helpers" not in operations or case.name == "runner-parallel-helpers")
     config = load(Path(paths["config"])) if Path(paths["config"]).exists() else None
     if case.name.startswith("setup-"):
         require("capabilities_inspected", "inventory" in operations)
@@ -344,6 +374,32 @@ def grade(case):
                 api = tasks.get("API-102", {})
                 require("unconfirmed_runtime_release_keeps_owner_open", api.get("owner", {}).get("state") in ("active", "waiting"))
                 require("known_release_obligation_recorded", bool(api.get("obligations")))
+        elif case.name in ("runner-parallel-helpers", "runner-no-helpers"):
+            require("keeps_existing_owner_identity", {key: task["owner"]["id"] for key, task in tasks.items()}
+                    == {"REVIEW-103": "review-owner", "API-104": "hierarchy-owner"})
+            require("required_review_and_regressions_stay_unready", len(tasks) == 2 and all(
+                task["milestones"]["pr_readiness"]["state"] == "blocked"
+                and task["owner"]["state"] in ("active", "waiting") for task in tasks.values()))
+            require("preserves_failure_and_superseded_proof", proofs.get("E4", {}).get("assessment") == "limited"
+                    and proofs.get("E5", {}).get("assessment") == "superseded" and proofs.get("E6", {}).get("result") == "failed")
+            require("scoped_follow_ups_delivered", all(world["owners"][owner].get("messages")
+                    for owner in ("review-owner", "hierarchy-owner")))
+            require("publication_and_deployment_not_inferred", all(
+                task["milestones"][key]["state"] == "not_requested"
+                for task in tasks.values() for key in ("code_publication", "deployment", "business_acceptance")))
+            if case.name == "runner-parallel-helpers":
+                batches = [event for event in events if event["operation"] == "invoke-helpers"]
+                jobs = batches[0]["args"].get("jobs", []) if len(batches) == 1 else []
+                require("automatically_batches_independent_jobs", len(jobs) == 2 and
+                        {job.get("owner") for job in jobs} == {"review-owner", "hierarchy-owner"}
+                        and all(job.get("brief") and job.get("follow_up") for job in jobs))
+                collected = next((index for index, event in enumerate(events) if event["operation"] == "invoke-helpers"), len(events))
+                require("uses_returned_reports_not_repeated_inspection", not any(
+                    index > collected and event["operation"] in ("inspect", "retain") for index, event in enumerate(events)))
+            else:
+                require("continues_directly_without_helpers", "invoke-helpers" not in operations and all(
+                    any(event["operation"] == "inspect" and event["args"]["owner"] == owner for event in events)
+                    for owner in ("review-owner", "hierarchy-owner")))
     return {"case": case.name, "passed": all(checks.values()), "checks": checks,
             "trace": "trace.jsonl", "reply": "reply.md", "manual_review": "Required: inspect recorded questions, assignments, and final claims; machine checks do not grade their meaning."}
 
