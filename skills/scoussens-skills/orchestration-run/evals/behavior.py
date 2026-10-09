@@ -672,7 +672,9 @@ def grade(case):
                     == world["owners"]["api-owner"]["state"])
             require("shared_action_approval_still_held", tasks.get("OPS-105", {}).get("milestones", {}).get("code_publication", {}).get("state") == "blocked")
             require("independent_ui_owner_keeps_moving", tasks.get("UI-101", {}).get("owner", {}).get("state") == "active"
-                    and not tasks["UI-101"]["blocker"] and bool(world["owners"]["ui-owner"].get("messages")))
+                    and not tasks["UI-101"]["blocker"] and not world["owners"]["ui-owner"].get("messages")
+                    and any(event["operation"] == "inspect" and event["args"]["owner"] == "ui-owner"
+                            and event["result"].get("state") == "active" for event in events))
         elif case.name.startswith("runner-ticket-"):
             require("ticket_reference_loaded", any(event["operation"] == "read-skill" and
                     event["args"].get("resource") == "references/ticket-template.md" for event in events))
