@@ -63,7 +63,10 @@ Each harness entry records the observation time, inspected sources, and:
 - Artifacts. List usable destinations, update operations, audiences, and optional
   native comment/message interaction. Local HTML can be an option. In a remote
   environment, describe its supported user preview or portal. Use `null` for
-  unavailable interaction. Copyable questions need no messaging bridge.
+  unavailable interaction. Record `auto_refresh` as a sourced description of
+  supported embedded full-page reloads that retrieve updates from the same URL,
+  or `null` when unavailable. Note embedding and caching limits. Copyable questions
+  need no messaging bridge.
 
 Store operation descriptions with important arguments, not executable commands
 to run from JSON. An inspected unavailable operation is `null` with a limitation.

@@ -24,10 +24,13 @@ class Page(HTMLParser):
         self.rows = {}
         self.contexts = {}
         self.row = None
+        self.refresh = None
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if tag == "meta" and attrs.get("http-equiv") == "refresh":
+            self.refresh = attrs["content"]
         if "id" in attrs:
             self.ids.append(attrs["id"])
         if "data-context" in attrs:
@@ -56,6 +59,44 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(page.rows["row-OPS-105"], ["Verified", "Blocked", "Not requested", "Not requested"])
         self.assertEqual(len(page.rows), 7)
         self.assertEqual(len(page.ids), len(set(page.ids)))
+
+    def test_auto_refresh_uses_run_interval_even_when_paused_or_finished(self):
+        self.data["presentation"]["auto_refresh"] = True
+        for interval, hold in ((1, None), (17, "Paused for user input"), (137, "Run complete")):
+            with self.subTest(interval=interval, hold=hold):
+                self.data["monitoring"] = {"interval_seconds": interval, "hold": hold, "next_check_at": None}
+                if hold == "Run complete":
+                    self.data.update(tasks=[], decisions=[], evidence=[], history=[])
+                html = render(self.data, hosted=True)
+                self.assertEqual(Page(html).refresh, str(interval))
+                self.assertIn(f"Page reloads every {interval} seconds; status updated by the coordinator", html)
+                self.assertIn("Updated 2026-10-08T14:30:00-05:00", html)
+        self.assertEqual(self.data["updated_at"], "2026-10-08T14:30:00-05:00")
+
+    def test_absent_or_unavailable_auto_refresh_keeps_static_snapshot(self):
+        self.data["monitoring"] = {"interval_seconds": 17}
+        for explicit in (False, True):
+            with self.subTest(explicit=explicit):
+                if explicit:
+                    self.data["presentation"]["auto_refresh"] = False
+                html = render(self.data)
+                self.assertIsNone(Page(html).refresh)
+                self.assertIn("Static snapshot, updated by the coordinator", html)
+
+    def test_auto_refresh_rejects_invalid_capability_flags_and_intervals(self):
+        for value in (None, "true", 1):
+            with self.subTest(flag=value):
+                self.data["presentation"]["auto_refresh"] = value
+                with self.assertRaisesRegex(ValueError, "presentation.auto_refresh must be boolean"):
+                    render(self.data)
+        self.data["presentation"]["auto_refresh"] = True
+        with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
+            render(self.data)
+        for interval in (None, 0, -1, True, "17", 1.5):
+            with self.subTest(interval=interval):
+                self.data["monitoring"] = {"interval_seconds": interval}
+                with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
+                    render(self.data)
 
     def test_green_job_cannot_be_used_as_verified_review_proof(self):
         self.data["tasks"][2]["milestones"]["pr_readiness"]["state"] = "verified"
@@ -337,6 +378,22 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(selected["artifacts"], [])
         self.assertEqual(selected["limitations"], ["No independent owners"])
         self.assertIsNone(self.selected("Amp")["artifacts"][0]["interaction"])
+
+    def test_artifact_auto_refresh_is_an_optional_capability_description(self):
+        artifact = self.discovery["harnesses"]["Amp"]["artifacts"][0]
+        self.assertNotIn("auto_refresh", self.selected("Amp")["artifacts"][0])
+        for value in (None, "Supports HTML meta refresh at the updated page URL"):
+            with self.subTest(capability=value):
+                artifact["auto_refresh"] = value
+                self.save()
+                self.assertEqual(self.selected("Amp")["artifacts"][0]["auto_refresh"], value)
+        for value in ("", True, 17):
+            with self.subTest(invalid=value):
+                artifact["auto_refresh"] = value
+                self.save()
+                result = self.cli(DISCOVERY, self.discovery_path)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("artifact.auto_refresh must be nonempty text", result.stderr)
 
     def test_all_orchestration_names_are_excluded_from_shared_worker_skills(self):
         original = deepcopy(self.config)

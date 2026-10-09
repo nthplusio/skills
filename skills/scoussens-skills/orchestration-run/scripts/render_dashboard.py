@@ -68,6 +68,17 @@ def render(data, hosted=False):
         raise ValueError("run_id must be nonempty text")
     if not isinstance(data["config_path"], str) or not data["config_path"].strip():
         raise ValueError("record the harness config_path")
+    auto_refresh = data["presentation"].get("auto_refresh", False)
+    if type(auto_refresh) is not bool:
+        raise ValueError("presentation.auto_refresh must be boolean")
+    refresh_meta = ""
+    refresh_status = "Static snapshot, updated by the coordinator"
+    if auto_refresh:
+        interval = data.get("monitoring", {}).get("interval_seconds")
+        if type(interval) is not int or interval < 1:
+            raise ValueError("automatic refresh needs a positive integer monitoring.interval_seconds")
+        refresh_meta = f'<meta http-equiv="refresh" content="{interval}">'
+        refresh_status = f"Page reloads every {interval} seconds; status updated by the coordinator"
     evidence = indexed(data["evidence"])
     tasks = indexed(data["tasks"])
     decisions = indexed(data["decisions"])
@@ -254,6 +265,7 @@ def render(data, hosted=False):
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
         "GOAL": escape(data["goal"]), "UPDATED": escape(data["updated_at"]),
+        "REFRESH_META": refresh_meta, "REFRESH_STATUS": refresh_status,
         "NOTICE": escape(data.get("notice", "")), "TASK_COUNT": str(len(tasks)),
         "ACTIVE_COUNT": str(sum(state == "active" for state in owners.values())),
         "WAITING_COUNT": str(sum(state == "waiting" for state in owners.values())),

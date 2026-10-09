@@ -63,8 +63,9 @@ Resolve project choices first, then the current harness profile:
 4. Run defaults. Confirm the default finish line, preferred available destination
    or `null` for no preference, and scan interval. Propose review-ready PRs and
    60 seconds if guidance supplies none. Explain active-turn or manual-resume
-   limits from discovery. A preference is not run approval or permission to wake
-   the coordinator after yielding.
+   limits from discovery. For destinations with verified embedded refresh,
+   explain that the dashboard reloads at the run interval, including during dialogs.
+   A preference is not run approval or permission to wake the coordinator after yielding.
 
 Group closely related choices when one answer can settle them, such as the storage
 paths or run defaults. If an answer is pending, end this turn with that one question

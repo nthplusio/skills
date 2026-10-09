@@ -288,6 +288,17 @@ or identify privately retained proof. Follow the selected host's instructions.
 In a remote sandbox, local HTML needs a supported preview or portal for the user;
 a sandbox-local URL is not a delivery link.
 
+Set `presentation.auto_refresh` from the selected destination's discovered
+`auto_refresh` capability. Inspect missing capability facts through discovery.
+Enable verified embedded refresh automatically at the confirmed run interval.
+For unavailable or unverified support, keep the page static and state the limitation
+in `notice`. When first using a destination, check the served page's refresh
+directive and verify that a timed reload retrieves an updated artifact from the
+same URL, without a manual reload. If the host strips refresh or serves stale HTML,
+correct discovery and keep the page static with the limitation.
+Reloads continue through pauses and completion and can discard open dialogs and
+drafted questions. They do not run status checks or establish fresh evidence.
+
 ```bash
 python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html>
 # Before hosting, reject local proof/owner links that the audience cannot use:
@@ -304,7 +315,7 @@ initial load unless the user requests a selected decision up front. Keep unblock
 previews and copyable IDs in the queue, with the recommendation and authoritative
 answer route in the dialog.
 Keep history and raw proof expandable. Stamp the real update time; do not imply
-a static page updates itself.
+that a page reload advances the coordinator's snapshot time.
 
 Keep task, proof, decision, and run IDs stable. The template lets the user copy
 an ID, a question, or the selected issue/decision context with its snapshot time,
