@@ -211,22 +211,31 @@ python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboa
 
 The renderer checks the display contract, not the truth of supplied evidence.
 Update the record when an owner reports a meaningful change, a dependency or
-approval changes, a verdict is corrected, or an owner closes. Show decisions
-needed beside a compact task/owner matrix with four distinct milestone indicators.
-Selecting a task opens its blocker, next action, and proof in the details pane.
+approval changes, a verdict is corrected, or an owner closes. Show a compact
+task/owner matrix with four distinct milestone indicators and one decision queue.
+Selecting a task opens its blocker, next action, and proof in a bounded dialog.
+Selecting a decision opens its focused dialog. Default to a closed dialog on
+initial load unless the user requests a selected decision up front. Keep unblock
+previews and copyable IDs in the queue, with the recommendation and authoritative
+answer route in the dialog.
 Keep history and raw proof expandable. Stamp the real update time; do not imply
 a static page updates itself.
 
 Keep task, proof, decision, and run IDs stable. The template lets the user copy
-an ID or a question containing its run/task/proof context. Task and proof
-questions go to the coordinator; decision questions use their recorded
-discussion route, with a direct-thread instruction for human-only gates. Show
-affected tasks and what each decision unblocks beside its recommendation.
+an ID, a question, or the selected issue/decision context with its snapshot time,
+states, blocker, next action, proof IDs and approval constraints. Task/proof
+questions go to the coordinator; task context goes to its existing work owner.
+Decision context and questions use their recorded discussion route, with a
+direct-thread instruction for human-only gates. Keep the work owner distinct
+from that answer destination. Show affected tasks and what each decision unblocks
+beside its recommendation.
 Record the coordinator link and any configured native comment/message mechanism
-in `presentation`. Explain that copy does not send. Use host-native interaction
-when supported; do not invent a chat backend or claim delivery from a clipboard
-action. Interpret answers against the same record and update it without asking
-the user to repeat a decision already made in its authoritative conversation.
+in `presentation`. Put Copy context before the existing conversation link;
+the user copies, opens and pastes. Neither action sends a message or grants
+approval. Use host-native interaction when supported; do not invent a chat backend
+or claim delivery from a clipboard action. Interpret answers against the same
+record and update it without asking the user to repeat a decision already made
+in its authoritative conversation.
 
 Render representative states and inspect the result when creating or changing
 the template. Routine data updates need the renderer check and a correct

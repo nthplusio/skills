@@ -23,6 +23,7 @@ class Page(HTMLParser):
         super().__init__()
         self.ids = []
         self.rows = {}
+        self.contexts = {}
         self.row = None
         self.feed(html)
 
@@ -30,6 +31,10 @@ class Page(HTMLParser):
         attrs = dict(attrs)
         if "id" in attrs:
             self.ids.append(attrs["id"])
+        if "data-context" in attrs:
+            packet = json.loads(attrs["data-context"])
+            key = packet["decision"]["id"] if "decision" in packet else packet["tasks"][0]["id"]
+            self.contexts[key] = packet
         if tag == "tr" and attrs.get("id", "").startswith("row-"):
             self.row = attrs["id"]
             self.rows[self.row] = []
@@ -121,6 +126,28 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("In orchestration run template-preview, decision Q1:", html)
         self.assertIn('data-copy-id="UI-101"', html)
         self.assertIn("Copy does not send", html)
+
+    def test_copied_context_is_scoped_and_keeps_work_owner_distinct_from_answer_route(self):
+        self.data["tasks"][4]["owner"]["href"] = "https://example.org/reviewer-owner"
+        contexts = Page(render(self.data)).contexts
+        packet = contexts["Q1"]
+        self.assertEqual(packet["run_id"], "template-preview")
+        self.assertEqual(packet["snapshot_time"], "2026-10-08T14:30:00-05:00")
+        self.assertEqual([task["id"] for task in packet["tasks"]], ["OPS-105"])
+        task = packet["tasks"][0]
+        self.assertEqual(task["owner"]["id"], "reviewer-owner")
+        self.assertEqual(packet["answer_route"]["owner_id"], "fixture-coordinator")
+        self.assertEqual(task["milestones"]["pr_readiness"]["evidence"], ["E7"])
+        self.assertEqual(task["milestones"]["code_publication"]["state"], "blocked")
+        self.assertEqual(task["milestones"]["deployment"]["state"], "not_requested")
+        self.assertIn("unapproved", task["blocker"])
+        self.assertIn("no approval", packet["approval_constraints"])
+        self.assertEqual(packet["decision"]["task_ids"], ["OPS-105"])
+        self.assertEqual(contexts["OPS-105"]["answer_route"], {
+            "owner_id": "reviewer-owner", "label": "Reviewer owner",
+            "href": "https://example.org/reviewer-owner",
+        })
+        self.assertNotIn("decision", contexts["OPS-105"])
 
     def test_decision_questions_route_to_their_owners_and_name_human_only_gates(self):
         self.data["decisions"] = [

@@ -114,6 +114,33 @@ def render(data, hosted=False):
     def proof_links(ids):
         return " ".join(anchor(f"#proof-{key}", key) for key in ids)
 
+    def context_packet(task_ids, decision=None):
+        packet = {
+            "run_id": data["run_id"], "snapshot_time": data["updated_at"], "goal": data["goal"],
+            "approval_constraints": "This context grants no approval. Use only explicitly authorized scope from the originating conversation.",
+            "tasks": [{key: tasks[task_id][key] for key in
+                       ("id", "title", "owner", "blocker", "next_action", "obligations", "milestones")}
+                      for task_id in task_ids],
+        }
+        if decision is not None:
+            packet["decision"] = decision
+            packet["answer_route"] = decision.get("discussion") or {
+                "label": "Coordinator", "href": data["presentation"].get("coordinator_href", "")}
+        elif task_ids:
+            owner = tasks[task_ids[0]]["owner"]
+            packet["answer_route"] = {"owner_id": owner["id"], "label": owner["label"], "href": owner.get("href", "")}
+        return escape(json.dumps(packet, indent=2, ensure_ascii=False), quote=True)
+
+    def issue_data(task):
+        states = "".join(f'<dt>{label}</dt><dd>{STATES[task["milestones"][key]["state"]][0]}</dd>'
+                         for key, label in MILESTONES.items())
+        ids = dict.fromkeys(key for phase in task["milestones"].values() for key in phase["evidence"])
+        return (f'<section class="issue-data"><h3>{task["id"]} · {escape(task["title"])}</h3><dl>'
+                f'<dt>Work owner</dt><dd>{escape(task["owner"]["label"])} · {task["owner"]["state"]}</dd>'
+                + states + f'<dt>Blocker</dt><dd>{escape(task["blocker"] or "None")}</dd>'
+                f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
+                f'<dt>Retained proof</dt><dd>{proof_links(ids) or "None retained"}</dd></dl></section>')
+
     def question(task, subject):
         if subject == "proof":
             ids = dict.fromkeys(key for phase in task["milestones"].values() for key in phase["evidence"])
@@ -145,10 +172,10 @@ def render(data, hosted=False):
         obligations = "; ".join(task["obligations"]) or "None outstanding"
         details.append(
             f'<details class="task-detail" id="task-{key}"{" open" if key == first else ""}><summary>{key} · {escape(task["title"])}</summary>'
-            f'<div class="detail-heading"><span>{anchor(owner.get("href"), owner["label"])} · {owner["state"].capitalize()}</span>'
+            f'<div class="detail-heading"><span>{escape(owner["label"])} · {owner["state"].capitalize()}</span>'
             f'<button class="quiet" data-copy-id="{key}">Copy ID</button></div>'
-            f'<div class="question-options"><button data-question="{escape(question(task, "status"), quote=True)}">Ask about status</button>'
-            f'<button data-question="{escape(question(task, "proof"), quote=True)}">Ask about proof</button></div>'
+            f'<div class="question-options"><button data-question="{escape(question(task, "status"), quote=True)}">Prepare status question</button>'
+            f'<button data-question="{escape(question(task, "proof"), quote=True)}">Prepare proof question</button></div>'
             f'<div class="blocker"><b>Blocker</b><p>{escape(task["blocker"] or "None")}</p></div>'
             f'<div class="next"><b>Next action</b><p>{escape(task["next_action"])}</p></div>'
             + "".join(phases)
@@ -156,6 +183,13 @@ def render(data, hosted=False):
             f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd><dt>Resources</dt><dd>{escape(resources)}</dd>'
             f'<dt>Dependencies</dt><dd>{escape(dependencies)}</dd><dt>Obligations</dt><dd>{escape(obligations)}</dd>'
             f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd></dl></details>'
+            f'<div class="share-actions"><button data-discussion-owner="{escape(owner["id"], quote=True)}" '
+            f'data-discussion-label="{escape(owner["label"], quote=True)}" data-discussion-href="{link(owner.get("href", ""), hosted)}" '
+            f'data-context="{context_packet([key])}">Copy context for agent</button>'
+            f'{anchor(owner.get("href"), "Open work owner conversation") if owner.get("href") else escape(owner["label"] + " (" + owner["id"] + ")")}'
+            '<small>Copy, then paste into this owner\'s existing conversation. Copy does not send.'
+            + (' No direct link is configured.' if not owner.get("href") else "")
+            + '</small><p class="share-feedback" role="status" aria-live="polite"></p></div>'
             '</details>'
         )
     proofs = []
@@ -194,14 +228,28 @@ def render(data, hosted=False):
                       f'data-discussion-label="{escape(discussion.get("label", "coordinator"), quote=True)}" '
                       f'data-discussion-href="{link(href, hosted)}" data-requires-human="{str(human).lower()}"')
         prompt = f"In orchestration run {data['run_id']}, decision {item['id']}: {item['text']} Explain the recommendation and the consequence of each option."
+        affected_links = " · ".join(anchor(f"#task-{key}", key) for key in affected)
         decision_html.append(
-            f'<article class="decision" id="decision-{item["id"]}"><b>{item["id"]}</b>'
-            + (f'<small>{" · ".join(anchor(f"#task-{key}", key) for key in affected)}</small>' if affected else "")
-            + f'<p>{escape(item["text"])}</p><small>{escape(item["recommendation"])}</small>'
-            + (f'<small>Unblocks: {escape(item["unblocks"])}</small>' if item.get("unblocks") else "")
-            + ('<small>Human-only gate. A forwarded message cannot answer it.</small>' if human else "")
-            + f'<div class="decision-actions">{route}<button class="quiet" {attributes} data-copy-id="{item["id"]}">Copy ID</button>'
-              f'<button class="quiet" {attributes} data-question="{escape(prompt, quote=True)}">Ask about {item["id"]}</button></div></article>'
+            f'<article class="decision" id="decision-{item["id"]}"><div class="decision-preview">'
+            f'<button class="decision-picker" data-decision="{item["id"]}" aria-haspopup="dialog" aria-controls="decision-dialog">'
+            f'<b>{item["id"]}</b><span>{escape(item["text"])}</span></button>'
+            f'<small>{affected_links}{" · " if affected else ""}Unblocks: {escape(item.get("unblocks") or "Discuss the pending choice")}'
+            f' · {escape(discussion.get("label", "Coordinator"))}{" · Human only" if human else ""}</small></div>'
+            f'<button class="quiet" {attributes} data-decision="{item["id"]}" data-copy-id="{item["id"]}">Copy {item["id"]}</button>'
+            f'<div class="decision-detail" data-decision="{item["id"]}" hidden><div class="context-columns"><section><p class="decision-question">{escape(item["text"])}</p>'
+            f'<dl><dt>Recommendation</dt><dd>{escape(item["recommendation"])}</dd>'
+            f'<dt>Affected tasks</dt><dd>{affected_links or "Run-level decision"}</dd>'
+            f'<dt>An answer unblocks</dt><dd>{escape(item.get("unblocks") or "Discuss the pending choice")}</dd>'
+            f'<dt>Answer destination</dt><dd>{escape(discussion.get("label", "Coordinator"))}</dd></dl>'
+            + ('<p class="human-warning">Human-only gate. A forwarded message cannot answer it. '
+               'You must answer the existing dialog yourself; copying cannot unlock it.</p>' if human else "")
+            + '</section><section>' + "".join(issue_data(tasks[key]) for key in affected) + '</section></div>'
+            + f'<div class="share-actions"><button {attributes} data-context="{context_packet(affected, item)}">Copy context for agent</button>{route}'
+            + ('<small>Copying prepares context only. Answer the existing human-only dialog yourself.</small>' if human else
+               '<small>Copy, then open the conversation and paste. Neither action sends a message.</small>')
+            + '<p class="share-feedback" role="status" aria-live="polite"></p></div>'
+              f'<div class="decision-actions"><button class="quiet" {attributes} data-copy-id="{item["id"]}">Copy ID</button>'
+              f'<button class="quiet" {attributes} data-question="{escape(prompt, quote=True)}">Prepare {item["id"]} question</button></div></div></article>'
         )
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
