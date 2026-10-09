@@ -1,7 +1,8 @@
 {
-  "skill_name": "running-orchestration",
+  "skill_name": "orchestration-run",
   "note": "Evaluation prompts using synthetic historical patterns. See README.md for isolated candidate execution through behavior.py and retained action traces. No live platform checks, shared mutations, or real owner launches are needed. Agent behavior, mock-harness tests, and test_dashboard.py's JSON/HTML contracts are separate results.",
   "evals": [
+    {"id": 14, "name": "resolve-only-current-harness", "prompt": "Start a run for UI-101 and API-102 in the current product. Repository setup includes another product too. I want review-ready PRs and 30-second scans for this run, leaving future defaults alone. Confirm the local dashboard and audience with me before starting.", "expected_output": "Resolves the current profile, asks compact run-only confirmation and records its actual source, leaves both profiles and project policy unchanged.", "assertions": ["current_profile_only", "run_confirmation_provenance", "defaults_unchanged"], "files": []},
     {
       "id": 0,
       "name": "reuse-proof-not-repeat-validation",
@@ -28,7 +29,7 @@
         "preserves_failed_receipts: retains inherited and expanded failures beside successful receipts",
         "does_not_replay_receipts: artifact inspection is not described as a new execution"
       ],
-      "files": ["skills/scoussens-skills/running-orchestration/evals/dashboard-preview.json"]
+      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
     },
     {
       "id": 2,
@@ -68,7 +69,7 @@
         "native_interaction_is_capability_based: uses only configured host comments/message mechanisms",
         "avoids_tracker_dependency: the answer and dashboard supply status without requiring another tool's board"
       ],
-      "files": ["skills/scoussens-skills/running-orchestration/evals/dashboard-preview.json"]
+      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
     },
     {
       "id": 5,
@@ -125,19 +126,6 @@
         "relays_actual_answer_once: Q4's leaf-label choice reaches its owner without another user question or broader permission",
         "retains_answer_scope: Q4 leaves the pending queue with its source and local-only scope retained",
         "independent_work_continues: the UI owner remains runnable while the other decisions wait"
-      ],
-      "files": []
-    },
-    {
-      "id": 9,
-      "name": "confirm-missing-ticket-conventions",
-      "prompt": "Prepare ownership for this repository's first coordinated run. Inspect its guidance and ticket records; I have not chosen a ticket source, definition, layout, IDs or ticket storage. Ask one focused question at a time and hold assignments that depend on my answer. The harness configuration, working-state directory and local dashboard destination are already confirmed. Do not invent a tracker or treat a local-ticket proposal as confirmed.",
-      "expected_output": "Discovers the absence of ticket conventions, proposes local Markdown records, and asks one focused source question. Location, stable IDs and layout can be confirmed in subsequent questions; they remain unresolved before record creation or owner assignment.",
-      "assertions": [
-        "discovers_before_asking: reads repository guidance and available records",
-        "uses_default_reference: reads the bundled ticket reference rather than inventing a different policy",
-        "waits_for_real_confirmation: one focused question leaves affected assignments held without ticket creation",
-        "separates_run_and_harness: does not put unconfirmed repository policy in harness configuration"
       ],
       "files": []
     },

@@ -31,10 +31,11 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Find where a repository's business logic lives, derive the rules its code actually enforces, have a second reader check them, and deliver a tree explorer where business owners mark each rule correct or wrong and export corrections. Asks where the explorer goes and who can see it before publishing. Invoked explicitly. |
 | [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
 | [`scoussens-skills/optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluate, design, or improve repository-specific CI for trustworthy feedback, runner cost, and maintainability. Preserves merge and release contracts, including when designing a pipeline without run history. |
+| [`scoussens-skills/orchestration-discovery`](skills/scoussens-skills/orchestration-discovery/SKILL.md) | Discover harness capabilities and repository ticket conventions. Save sourced observations by harness name. |
+| [`scoussens-skills/orchestration-setup`](skills/scoussens-skills/orchestration-setup/SKILL.md) | Interview for project policy and per-harness preferences using saved discovery. Configure multiple harnesses in one repository. |
+| [`scoussens-skills/orchestration-run`](skills/scoussens-skills/orchestration-run/SKILL.md) | Resolve the current harness's setup, confirm run-only choices, and coordinate ticket owners with retained proof and one dashboard. |
 | [`scoussens-skills/pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync the pstack skills from `cursor/plugins` into the directory that holds this skill — adding, updating, and removing skills — and adapt Cursor-only features to the running harness, replaying recorded adaptations so a fresh install does not re-adapt. Ships an Amp harness profile and a template for others. Invoked explicitly. |
 | [`scoussens-skills/release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder, verified against what actually reached production. Invoked explicitly. |
-| [`scoussens-skills/running-orchestration`](skills/scoussens-skills/running-orchestration/SKILL.md) | Coordinate ticket-owned conversations to a named milestone, reuse retained proof, close completed owners, and maintain one HTML dashboard with selectable details and copyable questions. |
-| [`scoussens-skills/setting-up-orchestration`](skills/scoussens-skills/setting-up-orchestration/SKILL.md) | Discover the harness's owner, helper, evidence, skill, and artifact capabilities, confirm local storage choices, and save the untracked JSON configuration the runner reads. |
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
 | [`scoussens-skills/visualize-spec`](skills/scoussens-skills/visualize-spec/SKILL.md) | Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — with every place the spec is silent marked as a gap, themed to the repository, and opened locally or published where the agent can. Invoked explicitly. |
 | [`scoussens-skills/work-proposal`](skills/scoussens-skills/work-proposal/SKILL.md) | Turn a body of scoped work into a client-ready proposal — effort grounded in the codebase, priced against the agreement that already exists, delivered as a themed Artifact, PDF, or email. Invoked explicitly. |
@@ -79,6 +80,34 @@ skills/
 
 Flat (`skills/<name>/`) and categorised (`skills/<category>/<name>/`) layouts
 are both supported.
+
+## Orchestration
+
+Install all three orchestration skills together. Each supports manual invocation
+and agent discovery:
+
+1. `/orchestration-discovery` saves `.orchestration/discovery.json` with observed
+   capabilities keyed by the discovered harness name.
+2. `/orchestration-setup` calls discovery if needed, then interviews for project
+   ticket policy, shared worker skills, storage, and run defaults. It saves
+   `.orchestration/config.json` with a profile for each harness.
+3. `/orchestration-run` identifies the current harness and resolves its profile.
+   A short confirmation covers the selected tickets, finish line, dashboard
+   audience, and scan interval. Resume reuses confirmed run choices.
+
+Sanitized discovery and setup live in the repository. Runtime records, dashboards,
+and receipts stay ignored local state. Setup preferences do not authorize shared
+actions or dashboard publication. Explicit version 1 configuration can be migrated
+through setup without overwriting the original personal settings.
+
+Run the contracts for all three stages:
+
+```bash
+npm run test:orchestration
+```
+
+See [behavioral evaluation instructions](skills/scoussens-skills/orchestration-run/evals/README.md)
+for fresh agent runs and their separate evidence requirements.
 
 ## Adding a skill
 

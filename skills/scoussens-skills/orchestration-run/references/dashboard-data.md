@@ -11,7 +11,13 @@ without fetching data or calling harness tools. See the synthetic
 - `run_id`: stable ID included in copied dashboard questions.
 - `title`, `goal`: short plain-language strings.
 - `updated_at`: actual ISO 8601 timestamp, with timezone.
-- `config_path`: absolute path of the stored harness JSON this run reads.
+- `config_path`: absolute path of repository setup this run reads.
+- `harness_name`: current harness name, exactly as keyed in setup. Required for
+  new runs. Recover older records' name from their original context, not the model.
+- `run_choices`: selected ticket IDs, finish line, destination, interval, and
+  `confirmed_from` identifying the actual user instruction or answer. Defaults
+  propose choices for a new run. Resume reuses these choices without another
+  interview. Run overrides leave project policy and harness defaults unchanged.
 - `monitoring`: required for new coordinated runs; older records can omit it
   until resumed. `mode` describes the selected configured mechanism.
   `interval_seconds` is the positive scan interval; `last_checked_at` is the
@@ -88,8 +94,8 @@ can advance this timestamp without changing activity or reassessing its proof.
 Retain unanswered scoped follow-ups in the blocker/next action and history.
 Retain the original ticket binding in the row and any replacement handoff/history.
 Inspect the owner's original assignment before reuse; the renderer cannot prove
-historical bindings outside this record. Record confirmed repository ticket-policy
-choices and their source in `history`, without adding them to the harness config.
+historical bindings outside this record. Setup owns project ticket policy.
+Record this run's selected policy source in `history`, not a second policy interview.
 Use `complete` when work is done but closure is unavailable/pending. Only
 `closed` asserts that the harness close/archive operation succeeded. Settle all
 of its ticket's assigned work and known obligations before marking it complete
