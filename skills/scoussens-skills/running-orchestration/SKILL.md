@@ -120,6 +120,9 @@ Relay exact user answers to the discussion owner when the harness permits it.
 An owner can apply a local answer within existing authorization and report the
 answer, source and outcome; the user need not repeat it to the coordinator.
 Record the decision and scope once, and remove it from the pending queue.
+Answering changes the decision queue, not the owner's activity status. Update
+owner activity from inspected state or an actual progress report; a delivery
+receipt proves communication, not that the owner resumed work.
 
 Inspect native input gates using configured capabilities. A human-only gate
 must be answered by the user in its owning conversation; show that direct route

@@ -462,6 +462,8 @@ def grade(case):
                     and answers[0]["result"].get("answered_dialog") == "Q4")
             require("answer_retained_not_reasked", "Q4" not in decisions and any("Q4" in line and "leaf labels" in line.lower()
                     for line in status.get("history", [])))
+            require("owner_activity_matches_observation", tasks.get("API-102", {}).get("owner", {}).get("state")
+                    == world["owners"]["api-owner"]["state"])
             require("shared_action_approval_still_held", tasks.get("OPS-105", {}).get("milestones", {}).get("code_publication", {}).get("state") == "blocked")
             require("independent_ui_owner_keeps_moving", tasks.get("UI-101", {}).get("owner", {}).get("state") == "active"
                     and not tasks["UI-101"]["blocker"] and bool(world["owners"]["ui-owner"].get("messages")))
