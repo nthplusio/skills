@@ -1,183 +1,100 @@
-# Measuring CI
+# Collect comparable evidence
 
-Use this reference to establish a baseline and compare changes. The method is
-provider-neutral; adapt collection to the repository's CI system.
+## Define the population and clocks
 
-## Define the run class
+Keep event, tested revision, runner type, matrix, test scope, services, and cache
+state explicit. Separate pull requests, integration commits, main pushes,
+schedules, and releases. Classify cache state as unknown when logs do not expose
+it; a fast install is not proof of a hit.
 
-Do not mix unlike runs. A run class should hold these dimensions constant:
+Match effective configuration, including called workflows, scripts, manifests,
+toolchains, and images. A matching top-level workflow blob is only a first filter.
+Record local edits or hosted configuration changes that make history incomparable.
 
-- event type — pull request, default-branch push, schedule, manual, release
-- operating system, architecture, runner size, and hosted or self-hosted status
-- matrix shape and enabled feature set
-- cold or warm dependency and build caches
-- test scope and service dependencies
-- branch protection and deployment behavior
+Use quantities with named origins:
 
-Exclude cancelled runs from duration percentiles unless cancellation behavior is
-the subject of the evaluation. Report failed and retried runs separately because
-they contribute consumption even when they do not represent steady-state speed.
+| Quantity | Origin and endpoint |
+| --- | --- |
+| First useful feedback | Trigger to the first trustworthy, actionable result |
+| Required-gate latency | Trigger to the required decision on the tested revision |
+| Run completion latency | Trigger to the last completed job, including downstream work |
+| Attempt elapsed | Attempt start to that attempt's last job completion |
+| Time to green | Original trigger to successful decision, including retries and human delay |
+| Job queue interval | Provider job creation to execution start; verify what creation means |
+| Critical-path execution | Longest dependency-respecting execution path, without queue or approvals |
+| Raw runner time | Sum of executed job durations across every attempt and conclusion |
+| Rounded hosted minutes | Per-job rounding applied to hosted execution, before rates and allowances |
 
-Match each run to the workflow revision under evaluation. If the checkout is
-dirty or its workflow is newer than hosted history, report the mismatch and do
-not attribute historical timings to the unrun topology.
+Run completion is not necessarily required-gate latency. The longest job queue
+interval is not total queue delay. Do not sum overlapping queue and elapsed
+intervals or subtract the longest queue from elapsed to invent execution time.
+Creation-to-latest-attempt delay includes retry waits, not only initial queuing.
 
-## Use the right quantities
+## Sample steady-state speed and total consumption separately
 
-For a run with jobs `J`:
+Prefer 20 to 50 comparable successful first attempts when available. Report sample
+size, dates, individual values or ranges, and material workload differences.
+With sparse history, show all observations rather than manufacture a stable tail
+percentile. The collector's minimum sample thresholds prevent tiny-sample labels;
+they do not establish statistical confidence.
 
-- **Feedback latency** is completion time minus trigger time. Split it into queue
-  time and execution time when the provider exposes both.
-- **Critical-path execution** is the longest dependency-respecting path through
-  the job graph. It is not always the duration of the longest individual job.
-- **Raw runner time** is the sum of execution durations across all jobs in `J`.
-- **Billed consumption** applies provider rounding, operating-system or runner
-  multipliers, included allowances, and self-hosted policy to raw runner time.
-- **Reliability cost** includes time consumed by failures, retries, flakes, and
-  abandoned superseded runs.
+Keep failed, cancelled, superseded, and repeated attempts out of ordinary
+successful-run speed distributions unless those behaviors are the subject.
+Keep their work in consumption totals. State the observation window and coverage
+before extrapolating per-run savings to monthly consumption. Partial API reads
+are missing evidence, not zero-cost runs.
 
-Never call raw runner time “billed minutes” unless the provider confirms that the
-two are identical for the evaluated plan and runner types.
+Capture enough data to explain a result:
 
-## Collect enough evidence
+- run ID, event, tested revision, configuration revision, timestamps, and conclusion
+- each attempt and job, runner labels, execution duration, and queue interval
+- task and step durations, intended test identities, and reported test counts
+- cache hits, transfer durations, services, and cleanup when logs expose them
+- first-attempt failures, retry causes, cancellation reasons, and repair time
 
-Prefer 20–50 recent successful runs per class for a baseline. Compute p50 and p90
-for latency and raw runner time. Also report the number of runs, date range, and
-cache classification.
+Read required-check settings and deployment consumers separately from timings.
+Public run history does not establish private protection, secrets, or billing.
 
-When only one or two runs exist for the current topology, use all of them and
-show their individual values. Do not label a single value as a median or infer a
-p90 from a tiny sample. Keep older-topology runs in a separate baseline rather
-than padding the sample.
+## Use the GitHub collector within its limits
 
-For a small before-and-after implementation, aim for at least three comparable
-runs on each side. Use more when variance is high. If the provider is expensive
-or inaccessible, state that the result is a local or modeled estimate.
+Resolve `scripts/gh_ci_baseline.py` relative to the skill directory and run it
+against the target repository. Use its JSON output for repeatable inspection.
+It paginates workflow and job reads, accounts for attempts, and distinguishes
+unknown workflow revisions and incomplete measurements.
 
-Capture one row per run:
+The collector's `elapsed` is trigger-to-run-completion, not time to the required
+gate. Inspect `attempt_elapsed`, `initial_delay`, job queues, and attempt coverage
+before explaining delay. Read the output's completeness warnings and compare the
+current workflow file with other configuration inputs yourself.
 
-| Run | Commit | Event | Started | Queue | Elapsed | Runner time | Cache | Result | Retries |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+It does not infer cache hits, classify warm and cold workloads, expand expressions
+or reusable workflows, inspect runner utilization, reconstruct `needs:`, or
+calculate account charges. Read logs, configuration, and billing evidence for
+those facts. Job timestamps suggest concurrency, not proof of a dependency.
 
-Capture one row per job or important step:
+## Bound and validate the improvement
 
-| Run | Job or step | Depends on | Duration | Runner | Repeated work | Required consumer |
-| --- | --- | --- | --- | --- | --- | --- |
+Deleting a stage consuming fraction \(f\) of the chosen objective saves at most
+\(f\). Reducing that stage by fraction \(r\) bounds direct savings at \(f r\).
+For a job graph, recompute the critical path after the change. Competing paths
+and shared resources can remove the expected benefit.
 
-Provider logs are preferred for hosted effects. Local timing is useful for test,
-build, and setup changes when the machine, command, data, and cache state are held
-constant.
+For example, replacing a 20-minute job with two 11-minute jobs can reduce elapsed
+execution by 9 minutes while increasing raw runner time to 22 minutes. Repeated
+setup, transfers, queues, and billing rounding can change both effects.
 
-Record cache state as `unknown` or `unclassified` when the provider exposes
-timings but not cache logs. Do not infer a hit from a fast install.
+For a small implementation, aim for at least three comparable observations on
+each side. Increase the sample when variance matters. Hold source, runner,
+services, scope, and cache state constant where possible. Compare cold and warm
+behavior separately, and verify the intended tasks actually ran.
 
-## Discover the full system
+Local probes support code-level claims only. Hosted evidence is needed for
+queue, provider-cache, billing, and exact-commit deployment claims. State what
+remains unverified and distinguish measured changes, bounds, and estimates.
 
-Search beyond the obvious workflow file. Common sources include:
+## Accept the evidence
 
-- `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`,
-  `.buildkite/`, `azure-pipelines.yml`, and provider-specific includes
-- package scripts, task runners, Makefiles, hooks, and container build files
-- test setup, global fixtures, coverage configuration, and service containers
-- branch rules, required checks, merge queues, environment approvals, and hosted
-  variables
-- deployment integrations that subscribe to pushes, checks, artifacts, or tags
-
-Treat workflow comments and documentation as claims to verify against hosted
-settings and recent runs.
-
-Public run visibility does not imply access to branch rules, secrets,
-environments, billing, or deployment integrations. If authenticated inspection
-fails, mark those facts unknown. Do not infer a required check from a job name.
-
-## GitHub Actions specifics
-
-`scripts/gh_ci_baseline.py` handles the first five of these. They are written
-out so you can recognise them when you query by hand or read someone else's
-numbers.
-
-**Required checks live in two places, and each API is blind to the other.**
-Rulesets are read with `gh api repos/{owner}/{repo}/rules/branches/{branch}`.
-Classic protection is read with
-`gh api repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks`.
-A repository can use either or both. `gh api repos/{owner}/{repo}/branches/{branch}`
-can report `"protected": true` with an empty `required_status_checks`, because
-a ruleset is what requires the check. Read both before saying a branch has no
-required checks.
-
-**A 404 from the classic endpoint is ambiguous.** The message `Branch not
-protected` means no classic rule. A bare `Not Found` or a 403 means the token
-cannot read protection, so the answer is unknown, not none.
-
-**`strict` means a pull request must be up to date before it merges.** Under
-it, every merge to the base branch makes open pull requests stale, and each one
-reruns CI after its author updates it. That rerun is real consumption, and it
-grows with merge frequency rather than with pipeline length.
-
-**Run history outlives the workflow.** `gh run list` still prints runs of a
-deleted or renamed workflow. Confirm what exists with
-`gh api repos/{owner}/{repo}/actions/workflows`, which also reports each
-workflow's `state` — `active`, `disabled_manually`, or `disabled_inactivity`.
-
-**A skipped job reports equal start and end times.** A job skipped by an `if:`
-on some events, such as a deploy-only job on a pull request, looks like a
-zero-second job. Leave it out of durations, or its median collapses.
-
-**The jobs API does not report `needs:`, but its timestamps do.** Each job's
-`created_at` is when it became runnable. A job created the moment another
-finished is waiting on it, so start and end offsets from the run's start
-recover the serial chain. Confirm the chain against the workflow file before
-you rely on it.
-
-**`gh run watch --exit-status` exits 0 for a cancelled run.** Read the
-conclusion with `gh run view <id> --json conclusion` instead of trusting the
-exit code. The same applies to any wrapper that treats exit 0 as success.
-
-**Billing rounds each job up to a whole minute.** Thirty 20-second jobs bill as
-thirty minutes, not ten, so many small jobs can cost more than one long one.
-Standard GitHub-hosted runners are free for public repositories; larger runners
-are billed even there. Private repositories pay per-OS rates against the plan's
-included minutes, so take rates from the account's current pricing rather than
-from memory.
-
-## Control benchmark noise
-
-- Compare the same commit where possible.
-- Separate cold and warm caches.
-- Keep runner type, matrix, database image, dependency lockfile, and test scope
-  constant.
-- Record test file and test-case counts.
-- Avoid comparing a local workstation directly with a hosted runner.
-- Report medians and ranges; do not select the best run.
-- Check whether queue time dominates before tuning execution.
-
-## Bound each opportunity
-
-For a stage consuming fraction `f` of the measured objective, deleting that stage
-cannot save more than `f`. Optimizing it by fraction `r` has an upper bound of
-`f × r` before secondary effects.
-
-For parallel changes, calculate both objectives:
-
-- Splitting a 20-minute serial job into two 11-minute jobs may cut feedback time
-  by about 9 minutes while increasing raw runner time from 20 to 22 minutes.
-- Combining two 8-minute independent jobs may reduce setup and billed rounding
-  while increasing the critical path.
-
-State which trade the user selected.
-
-## Compare honestly
-
-A result should name:
-
-- before and after samples
-- p50 and p90 feedback latency
-- p50 and p90 raw runner time
-- provider-billed change when available
-- cache state
-- test and check counts
-- failures or retries
-- confidence and remaining uncertainty
-
-If only an upper bound is known, call it an upper bound. If the data comes from a
-different run class, do not present it as a before-and-after comparison.
+The baseline is usable when every included run has known scope and complete
+timings, excluded consumption is disclosed, and the dominant constraint has
+supporting observations. Missing provider access warrants a limited conclusion
+or a design assumption, not an invented timing or hosted rule.
