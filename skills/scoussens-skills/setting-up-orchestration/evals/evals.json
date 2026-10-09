@@ -55,6 +55,20 @@
         "local_scope: does not add a distribution or recovery service"
       ],
       "files": []
+    },
+    {
+      "id": 4,
+      "name": "discover-monitoring-without-enabling-background-work",
+      "prompt": "Repair my existing version 1 orchestration configuration for repeated child-owner inspection. Storage paths and existing mappings are confirmed; monitoring facts are missing. The inventory and docs expose completion replies while the coordinator is active, an inspect operation that also reports pending human-only input, a caller-blocking timed pause with a timeout, and a scheduler that can resume a conversation after its turn ends. Completion replies do not cover all input/state changes. Discover these facts and save them without creating schedules, subscriptions, owners or artifacts. I have not requested background monitoring.",
+      "expected_output": "Adds monitoring operation descriptions to the existing configuration, scopes notification coverage and active-conversation lifetime, describes the timed pause's timeout/blocking behavior and scheduler authorization requirements, and preserves unrelated mappings and confirmed paths. Checks stored JSON without activating background work or choosing a run cadence.",
+      "assertions": [
+        "discovers_needed_facts: inspects available tools/docs rather than asking the user which capabilities exist",
+        "separates_inspection_and_collection: completion replies are not treated as complete state/input coverage or a second collection route",
+        "describes_wait_and_wake: records how bounded waits continue and how a coordinator can resume after yielding",
+        "preserves_existing_settings: repairs only missing capability facts without repeating storage questions or bumping the version",
+        "discovery_is_not_activation: creates no schedule, subscription, owner or artifact and stores no run interval"
+      ],
+      "files": []
     }
   ]
 }

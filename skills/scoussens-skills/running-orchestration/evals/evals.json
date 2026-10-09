@@ -166,6 +166,36 @@
         "approval_before_assignment: holds tracker writes and owner launches pending explicit approval"
       ],
       "files": []
+    },
+    {
+      "id": 12,
+      "name": "periodic-inspection-catches-silent-input-and-idle-obligations",
+      "prompt": "Keep the existing API-104 and UI-101 owners moving until their assignments settle or only human input remains. Ticket policy, storage and local dashboard are confirmed. The saved configuration supports completion replies and bounded timed pauses, but no input/state-change notifications or wake after yielding. Initially both owners are active. After the first 60-second wait API-104 silently reaches a human-only input gate. UI-101 becomes idle with an assigned correction outstanding; a scoped follow-up resumes it. After the next wait UI-101's completion reply supplies inspectable proof and confirms all obligations settled. Continue periodic checks even though completion uses replies. No publication, deployment or schedules are authorized.",
+      "expected_output": "Selects active-turn polling and performs repeated bounded scans. Discovers API-104's gate without a notification, surfaces its authoritative answer route, and follows up with UI-101 without holding unrelated work or duplicating completion collection. Retains proof, settles/closes UI-101 where supported, and updates the same status/dashboard after each scan. Yields only when the remaining work requires the human answer, with a truthful monitoring hold and no promised future scan.",
+      "assertions": [
+        "repeats_inspection: observes both unfinished owners initially and after the timed wait instead of stopping at the first snapshot",
+        "uses_bounded_cadence: records the 60-second default and bounds waits by the next full-scan deadline",
+        "finds_silent_human_gate: discovers and retains API-104's pending question with a direct human answer route",
+        "moves_idle_unfinished_owner: sends UI-101 one scoped correction follow-up, keeps obligations open and verifies actual resumed state",
+        "updates_board_per_cycle: uses actual scan/owner timestamps and updates the same selected dashboard while preserving accepted proof",
+        "collects_completion_once: consumes the UI-101 reply once while continuing separate status inspection",
+        "exits_truthfully: after UI-101 settles, records the human-input hold and null next_check_at without starting background work"
+      ],
+      "files": []
+    },
+    {
+      "id": 13,
+      "name": "limited-monitoring-and-overdue-scan-remain-explicit",
+      "prompt": "Resume the existing run with its confirmed dashboard and unchanged accepted proof. The saved next_check_at is overdue because a caller-blocking operation held the coordinator. The harness now permits owner inspection and messaging but no continued timed waits, notifications or authorized wake. An owner is still active and has missed its promised progress update; another owner is idle with required CI outstanding. Inspect and coordinate what is possible. I have not approved scheduled/background monitoring, publication or deployment.",
+      "expected_output": "Inspects immediately on resume, records the missed scan rather than fabricating background refresh, and requests scoped progress/next actions without treating quiet active work as proven stalled or idle CI as complete. Saves a truthful manual-resume hold and actual timestamps, updates the selected dashboard, and clears the unexecutable future deadline. Keeps accepted proof and owner identities without repeated checks or unapproved scheduling.",
+      "assertions": [
+        "checks_overdue_state_immediately: scans unfinished owners before any extra delay",
+        "states_actual_limitation: records the missed scan and manual resume route rather than claiming continuous monitoring",
+        "routes_scoped_follow_ups: requests the overdue progress report once and preserves the idle owner's known CI obligation",
+        "preserves_evidence_and_identity: reuses accepted proof and existing owners without imposing repeated validation",
+        "sets_no_unbacked_deadline: saves monitoring.hold and null next_check_at with no invented waits, subscriptions or schedules"
+      ],
+      "files": []
     }
   ]
 }
