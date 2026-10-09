@@ -8,10 +8,10 @@ The baseline and contract pass for GitHub Actions. For one workflow it prints:
      GitHub keeps them, and whether this workflow emits each one;
   2. the recent runs, split by event and by the workflow revision they ran, with
      failures, cancellations and re-runs counted apart from the baseline;
-  3. per event, elapsed time, queue time, raw runner time and rounded job-minutes
-     over successful runs of the current workflow revision;
+  3. per event, first-attempt latency and total consumption, including retries,
+     failures and cancellations;
   4. per job, when it starts and ends relative to the run, so serial
-     dependencies show without parsing `needs:`, and the steps that dominate it.
+     scheduling is visible, without claiming to reconstruct `needs:`.
 
 It only reads. Every call is a GET through `gh api` or `gh run list`.
 
@@ -131,11 +131,33 @@ def required_checks(repo, branch):
 
 # --- runs --------------------------------------------------------------------
 
+def paginated(path, key):
+    rows = []
+    page = 1
+    while True:
+        ok, data = api(f"{path}?per_page=100&page={page}")
+        if not ok or not isinstance(data, dict) or not isinstance(data.get(key), list):
+            return rows, [f"cannot read {key} page {page}: {data}"]
+        total = data.get("total_count")
+        if not isinstance(total, int):
+            return rows, [f"missing total_count for {key} page {page}"]
+        batch = data[key]
+        known_ids = {row.get("id") for row in rows}
+        if any(not isinstance(row, dict) or row.get("id") is None or row["id"] in known_ids for row in batch):
+            return rows, [f"invalid or repeated {key} page {page}"]
+        rows.extend(batch)
+        if len(rows) == total:
+            return rows, []
+        if len(batch) < 100 or len(rows) > total:
+            return rows, [f"incomplete {key}: collected {len(rows)} of {total}"]
+        page += 1
+
+
 def list_workflows(repo):
-    ok, data = api(f"repos/{repo}/actions/workflows?per_page=100")
-    if not ok:
-        sys.exit(f"cannot list workflows: {data}")
-    return data.get("workflows", [])
+    rows, notes = paginated(f"repos/{repo}/actions/workflows", "workflows")
+    if notes:
+        sys.exit("; ".join(notes))
+    return rows
 
 
 def workflow_blob(repo, path, ref, cache):
@@ -147,25 +169,42 @@ def workflow_blob(repo, path, ref, cache):
     return cache[ref]
 
 
-def fetch_jobs(repo, run_id):
-    # The default filter returns the latest attempt only, which is the one
-    # whose verdict counts; earlier attempts are counted through `attempt`.
-    ok, data = api(f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100")
-    return data.get("jobs", []) if ok and isinstance(data, dict) else []
+def fetch_run(repo, run):
+    jobs = []
+    notes = []
+    attempt_starts = []
+    for attempt in range(1, (run.get("attempt") or 1) + 1):
+        path = f"repos/{repo}/actions/runs/{run['databaseId']}/attempts/{attempt}"
+        ok, metadata = api(path)
+        if not ok or not isinstance(metadata, dict) or not metadata.get("run_started_at"):
+            notes.append(f"cannot read start of attempt {attempt}")
+        else:
+            attempt_starts.append(metadata["run_started_at"])
+        rows, errors = paginated(f"{path}/jobs", "jobs")
+        notes.extend(errors)
+        for job in rows:
+            job["run_attempt"] = attempt
+            if job.get("status") != "completed" or not job.get("completed_at") or (
+                job.get("conclusion") != "skipped" and not job.get("started_at")
+            ):
+                notes.append(f"incomplete timing for attempt {attempt} job {job['id']}")
+        jobs.extend(rows)
+    return jobs, attempt_starts, notes
 
 
-def measure(run, jobs):
-    """Run-level figures from its jobs. Elapsed runs from the attempt's start
-    to the last job's end, so a run re-opened later is not inflated."""
-    start = run.get("startedAt") or run.get("createdAt")
+def measure(run, jobs, attempt_starts):
+    """Latest-attempt timing and all-attempt consumption have different clocks."""
+    attempts = run.get("attempt") or 1
+    latest = [j for j in jobs if j["run_attempt"] == attempts]
+    start = attempt_starts[-1]
     # A skipped job reports start == end. Counting it as a zero-second job
     # drags its median to nothing, so it is named and kept out of durations.
-    skipped = sorted({j["name"] for j in jobs if j.get("conclusion") == "skipped"})
-    done = [j for j in jobs
+    skipped = sorted({j["name"] for j in latest if j.get("conclusion") == "skipped"})
+    done = [j for j in latest
             if j.get("started_at") and j.get("completed_at") and j.get("conclusion") != "skipped"]
-    if not done:
+    if not latest:
         return None
-    last_end = max(j["completed_at"] for j in done)
+    last_end = max(j["completed_at"] for j in latest)
     job_rows = []
     for j in done:
         duration = seconds(j["started_at"], j["completed_at"])
@@ -186,14 +225,19 @@ def measure(run, jobs):
             "duration": duration,
             "steps": steps,
         })
-    hosted = [r for r in job_rows if not r["self_hosted"]]
+    executed = [j for j in jobs if j.get("conclusion") != "skipped"]
     return {
-        "elapsed": seconds(start, last_end),
-        "runner_time": sum(r["duration"] or 0 for r in job_rows),
+        "elapsed": seconds(run.get("createdAt"), last_end),
+        "attempt_elapsed": seconds(start, last_end),
+        "initial_delay": seconds(run.get("createdAt"), attempt_starts[0]),
+        "latest_attempt_delay": seconds(run.get("createdAt"), start),
+        "attempt_runner_time": sum(r["duration"] for r in job_rows),
+        "runner_time": sum(seconds(j["started_at"], j["completed_at"]) for j in executed),
         # GitHub bills each hosted job rounded up to the whole minute. This is
         # the rounded figure before any OS multiplier, allowance or free tier.
-        "rounded_minutes": sum(math.ceil((r["duration"] or 0) / 60) for r in hosted),
-        "queue": max((r["queue"] or 0) for r in job_rows),
+        "rounded_minutes": sum(math.ceil(seconds(j["started_at"], j["completed_at"]) / 60)
+                               for j in executed if "self-hosted" not in (j.get("labels") or [])),
+        "queue": max((r["queue"] for r in job_rows if r["queue"] is not None), default=None),
         "jobs": job_rows,
         "skipped": skipped,
     }
@@ -211,7 +255,7 @@ def print_contracts(checks, emitted):
             print(f"  {source:9} none")
         else:
             for c in contexts:
-                mark = "emitted by this workflow" if c in emitted else "NOT emitted by this workflow"
+                mark = "observed on current revision" if c in emitted else "not observed on current revision"
                 print(f"  {source:9} {c}  — {mark}")
     if checks["strict"]:
         print("  strict: a PR must be up to date with the branch before it can merge")
@@ -220,11 +264,13 @@ def print_contracts(checks, emitted):
 
 
 def print_baseline(event, rows):
-    print(f"\n## Baseline — {event}, successful runs of the current workflow revision")
+    print(f"\n## Baseline — {event}, successful first attempts of the current workflow revision")
     if not rows:
         print("  no comparable runs")
         return
     print(f"  elapsed          {summarize([r['elapsed'] for r in rows])}")
+    print(f"  attempt elapsed  {summarize([r['attempt_elapsed'] for r in rows])}")
+    print(f"  initial delay    {summarize([r['initial_delay'] for r in rows])}")
     print(f"  queue (longest)  {summarize([r['queue'] for r in rows])}")
     print(f"  raw runner time  {summarize([r['runner_time'] for r in rows])}")
     minutes = [r["rounded_minutes"] for r in rows]
@@ -234,9 +280,9 @@ def print_baseline(event, rows):
     for r in rows:
         for j in r["jobs"]:
             by_job.setdefault(j["name"], []).append(j)
-    total_runner = median([r["runner_time"] for r in rows]) or 1
+    total_runner = median([r["attempt_runner_time"] for r in rows]) or 1
     print("\n  Jobs in start order. 'starts' and 'ends' are offsets from the run's start;")
-    print("  a job that starts when another ends is waiting on it.")
+    print("  offsets suggest scheduling, not dependency or critical-path proof.")
     for name, jobs in sorted(by_job.items(), key=lambda kv: median([j["start_offset"] for j in kv[1]]) or 0):
         dur = median([j["duration"] for j in jobs])
         print(f"\n  {name}  [{','.join(jobs[0]['labels'])}]")
@@ -308,15 +354,19 @@ def main():
     current = workflow_blob(repo, workflow["path"], default_branch, blobs)
     completed = [r for r in runs if r["status"] == "completed"]
     for r in completed:
-        r["revision"] = "current" if workflow_blob(repo, workflow["path"], r["headSha"], blobs) == current else "other"
+        revision = workflow_blob(repo, workflow["path"], r["headSha"], blobs)
+        r["revision"] = "unknown" if not current or not revision else ("current" if revision == current else "other")
 
     with ThreadPoolExecutor(max_workers=6) as pool:
-        jobs = list(pool.map(lambda r: fetch_jobs(repo, r["databaseId"]), completed))
-    for r, j in zip(completed, jobs):
-        r["measure"] = measure(r, j)
+        collections = list(pool.map(lambda r: fetch_run(repo, r), completed))
+    for r, (jobs, starts, notes) in zip(completed, collections):
+        r["measurement_notes"] = notes
+        r["measurement_complete"] = not notes
+        r["measure"] = measure(r, jobs, starts) if not notes else None
 
     checks = required_checks(repo, args.protected_branch or default_branch)
-    emitted = {j["name"] for r in completed if r.get("measure") for j in r["measure"]["jobs"]}
+    emitted = {name for r in completed if r["revision"] == "current" and r.get("measure")
+               for name in [j["name"] for j in r["measure"]["jobs"]] + r["measure"]["skipped"]}
 
     if args.json:
         json.dump({"repo": repo, "workflow": workflow, "visibility": meta["visibility"],
@@ -343,19 +393,31 @@ def main():
         retried = sum(1 for r in rows if (r.get("attempt") or 1) > 1)
         parts = ", ".join(f"{n} {rev}/{concl}" for (rev, concl), n in sorted(tally.items()))
         print(f"  {event:20} {parts}; {retried} re-run")
+        measured = [r["measure"] for r in rows if r.get("measure")]
+        print(f"    all-attempt runner time {fmt(sum(m['runner_time'] for m in measured))}; "
+              f"rounded hosted minutes {sum(m['rounded_minutes'] for m in measured)}; "
+              f"coverage {len(measured)}/{len(rows)} completed runs")
     if any(r["revision"] == "other" for r in completed):
         print("  'other' runs used a different workflow file and are kept out of the baseline")
+    if any(r["revision"] == "unknown" for r in completed):
+        print("  'unknown' workflow revisions cannot establish comparability and are excluded")
+    incomplete = sum(not r.get("measurement_complete") for r in completed)
+    if incomplete:
+        print(f"  ! {incomplete} completed run(s) have incomplete job reads; excluded from baselines")
+        for r in completed:
+            for note in r["measurement_notes"]:
+                print(f"    run {r['databaseId']}: {note}")
 
     for event in events:
         rows = [r["measure"] for r in completed
-                if r["event"] == event and r["revision"] == "current"
-                and r["conclusion"] == "success" and r.get("measure")]
+                if r["event"] == event and r["revision"] == "current" and r.get("measurement_complete")
+                and r["conclusion"] == "success" and (r.get("attempt") or 1) == 1 and r.get("measure")]
         print_baseline(event, rows)
 
     print("\n## Not measured here")
     print("  cache hits — the jobs API does not report them; read the cache step logs")
-    print("  critical path — inferred from job start and end offsets; confirm against `needs:`")
-    print("  billed cost — rounded minutes exclude OS multipliers, allowances and free tiers")
+    print("  dependency graph — job timestamps do not reconstruct `needs:` or prove the critical path")
+    print("  billed dollars — rounded runner minutes are not dollar cost and exclude multipliers, allowances and free tiers")
     return 0
 
 

@@ -1,244 +1,190 @@
 ---
 name: optimize-ci
 description: >-
-  Audit a repository's continuous integration for feedback time and runner
-  minutes — baselined on comparable runs, every saving bounded by the share of
-  the run it can touch, and every change checked against the required checks
-  and deploy gates that depend on the pipeline — then recommend, design, or
-  implement the changes, on GitHub Actions, GitLab CI, CircleCI, Buildkite,
-  Jenkins, Azure Pipelines, or another provider. Load this only when the user
-  asks to evaluate or speed up CI as a whole — "why is CI so slow", "audit our
-  pipeline", "cut our Actions minutes", "our checks take twenty minutes",
-  "speed up the PR build", "are we wasting runner time". Do not load it to
-  debug one failing build, to fix a single flaky test, or to write a new
-  workflow from scratch; answer those directly instead.
+  Evaluates, designs, and improves a repository's CI architecture for trustworthy
+  feedback, runner cost, and maintainability while preserving merge and release
+  contracts. Use when the user asks to audit or speed up CI, reduce CI cost,
+  redesign a pipeline, or design CI for a repository without an existing pipeline.
+  Supports GitHub Actions, GitLab CI, and other providers. Do not load for one
+  failing build, one flaky test, or a narrow workflow syntax question.
 ---
 
 # Optimize CI
 
-Treat CI as a measured system with two independent costs: elapsed feedback time
-and consumed runner time. A change that improves one can make the other worse.
-Preserve the repository's verification and deployment contracts while improving
-the objective the user actually values.
+Design CI around the target repository's verification decisions. Improve the
+chosen objective without quietly changing what a successful gate guarantees.
 
-## Choose the mode
+## Choose the mode and authority
 
 Infer the mode from the request and state it before acting.
 
-- **Evaluate** — inspect, measure, and recommend. Default to read-only commands.
-  Do not modify workflows, provider settings, branch rules, deployment settings,
-  the checkout, generated files, dependencies, or persistent caches. Ask before
-  running native gates, installs, generators, `npx`, containers, or other commands
-  that may write or start paid work.
-- **Implement** — make the requested changes, validate them, and report measured
-  results. Treat provider and repository settings as separate mutation scopes;
-  repository edits do not authorize changing hosted settings.
-- **Design** — produce a concrete target workflow when provider data or access is
-  unavailable. Label every unmeasured estimate.
+- **Evaluate** inspects evidence and recommends. Keep the target repository and
+  hosted settings unchanged. Ask before installs, generators, native gates,
+  containers, or paid runs that inspection would require.
+- **Design** proposes an initial or replacement architecture. History is optional.
+  Label assumptions and estimates, and specify how to validate them. Proposal
+  authority does not authorize applying the design.
+- **Implement** makes authorized local changes and verifies them. Branch rules,
+  hosted settings, deployments, and paid experiments remain separate scopes.
 
-Ask only for decisions that repository and provider evidence cannot answer. For
-a neutral evaluation, report both pull-request latency and total runner or billed
-minutes. Ask the user to choose only when an implementation trades one objective
-for the other. Do not ask the user to collect facts you can inspect.
+For a neutral audit, consider latency, total consumption, reliability, and
+maintenance. Infer priorities from the request and repository evidence. Ask only
+when a consequential tradeoff remains unresolved or an action needs authority.
+Keep a narrow request narrow; escalate to redesign only when its cause demands it.
 
-## Step 1 — Read the contracts before the workflow
+## Step 1: Identify the repository and its contracts
 
-Read repository instructions, CI configuration, package or build manifests, test
-configuration, hooks, deployment configuration, and documentation that names the
-gate. Then inspect hosted settings when authenticated access permits it. Public
-workflow history is not evidence of private branch rules or deployment settings;
-report those contracts as unknown when they cannot be read.
+Read repository instructions, manifests, native verification commands, test
+configuration, CI includes, release configuration, and relevant history. Inspect
+hosted protection and deployment settings when readable.
 
-Record these contracts explicitly:
+Build a compact profile of deliverables, supported platforms, build and test
+tools, external services, contribution trust, release cadence, change volume,
+owners, runner classification, billing policy, and practical budgets. Mark
+missing facts unknown.
 
-- the canonical verification command and every required status check
-- which events and branches must emit checks
-- deployment systems that wait for a particular branch, commit, check suite, or
-  artifact
-- tests, security scans, generated-code checks, or platform matrices whose
-  removal changes the assurance level
-- runner constraints, secrets, service containers, and trusted or untrusted
-  contribution paths
+Map every relevant event to its tested revision, required checks, permitted
+skips, artifact consumer, and deployment dependency. Include merge queues or
+trains, forks, schedules, and releases when the repository uses them. Read the
+detected provider's semantics in
+[GitHub Actions](references/providers/github-actions.md) or
+[GitLab CI](references/providers/gitlab-ci.md). For another provider, consult its
+official documentation for these contracts rather than translating GitHub rules.
 
-Do not assume that a green pull request is the only consumer. A production deploy
-may require a second run on the exact commit at the default branch.
+**Complete when** every existing gate and downstream consumer has an evidence
+source or an explicit unknown, and the design objective fits this repository.
 
-## Step 2 — Establish a comparable baseline
+## Step 2: Establish evidence, or state the design assumptions
 
-Read [references/measurement.md](references/measurement.md) before collecting or
-comparing timings.
-
-On GitHub Actions, start with the collector. It reads only, and it does the
-parts that go wrong by hand: it reads required checks from both rulesets and
-classic protection, keeps runs of an older workflow file out of the baseline,
-separates events, excludes skipped jobs, and withholds percentiles from small
-samples:
+For measured analysis, read [measurement](references/measurement.md). Collect
+comparable run classes, unsuccessful attempts, queue delays, task timings, and
+cache evidence. On GitHub Actions, run the bundled read-only collector against
+the target repository, resolving its path relative to this skill:
 
 ```bash
-python3 scripts/gh_ci_baseline.py                      # list workflows and their state
-python3 scripts/gh_ci_baseline.py --workflow ci.yml    # contracts, runs, baseline
-python3 scripts/gh_ci_baseline.py --workflow ci.yml --json > baseline.json
+python3 <skill-directory>/scripts/gh_ci_baseline.py --repo owner/repo
+python3 <skill-directory>/scripts/gh_ci_baseline.py --repo owner/repo --workflow ci.yml --json
 ```
 
-Treat its output as the baseline's first draft, not its verdict. It cannot see
-cache hits, `needs:` edges, or billing multipliers, and it says so.
+The collector is evidence, not a verdict. Inspect its completeness indicators.
+It does not classify cache state, resolve the full effective workflow, reconstruct
+task dependencies, or establish actual billed cost.
 
-Use 20–50 recent comparable successful runs when the provider exposes history.
-Match history to the exact workflow revision being evaluated, and separate pull
-requests, default-branch pushes, scheduled runs, cache-warm runs, and materially
-different matrices. When the current topology has fewer runs, use every
-comparable run, show the individual values or range, and do not claim p50 or p90
-from one or two observations. If history is unavailable, measure the native gate
-locally only with write authority, or use provider logs that the user supplies.
-Say which evidence is missing and whether a dirty checkout differs from the
-hosted revision.
+For a repository without history, use its profile and native commands to design
+an initial pipeline. Record unmeasured task durations, capacity, and hosted rules
+as assumptions. Include a first-run measurement plan instead of inventing a baseline.
 
-Measure at least:
+**Complete when** each quantitative claim names its population and clock, or is
+explicitly an assumption, estimate, or unknown.
 
-- end-to-end elapsed time and queue time
-- critical-path job and step durations
-- sum of runner time across all jobs
-- install, generation, build, test, database, artifact, and teardown time
-- cache hit rate and transfer time, or explicitly `unknown` when logs do not
-  expose them
-- failure, cancellation, and retry frequency
-- test file and test-case counts where the framework reports them
+## Step 3: Explain the work and its limiting constraint
 
-Use p50 and p90 only for a run class with a meaningful sample. Do not present one
-unusually warm run as the baseline. Distinguish provider-billed minutes from raw
-runner time when rounding, platform multipliers, or self-hosted runners apply.
+Map commands beneath jobs, generated inputs, artifacts, and shared resources.
+Distinguish ordering edges from data transfers and resource locks. Name the
+consumer that justifies each task and dependency.
 
-## Step 3 — Model the workflow before changing it
+Read [architecture](references/architecture.md) when designing or changing job
+boundaries, events, selection, matrices, concurrency, or artifact flow. Read
+[performance](references/performance.md) when queue, setup, computation, I/O,
+network, transfer, or test infrastructure limits the requested objective.
 
-Build a compact inventory with one row per job:
+For an audit, explain why the observed constraint dominates and what observation
+would disprove that explanation. For initial design, identify likely constraints
+and the measurements that will decide whether to change the starting topology.
 
-| Job | Trigger | Depends on | Runner | p50 | Runner time | Gate or advisory | Output consumer |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+**Complete when** the graph accounts for every proposed task and artifact, and
+the recommendation follows from a constraint rather than a generic best practice.
 
-Identify the critical path separately from total consumption. Quantify the
-maximum possible saving from each independent candidate stage before proposing
-work. A stage that occupies 8% of the run cannot explain a 50% improvement.
-For overlapping setup or topology changes, provide a dependency-aware model and
-label it as an estimate rather than adding stage bounds together.
+## Step 4: Compare worthwhile designs
 
-Search first for:
+Compare keeping the current design with the smallest useful change. Add a larger
+redesign only when it solves an observed constraint or a stated new requirement.
+For a new pipeline, compare a simple native-command design with any proposed
+selector, sharding, or reusable component.
 
-1. full or partial verification repeated without an independent consumer
-2. advisory work that cannot affect a decision
-3. setup repeated across jobs or matrices
-4. pathological test infrastructure, global setup, or per-test cleanup
-5. cache misses, oversized cache transfers, and generated work with stable inputs
-6. serial dependencies that do not need to be serial
-7. excessive parallelism when runner minutes matter more than latency
-8. stale matrices, artifacts, reports, or integrations with no owner
+Read [simplicity and maintenance](references/simplicity-maintenance.md) before
+adding selectors, custom orchestration, shared workflows, persistent images,
+self-hosted runners, or external dependencies. Read [impact](references/impact.md)
+when ranking candidates or accepting results.
 
-Read [references/optimization-levers.md](references/optimization-levers.md) when
-ranking or implementing candidates.
+For each candidate, state evidence, feedback-time effect, total consumption,
+assurance change, implementation effort, ongoing ownership, risk, and confidence.
+Bound savings by the work it can remove; recompute overlapping critical paths.
+State whether the benefit is measured, bounded, or estimated.
 
-## Step 4 — Produce an evidence-backed recommendation
+**Complete when** the selected design earns its complexity, rejected alternatives
+have reasons, cost conclusions respect known billing policy, and "no worthwhile
+change" remains an acceptable verdict.
 
-For each recommendation, state:
+## Step 5: Check safety and failure behavior
 
-| Change | Evidence | Feedback-time effect | Runner-minute effect | Assurance change | Risk | Confidence |
-| --- | --- | --- | --- | --- | --- | --- |
+These checks apply in every mode. Preserve existing contracts unless the user
+explicitly authorizes changing them:
 
-Use ranges when run variance is material. Separate measured savings from an
-upper bound and from an estimate. Recommend deletion only after naming the
-consumer or decision that the work does—or does not—serve.
+- Keep canonical verification semantics, supported platforms, security controls,
+  and externally required check identities. Unknown hosted rules block renaming
+  or removing check producers, not further analysis.
+- Make selection take the broader safe path for unknown files, missing history,
+  or incomplete dependency information. Validate intended task identities and
+  partitions, not only unchanged test counts.
+- Ensure aggregate gates reject failed, cancelled, or missing required work.
+  Accept a skipped task only when a validated selection decision permits it.
+- Preserve exact-revision and artifact consumers. Cancel only runs whose
+  consumers no longer need them, not main runs that a deployment waits on.
+- Keep untrusted code, cache writers, and artifacts outside privileged execution
+  unless the consumer verifies the required identity and trust policy. Keep
+  secrets out of caches and reports, and preserve least privilege and pinning.
+- Reuse native task results only with complete inputs, suitable test semantics,
+  and trusted writers. An arbitrary cached "passed" flag is not verification.
 
-Prefer the smallest set of changes that captures most of the available saving.
-Do not redesign the entire pipeline to optimize a minor stage.
+Read [reliability](references/reliability.md) for retries, flakes, quarantine,
+aggregate gates, cancellation, cleanup, or external-service failures. Read
+[security](references/security.md) when a proposal changes credentials, fork
+execution, cache access, runner isolation, artifact consumption, or provenance.
 
-## Step 5 — Preserve safety while optimizing
+**Complete when** every changed decision has failure-state checks, every trust
+transition has a control, and remaining risks or authority limits are explicit.
 
-These constraints hold unless the user explicitly chooses a different assurance
-level:
+## Step 6: Deliver or implement the design
 
-- Keep the canonical gate and test semantics intact. Record test counts before
-  and after changes that alter test selection or topology.
-- Do not rename, remove, or consolidate check-producing jobs when required-check
-  settings are unavailable. A matching workflow job name is not proof of the
-  hosted rule.
-- Cache immutable inputs and reusable outputs, not pass or fail verdicts.
-- Make selective execution fail closed. New or unclassified files take the safe,
-  broader path until classified.
-- Do not cancel default-branch runs when a deployment waits for that exact check
-  suite. Cancellation is usually safe only for superseded review commits.
-- Keep secrets out of caches and artifacts. Treat caches populated by untrusted
-  changes as untrusted input.
-- Preserve least-privilege permissions, version pinning policy, provenance, and
-  required security scans.
-- Do not replace realistic integration behavior with mocks solely for speed.
-- Do not change branch rules, hosted settings, deployment settings, or billing
-  plans without explicit authority for that scope.
+Evaluate mode delivers a verdict, baseline limits, preserved contracts, and
+ranked options. Design mode delivers an event-to-gate matrix, task and artifact
+graph, native commands, required hosted configuration, assumptions, owners,
+validation plan, and rollback criteria. Show enough concrete configuration to
+make the proposal implementable without implying that it has been applied.
+Check proposed command names against the repository's native commands and
+revision claims against the configured event and checkout behavior. Mark
+unresolved configuration inputs explicitly instead of assuming a match.
 
-When a repository rule blocks an optimization, present it as a decision with the
-reason and expected saving. Do not silently route around it.
+In implement mode:
 
-## Step 6 — Implement in reversible increments
+1. Capture evidence and contracts before editing.
+2. Change one independently verifiable class of behavior at a time.
+3. Run native verification and provider syntax validation.
+4. Exercise affected events and failure states, including unknown selection,
+   cancellation, missing outputs, cleanup, and cold-cache recovery.
+5. Compare intended task coverage, check identities, artifact lineage, and
+   consumers. Confirm hosted effects only through authorized provider evidence.
+6. Record measured results, limitations, ownership, and rollback conditions.
 
-For implementation mode:
+**Complete when** local behavior is verified, unchanged contracts still hold,
+and unverified hosted behavior is named rather than claimed.
 
-1. Capture the baseline and current contracts in the work log.
-2. Make one independently measurable class of change at a time.
-3. Run the repository's native gate under comparable conditions.
-4. Compare test counts, exit semantics, artifacts, and emitted check names.
-5. Run syntax or provider validation for every changed workflow.
-6. Inspect the diff for unrelated edits and secret exposure.
-7. Use provider runs to confirm the effect when access exists.
+## Report the decision and delivery state
 
-Do not claim provider savings from local timing alone. Local benchmarks can prove
-a code-level improvement; only provider evidence proves queue, cache, billing, or
-hosted-runner effects.
+Lead with the chosen action and why it fits this repository. Include the evidence
+and its limits, contract and assurance effects, worthwhile alternatives, and
+validation appropriate to the mode. Distinguish proposed, locally verified,
+committed, pushed, and hosted-verified work. A local speedup does not establish
+queue, billing, or deployment improvements.
 
-## Step 7 — Validate the result
+For cost conclusions, state the known billing basis even when recommending no
+change. Unbilled execution has no direct runner-charge saving; missing prices
+do not erase a known billing exemption.
 
-Prefer at least three before and three after runs from the same run class. If that
-cost is disproportionate, run the smallest defensible sample and label the
-confidence accordingly.
+## Scope
 
-Validation must cover:
-
-- the native verification gate passes
-- the same intended tests and checks run
-- required check names still match hosted protection rules
-- required branch and event runs still occur
-- deployment consumers still receive their expected commit, check, or artifact
-- cold-cache behavior remains correct
-- warm-cache behavior produces the expected saving
-- cancellations, failures, and cleanup still report truthful conclusions
-
-## Report the outcome
-
-Lead with the decision and measured impact. Include:
-
-1. **Verdict** — the dominant bottleneck and the recommended action
-2. **Baseline** — run class, sample, p50/p90 elapsed time, runner time, and data
-   limitations
-3. **Contracts** — required checks, deployment coupling, and assurance preserved
-4. **Opportunities** — ranked table with latency, consumption, risk, and confidence
-5. **Changes and validation** — only in implementation mode
-6. **Deferred decisions** — options that need authority or trade assurance for cost
-
-## Do not use this skill for
-
-- **Debugging one failing build.** Read its log and fix the cause. A baseline of
-  thirty runs says nothing about why one of them went red.
-- **Fixing a single flaky test.** Flakiness is a reliability cost this skill
-  counts, but repairing one test is ordinary debugging.
-- **Writing a new workflow from scratch.** With no runs to measure, there is
-  nothing to baseline. Write the workflow, and come back once it has history.
-
-It is invoked deliberately, by name or by an explicit request to evaluate or
-speed up CI. A full audit reads dozens of runs and their job timings, which is
-too much work to spend on a question that did not ask for it.
-
-## Done when
-
-- The baseline separates elapsed time from runner or billed consumption.
-- Every recommendation points to observed evidence and a consumer or contract.
-- Expected savings are measured, bounded, or clearly labeled as estimates.
-- Implemented changes pass the native gate and preserve intended test counts and
-  externally required check names.
-- Hosted effects are confirmed with comparable provider runs or reported as
-  unverified.
+Use this skill for repository-level CI analysis and architecture. Debugging one
+failure or repairing one flaky test uses ordinary diagnosis; summarize its
+pipeline impact here only when it explains the broader constraint. Repository
+redesign does not authorize infrastructure changes or production operations.
