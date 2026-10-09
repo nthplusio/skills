@@ -122,6 +122,42 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('data-copy-id="UI-101"', html)
         self.assertIn("Copy does not send", html)
 
+    def test_decision_questions_route_to_their_owners_and_name_human_only_gates(self):
+        self.data["decisions"] = [
+            {"id": "Q-local", "text": "Choose the description format?", "recommendation": "Use full labels.",
+             "task_ids": ["API-104"], "unblocks": "Description formatting",
+             "discussion": {"owner_id": "hierarchy-owner", "label": "Hierarchy owner",
+                            "href": "https://example.org/discuss-hierarchy"}},
+            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime thread.",
+             "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in", "requires_human": True,
+             "discussion": {"owner_id": "runtime-owner", "label": "Runtime owner",
+                            "href": "https://example.org/runtime-input"}},
+        ]
+        html = render(self.data, hosted=True)
+        self.assertIn('href="https://example.org/discuss-hierarchy">Open discussion</a>', html)
+        self.assertIn('href="https://example.org/runtime-input">Answer in thread</a>', html)
+        self.assertIn('href="#task-API-104">API-104</a>', html)
+        self.assertIn("Unblocks: Description formatting", html)
+        self.assertIn('data-discussion-owner="hierarchy-owner"', html)
+        self.assertIn('data-requires-human="true"', html)
+        self.assertIn("Human-only gate. A forwarded message cannot answer it.", html)
+        self.assertIn('data-copy-id="Q-gate"', html)
+
+    def test_decision_route_validation_and_legacy_coordinator_fallback(self):
+        decision = {"id": "Q-old", "text": "Keep publication held?", "recommendation": "Keep the hold."}
+        self.data["decisions"] = [decision]
+        self.assertIn('data-discussion-owner=""', render(self.data))
+        for fields, expected in (
+            ({"requires_human": True}, "human-only gate needs a discussion owner"),
+            ({"requires_human": "true"}, "requires_human must be boolean"),
+            ({"task_ids": ["MISSING"]}, "unknown affected task"),
+            ({"discussion": {"owner_id": "runtime-owner", "label": "Runtime owner", "href": "javascript:bad()"}}, "unsupported link scheme"),
+        ):
+            with self.subTest(fields=fields):
+                self.data["decisions"] = [{**decision, **fields}]
+                with self.assertRaisesRegex(ValueError, expected):
+                    render(self.data, hosted=True)
+
     def test_text_is_escaped_and_not_reprocessed_as_a_template(self):
         self.data["title"] = '<script>alert("title")</script> {{ROWS}}'
         self.data["tasks"][0]["title"] = '</button><img src=x onerror="bad()">'

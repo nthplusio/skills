@@ -169,9 +169,38 @@ def render(data, hosted=False):
         )
     decision_html = []
     for item in decisions.values():
+        affected = item.get("task_ids", [])
+        if not isinstance(affected, list) or any(key not in tasks for key in affected):
+            raise ValueError(f"{item['id']}: unknown affected task")
+        discussion = item.get("discussion", {})
+        if not isinstance(discussion, dict) or (discussion and any(
+            not isinstance(discussion.get(key), str) or not discussion[key].strip() for key in ("owner_id", "label")
+        )):
+            raise ValueError(f"{item['id']}: discussion needs an owner_id and label")
+        human = item.get("requires_human", False)
+        if not isinstance(human, bool):
+            raise ValueError(f"{item['id']}: requires_human must be boolean")
+        if human and not discussion:
+            raise ValueError(f"{item['id']}: human-only gate needs a discussion owner")
+        href = discussion.get("href", "")
+        if discussion:
+            route = (anchor(href, "Answer in thread" if human else "Open discussion") if href
+                     else escape(f"Discuss with {discussion['label']} ({discussion['owner_id']})"))
+        else:
+            route = anchor(data["presentation"].get("coordinator_href"), "Open coordinator")
+        attributes = (f'data-discussion-owner="{escape(discussion.get("owner_id", ""), quote=True)}" '
+                      f'data-discussion-label="{escape(discussion.get("label", "coordinator"), quote=True)}" '
+                      f'data-discussion-href="{link(href, hosted)}" data-requires-human="{str(human).lower()}"')
         prompt = f"In orchestration run {data['run_id']}, decision {item['id']}: {item['text']} Explain the recommendation and the consequence of each option."
-        decision_html.append(f'<article class="decision" id="decision-{item["id"]}"><b>{item["id"]}</b><p>{escape(item["text"])}</p>'
-                             f'<small>{escape(item["recommendation"])}</small><button class="quiet" data-question="{escape(prompt, quote=True)}">Ask about {item["id"]}</button></article>')
+        decision_html.append(
+            f'<article class="decision" id="decision-{item["id"]}"><b>{item["id"]}</b>'
+            + (f'<small>{" · ".join(anchor(f"#task-{key}", key) for key in affected)}</small>' if affected else "")
+            + f'<p>{escape(item["text"])}</p><small>{escape(item["recommendation"])}</small>'
+            + (f'<small>Unblocks: {escape(item["unblocks"])}</small>' if item.get("unblocks") else "")
+            + ('<small>Human-only gate. A forwarded message cannot answer it.</small>' if human else "")
+            + f'<div class="decision-actions">{route}<button class="quiet" {attributes} data-copy-id="{item["id"]}">Copy ID</button>'
+              f'<button class="quiet" {attributes} data-question="{escape(prompt, quote=True)}">Ask about {item["id"]}</button></div></article>'
+        )
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
         "GOAL": escape(data["goal"]), "UPDATED": escape(data["updated_at"]),

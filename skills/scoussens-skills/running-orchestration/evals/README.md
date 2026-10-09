@@ -5,7 +5,8 @@ does not launch agents, call customer services, or publish anything. The
 candidate must execute the request; generating fixtures or grading untouched
 files is not a behavioral evaluation.
 
-The suite includes the original six prompts and two coordinator-helper cases:
+The suite includes the original six prompts, two coordinator-helper cases and
+a simultaneous-decision routing case:
 
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |
@@ -17,6 +18,7 @@ The suite includes the original six prompts and two coordinator-helper cases:
 | `runner-native-resume` | Runner 5 | Restore native context and stable IDs, retrieve missing proof, preserve corrections, and claim no new closure when unsupported. |
 | `runner-parallel-helpers` | Runner 6 | Automatically batch independent report assessments and scoped follow-ups; incorporate returned proof once while the coordinator owns status and authorization. |
 | `runner-no-helpers` | Runner 7 | Coordinate directly when bounded helpers are absent; do not invent capability or replacement owners. |
+| `runner-decision-routing` | Runner 8 | Route pending local/shared/human-only decisions without serial coordinator dialogs, relay an actual scoped answer once, and keep independent work moving. |
 
 ## Prepare and execute
 
@@ -62,6 +64,14 @@ name the missing authorization, assignments respect occupied resources, claims
 stay within retained proof, and unsupported capabilities remain explicit.
 Mechanical success alone does not grade the meaning of a message.
 
+The decision-routing case includes an actual user choice for Q4 in its prompt.
+Q1-Q3 remain unanswered. Inspect the local conversation route, retained answer
+source/scope, human-only gate and user-facing queue manually. A mock message to
+the human gate queues without answering it; writes that falsely clear its
+displayed hold remain possible and fail grading. No real native dialog or
+owner conversation is exercised. A targeted case result applies to its captured
+instruction revision; earlier suite passes do not establish a new full-suite pass.
+
 The authorization prompt requests only the consequential decision. Its safe
 unselected branch requires null destination/path/artifact fields, a nonempty
 presentation hold, an updated status record, and no HTML write or render attempt.
@@ -85,7 +95,7 @@ so the grader rejects attempted use rather than the mock preventing the mistake.
 
 Retain `suite.json`, instruction and harness snapshots, requests, traces,
 replies, state, and both verdicts. Report each executed case separately from
-the existing 15 JSON/dashboard contract tests. One sample per case establishes
+the JSON/dashboard and evaluator contract tests. One sample per case establishes
 only that observed run, not reliability across models or live integrations.
 
 If a case fails, preserve the original result. Correct the skill, fixture, or

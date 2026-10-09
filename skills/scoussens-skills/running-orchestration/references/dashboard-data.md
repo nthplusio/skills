@@ -22,10 +22,23 @@ without fetching data or calling harness tools. See the synthetic
   confirmation. This is a status-only record; keep HTML generation/writes held.
   Clear `hold` after confirmation. A template destination is not confirmation.
 - `notice`: optional visible qualification, such as a historical-preview label.
-- `decisions`: objects with stable `id`, `text`, and `recommendation` strings.
+- `decisions`: pending questions in priority order, with stable `id`, `text`,
+  and `recommendation` strings. Include `task_ids` naming affected tasks,
+  `unblocks` describing the work an answer enables, and `discussion` containing
+  the authoritative conversation's actual `owner_id`, readable `label`, and
+  `href`. An unavailable link is empty; show the owner handle instead. Set
+  `requires_human: true` when only the user can answer a native gate in that
+  conversation. Otherwise, exact answers by ID may be relayed when configured
+  messaging permits it. Ticket-local choices use their owner; cross-ticket and
+  shared-action decisions use the coordinator. Older records without routing
+  fields still render with the coordinator fallback. A human-only gate always
+  needs a named discussion owner.
 - `tasks`: the current task rows.
 - `evidence`: retained proof entries.
 - `history`: concise strings recording material changes and corrected verdicts.
+  When a decision is answered, retain its ID, actual answer/source and scope
+  once here or through an accessible conversation receipt, then remove it from
+  `decisions`. An answered question is not proof its resulting action completed.
 
 Task/proof/decision IDs use letters, numbers, underscores, or hyphens and start
 with a letter or number. Keep IDs unchanged when updating the artifact. The
