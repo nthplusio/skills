@@ -396,7 +396,7 @@ def grade(case):
                         and all(job.get("brief") and job.get("follow_up") for job in jobs))
                 collected = next((index for index, event in enumerate(events) if event["operation"] == "invoke-helpers"), len(events))
                 require("uses_returned_reports_not_repeated_inspection", not any(
-                    index > collected and event["operation"] in ("inspect", "retain") for index, event in enumerate(events)))
+                    index > collected and event["operation"] == "inspect" for index, event in enumerate(events)))
             else:
                 require("continues_directly_without_helpers", "invoke-helpers" not in operations and all(
                     any(event["operation"] == "inspect" and event["args"]["owner"] == owner for event in events)

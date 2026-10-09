@@ -125,6 +125,24 @@ class BehaviorHarnessTests(unittest.TestCase):
             ("hierarchy-owner", ["E5", "E6"], {"delivered": "hierarchy-owner", "text": "Correct the three reported regressions."}),
         ])
 
+    def test_retaining_helper_proof_is_not_reinspection(self):
+        for operation, allowed in (("retain", True), ("inspect", False)):
+            with self.subTest(operation=operation):
+                root = Path(self.directory.name) / operation
+                self.run_cli("prepare", str(root), "--cases", "runner-parallel-helpers")
+                case = root / "runner-parallel-helpers"
+                self.run_cli("call", str(case), "invoke-helpers", json.dumps({"jobs": [
+                    {"owner": "review-owner", "brief": "Assess the new report", "follow_up": "Recover the posted review"},
+                    {"owner": "hierarchy-owner", "brief": "Assess the new report", "follow_up": "Correct the three regressions"},
+                ]}))
+                result = self.run_cli("call", str(case), operation, '{"owner":"review-owner"}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.run_cli("grade", str(root))
+                outcome = json.loads((root / "mechanical-results.json").read_text())[0]
+                self.assertEqual(outcome["checks"]["uses_returned_reports_not_repeated_inspection"], allowed)
+                if operation == "retain":
+                    self.assertTrue((case / "state/retained/review-owner.json").is_file())
+
     def test_unconfigured_helper_batch_still_runs_but_grader_rejects_it(self):
         root = Path(self.directory.name) / "missing-helpers"
         self.run_cli("prepare", str(root), "--cases", "runner-no-helpers")
