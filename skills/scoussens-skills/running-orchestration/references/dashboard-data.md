@@ -17,11 +17,50 @@ without fetching data or calling harness tools. See the synthetic
   `interaction` describes a configured native comment/message mechanism or says
   to paste copied questions. Copying is not delivery. Setup lists destinations;
   this record stores the user's choice.
+  Before that choice, set `destination`, `local_path`, `artifact_id` and
+  `artifact_url` to `null` and record a nonempty `hold` explaining the missing
+  confirmation. This is a status-only record; keep HTML generation/writes held.
+  Clear `hold` after confirmation. A template destination is not confirmation.
 - `notice`: optional visible qualification, such as a historical-preview label.
-- `decisions`: objects with stable `id`, `text`, and `recommendation` strings.
+- `decisions`: pending questions in priority order, with stable `id`, `text`,
+  and `recommendation` strings. Include `task_ids` naming affected assigned rows
+  that already exist in `tasks`. For unassigned tickets or proposed children,
+  name their IDs in the decision text and leave `task_ids` empty until assigned;
+  keep approval pending without inventing an owner or a matrix row. Include
+  `unblocks` describing the work an answer enables, and `discussion` containing
+  the authoritative conversation's actual `owner_id`, readable `label`, and
+  `href`. An unavailable link is empty; show the owner handle instead. Set
+  `requires_human: true` when only the user can answer a native gate in that
+  conversation. Otherwise, exact answers by ID may be relayed when configured
+  messaging permits it. Ticket-local choices use their owner; cross-ticket and
+  shared-action decisions use the coordinator. Older records without routing
+  fields still render with the coordinator fallback. A human-only gate always
+  needs a named discussion owner.
 - `tasks`: the current task rows.
 - `evidence`: retained proof entries.
 - `history`: concise strings recording material changes and corrected verdicts.
+  When a decision is answered, retain its ID, actual answer/source and scope
+  once here or through an accessible conversation receipt, then remove it from
+  `decisions`. An answered question is not proof its resulting action completed.
+
+A human-only decision uses this shape. `requires_human` belongs on the decision,
+alongside `discussion`:
+
+```json
+{
+  "id": "Q3",
+  "text": "Complete the existing sign-in dialog.",
+  "recommendation": "Answer in the runtime owner conversation.",
+  "task_ids": ["ENV-106"],
+  "unblocks": "Runtime sign-in",
+  "requires_human": true,
+  "discussion": {
+    "owner_id": "runtime-owner",
+    "label": "Runtime owner",
+    "href": "https://example.org/conversations/runtime-owner"
+  }
+}
+```
 
 Task/proof/decision IDs use letters, numbers, underscores, or hyphens and start
 with a letter or number. Keep IDs unchanged when updating the artifact. The
@@ -29,14 +68,21 @@ template uses them for selection, links, host comments, and copyable questions.
 
 ## Task fields
 
-`id` is a stable ticket or task ID, `title` is the outcome, and `done_when` names
-the assigned completion criterion. `owner` contains its actual harness `id`,
-`label`, optional `href`, `state`, `location`, and `handoff`. Its state is
-`active`, `waiting`, `complete`, or `closed`. Multiple tickets may share an
-owner ID; its lifecycle must agree across rows and counts include it once.
+Each row represents one ticket in the repository's confirmed ticket source.
+`id` is its stable ticket ID, `title` is the outcome, and `done_when` names the
+assigned completion criterion. `owner` contains its actual harness `id`, `label`,
+optional `href`, `state`, `location`, and `handoff`. Its state is `active`,
+`waiting`, `complete`, or `closed`. An owner ID belongs to exactly one ticket;
+the renderer rejects duplicate owner IDs across rows, including closed owners.
+Retain the original ticket binding in the row and any replacement handoff/history.
+Inspect the owner's original assignment before reuse; the renderer cannot prove
+historical bindings outside this record. Record confirmed repository ticket-policy
+choices and their source in `history`, without adding them to the harness config.
 Use `complete` when work is done but closure is unavailable/pending. Only
 `closed` asserts that the harness close/archive operation succeeded. Settle all
-of an owner's assigned tasks before marking that owner complete or closed.
+of its ticket's assigned work and known obligations before marking it complete
+or closed. Code readiness and owner completion are independent: a required
+runtime release keeps the owner active/waiting and belongs in `obligations`.
 
 `resources` lists file/runtime responsibilities. `blocked_by` lists known task
 IDs or named external dependencies. `blocker` states the actionable hold, or is

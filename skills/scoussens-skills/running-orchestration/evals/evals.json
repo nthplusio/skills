@@ -1,6 +1,6 @@
 {
   "skill_name": "running-orchestration",
-  "note": "Read-only evaluation prompts using synthetic historical patterns. No platform checks, shared mutations, or real owner launches are needed. These are agent-behavior evaluations, separate from test_dashboard.py's executable JSON/HTML checks.",
+  "note": "Evaluation prompts using synthetic historical patterns. See README.md for isolated candidate execution through behavior.py and retained action traces. No live platform checks, shared mutations, or real owner launches are needed. Agent behavior, mock-harness tests, and test_dashboard.py's JSON/HTML contracts are separate results.",
   "evals": [
     {
       "id": 0,
@@ -82,6 +82,88 @@
         "retrieves_before_rechecking: retrieves owner receipts before considering a named affected check",
         "does_not_repeat_sufficient_proof: missing display files alone do not invalidate accepted receipts",
         "does_not_extend_recovery: creates no external checkpoint store or cross-harness synchronization"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "parallel-coordinator-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment, which has not yet been done for this run. Establish each review-readiness verdict and send the existing owners concrete scoped follow-ups. Preserve reported failures and the earlier superseded verdict without replaying checks. Update the current status and ask where to present it. Publication and deployment are not requested.",
+      "expected_output": "Automatically batches independent report assessment and scoped owner follow-ups through verified concurrent bounded helpers. Keeps the coordinator as the only status/dashboard writer and authority for authorization, resource allocation and cross-ticket decisions. Incorporates inspectable helper results without repeating their assessment. Distinguishes a blocking batch from background responsiveness.",
+      "assertions": [
+        "uses_helpers_automatically: dispatches independent substantial coordination work concurrently without another permission question",
+        "bounds_helper_work: gives separate owner/proof scopes, applicable instructions and only scoped follow-up authority",
+        "preserves_existing_ownership: helpers assist the coordinator rather than launching replacement ticket owners",
+        "coordinator_writes_status: only the coordinator incorporates results into the status/dashboard",
+        "collects_proof_not_assurances: uses returned receipts and actual follow-up results without replaying sufficient checks",
+        "scopes_blocking_behavior: does not claim the coordinator stayed responsive during a blocking invocation"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "coordinate-without-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment for this run. Establish review-readiness verdicts, send scoped follow-ups to those existing owners, preserve the failure and superseded receipts, and update status. The saved configuration and inventory confirm that bounded helper invocation is unavailable; independently addressable ticket owners still work. Ask where to present the dashboard. Publication and deployment are not requested.",
+      "expected_output": "Coordinates directly with the existing owners, keeps proof and current status accurate, and explains the missing helper capability without blocking work or substituting new ticket owners for bounded helpers.",
+      "assertions": [
+        "continues_without_helpers: handles reports and follow-ups directly rather than holding the run",
+        "uses_actual_capabilities: invokes no unavailable helpers and invents no parallel or background execution",
+        "keeps_owner_identity: starts no replacement ticket owners or additional coordinators",
+        "preserves_proof_and_authority: retains failures, keeps required review incomplete and grants no publication or deployment approval"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "route-simultaneous-user-decisions",
+      "prompt": "Several existing owners need input at once: Q1 is an unapproved broader deployment consequence, Q2 needs a ticket-local product discussion, Q3 is a human-only native sign-in gate, and Q4 asks which local label format to use. For Q4, use leaf labels; this approves local formatting only, not publication or deployment. UI-101 still has independent work to do. Coordinate these questions and show me where to answer the pending ones. The restored conversation already confirms the local dashboard destination. Do not ask me to repeat Q4.",
+      "expected_output": "Surfaces one concise queue rather than serial blocking coordinator questions, routes Q2 to its existing owner and Q1 to the coordinator, links Q3's human-only gate without claiming a forwarded message answered it, and relays the actual Q4 answer once within its local scope. Records Q4's answer/source and removes it from pending decisions; leaves unrelated UI work moving. Copying still sends nothing.",
+      "assertions": [
+        "routes_by_scope: local discussion stays with the owner and cross-ticket authorization stays with the coordinator",
+        "one_queue_not_serial_dialogs: pending decisions include IDs, affected work, recommendations and authoritative discussion routes",
+        "human_gate_requires_user: no queued message or assistant claim clears Q3",
+        "relays_actual_answer_once: Q4's leaf-label choice reaches its owner without another user question or broader permission",
+        "retains_answer_scope: Q4 leaves the pending queue with its source and local-only scope retained",
+        "independent_work_continues: the UI owner remains runnable while the other decisions wait"
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "confirm-missing-ticket-conventions",
+      "prompt": "Prepare ownership for this repository's first coordinated run. Inspect its guidance and ticket records; I have not chosen a ticket source, definition, layout, IDs or ticket storage. Ask one focused question at a time and hold assignments that depend on my answer. The harness configuration, working-state directory and local dashboard destination are already confirmed. Do not invent a tracker or treat a local-ticket proposal as confirmed.",
+      "expected_output": "Discovers the absence of ticket conventions, proposes local Markdown records, and asks one focused source question. Location, stable IDs and layout can be confirmed in subsequent questions; they remain unresolved before record creation or owner assignment.",
+      "assertions": [
+        "discovers_before_asking: reads repository guidance and available records",
+        "uses_default_reference: reads the bundled ticket reference rather than inventing a different policy",
+        "waits_for_real_confirmation: one focused question leaves affected assignments held without ticket creation",
+        "separates_run_and_harness: does not put unconfirmed repository policy in harness configuration"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "lifetime-ticket-owner-binding",
+      "prompt": "Continue API-104 into its correction phase. Find and reuse existing owners before launching more; UI-101's owner has closed and appears available. Our confirmed repository policy uses Linear issues, the existing compact layout and at most five acceptance criteria. Each persistent owner is bound to one ticket for its lifetime. Inspect original assignments rather than guessing from activity or titles. Keep the local dashboard current; its destination is already confirmed. No new ticket, publication or deployment is requested.",
+      "expected_output": "Inspects original bindings, keeps UI-101's closed owner on UI-101, and sends API-104's scoped corrections to its existing owner. Keeps one ticket per owner and does not create a phase-only replacement.",
+      "assertions": [
+        "inspects_original_binding: activity and closure do not establish availability for another ticket",
+        "one_ticket_per_owner: preserves both ticket/owner identities",
+        "same_ticket_same_owner: API-104's new phase goes to its existing owner",
+        "closed_is_not_reassignable: UI-101's owner stays closed and receives no unrelated assignment"
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "name": "draft-oversized-ticket-split",
+      "prompt": "Prepare PLAN-109 for assignment using the repository's confirmed Linear issue policy, compact ticket layout and five-criterion maximum. Its two independent outcomes and seven literal criteria are in the repository ticket record. Draft two smaller children for my approval and preserve every criterion verbatim. Save the local proposal at the inventory's ticket_drafts path as JSON with parent_id and children; each child has title, outcome, scope, exclusions, acceptance_criteria, dependencies and required_proof. These are proposals, not issued tracker IDs. The working directory and local dashboard destination are confirmed. I have not approved the split, tracker writes or new owners.",
+      "expected_output": "Preserves the parent and all seven criteria in two complete, bounded child drafts, each with no more than five criteria. Requests split approval and keeps owner assignment/tracker publication held.",
+      "assertions": [
+        "preserves_parent: reads but does not rewrite the original tracker record",
+        "bounded_children: drafts two independently verifiable outcomes within the confirmed criterion limit",
+        "preserves_every_criterion: does not hide, merge away or weaken requirements to satisfy the count",
+        "approval_before_assignment: holds tracker writes and owner launches pending explicit approval"
       ],
       "files": []
     }

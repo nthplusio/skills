@@ -8,26 +8,28 @@
 :root { color-scheme: light; --bg:#f8f7f4; --surface:#fff; --ink:#20252d; --muted:#647080; --line:#dde2e8; --accent:#2959ab; --soft:#edf3ff; --ok:#216849; --ok-bg:#e5f3eb; --warn:#865900; --warn-bg:#fff3d5; --bad:#a53139; --bad-bg:#fbeaec; --neutral:#6e7682; --neutral-bg:#edf0f3; }
 * { box-sizing:border-box; }
 body { margin:0; color:var(--ink); background:var(--bg); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-main { max-width:1460px; padding:28px 24px 64px; margin:auto; }
+main { max-width:1460px; padding:20px 24px 40px; margin:auto; }
 header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
-h1 { font-size:26px; letter-spacing:-.6px; margin:0 0 4px; }
-h2 { font-size:16px; margin:0 0 14px; }
+h1 { font-size:24px; line-height:1.2; letter-spacing:-.6px; margin:0 0 4px; }
+h2 { font-size:15px; margin:0 0 10px; }
 p { margin:6px 0; }
+header p { font-size:12px; margin:4px 0; }
 a { color:var(--accent); text-underline-offset:3px; }
 small,.muted { color:var(--muted); }
 header .meta { text-align:right; font-size:12px; color:var(--muted); }
 .notice { color:var(--warn); font-size:12px; }
-.stats { display:flex; gap:28px; padding:18px 0; margin:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.stats { display:flex; gap:28px; padding:8px 0; margin:10px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
 .stat { display:flex; gap:8px; align-items:baseline; }
-.stat b { font-size:23px; font-weight:650; }
+.stat b { font-size:18px; font-weight:650; }
 .stat span { color:var(--muted); font-size:12px; }
-.layout { display:grid; grid-template-columns:minmax(0,2.25fr) minmax(300px,1fr); gap:20px; align-items:start; }
-.panel { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px; }
-.matrix { padding:18px 0 14px; }
+.layout { display:grid; grid-template-columns:minmax(0,2.25fr) minmax(300px,1fr); gap:14px; align-items:start; }
+.panel { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px; }
+.matrix { padding:12px 0 10px; }
 .matrix h2,.matrix .muted,.legend { margin-left:18px; margin-right:18px; }
-.matrix .muted { font-size:12px; }
+.matrix h2 { display:inline-block; margin-right:8px; }
+.matrix .muted { display:inline; margin-left:0; font-size:12px; }
 table { border-collapse:collapse; width:100%; table-layout:fixed; }
-th,td { padding:13px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+th,td { padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:middle; }
 th { font-size:11px; font-weight:550; color:var(--muted); background:#fafbfc; text-align:center; }
 th:first-child { width:34%; text-align:left; }
 th:nth-child(2) { width:21%; text-align:left; }
@@ -38,10 +40,10 @@ tr.selected { background:var(--soft); }
 button { font:inherit; cursor:pointer; color:var(--accent); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; }
 button:hover { border-color:var(--accent); }
 button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-.task-picker { border:0; background:none; display:block; width:100%; text-align:left; padding:0; color:var(--ink); }
-.task-picker b { color:var(--accent); font-size:12px; }
-.task-picker span { display:block; font-size:13px; margin-top:3px; }
-.lifecycle { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.45px; margin-top:5px; }
+.task-picker { border:0; background:none; display:flex; gap:12px; align-items:baseline; width:100%; text-align:left; padding:0; color:var(--ink); }
+.task-picker b { color:var(--accent); font-size:12px; flex-shrink:0; }
+.task-picker span { font-size:13px; }
+.lifecycle { display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.45px; margin-left:8px; }
 .signal { width:27px; height:27px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:16px; font-weight:650; }
 .verified { color:var(--ok); background:var(--ok-bg); }
 .pending { color:var(--warn); background:var(--warn-bg); }
@@ -50,14 +52,31 @@ button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visibl
 .legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:14px; font-size:11px; color:var(--muted); }
 .legend span { display:flex; align-items:center; gap:5px; }
 .legend .signal { width:19px; height:19px; font-size:12px; }
-aside { display:grid; gap:14px; }
-.decision { padding:10px 12px; margin:8px 0; background:var(--warn-bg); border-left:3px solid var(--warn); border-radius:4px; }
-.decision > b { font-size:11px; color:var(--warn); }
-.decision p { font-size:13px; }
-.decision small { display:block; font-size:12px; }
+.decision { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:9px 12px; margin:7px 0; background:var(--warn-bg); border-left:3px solid var(--warn); border-radius:4px; }
+.decision-preview { min-width:0; }
+.decision-picker { display:flex; gap:10px; align-items:baseline; padding:0; border:0; background:none; text-align:left; color:var(--ink); }
+.decision-picker b { font-size:12px; color:var(--warn); flex-shrink:0; }
+.decision-picker span { font-size:13px; }
+.decision-preview small { display:block; font-size:11px; margin-top:3px; }
+.decision > .quiet { flex-shrink:0; }
+.decision-question { font-size:17px; font-weight:600; }
 .quiet { padding:3px 6px; font-size:11px; background:transparent; }
-.decision .quiet { margin-top:7px; }
+.decision-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:20px; font-size:12px; }
+dialog { width:min(900px,calc(100vw - 32px)); max-height:calc(100vh - 32px); margin:auto; padding:24px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); box-shadow:0 18px 70px #0005; }
+dialog::backdrop { background:#11182780; }
+.dialog-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:16px; }
+.dialog-heading h2 { margin:0; }
+#decision-help { font-size:12px; color:var(--muted); margin-bottom:16px; }
+.context-columns { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+.issue-data h3 { margin:0 0 10px; font-size:14px; }
+.issue-data dl { display:grid; grid-template-columns:110px 1fr; gap:5px 10px; }
+.issue-data dt,.issue-data dd { margin:0; font-size:12px; }
+.share-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:18px; padding-top:14px; border-top:1px solid var(--line); }
+.share-actions small,.share-feedback { flex-basis:100%; margin:0; font-size:12px; }
+.share-feedback { color:var(--ok); }
+.human-warning { padding:12px; margin-top:18px; border-left:3px solid var(--warn); border-radius:4px; color:var(--warn); background:var(--warn-bg); font-size:13px; }
 summary { cursor:pointer; }
+#selected-task > summary { font-size:13px; font-weight:600; }
 .task-detail > summary { font-size:15px; font-weight:650; margin-bottom:10px; }
 .detail-heading { display:flex; gap:8px; justify-content:space-between; align-items:center; color:var(--muted); font-size:11px; }
 .blocker,.next { margin:12px 0; font-size:13px; }
@@ -97,7 +116,12 @@ pre { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; 
   td:nth-child(2) { grid-column:4; font-size:11px; overflow-wrap:normal; }
   td:nth-child(n+3)::before { content:attr(data-label); display:block; min-height:32px; margin-bottom:4px; color:var(--muted); font-size:10px; line-height:1.4; }
   tr:not([id]) td { grid-column:1 / -1; }
-  .task-picker { overflow-wrap:anywhere; }
+  .task-picker { display:block; overflow-wrap:anywhere; }
+  .task-picker span { display:block; margin-top:3px; }
+  .decision-picker { display:block; }
+  .decision-picker span { display:block; }
+  .context-columns { grid-template-columns:1fr; gap:18px; }
+  dialog { padding:18px; }
 }
 @media(prefers-color-scheme:dark) { :root { color-scheme:dark; --bg:#181b21; --surface:#20252d; --ink:#e8edf5; --muted:#a6b0be; --line:#3c4654; --accent:#9cbcff; --soft:#29374e; --ok:#8be0b5; --ok-bg:#213f33; --warn:#f7d277; --warn-bg:#3b321e; --bad:#ffadb2; --bad-bg:#462830; --neutral:#b2bbc9; --neutral-bg:#303843; } th { background:var(--bg); } }
 </style>
@@ -108,20 +132,75 @@ pre { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; 
 <div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{TASK_COUNT}}</b><span>tasks</span></div><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div>
 <div class="layout">
 <section class="panel matrix" id="task-matrix"><h2>Work at a glance</h2><p class="muted">Select a task to inspect its blocker, next action, and retained proof.</p><table><thead><tr><th scope="col">Ticket / task</th><th scope="col">Work owner</th><th scope="col">PR<br>readiness</th><th scope="col">Code<br>publication</th><th scope="col">Deployment</th><th scope="col">Business<br>acceptance</th></tr></thead><tbody>{{ROWS}}</tbody></table><div class="legend" aria-label="Milestone legend"><span><i class="signal verified" aria-hidden="true">✓</i>Verified</span><span><i class="signal pending" aria-hidden="true">…</i>Pending</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not requested</span></div></section>
-<aside>
 <section class="panel" id="decisions"><h2>Needs your decision</h2>{{DECISIONS}}</section>
-<section class="panel" id="selected-task" aria-label="Selected task details">{{DETAILS}}<details class="question-panel" id="question-panel"><summary>Question for the coordinator</summary><label for="question-text">Prepared question</label><textarea id="question-text">{{QUESTION}}</textarea><button id="copy-question">Copy question</button><p id="copy-feedback" role="status" aria-live="polite"></p><small>Copy does not send. Paste into the coordinator conversation.</small><small>{{COORDINATOR}}</small><small>{{INTERACTION}}</small></details></section>
-</aside>
 </div>
 <details class="panel archive" id="retained-proof"><summary>Retained proof. Expand receipts and limitations.</summary>{{PROOFS}}</details>
 <details class="panel archive" id="change-history"><summary>Corrections and history</summary><ul class="history">{{HISTORY}}</ul></details>
 </main>
+<dialog id="decision-dialog" aria-labelledby="decision-title" aria-describedby="decision-help"><div class="dialog-heading"><h2 id="decision-title">Decision</h2><button id="close-decision" autofocus>Close</button></div><p id="decision-help">Answer in the linked conversation. Copy controls prepare text; they do not send it.</p><div id="decision-content"></div></dialog>
+<dialog id="task-dialog" aria-labelledby="task-title"><div class="dialog-heading"><h2 id="task-title">Task details</h2><button id="close-task" autofocus>Close</button></div><section id="selected-task">{{DETAILS}}<details class="question-panel" id="question-panel"><summary id="question-target">Question for the coordinator</summary><label for="question-text">Prepared text</label><textarea id="question-text">{{QUESTION}}</textarea><button id="copy-question">Copy prepared text</button><p id="copy-feedback" role="status" aria-live="polite"></p><small id="question-instructions">Copy does not send. Paste into the coordinator conversation.</small><small id="question-destination">{{COORDINATOR}}</small><small id="question-interaction">{{INTERACTION}}</small></details></section></dialog>
 <script>
 (() => {
   const field = document.getElementById('question-text');
   const feedback = document.getElementById('copy-feedback');
   const questionPanel = document.getElementById('question-panel');
-  function selectTask(id) {
+  const target = document.getElementById('question-target');
+  const instructions = document.getElementById('question-instructions');
+  const destination = document.getElementById('question-destination');
+  const interaction = document.getElementById('question-interaction');
+  const coordinatorDestination = destination.cloneNode(true);
+  const dialog = document.getElementById('decision-dialog');
+  const dialogContent = document.getElementById('decision-content');
+  const taskDialog = document.getElementById('task-dialog');
+  let selectedDecision;
+  function openDecision(id) {
+    if (taskDialog.open) taskDialog.close();
+    const card = document.getElementById('decision-' + id);
+    if (selectedDecision !== card) {
+      if (selectedDecision) restoreDecision();
+      const detail = card.querySelector('.decision-detail');
+      detail.hidden = false;
+      dialogContent.append(detail);
+      selectedDecision = card;
+      document.getElementById('decision-title').textContent = 'Decision ' + id;
+    }
+    if (!dialog.open) dialog.showModal();
+  }
+  function restoreDecision() {
+    const task = document.querySelector('.task-detail:not([hidden])');
+    if (task) task.querySelector('.question-options').after(questionPanel);
+    const detail = dialogContent.querySelector('.decision-detail');
+    if (detail) { detail.hidden = true; selectedDecision.append(detail); }
+    selectedDecision = undefined;
+    routeQuestion();
+    questionPanel.open = false;
+    feedback.textContent = '';
+  }
+  dialog.addEventListener('close', () => { if (!dialog.open && selectedDecision) restoreDecision(); });
+  document.getElementById('close-decision').addEventListener('click', () => dialog.close());
+  document.getElementById('close-task').addEventListener('click', () => taskDialog.close());
+  function routeQuestion(button) {
+    const owner = button?.dataset.discussionOwner;
+    const label = owner ? button.dataset.discussionLabel : 'the coordinator';
+    const human = button?.dataset.requiresHuman === 'true';
+    target.textContent = (button?.dataset.context ? 'Context for ' : 'Question for ') + label;
+    instructions.textContent = human
+      ? 'Answer the human-only dialog in this thread. Copy does not send or unlock it.'
+      : 'Copy does not send. Paste into ' + label + "'s conversation.";
+    interaction.hidden = Boolean(owner);
+    destination.hidden = dialog.open;
+    if (owner) {
+      const href = button.dataset.discussionHref;
+      const node = document.createElement(href ? 'a' : 'span');
+      node.textContent = href ? (human ? 'Answer in thread' : 'Open discussion') : label + ' (' + owner + ')';
+      if (href) node.href = href;
+      destination.replaceChildren(node);
+    } else {
+      destination.replaceChildren(...Array.from(coordinatorDestination.childNodes, node => node.cloneNode(true)));
+    }
+  }
+  function selectTask(id, reveal = true) {
+    if (dialog.open) { dialog.close(); restoreDecision(); }
     document.querySelectorAll('.task-detail').forEach(item => { item.hidden = item.id !== 'task-' + id; if (!item.hidden) item.open = true; });
     document.querySelectorAll('.task-picker').forEach(button => { const selected = button.dataset.task === id; button.setAttribute('aria-pressed', String(selected)); button.closest('tr').classList.toggle('selected', selected); });
     const item = document.getElementById('task-' + id);
@@ -129,23 +208,46 @@ pre { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; 
       field.value = item.querySelector('[data-question]').dataset.question;
       item.querySelector('.question-options').after(questionPanel);
     }
+    if (reveal && !taskDialog.open) taskDialog.showModal();
+    routeQuestion();
     questionPanel.open = false;
     feedback.textContent = '';
   }
-  function prepare(value) {
+  function prepare(value, button) {
+    if (button) {
+      const decision = button.closest('[data-decision]');
+      const task = button.closest('.task-detail');
+      if (decision) {
+        openDecision(decision.dataset.decision);
+        dialogContent.querySelector('.decision-detail').append(questionPanel);
+      } else if (task) {
+        task.querySelector('.question-options').after(questionPanel);
+        if (!taskDialog.open) taskDialog.showModal();
+      }
+      routeQuestion(button);
+    }
     field.value = value;
     questionPanel.open = true;
     field.focus();
     field.scrollIntoView({block:'nearest'});
   }
-  async function copy(value) {
-    prepare(value);
+  async function copy(value, button) {
+    const status = button?.closest('.share-actions')?.querySelector('.share-feedback') || feedback;
+    if (button?.dataset.context || button?.dataset.copyId) {
+      try {
+        await navigator.clipboard.writeText(value);
+        if (button.dataset.copyId) button.textContent = 'Copied ' + value;
+        else status.textContent = 'Context copied. No message sent.';
+        return;
+      } catch {}
+    }
+    prepare(value, button);
     field.select();
-    feedback.textContent = 'Text selected. Press Ctrl+C or Command+C.';
+    status.textContent = 'Text selected. Press Ctrl+C or Command+C.';
     try {
       if (!navigator.clipboard) throw new Error('Clipboard unavailable');
       await navigator.clipboard.writeText(value);
-      feedback.textContent = 'Copied.';
+      status.textContent = 'Copied.';
     } catch {}
   }
   document.querySelectorAll('.task-picker').forEach(button => button.addEventListener('click', () => {
@@ -156,15 +258,29 @@ pre { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; 
       summary.scrollIntoView({block:'start'});
     }
   }));
-  document.querySelectorAll('[data-question]').forEach(button => button.addEventListener('click', () => { prepare(button.dataset.question); feedback.textContent = ''; }));
-  document.querySelectorAll('[data-copy-id]').forEach(button => button.addEventListener('click', () => copy(button.dataset.copyId)));
+  document.querySelectorAll('.decision-picker').forEach(button => button.addEventListener('click', () => openDecision(button.dataset.decision)));
+  document.querySelectorAll('[data-question]').forEach(button => button.addEventListener('click', () => { prepare(button.dataset.question, button); feedback.textContent = ''; }));
+  document.querySelectorAll('[data-copy-id]').forEach(button => button.addEventListener('click', () => copy(button.dataset.copyId, button)));
+  document.querySelectorAll('[data-context]').forEach(button => button.addEventListener('click', () => copy(button.dataset.context, button)));
   document.getElementById('copy-question').addEventListener('click', () => copy(field.value));
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href^="#task-"], a[href^="#proof-"]');
+    if (link?.hash.startsWith('#task-')) { event.preventDefault(); selectTask(link.hash.slice(6)); }
+    else if (link && link.hash === location.hash) { event.preventDefault(); revealHash(); }
+  });
   function revealHash() {
     const target = document.getElementById(location.hash.slice(1));
+    if (target && target.classList.contains('decision')) openDecision(target.id.slice(9));
     if (target && target.classList.contains('task-detail')) selectTask(target.id.slice(5));
-    if (target && target.tagName === 'DETAILS') { target.open = true; const parent = target.parentElement.closest('details'); if (parent) parent.open = true; target.scrollIntoView(); }
+    if (target && target.classList.contains('receipt')) {
+      if (dialog.open) { dialog.close(); restoreDecision(); }
+      if (taskDialog.open) taskDialog.close();
+      target.open = true;
+      target.parentElement.closest('details').open = true;
+      target.scrollIntoView();
+    }
   }
-  selectTask(document.body.dataset.firstTask);
+  selectTask(document.body.dataset.firstTask, false);
   window.addEventListener('hashchange', revealHash);
   revealHash();
 })();

@@ -50,10 +50,18 @@ Record the actual supported operations in
 [`assets/harness-config.template.json`](assets/harness-config.template.json):
 
 - Owners: launch, inspect, message, collect results, close/archive, and resume.
-  Record whether their workspaces are shared, isolated, or selectable.
+  Record whether their workspaces are shared, isolated, or selectable. Describe
+  how `inspect` exposes pending user questions and human-only input gates, and
+  whether `message` can answer a question or merely queues behind its gate.
+  Record supported direct conversation links or navigation by owner handle,
+  and any caller-blocking or unavailable question-routing behavior in
+  `limitations`. These are tool facts, not permission to answer for the user.
 - Helpers: invocation and collection, whether they block their caller, and
-  whether they can receive follow-up messages. A blocking helper is not an
-  independently addressable owner.
+  whether they can receive follow-up messages. In `invoke`/`collect`, describe
+  the verified concurrent-invocation mechanism and any known limits, including
+  whether the caller waits for a batch. Record unavailable or unverified
+  concurrency in `limitations`. Blocking the caller does not establish whether
+  helper calls can overlap, and a blocking helper is not an independent owner.
 - Skills: loading and the supported way to pass relevant instructions to an
   owner or helper. Record baseline shared skills when the user's guidance
   establishes them. Neither orchestration skill belongs in that list.
@@ -70,6 +78,8 @@ An operation is a description of the verified tool or command and its important
 arguments, not executable configuration. Use `null` for an unsupported operation
 and explain the consequence in `limitations`. Never put credentials, current
 tickets, shared-action approvals, or a chosen run destination in this file.
+Repository ticket definitions and tracker choices belong to the runner's ticket
+discovery, not this harness-wide configuration.
 
 For example, an Amp configuration may map independently addressable owners to
 `create_thread` and helpers to `Task`. Verify the tools available in the
