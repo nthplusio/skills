@@ -152,6 +152,8 @@ class DashboardTests(unittest.TestCase):
             ({"requires_human": "true"}, "requires_human must be boolean"),
             ({"task_ids": ["MISSING"]}, "unknown affected task"),
             ({"discussion": {"owner_id": "runtime-owner", "label": "Runtime owner", "href": "javascript:bad()"}}, "unsupported link scheme"),
+            ({"discussion": {"owner_id": "runtime-owner", "label": "Runtime owner", "requires_human": True}},
+             "requires_human belongs on the decision"),
         ):
             with self.subTest(fields=fields):
                 self.data["decisions"] = [{**decision, **fields}]
