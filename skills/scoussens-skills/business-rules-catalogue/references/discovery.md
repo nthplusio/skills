@@ -18,6 +18,12 @@ the one with the most decisions. Survey's `dec/kloc` column counts branch and
 query keywords per thousand lines. It hints where conditions concentrate; the
 files you read decide the tier.
 
+Survey is a heuristic, not a complete policy inventory. Inspect the pinned
+tracked-file list with `git ls-tree -r --name-only <commit>` for configuration,
+seed tables, schemas, templates and executable examples the language/path
+filters omitted. Add policy-bearing extensions or explicit `include` globs
+and an owning area before confirming scope. Report deliberate omissions.
+
 ## Classify every candidate area
 
 - **business**: the code decides outcomes the business owns. Domain models
@@ -83,6 +89,10 @@ eligibility, scheduling) in the order a user meets them.
   code against.
 - `exclude`: whole-path globs for generated or vendored files survey did not
   recognise. `*` also crosses `/`, so `*/generated/*` matches at any depth.
+- `include`: whole-path globs that override the language and path heuristics,
+  such as `docs/executable-policy/*.yaml`. This admits business decisions in
+  a normally skipped folder or an unrecognised file format. `exclude` still
+  wins; include only text files readers can inspect.
 - `links`: only when `origin` is not GitHub, GitLab or Bitbucket and the user
   wants clickable citations. Give `file`, `line` and `commit` URL templates
   using `{commit}`, `{path}`, `{start}` and `{end}`.
@@ -103,10 +113,11 @@ merge their proposed area entries yourself.
   "glossary": {"path": "docs/GLOSSARY.md", "format": "bold-colon"},
   "docs": ["docs/GLOSSARY.md", "docs/adr"],
   "extensions": [".go", ".sql", ".ts"],
+  "include": ["config/pricing.yaml"],
   "exclude": ["*.gen.ts"],
   "areas": [
     {"id": "orders", "code": "OR", "title": "Orders", "tier": "business",
-     "paths": ["services/orders"], "summary": "Prices, places and cancels orders.",
+     "paths": ["services/orders", "config/pricing.yaml"], "summary": "Prices, places and cancels orders.",
      "focus": "The glossary says a cancelled order keeps its number; check that."}
   ],
   "surfaceKinds": [{"id": "api", "label": "API", "icon": "{ }", "where": ["services/orders/src"]},
@@ -121,7 +132,7 @@ merge their proposed area entries yourself.
 `id` is a lowercase slug. `code` is 2 to 4 capitals, unique across areas, and
 prefixes every rule ID in the area (`BR-OR-012`). `paths` are
 repository-relative directories or files. A file under two areas belongs to
-the one with the longer path. `summary` says in one or two sentences what the
-area decides, or why it is skipped. `focus` is optional: claims from the
-glossary or decision records that readers should check against this area's
-code.
+the one with the longer path, including a nested skip area. `summary` says in
+one or two sentences what the area decides, or why it is skipped. `focus` is
+optional: claims from the glossary or decision records that readers should
+check against this area's code.

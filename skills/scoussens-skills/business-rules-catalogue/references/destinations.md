@@ -15,7 +15,11 @@ A run has three things to place:
 ## Usable destinations
 
 List only the destinations you can deliver to from this session. Read each
-publishing tool's description for who can see what it publishes.
+publishing tool's description for who can see what it publishes, whether it
+executes JavaScript, upload limits, and whether its preview and final URL have
+different access controls. Verify these facts before offering a host. A wiki
+that stores the HTML as text is not an explorer host. DocStash is one option,
+not a dependency or a default.
 
 - **Local**, always available. Open `site/index.html` (or `bundle.html`)
   with `open` or `xdg-open` when there is a desktop. In a remote sandbox,
@@ -46,8 +50,10 @@ too.
 
 Put up to three questions in the same message as the scope confirmation:
 
-1. The explorer: which destination, and which audience. Offer local first,
-   as the default.
+1. The explorer: local preview/file or published delivery; the local output
+   location or available publishing provider; private, named/shared, or public
+   access. For shared access, resolve the actual recipients or organisation.
+   Offer local first as a proposal, not an answer on the user's behalf.
 2. The research note: a repository path following the convention survey found
    (`noteDirs`), or the work directory only.
 3. The saved scope: `.business-rules/` in the repository, another path, or
@@ -56,6 +62,11 @@ Put up to three questions in the same message as the scope confirmation:
 Then:
 
 - When the user already named an answer, confirm it instead of asking again.
+- Restore confirmed choices when resuming the same run. Saved scope or another
+  run's hosting preference is evidence for a proposal, not publication approval.
+- "Publish it" settles hosted delivery, but leaves an unnamed provider or
+  audience unanswered. Ask only for those remaining choices. "For the product
+  team" names reviewers, not permission to make the page public.
 - When local is the only destination and the user asked for nothing more, use
   local without asking that question.
 - When the destination question goes unanswered, build locally and **hold**
@@ -68,6 +79,11 @@ Record each answer as it arrives:
 $BR record --work <work> --destination docstash --audience private --note docs/research/business-rules.md --save-scope .business-rules
 ```
 
+`--destination` accepts any host name. Keep the concrete local path, provider
+identifier and shared recipients with the user's confirmation in
+`<work>/delivery.md`; `run.json` holds the destination, audience and final URL.
+An unresolved choice stays absent. Neither file grants permission by itself.
+
 ## Separate permissions
 
 Choosing a destination authorizes delivering the explorer there at the chosen
@@ -79,6 +95,33 @@ audience. Each of these needs its own explicit request:
 - announcing the link by chat or email;
 - uploading anything besides the explorer.
 
+## Other hosts and local delivery
+
+Copy the chosen output to the confirmed location. For a single-page host, use
+`bundle.html`; for a static-file host, retain `site/` paths and upload every
+file. Verify the host runs scripts and preserves the rule data, citations,
+review controls and download/import behavior. A hash-checked upload alone does
+not prove the hosted app works, because a host can strip scripts or sandbox
+downloads and browser storage.
+
+Apply only the confirmed audience and record the URL the provider returns.
+For public access, load the final URL in a fresh signed-out browser session.
+For private/shared access, check the host's access settings and test an
+authorised viewer plus an unauthorised session when available. Report any
+access check you cannot perform; keep delivery held if the requested access
+control cannot be established. An unguessable link alone is not private access.
+For local remote-sandbox delivery, use its supported portal and describe the
+portal's actual audience and lifetime, rather than calling it private by default.
+
+Reviews stay in browser storage for that origin, not on the host or in a
+shared database. Different browsers and private sessions do not share them;
+moving the explorer to another origin needs a JSON export/import. Reviewers
+and the product architect export their own corrections and send them to
+engineering. Import keeps the newer review per rule and can replace a different
+reviewer's verdict; retain the original exports for attribution. CSV and
+Markdown are handoff formats; only JSON imports. A legacy JSON export without
+a project field still requires the matching commit and valid rule IDs.
+
 ## DocStash
 
 1. Run `$BR publish-prep --work <work>`. It refuses until a hosted
@@ -87,8 +130,10 @@ audience. Each of these needs its own explicit request:
 2. One helper creates the shell from `<work>/publish/UPLOAD.md`, section
    *Create the shell*, named `<title> (<short sha>)`. Record the slug it
    returns.
-3. One helper per group uploads in parallel, each using section *Upload a
-   group*, the slug and its group number.
+3. Upload groups sequentially, each using section *Upload a group*, the slug
+   and its group number. Calls edit one shared app, so a single writer avoids
+   lost updates. Helpers may prepare payloads in parallel, but the coordinator
+   owns every `edit_app` call.
 4. Paste `<work>/publish/verify.js` into `code_exec` with the slug filled in.
    Done when it prints `allOk: true`.
 5. Apply the recorded audience:
@@ -101,6 +146,10 @@ audience. Each of these needs its own explicit request:
      link is `https://docstash.ai/<slug>`. Open it in a fresh browser session
      to confirm it loads without signing in.
 6. Run `$BR record --work <work> --share-url <link>` so the note cites it.
+7. Run the same browser and access checks as other hosts on the final link.
+   Inspect the current tool schemas before invoking create, save or sharing
+   operations; the snippets describe the intended workflow, not guaranteed
+   provider API compatibility.
 
 The draft link (`app.docstash.ai/<slug>`) needs a sign-in. Give each commit
 its own document: rule IDs hold for one commit, so a new run never becomes a

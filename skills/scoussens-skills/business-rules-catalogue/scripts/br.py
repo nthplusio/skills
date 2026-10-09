@@ -142,6 +142,12 @@ def work_dir(args):
     work = Path(args.work).expanduser().resolve()
     if not (work / "run.json").exists():
         sys.exit(f"{work}/run.json is missing. Run `br.py init` first.")
+    if args.cmd in {"survey", "partition", "check", "batches", "build"}:
+        run = run_info(work)
+        repo = repo_of(run)
+        if (sh("git", "rev-parse", "HEAD", cwd=repo) != run["commit"] or
+                sh("git", "status", "--porcelain", "--untracked-files=no", cwd=repo)):
+            sys.exit("Source changed since init. Use a clean checkout at the pinned commit, or start a new run.")
     return work
 
 
@@ -165,7 +171,9 @@ def commit_files(repo, commit):
     return sh("git", "ls-tree", "-r", "--name-only", commit, cwd=repo).splitlines()
 
 
-def is_source(path, extensions):
+def is_source(path, extensions, include=()):
+    if excluded(path, include):
+        return True
     p = PurePosixPath(path)
     if p.suffix.lower() not in extensions:
         return False
@@ -187,10 +195,10 @@ def under(path, root):
     return root in ("", ".") or path == root or path.startswith(root + "/")
 
 
-def area_files(files, area, extensions, exclude):
+def area_files(files, area, extensions, exclude, include=()):
     out = []
     for f in files:
-        if any(under(f, p) for p in area["paths"]) and is_source(f, extensions) and not excluded(f, exclude):
+        if any(under(f, p) for p in area["paths"]) and is_source(f, extensions, include) and not excluded(f, exclude):
             out.append(f)
     return out
 
@@ -206,13 +214,11 @@ def in_scope_files(work, run, sc):
     ext = set(sc.get("extensions") or CODE_EXT)
     owner = {}
     for area in sc["areas"]:
-        if area["tier"] == "skip":
-            continue
-        for f in area_files(files, area, ext, sc.get("exclude")):
+        for f in area_files(files, area, ext, sc.get("exclude"), sc.get("include", [])):
             best = max(len(p) for p in area["paths"] if under(f, p))
             if f not in owner or best > owner[f][1]:
-                owner[f] = (area["id"], best)
-    return {f: a for f, (a, _) in owner.items()}
+                owner[f] = (area["id"], best, area["tier"])
+    return {f: a for f, (a, _, tier) in owner.items() if tier != "skip"}
 
 
 def is_reexport(path):
@@ -322,9 +328,9 @@ def cmd_init(args):
     except (subprocess.CalledProcessError, FileNotFoundError):
         sys.exit(f"{args.repo} is not inside a Git repository.")
     dirty = sh("git", "status", "--porcelain", "--untracked-files=no", cwd=repo)
-    if dirty and not args.allow_dirty:
-        sys.exit("The repository has uncommitted changes to tracked files. Every rule cites a commit, so commit or "
-                 "stash them, or pass --allow-dirty and say so in the report.\n" + dirty)
+    if dirty:
+        sys.exit("The repository has uncommitted changes to tracked files. Use a clean checkout so every rule "
+                 "cites the code the readers see.\n" + dirty)
     commit = sh("git", "rev-parse", "HEAD", cwd=repo)
     name = Path(sh("git", "remote", "get-url", "origin", cwd=repo)).stem if has_origin(repo) else repo.name
     state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
@@ -334,8 +340,8 @@ def cmd_init(args):
     run_path = work / "run.json"
     if run_path.exists():
         run = load_json(run_path)
-        if run["commit"] != commit:
-            sys.exit(f"{work} belongs to commit {run['commit'][:9]}; HEAD is {commit[:9]}. Use another --work.")
+        if run["commit"] != commit or Path(run["repo"]).resolve() != repo:
+            sys.exit(f"{work} belongs to another repository or commit. Use another --work.")
     else:
         run = {"schema_version": SCHEMA_VERSION, "repo": str(repo), "project": name, "commit": commit,
                "short": commit[:9], "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -492,6 +498,7 @@ def cmd_survey(args):
         "glossary": gloss,
         "docs": ([gloss["path"]] if gloss else []) + decisions,
         "extensions": sorted(e for e in ext_counts),
+        "include": [],
         "exclude": [],
         "areas": areas,
         "surfaceKinds": surfaces + [DEFAULT_SURFACES["internal"]],
@@ -574,7 +581,9 @@ def validate_scope(work, run):
 
     if not errors:
         owner = in_scope_files(work, run, sc)
-        all_src = [f for f in commit_files(repo, run["commit"]) if is_source(f, set(sc.get("extensions") or CODE_EXT))]
+        all_src = [f for f in commit_files(repo, run["commit"])
+                   if is_source(f, set(sc.get("extensions") or CODE_EXT), sc.get("include", []))
+                   and not excluded(f, sc.get("exclude"))]
         covered = {f for f in all_src if any(under(f, p) for a in sc["areas"] for p in a["paths"])}
         stray = Counter(PurePosixPath(f).parts[0] for f in all_src if f not in covered)
         for top, n in stray.most_common():
@@ -796,8 +805,19 @@ def cmd_check(args):
     surface_kinds = {k["id"] for k in sc["surfaceKinds"]}
     areas = {a["id"]: a for a in sc["areas"] if a["tier"] != "skip"}
     errors, warnings = [], []
-    if sh("git", "rev-parse", "HEAD", cwd=repo) != run["commit"]:
-        warnings.append(f"HEAD moved since init ({run['short']}); readers may have read different code")
+    tracked = set(commit_files(repo, run["commit"]))
+    lengths = {}
+
+    def check_ref(tag, ref):
+        m = re.fullmatch(r"(.+):(\d+)(?:-(\d+))?", str(ref))
+        if not m or m[1] not in tracked:
+            errors.append(f"{tag}: citation {ref!r} must name a tracked file and line range")
+            return
+        path, start, end = m[1], int(m[2]), int(m[3] or m[2])
+        if path not in lengths:
+            lengths[path] = line_count(repo / path)
+        if not 1 <= start <= end <= lengths[path]:
+            errors.append(f"{tag}: citation {ref!r} is outside the file's {lengths[path]} lines")
 
     seen_mod, seen_key = {}, {}
     rules, flags, by_area = 0, Counter(), Counter()
@@ -825,7 +845,7 @@ def cmd_check(args):
                     if prior and prior[1] == mod:
                         errors.append(f"{tag}: duplicate key in one module")
                     elif prior:
-                        warnings.append(f"{tag}: key also used by {prior[0]} in {prior[1]}; both rules are kept")
+                        errors.append(f"{tag}: key also used by {prior[0]} in {prior[1]}; use an area-unique key")
                     seen_key[(aid, r.get("key"))] = (w, mod)
                     missing = [k for k in REQUIRED if k not in r]
                     if missing:
@@ -841,8 +861,12 @@ def cmd_check(args):
                     for s in r.get("surfaces", []):
                         if s.get("kind") not in surface_kinds:
                             errors.append(f"{tag}: surface kind {s.get('kind')!r} is not in scope.surfaceKinds")
+                        if s.get("ref"):
+                            check_ref(tag, s["ref"])
                     if not r.get("engineering"):
                         errors.append(f"{tag}: no engineering")
+                    elif not any(e.get("role") == "decides" for e in r["engineering"]):
+                        errors.append(f"{tag}: no deciding code citation")
                     for e in r.get("engineering", []):
                         role = e.get("role")
                         if role in ROLE_ALIASES:
@@ -851,12 +875,15 @@ def cmd_check(args):
                             errors.append(f"{tag}: engineering role {role!r}")
                         if not e.get("file"):
                             errors.append(f"{tag}: engineering entry without a file")
+                        check_ref(tag, f"{e.get('file', '')}:{e.get('lines', '')}")
                     for f in r.get("flags", []):
                         flags[f.get("type")] += 1
                         if f.get("type") not in flag_types:
                             errors.append(f"{tag}: flag type {f.get('type')!r}")
                         if not f.get("evidence"):
                             errors.append(f"{tag}: flag {f.get('type')} has no evidence")
+                        for ref in f.get("evidence", []):
+                            check_ref(tag, ref)
                     if r.get("statement", "").count("`") % 2 or r.get("title", "").count("`") % 2:
                         errors.append(f"{tag}: unbalanced backticks in title or statement")
 
@@ -882,7 +909,8 @@ def cmd_check(args):
     for e in errors:
         print("ERROR", e)
     print(f"{len(errors)} errors, {len(warnings)} warnings")
-    sys.exit(1 if errors else 0)
+    if errors:
+        sys.exit(1)
 
 
 # ---------- batches ----------
@@ -890,6 +918,7 @@ def cmd_check(args):
 def cmd_batches(args):
     work = work_dir(args)
     run = run_info(work)
+    cmd_check(args)
     rng = random.Random(int(run["commit"][:12], 16))
     hard = {"contradicts-docs", "inconsistent"}
     flagged, sample = [], []
@@ -912,7 +941,7 @@ def cmd_batches(args):
         batches[i * n // len(flagged)].append(item)
     for i, item in enumerate(sample):
         batches[i % n].append(item)
-    for f in glob.glob(str(work / "verify" / "in*.json")):
+    for f in glob.glob(str(work / "verify" / "in*.json")) + glob.glob(str(work / "verify" / "out*.json")):
         Path(f).unlink()
     for i, b in enumerate(batches, 1):
         save_json(work / "verify" / f"in{i}.json", b)
@@ -923,9 +952,47 @@ def cmd_batches(args):
 # ---------- build ----------
 
 def apply_verification(work, mods):
+    inputs = sorted((work / "verify").glob("in*.json"))
+    if not inputs:
+        sys.exit("No second-read batches. Run `br.py batches`, then complete every checker batch.")
     verdicts = []
-    for f in sorted(glob.glob(str(work / "verify" / "out*.json"))):
-        verdicts += load_json(f)
+    rules = {(aid, r["key"]): r for (aid, _), m in mods.items() for r in m["rules"]}
+    for source in inputs:
+        output = source.with_name(source.name.replace("in", "out", 1))
+        if not output.exists():
+            sys.exit(f"Missing checker output {output.name}; write [] for an empty batch.")
+        expected = load_json(source)
+        actual = load_json(output)
+        if not isinstance(actual, list):
+            sys.exit(f"{output.name}: expected a JSON list of checker verdicts.")
+        key = lambda v: (v.get("worker"), v.get("area"), v.get("key"))
+        if Counter(map(key, actual)) != Counter(map(key, expected)):
+            sys.exit(f"{output.name}: checker verdicts must cover each input exactly once.")
+        by_key = {key(v): v for v in actual}
+        for item in expected:
+            if rules.get((item["area"], item["key"])) != item["rule"]:
+                sys.exit("Reader output changed after sampling. Re-run batches and the second read.")
+            v = by_key[key(item)]
+            revision = v.get("rule_revision")
+            if v.get("rule_verdict") not in {"correct", "needs-revision", "wrong"}:
+                sys.exit(f"{output.name}: invalid rule verdict for {item['key']}.")
+            if v["rule_verdict"] == "needs-revision" and not revision:
+                sys.exit(f"{output.name}: needs-revision requires corrected fields.")
+            if v["rule_verdict"] == "correct" and revision:
+                sys.exit(f"{output.name}: corrected fields require needs-revision or wrong.")
+            if revision and (not isinstance(revision, dict) or set(revision) -
+                             {"title", "statement", "applies_when", "exceptions", "example", "on_violation",
+                              "engineering", "surfaces", "terms", "confidence"}):
+                sys.exit(f"{output.name}: rule_revision contains unsupported fields.")
+            flags = v.get("flags", [])
+            if Counter(f.get("index") for f in flags) != Counter(item["check_flags"]):
+                sys.exit(f"{output.name}: flag verdicts must cover check_flags exactly once.")
+            for f in flags:
+                if f.get("verdict") not in {"confirmed", "revised", "refuted"}:
+                    sys.exit(f"{output.name}: invalid flag verdict.")
+                if f["verdict"] == "revised" and not f.get("revised_detail"):
+                    sys.exit(f"{output.name}: revised flag requires revised_detail.")
+        verdicts += actual
     index = {(v.get("area") or v.get("package"), v["key"]): v for v in verdicts}
     stats = {"rules_checked": 0, "rules_correct": 0, "rules_revised": 0, "rules_removed": 0,
              "flags_checked": 0, "flags_confirmed": 0, "flags_revised": 0, "flags_removed": 0}
@@ -1001,6 +1068,7 @@ def cmd_build(args):
     run = run_info(work)
     sc = scope_of(work)
     repo = repo_of(run)
+    cmd_check(args)
     areas_by_id = {a["id"]: a for a in sc["areas"] if a["tier"] != "skip"}
     mods, area_summary = {}, {}
     for _, d in load_outputs(work):
@@ -1232,7 +1300,7 @@ def cmd_note(args):
       "effect is left out unless it silently changes an outcome.")
     w("- Each rule lives with the module holding the condition that decides it. When that condition is query or "
       "template text, the rule lives with the text, and the code that runs it is cited as `executes`.")
-    w("- Parallel readers each owned a disjoint file set. Each rule cites its deciding code as `path:line`, and each "
+    w("- Readers each owned a disjoint file set. Each rule cites its deciding code as `path:line`, and each "
       "\"where you see this\" surface was traced from the enforcing code's callers.")
     w("- *Inferred* marks rules that needed inference across calls the reader did not fully trace.\n")
     w("## 2. How far to trust a rule\n")
@@ -1246,7 +1314,8 @@ def cmd_note(args):
     if v["rules_checked"]:
         rate = round(100 * v["rules_revised"] / v["rules_checked"])
         w(f"- Rules not re-checked carry the first reader's wording. In the re-checked set {rate}% needed a "
-          f"correction.\n")
+          "correction. The set combines targeted flagged rules with sampled unflagged rules; it does not "
+          "estimate the error rate among unchecked rules.\n")
     w("## 3. Flags at a glance\n")
     w("| Flag | Meaning | Count |\n|---|---|---|")
     for f in d["flagTypes"]:
@@ -1331,8 +1400,9 @@ def cmd_publish_prep(args):
     work = work_dir(args)
     run = run_info(work)
     dest = run.get("choices", {}).get("destination")
-    if not dest or dest == "local":
-        sys.exit("No hosted destination is recorded. Ask the user (references/destinations.md), then run "
+    audience = run.get("choices", {}).get("audience")
+    if not dest or dest == "local" or audience not in {"private", "shared", "public"}:
+        sys.exit("No hosted destination and audience are recorded. Ask the user (references/destinations.md), then run "
                  "`br.py record --destination <host> --audience <audience>`.")
     site, pub = work / "site", work / "publish"
     for f in pub.glob("*.json"):
@@ -1428,7 +1498,6 @@ def main():
     p = add("init", cmd_init, "pin the commit and create the work directory")
     p.add_argument("--repo", default=".", help="any path inside the target repository (default: the current directory)")
     p.add_argument("--scope-dir", help=f"a saved scope to load (default: <repo>/{SAVED_DIR})")
-    p.add_argument("--allow-dirty", action="store_true", help="run against uncommitted changes")
     add("survey", cmd_survey, "map the repository and draft scope.json, or validate it")
     p = add("record", cmd_record, "record the user's delivery choices")
     p.add_argument("--destination", help="`local`, or the host the user chose, such as `docstash`")
