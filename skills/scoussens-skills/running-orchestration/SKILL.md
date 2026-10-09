@@ -74,7 +74,8 @@ from setup and this run explicitly, excluding both orchestration skills. Owners
 may load additional role-specific skills and use bounded helpers. Pass relevant
 instructions to those helpers too; do not assume inheritance or launch recursive
 coordinators. Use the harness's supported briefing mechanism if direct skill
-loading is unavailable.
+loading is unavailable. Include step 3's decision routing in owner briefs so
+owners can discuss ticket-local choices with the user and report the outcome.
 
 **Done when** every task has one accountable owner, a checkable finish line,
 and clear resource/dependency boundaries. Each owner can begin without guessing
@@ -104,10 +105,29 @@ still waits for the batch. Claim background responsiveness only when the harness
 supports it. If helpers or concurrent invocation are unavailable, coordinate
 directly; record a material limitation without holding unrelated owner work.
 
-Resolve ordinary technical blockers and owner disagreements with evidence.
-Escalate unresolved scope, expected behavior, or acceptable-risk choices, and
-shared actions outside granted approval. Pause affected work while independent
-owners continue. Give the user the concrete decision and your recommendation.
+Let owners resolve ordinary technical choices within their assignment. Route a
+ticket-local product or behavior question to its existing owner for discussion
+with the user. Keep cross-ticket priorities, conflicts, shared resources and
+shared-action approvals with the coordinator. Pause only affected work.
+
+Keep one pending decision queue in the current record, ordered by blocked work
+and urgency. Each decision has a stable ID, affected tasks, a concise question,
+recommendation, what its answer unblocks, and one authoritative discussion owner
+and link or harness handle. Surface several independent decisions together
+instead of serial blocking coordinator dialogs. The user can discuss a local
+choice in its owner thread or give quick answers by ID to the coordinator.
+Relay exact user answers to the discussion owner when the harness permits it.
+An owner can apply a local answer within existing authorization and report the
+answer, source and outcome; the user need not repeat it to the coordinator.
+Record the decision and scope once, and remove it from the pending queue.
+
+Inspect native input gates using configured capabilities. A human-only gate
+must be answered by the user in its owning conversation; show that direct route
+and keep it pending until the harness confirms it is answered. A queued message,
+clipboard action or recommendation is not an answer. When a coordinator dialog
+blocks its caller, neither helpers nor pending reports establish background
+responsiveness. Prefer the decision queue while unrelated owners continue;
+retain the real dashboard update time when refresh is unavailable during a wait.
 
 Record approval scope, destination, and side effects and carry that permission
 to the relevant owners. A milestone goal is not approval for a shared database
@@ -115,8 +135,8 @@ write, access/secrets change, push, merge, or deployment. Include indirect
 effects such as auto-merge or an automatic deployment before seeking approval.
 Ask again only when the action exceeds the granted scope.
 
-**Done when** runnable work continues, holds name their real blocker and next
-action, and requested shared actions fit recorded authorization.
+**Done when** runnable work continues, every pending decision has a clear answer
+route, and requested shared actions fit recorded authorization.
 
 ## 4. Consume proof once
 
@@ -195,13 +215,15 @@ Keep history and raw proof expandable. Stamp the real update time; do not imply
 a static page updates itself.
 
 Keep task, proof, decision, and run IDs stable. The template lets the user copy
-an ID or a question containing the run/task/proof context, then paste it into
-the coordinator conversation. Record the coordinator link and any configured
-native comment/message mechanism in `presentation`. Explain that copy does not
-send. Use host-native interaction when supported; do not invent a chat backend
-or claim a message was delivered from a clipboard action. Interpret dashboard
-questions against the same status record and update it when an answer changes
-the verdict or plan.
+an ID or a question containing its run/task/proof context. Task and proof
+questions go to the coordinator; decision questions use their recorded
+discussion route, with a direct-thread instruction for human-only gates. Show
+affected tasks and what each decision unblocks beside its recommendation.
+Record the coordinator link and any configured native comment/message mechanism
+in `presentation`. Explain that copy does not send. Use host-native interaction
+when supported; do not invent a chat backend or claim delivery from a clipboard
+action. Interpret answers against the same record and update it without asking
+the user to repeat a decision already made in its authoritative conversation.
 
 Render representative states and inspect the result when creating or changing
 the template. Routine data updates need the renderer check and a correct

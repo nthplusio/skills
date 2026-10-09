@@ -18,7 +18,10 @@
     {
       "id": "Q1",
       "text": "OPS-105 publication would trigger a broader deployment. Approve that consequence or keep the hold?",
-      "recommendation": "Keep the hold until the deployment scope is explicitly approved."
+      "recommendation": "Keep the hold until the deployment scope is explicitly approved.",
+      "task_ids": ["OPS-105"],
+      "unblocks": "The publication destination and deployment scope",
+      "discussion": {"owner_id": "fixture-coordinator", "label": "Coordinator", "href": "https://example.org/conversations/coordinator"}
     }
   ],
   "tasks": [

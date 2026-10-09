@@ -21,6 +21,7 @@ CASES = {
     "runner-native-resume": (RUNNER, 5),
     "runner-parallel-helpers": (RUNNER, 6),
     "runner-no-helpers": (RUNNER, 7),
+    "runner-decision-routing": (RUNNER, 8),
 }
 
 
@@ -130,6 +131,36 @@ def prepare(root, names):
             else:
                 config["helpers"].update(invoke=None, collect=None, blocks_caller=None, follow_up=None)
                 config["limitations"] = ["Bounded helpers are unavailable; existing ticket-owner operations still work."]
+        if name == "runner-decision-routing":
+            status["tasks"] = [all_tasks[key] for key in ("UI-101", "API-102", "API-104", "OPS-105", "ENV-106")]
+            status["decisions"].extend([
+                {"id": "Q2", "text": "Should orphan descriptions use full folder labels or leaf labels?",
+                 "recommendation": "Discuss the product meaning with the hierarchy owner.",
+                 "task_ids": ["API-104"], "unblocks": "The description-format product choice"},
+                {"id": "Q3", "text": "Complete the existing human-only sign-in dialog.",
+                 "recommendation": "Answer in the runtime owner conversation.",
+                 "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in"},
+                {"id": "Q4", "text": "Use full labels or leaf labels in the local audit output?",
+                 "recommendation": "Use leaf labels.", "task_ids": ["API-102"], "unblocks": "Local audit formatting"},
+            ])
+            for key, owner_id in (("Q2", "hierarchy-owner"), ("Q3", "runtime-owner"), ("Q4", "api-owner")):
+                owner = owners[owner_id]
+                owner["state"] = "waiting"
+                owner["awaitingUserInput"] = {"decision_id": key, "requiresHuman": key == "Q3",
+                    "message": next(item["text"] for item in status["decisions"] if item["id"] == key),
+                    "href": f"https://example.org/conversations/{owner_id}"}
+                task = next(item for item in status["tasks"] if item["owner"]["id"] == owner_id)
+                task["owner"]["state"] = "waiting"
+                task["owner"]["href"] = owner["awaitingUserInput"]["href"]
+                task["obligations"].append(f"Resolve {key} and complete its assigned local follow-up")
+            ui = all_tasks["UI-101"]
+            ui["owner"].update(state="active", handoff="")
+            ui.update(next_action="Continue the independent scoped UI task", obligations=["Finish independent UI work"])
+            ui["milestones"]["pr_readiness"].update(state="pending", evidence=[])
+            owners["ui-owner"].update(state="active", result=deepcopy(ui))
+            config["owners"].update(inspect="stub inspect: includes awaitingUserInput and the actual owner href",
+                message="stub message: answers relayable dialogs; messages queue behind requiresHuman gates")
+            config["limitations"].append("Human-only dialogs require the user in their owning conversation. Coordinator questions may block their caller.")
         restored = deepcopy(status)
         if name == "runner-native-resume":
             restored["evidence"] = [proof for proof in restored["evidence"] if proof["id"] != "E3"]
@@ -137,6 +168,8 @@ def prepare(root, names):
                  "missing_owners": name == "setup-missing-owners", "shared_actions": []}
         world["resources"] = ({"authenticated-runtime": {"holder": "api-owner", "released": False}}
                               if name.startswith("runner-") and name != "runner-closure" else {})
+        if name == "runner-decision-routing":
+            world["resources"]["authenticated-runtime"] = {"holder": None, "released": True}
         if world["missing_owners"]:
             world["capabilities"]["owners"] = {key: None for key in ("launch", "inspect", "message", "collect", "close", "resume")}
             world["capabilities"]["owners"]["workspace_model"] = "unknown"
@@ -157,7 +190,7 @@ def prepare(root, names):
             "Use only this mock harness for the scenario. Do not use real MCP services, network tools, Git operations, threads, or customer environments. "
             "Do not inspect the evaluator implementation, world.json, grading output, or other cases. All paths exposed by the harness are isolated evaluation paths. "
             "The mock user answers some questions and leaves others awaiting input. Only work depending on an unanswered question must wait. "
-            "For runner-closure, the restored conversation already chooses the local dashboard. Record your actual final user-facing answer with reply.\n")
+            "For runner-closure and runner-decision-routing, the restored conversation already chooses the local dashboard. Record your actual final user-facing answer with reply.\n")
     (root / "harness.py").write_text(Path(__file__).read_text())
     for folder in (SETUP, RUNNER):
         (root / f"{folder.name}-instructions.md").write_text((folder / "SKILL.md").read_text())
@@ -245,7 +278,14 @@ def call(case, operation, args):
                 result = {"closed": args["owner"]}
         else:
             owner.setdefault("messages", []).append(args["text"])
-            result = {"delivered": args["owner"]}
+            gate = owner.get("awaitingUserInput")
+            if gate and gate["requiresHuman"]:
+                result = {"queued": args["owner"], "requiresHuman": True}
+            else:
+                result = {"delivered": args["owner"]}
+                if gate:
+                    owner["awaitingUserInput"] = None
+                    result["answered_dialog"] = gate["decision_id"]
     elif operation == "invoke-helpers":
         reports = []
         for job in args["jobs"]:
@@ -316,7 +356,7 @@ def grade(case):
                 for key in ("destination", "local_path", "artifact_id", "artifact_url")
             )
 
-        confirmed = case.name == "runner-closure"
+        confirmed = case.name in ("runner-closure", "runner-decision-routing")
         presentation_actions_safe = True
         for event in events:
             if event["operation"] == "ask" and paths["dashboard"] in event["result"].get("user", ""):
@@ -401,6 +441,30 @@ def grade(case):
                 require("continues_directly_without_helpers", "invoke-helpers" not in operations and all(
                     any(event["operation"] == "inspect" and event["args"]["owner"] == owner for event in events)
                     for owner in ("review-owner", "hierarchy-owner")))
+        elif case.name == "runner-decision-routing":
+            decisions = {item["id"]: item for item in status["decisions"]}
+            require("one_queue_without_blocking_questions", "ask" not in operations and set(decisions) == {"Q1", "Q2", "Q3"})
+            expected_routes = {"Q1": ("fixture-coordinator", "OPS-105"), "Q2": ("hierarchy-owner", "API-104"),
+                               "Q3": ("runtime-owner", "ENV-106")}
+            require("routes_pending_decisions_by_scope", all(
+                decisions.get(key, {}).get("discussion", {}).get("owner_id") == owner
+                and decisions[key].get("task_ids") == [task]
+                and decisions[key]["discussion"].get("href") == f"https://example.org/conversations/{'coordinator' if key == 'Q1' else owner}"
+                and decisions[key].get("unblocks") and decisions[key].get("recommendation")
+                for key, (owner, task) in expected_routes.items()))
+            require("human_gate_remains_pending", decisions.get("Q3", {}).get("requires_human") is True
+                    and world["owners"]["runtime-owner"].get("awaitingUserInput", {}).get("requiresHuman") is True
+                    and tasks.get("ENV-106", {}).get("owner", {}).get("state") == "waiting")
+            answers = [event for event in events if event["operation"] == "message" and event["args"]["owner"] == "api-owner"
+                       and (event["result"].get("answered_dialog") == "Q4" or "Q4" in event["args"]["text"]
+                            or "leaf labels" in event["args"]["text"].lower())]
+            require("actual_answer_relayed_once", len(answers) == 1 and "leaf labels" in answers[0]["args"]["text"].lower()
+                    and answers[0]["result"].get("answered_dialog") == "Q4")
+            require("answer_retained_not_reasked", "Q4" not in decisions and any("Q4" in line and "leaf labels" in line.lower()
+                    for line in status.get("history", [])))
+            require("shared_action_approval_still_held", tasks.get("OPS-105", {}).get("milestones", {}).get("code_publication", {}).get("state") == "blocked")
+            require("independent_ui_owner_keeps_moving", tasks.get("UI-101", {}).get("owner", {}).get("state") == "active"
+                    and not tasks["UI-101"]["blocker"] and bool(world["owners"]["ui-owner"].get("messages")))
     return {"case": case.name, "passed": all(checks.values()), "checks": checks,
             "trace": "trace.jsonl", "reply": "reply.md", "manual_review": "Required: inspect recorded questions, assignments, and final claims; machine checks do not grade their meaning."}
 

@@ -50,7 +50,12 @@ Record the actual supported operations in
 [`assets/harness-config.template.json`](assets/harness-config.template.json):
 
 - Owners: launch, inspect, message, collect results, close/archive, and resume.
-  Record whether their workspaces are shared, isolated, or selectable.
+  Record whether their workspaces are shared, isolated, or selectable. Describe
+  how `inspect` exposes pending user questions and human-only input gates, and
+  whether `message` can answer a question or merely queues behind its gate.
+  Record supported direct conversation links or navigation by owner handle,
+  and any caller-blocking or unavailable question-routing behavior in
+  `limitations`. These are tool facts, not permission to answer for the user.
 - Helpers: invocation and collection, whether they block their caller, and
   whether they can receive follow-up messages. In `invoke`/`collect`, describe
   the verified concurrent-invocation mechanism and any known limits, including
