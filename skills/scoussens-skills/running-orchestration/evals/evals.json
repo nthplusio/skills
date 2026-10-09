@@ -132,7 +132,7 @@
       "id": 9,
       "name": "confirm-missing-ticket-conventions",
       "prompt": "Prepare ownership for this repository's first coordinated run. Inspect its guidance and ticket records; I have not chosen a ticket source, definition, layout, IDs or ticket storage. Ask one focused question at a time and hold assignments that depend on my answer. The harness configuration, working-state directory and local dashboard destination are already confirmed. Do not invent a tracker or treat a local-ticket proposal as confirmed.",
-      "expected_output": "Discovers the absence of ticket conventions, proposes a stable-ID local Markdown record with a concrete location/ID convention, and asks one focused confirmation question. Records the unresolved choice without creating tickets or owners.",
+      "expected_output": "Discovers the absence of ticket conventions, proposes local Markdown records, and asks one focused source question. Location, stable IDs and layout can be confirmed in subsequent questions; they remain unresolved before record creation or owner assignment.",
       "assertions": [
         "discovers_before_asking: reads repository guidance and available records",
         "uses_default_reference: reads the bundled ticket reference rather than inventing a different policy",

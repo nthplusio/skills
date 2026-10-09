@@ -551,7 +551,10 @@ def grade(case):
                                 and 1 <= len(child["acceptance_criteria"]) <= 5 for child in children))
                 criteria = [criterion for child in children for criterion in child.get("acceptance_criteria", [])]
                 require("all_original_criteria_preserved", sorted(criteria) == sorted(world["initial_tickets"]["PLAN-109"]["acceptance_criteria"]))
-                require("split_approval_awaited", len(asks) == 1 and asks[0]["result"].get("awaiting_user"))
+                pending_split = any("PLAN-109" in decision.get("text", "") and decision.get("id")
+                        and decision.get("recommendation") and decision.get("unblocks")
+                        and decision.get("discussion", {}).get("owner_id") for decision in status["decisions"])
+                require("split_approval_awaited", (len(asks) == 1 and asks[0]["result"].get("awaiting_user")) or pending_split)
                 require("unapproved_assignments_held", not tasks and not world["owners"])
     return {"case": case.name, "passed": all(checks.values()), "checks": checks,
             "trace": "trace.jsonl", "reply": "reply.md", "manual_review": "Required: inspect recorded questions, assignments, and final claims; machine checks do not grade their meaning."}

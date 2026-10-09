@@ -290,6 +290,22 @@ class BehaviorHarnessTests(unittest.TestCase):
                 self.assertEqual(checks["two_bounded_complete_child_drafts"], bounded)
                 self.assertEqual(checks["all_original_criteria_preserved"], preserved)
 
+    def test_split_approval_can_wait_in_the_current_queue_but_not_disappear(self):
+        root = Path(self.directory.name) / "queued-split"
+        self.run_cli("prepare", str(root), "--cases", "runner-ticket-split")
+        case = root / "runner-ticket-split"
+        status_path = case / "state/runs/template-preview/status.json"
+        status = json.loads(status_path.read_text())
+        status["decisions"] = [{"id": "Q-split", "text": "Approve the PLAN-109 split?",
+            "recommendation": "Use two independent children.", "unblocks": "Approved split only; tracker writes remain held.",
+            "discussion": {"owner_id": "coordinator", "label": "Coordinator", "href": ""}}]
+        for expected in (True, False):
+            self.run_cli("call", str(case), "write", json.dumps({"path": str(status_path), "content": status}))
+            self.run_cli("grade", str(root))
+            checks = json.loads((root / "mechanical-results.json").read_text())[0]["checks"]
+            self.assertEqual(checks["split_approval_awaited"], expected)
+            status["decisions"] = []
+
 
 if __name__ == "__main__":
     unittest.main()
