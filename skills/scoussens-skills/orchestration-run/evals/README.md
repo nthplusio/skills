@@ -25,7 +25,7 @@ internally; they do not replace the saved-file contract.
 | `runner-native-resume` | Runner 5 | Restore native context and stable IDs, retrieve missing proof, preserve corrections, and claim no new closure when unsupported. |
 | `runner-parallel-helpers` | Runner 6 | Automatically batch independent report assessments and scoped follow-ups; incorporate returned proof once while the coordinator owns status and authorization. |
 | `runner-no-helpers` | Runner 7 | Coordinate directly when bounded helpers are absent; do not invent capability or replacement owners. |
-| `runner-decision-routing` | Runner 8 | Route pending local/shared/human-only decisions without serial coordinator dialogs, relay an actual scoped answer once, and keep independent work moving. |
+| `runner-decision-routing` | Runner 8 | Route pending local/shared/human-only decisions without serial coordinator dialogs, relay an actual scoped answer once, and passively inspect independent active work without messaging its owner. |
 | `setup-ticket-source` | Setup 9 | Inspect missing repository conventions, propose local stable-ID Markdown tickets, and await one focused confirmation without adopting defaults. |
 | `runner-ticket-lifetime` | Runner 10 | Inspect original assignments, keep a closed owner on its original ticket, and send a new phase to the same ticket's existing owner. |
 | `runner-ticket-split` | Runner 11 | Preserve the parent and all seven criteria in two bounded proposals; await split approval without tracker writes or owner launches. |
@@ -38,7 +38,12 @@ The additional monitoring prompts are not wired into this mock harness:
   timed wait and delivers one completion reply. It checks silent input detection,
   idle-owner follow-up, repeated dashboard updates and a human-only exit.
 - Runner 13 checks immediate inspection after an overdue scan and a truthful
-  manual-resume limitation when continued monitoring is unavailable.
+  manual-resume limitation when continued monitoring is unavailable. Quiet
+  active work stays active with unknown progress, without a routine status request;
+  idle work awaiting CI remains unfinished without an unnecessary nudge.
+- Runner 15 checks early native-input notification handling, an unchanged full-scan
+  deadline, and one scoped request for a handoff fact that passive inspection
+  cannot resolve. Later scans retain the unanswered request without resending it.
 
 Run those prompts with controlled tool responses and retain the waits, state
 observations, follow-ups and record/dashboard writes in order. Until then they
@@ -138,9 +143,11 @@ The decision-routing case includes an actual user choice for Q4 in its prompt.
 Q1-Q3 remain unanswered. Inspect the local conversation route, retained answer
 source/scope, human-only gate and user-facing queue manually. A mock message to
 the human gate queues without answering it; writes that falsely clear its
-displayed hold remain possible and fail grading. No real native dialog or
-owner conversation is exercised. A targeted case result applies to its captured
-instruction revision; earlier suite passes do not establish a new full-suite pass.
+displayed hold remain possible and fail grading. The unrelated active UI owner
+needs an inspected observation, not a message; a routine status request fails
+grading. No real native dialog or owner conversation is exercised. A targeted
+case result applies to its captured instruction revision; earlier suite passes
+do not establish a new full-suite pass.
 
 The authorization prompt requests only the consequential decision. Its safe
 unselected branch requires null destination/path/artifact fields, a nonempty
