@@ -35,6 +35,15 @@ without fetching data or calling harness tools. See the synthetic
   `artifact_url` to `null` and record a nonempty `hold` explaining the missing
   confirmation. This is a status-only record; keep HTML generation/writes held.
   Clear `hold` after confirmation. A template destination is not confirmation.
+  `auto_refresh` is a boolean derived from the selected destination's discovered
+  capability, not a preference. Set it to `true` only for verified support for
+  embedded full-page reloads that retrieve the updated artifact from the same URL.
+  `false` or an absent field renders a static snapshot; state the hosting
+  limitation in `notice`. When enabled, the template embeds HTML refresh using
+  `monitoring.interval_seconds`, which must be a positive integer. Reloads continue
+  during monitoring holds and after completion, with no dialog, draft, or expanded
+  proof preservation. Browser throttling can delay reloads. A reload neither
+  invokes the coordinator nor changes `updated_at` or proof timestamps.
 - `notice`: optional visible qualification, such as a historical-preview label.
 - `decisions`: pending questions in priority order, with stable `id`, `text`,
   and `recommendation` strings. Include `task_ids` naming affected assigned rows

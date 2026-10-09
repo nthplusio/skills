@@ -65,8 +65,9 @@ def check(discovery):
             if artifact["id"] in seen:
                 raise ValueError("artifact IDs must be unique per harness")
             seen.add(artifact["id"])
-            if artifact.get("interaction") is not None:
-                text(artifact["interaction"], "artifact.interaction")
+            for field in ("interaction", "auto_refresh"):
+                if artifact.get(field) is not None:
+                    text(artifact[field], f"artifact.{field}")
     if "REPLACE_WITH_" in json.dumps(discovery):
         raise ValueError("replace every template placeholder with a discovered value")
 
