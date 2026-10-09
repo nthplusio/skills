@@ -1,0 +1,19 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+
+build:
+  stage: build
+  script: make build
+  artifacts:
+    paths: [dist/]
+
+test:
+  stage: test
+  needs:
+    - job: build
+      artifacts: true
+  rules:
+    - changes: [src/**/*]
+  script: make test
