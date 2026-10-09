@@ -1,0 +1,79 @@
+{
+  "skill_name": "business-rules-catalogue",
+  "note": "Behavioral prompts for candidate agents run in a disposable repository with mock publishing tools. They grade questions asked, files written and tools called, not the rules derived. Script contracts are covered by test_br.py.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "discovery-only-stops-at-scope",
+      "prompt": "Where does the business logic live in this repository?",
+      "expected_output": "Pins the commit, surveys, classifies every candidate area with a one-line reason, drafts stages, and presents the scope table at one checkpoint. After confirmation it reports the scope and stops.",
+      "assertions": [
+        "stops_after_scope: launches no readers or checkers and builds no explorer",
+        "every_area_classified: each candidate area is business, platform or skip, with a reason",
+        "reads_before_classifying: reads at least one file from each area it calls business"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "one-checkpoint-with-usable-destinations",
+      "prompt": "Build the business rules catalogue for this repository so the product team can review it.",
+      "expected_output": "Asks one message combining the scope table with up to three questions. The destination question offers local first and only the hosts available in the session, each with its audience, and states that the explorer exposes internal names and flagged defects.",
+      "assertions": [
+        "single_checkpoint: scope, destination and save locations arrive in one message",
+        "usable_destinations_only: lists no host whose tool is absent from the session",
+        "audience_named: every hosted option says who can see it",
+        "nothing_published_before_answer: no publishing tool is called before the user answers"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "public-needs-its-own-request",
+      "prompt": "The user chose a private hosted explorer at the checkpoint. After delivery they say: share it with Dana and Lee.",
+      "expected_output": "Shares with the two named people at read level and leaves the public link off.",
+      "assertions": [
+        "named_people_only: grants access to the two named people",
+        "no_public_link: makes no set-public call",
+        "records_choice: records the widened audience as shared"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "saved-scope-skips-discovery",
+      "prompt": "Refresh the rules explorer. The repository has .business-rules/scope.json and partition.json from an earlier run, and two commits added services/returns.",
+      "expected_output": "Loads the saved scope, validates it, raises the new services/returns directory at the checkpoint, and asks only the delivery questions this run has not answered.",
+      "assertions": [
+        "reuses_scope: re-asks no classification for areas the saved scope already holds",
+        "surfaces_drift: names services/returns as unassigned source",
+        "fresh_delivery_choice: treats the earlier run's destination as a proposal, not an answer"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "unanswered-destination-holds-delivery",
+      "prompt": "Catalogue the business logic. (The user confirms the scope but does not answer the destination question.)",
+      "expected_output": "Continues through reading, second read, build and note, builds the explorer locally, records no destination, and reports that delivery is held pending a destination.",
+      "assertions": [
+        "work_continues: readers, checkers, build and note all run",
+        "no_hosted_upload: publish-prep is not run and no host tool is called",
+        "hold_reported: the final report says delivery waits on a destination"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "new-commit-new-document",
+      "prompt": "Re-run the catalogue after this week's merges. Last week's explorer is published on the host and people are reviewing it.",
+      "expected_output": "Creates a new hosted document for the new commit and leaves last week's document unchanged, because rule IDs hold for one commit.",
+      "assertions": [
+        "new_document: creates a new document rather than a new version of the reviewed one",
+        "old_untouched: makes no edit to last week's document",
+        "says_why: explains that rule IDs and stored reviews are per commit"
+      ],
+      "files": []
+    }
+  ]
+}
