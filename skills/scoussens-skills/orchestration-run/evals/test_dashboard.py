@@ -22,6 +22,10 @@ class Page(HTMLParser):
         super().__init__()
         self.ids = []
         self.rows = {}
+        self.row_text = {}
+        self.work_states = {}
+        self.groups = {}
+        self.group = None
         self.contexts = {}
         self.row = None
         self.refresh = None
@@ -37,11 +41,21 @@ class Page(HTMLParser):
             packet = json.loads(attrs["data-context"])
             key = packet["decision"]["id"] if "decision" in packet else packet["tasks"][0]["id"]
             self.contexts[key] = packet
+        if tag == "tbody":
+            self.group = attrs.get("class", "")
+            self.groups[self.group] = []
         if tag == "tr" and attrs.get("id", "").startswith("row-"):
             self.row = attrs["id"]
             self.rows[self.row] = []
+            self.row_text[self.row] = []
+            self.work_states[self.row] = attrs.get("data-work-state")
+            self.groups[self.group].append(self.row)
         if self.row and attrs.get("role") == "img":
             self.rows[self.row].append(attrs["aria-label"])
+
+    def handle_data(self, text):
+        if self.row:
+            self.row_text[self.row].append(text)
 
     def handle_endtag(self, tag):
         if tag == "tr":
@@ -57,8 +71,101 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(page.rows["row-UI-101"], ["Verified", "Not requested", "Not requested", "Not requested"])
         self.assertEqual(page.rows["row-SHIP-107"], ["Verified", "Verified", "Verified", "Verified"])
         self.assertEqual(page.rows["row-OPS-105"], ["Verified", "Blocked", "Not requested", "Not requested"])
-        self.assertEqual(len(page.rows), 7)
+        self.assertEqual(len(page.rows), 11)
         self.assertEqual(len(page.ids), len(set(page.ids)))
+
+    def test_grouped_ledger_distinguishes_resolution_from_activity_and_delivery(self):
+        html = render(self.data)
+        page = Page(html)
+        self.assertEqual(page.groups, {
+            "group-attention": ["row-REVIEW-103", "row-OPS-105", "row-ENV-106"],
+            "group-moving": ["row-API-102", "row-API-104"],
+            "group-resolved": ["row-UI-101", "row-SHIP-107", "row-TRIAGE-108", "row-UI-109", "row-UI-110", "row-UI-111"],
+        })
+        for row, label in (("row-TRIAGE-108", "No change needed"), ("row-UI-109", "Cancelled"), ("row-UI-110", "Deferred")):
+            with self.subTest(row=row):
+                self.assertIn(label, page.row_text[row])
+                self.assertEqual(page.rows[row], ["Not requested"] * 4)
+        self.assertIn("Revisit: After the authentication fix is accepted.", page.row_text["row-UI-110"])
+        self.assertIn("Next: Resolve Q1. The old hash is not a separate behavioral hold.", page.row_text["row-OPS-105"])
+        self.assertIn('href="#decision-Q1"', html)
+        self.assertIn('<b>11</b><span>total tasks</span>', html)
+        self.assertIn('<b>5</b><span>need work</span>', html)
+        self.assertIn('<b>6</b><span>resolved for this run</span>', html)
+        self.assertIn('<b>2</b> Delivered', html)
+        self.assertIn('<b>2</b> Deferred', html)
+        self.assertEqual(page.contexts["UI-110"]["tasks"][0]["work"], {
+            "state": "deferred", "reason": "The user moved draft recovery out of this run.",
+            "receipt": "Synthetic Q-auth answer: defer UI-110 until the authentication fix is accepted.",
+            "revisit": "After the authentication fix is accepted.",
+        })
+        self.assertIn("E10 establish", html)
+
+    def test_legacy_closed_owners_need_classification_not_a_delivery_guess(self):
+        for task in self.data["tasks"]:
+            del task["work"]
+        html = render(self.data)
+        page = Page(html)
+        self.assertEqual(page.work_states["row-UI-101"], "unknown")
+        self.assertEqual(page.work_states["row-UI-109"], "unknown")
+        self.assertEqual(page.work_states["row-API-102"], "working")
+        self.assertEqual(page.work_states["row-ENV-106"], "waiting")
+        self.assertIn("Needs classification", page.row_text["row-UI-101"])
+        self.assertIn('<b>6</b><span>need classification</span>', html)
+        self.assertIn('<b>0</b><span>resolved for this run</span>', html)
+        self.assertNotIn("group-resolved", page.groups)
+
+    def test_resolutions_require_proof_or_decisions_and_settled_scope(self):
+        baseline = deepcopy(self.data)
+        cases = [
+            ("UI-101", "work", "evidence", [], "accepted supporting proof"),
+            ("TRIAGE-108", "work", "evidence", ["E4"], "accepted supporting proof"),
+            ("TRIAGE-108", "work", "evidence", ["missing"], "retained proof"),
+            ("UI-109", "work", "receipt", "", "decision receipt"),
+            ("UI-110", "work", "receipt", "", "decision receipt"),
+            ("UI-110", "work", "revisit", "", "revisit trigger"),
+            ("UI-109", None, "obligations", ["Release runtime"], "settled obligations"),
+            ("UI-110", None, "blocker", "Approval missing", "settled obligations"),
+            ("UI-109", "work", "reason", "", "work needs a reason"),
+        ]
+        for ticket, section, field, value, message in cases:
+            with self.subTest(ticket=ticket, field=field):
+                self.data = deepcopy(baseline)
+                task = next(task for task in self.data["tasks"] if task["id"] == ticket)
+                (task[section] if section else task)[field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    render(self.data)
+        self.data = deepcopy(baseline)
+        task = self.data["tasks"][8]
+        task["owner"]["state"] = "active"
+        task["milestones"]["pr_readiness"]["state"] = "pending"
+        with self.assertRaisesRegex(ValueError, "unfinished milestone prevents work resolution"):
+            render(self.data)
+
+    def test_unfinished_states_and_check_times_do_not_imply_success_or_stalls(self):
+        task = self.data["tasks"][1]
+        task["owner"]["state"] = "waiting"
+        task["owner"]["last_checked_at"] = "2026-10-01T10:00:00-05:00"
+        for state, label, group in (("ready", "Ready", "group-moving"),
+                                    ("awaiting_acceptance", "Awaiting review / acceptance", "group-moving"),
+                                    ("waiting", "Waiting", "group-attention"),
+                                    ("unknown", "Needs classification", "group-attention")):
+            with self.subTest(state=state):
+                task["work"] = {"state": state, "reason": "Next inspection must confirm the result."}
+                page = Page(render(self.data))
+                self.assertIn("row-API-102", page.groups[group])
+                self.assertIn(label, page.row_text["row-API-102"])
+                self.assertIn("Checked 2026-10-01T10:00:00-05:00", page.row_text["row-API-102"])
+        task["work"]["state"] = "blocked"
+        with self.assertRaisesRegex(ValueError, "actionable blocker"):
+            render(self.data)
+        task["work"]["state"] = "needs_decision"
+        with self.assertRaisesRegex(ValueError, "pending decision"):
+            render(self.data)
+        task["work"]["state"] = "working"
+        task["owner"].update(state="complete", handoff="Retained")
+        with self.assertRaisesRegex(ValueError, "unfinished work prevents owner completion"):
+            render(self.data)
 
     def test_auto_refresh_uses_run_interval_even_when_paused_or_finished(self):
         self.data["presentation"]["auto_refresh"] = True
@@ -137,6 +244,7 @@ class DashboardTests(unittest.TestCase):
                     render(self.data)
 
     def test_completed_but_unclosed_owner_is_visible(self):
+        self.data["tasks"] = self.data["tasks"][:7]
         self.data["tasks"][0]["owner"]["state"] = "complete"
         html = render(self.data)
         self.assertIn('<b>1</b><span>complete, not closed</span>', html)
@@ -189,7 +297,7 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("decision", contexts["OPS-105"])
 
     def test_decision_questions_route_to_their_owners_and_name_human_only_gates(self):
-        self.data["decisions"] = [
+        self.data["decisions"] += [
             {"id": "Q-local", "text": "Choose the description format?", "recommendation": "Use full labels.",
              "task_ids": ["API-104"], "unblocks": "Description formatting",
              "discussion": {"owner_id": "hierarchy-owner", "label": "Hierarchy owner",
@@ -210,6 +318,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('data-copy-id="Q-gate"', html)
 
     def test_decision_route_validation_and_legacy_coordinator_fallback(self):
+        self.data["tasks"][4]["work"]["state"] = "waiting"
         decision = {"id": "Q-old", "text": "Keep publication held?", "recommendation": "Keep the hold."}
         self.data["decisions"] = [decision]
         self.assertIn('data-discussion-owner=""', render(self.data))
