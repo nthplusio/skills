@@ -17,6 +17,13 @@
       "description": "Directory-bound agent messaging using Doorbell's public MCP operations, local execution authority, and bounded optional continuation.",
       "category": "productivity",
       "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/doorbell"
+    },
+    {
+      "name": "doorbell-grant",
+      "source": "./plugins/doorbell-grant",
+      "description": "Approves the doorbell plugin's own read-only inbox calls at the permission check, so its background refresh works in auto mode. Installed with doorbell.",
+      "category": "productivity",
+      "homepage": "https://github.com/nthplusio/skills/tree/main/plugins/doorbell-grant"
     }
   ]
 }

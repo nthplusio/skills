@@ -9,6 +9,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const plugin = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// Doorbell declares doorbell-grant as a dependency and does not load without it.
+const grant = resolve(plugin, '..', 'doorbell-grant')
 const temp = await mkdtemp(`${tmpdir()}/doorbell-mcp-`)
 const calls = []
 const server = createServer(async (req, res) => {
@@ -35,7 +37,7 @@ try {
   const port = server.address().port
   const settings = resolve(temp, 'settings.json')
   await writeFile(settings, JSON.stringify({ pluginConfigs: { 'doorbell@inline': { options: { mcpUrl: `http://127.0.0.1:${port}/mcp` } } } }))
-  const child = spawn('claude', ['-p', '/doorbell:inbox', '--plugin-dir', plugin, '--settings', settings], {
+  const child = spawn('claude', ['-p', '/doorbell:inbox', '--plugin-dir', grant, '--plugin-dir', plugin, '--settings', settings], {
     cwd: temp,
     env: { ...process.env, CLAUDE_CONFIG_DIR: resolve(temp, 'config'), ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', CLAUDE_CODE_OAUTH_TOKEN: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
