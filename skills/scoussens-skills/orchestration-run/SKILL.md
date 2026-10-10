@@ -320,8 +320,15 @@ python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboa
 
 The renderer checks the display contract, not the truth of supplied evidence.
 Refresh at step 3's cycle boundaries, including dependency/approval changes,
-corrected verdicts and owner closure. Show a compact task/owner matrix with four
-distinct milestone indicators and one decision queue.
+corrected verdicts and owner closure. Record each task's `work` status and reason
+under the [work status contract](references/dashboard-data.md#work-status-and-resolution).
+Recover missing outcomes from retained results and decisions; closure alone
+leaves the outcome unclassified. Show all tasks in a grouped ledger: Needs
+attention, Moving or ready, and Resolved for this run. Keep reasons, next actions,
+deferral triggers and pending decision links visible beside the work status.
+Summarize remaining work and each resolution separately; keep owner lifecycle
+secondary and all four milestone indicators independent. Keep one decision queue
+below the ledger.
 Selecting a task opens its blocker, next action, and proof in a bounded dialog.
 Selecting a decision opens its focused dialog. Default to a closed dialog on
 initial load unless the user requests a selected decision up front. Keep unblock
@@ -378,6 +385,16 @@ Decide completion before checking whether the harness can close an owner:
   close it when supported and record the actual result. Only this completed
   branch may record **complete, closure unavailable/pending** instead of **closed**.
 
+For authorized cancellation or deferral, retain the decision receipt and scope
+before withdrawing affected work. Record the distinct resolution under the work
+status contract, settle remaining obligations and retain the handoff before
+marking the owner complete. A deferral keeps its revisit trigger. Investigation
+that establishes no change is needed keeps its supporting proof. These outcomes
+settle the current assignment without claiming implementation was delivered.
+Inspect due deferral triggers on resume and at coordination scans. When a trigger
+fires, expose the follow-up for the same ticket and owner within the authorized
+run scope; otherwise queue the required decision instead of silently restarting it.
+
 Hypothetical future work and unrequested milestones do not keep a completed
 owner open. Never delete evidence to clean up.
 
@@ -385,7 +402,8 @@ Keep the owner reference after closure. Resume that owner for later follow-up
 when supported; otherwise transfer ownership explicitly using the retained
 handoff. Closure does not make a ticket ownerless.
 
-**Done when** all assigned milestones are verified, known obligations are settled,
+**Done when** each assignment meets its finish line or has a recorded authorized
+resolution, all remaining requested milestones are verified, known obligations are settled,
 completed owners have been closed or have truthful closure limitations, and the
 status matches that result. The final chat states actual delivery, limitations,
 and the dashboard location or presentation hold without repeating its audit trail.
