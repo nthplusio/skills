@@ -19,6 +19,8 @@
   --warn:light-dark(oklch(0.500615 0.105638 74.942),oklch(0.876716 0.117823 87.801));
   --bad:light-dark(oklch(0.490203 0.151406 21.003),oklch(0.827885 0.096607 15.365));
   --neutral:light-dark(oklch(0.563217 0.020917 258.370),oklch(0.789387 0.022230 259.193));
+  --deferred:light-dark(oklch(.48 .14 305),oklch(.8 .12 305));
+  --no-change:light-dark(oklch(.45 .08 135),oklch(.8 .1 135));
   --soft:color-mix(in oklch,var(--accent) 10%,var(--surface));
   --ok-bg:color-mix(in oklch,var(--ok) 12%,var(--surface));
   --warn-bg:color-mix(in oklch,var(--warn) 12%,var(--surface));
@@ -44,21 +46,45 @@ header .meta { flex:0 1 25rem; min-inline-size:0; margin-inline-start:auto; font
 .stat { display:flex; gap:8px; align-items:baseline; }
 .stat b { font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
 .stat span { color:var(--muted); font-size:12px; }
-.layout { display:flex; flex-wrap:wrap; gap:14px; align-items:start; }
-#decisions { flex:1 1 18.75rem; min-inline-size:0; }
+.work-counts { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px 18px; }
+.layout { display:grid; gap:14px; }
+#decisions { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); gap:10px; min-inline-size:0; }
+#decisions h2 { grid-column:1 / -1; margin:0; }
 .panel { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px; }
-.matrix { flex:2.25 1 38rem; min-inline-size:0; container-type:inline-size; padding-block:12px 10px; padding-inline:0; }
+.matrix { min-inline-size:0; container-type:inline-size; padding-block:12px 10px; padding-inline:0; }
 .matrix h2,.matrix .muted,.legend { margin-inline:18px; }
 .matrix h2 { display:inline-block; margin-inline-end:8px; }
 .matrix .muted { display:inline; margin-inline-start:0; font-size:12px; }
 table { border-collapse:collapse; inline-size:100%; table-layout:fixed; }
 th,td { padding:6px 10px; border-block-end:1px solid var(--line); vertical-align:middle; }
 th { padding-inline:5px; font-size:11px; font-weight:550; color:var(--muted); background:color-mix(in oklch,var(--bg) 50%,var(--surface)); text-align:center; white-space:nowrap; }
-th:first-child { inline-size:34%; text-align:start; }
-th:nth-child(2) { inline-size:21%; text-align:start; }
+thead th:first-child { inline-size:23%; }
+thead th:nth-child(2) { inline-size:16%; }
+thead th:nth-child(3) { inline-size:25%; }
+thead th:nth-child(4) { inline-size:16%; }
+thead th:nth-child(-n+4) { text-align:start; }
+thead th:nth-child(n+5) { white-space:normal; }
+thead abbr { text-decoration:none; }
 td { text-align:center; }
-td:first-child,td:nth-child(2) { text-align:start; }
-td:nth-child(2) { font-size:12px; overflow-wrap:anywhere; }
+td:nth-child(-n+4) { text-align:start; }
+.reason-cell,.owner-cell { font-size:12px; }
+.reason-cell small,.owner-cell small { display:block; font-size:11px; margin-block-start:4px; }
+.row-blocker { color:var(--bad); }
+.group-heading th { text-align:start; padding:8px 18px; font-size:12px; border-inline-start:4px solid var(--group-color); }
+.group-attention { --group-color:var(--warn); }
+.group-moving { --group-color:var(--accent); }
+.group-resolved { --group-color:var(--neutral); }
+.work-status { --status-color:var(--neutral); display:inline-flex; gap:6px; align-items:baseline; border:1px solid color-mix(in oklch,var(--status-color) 50%,var(--line)); border-radius:20px; padding:3px 9px; font-size:11px; font-weight:600; color:var(--status-color); background:color-mix(in oklch,var(--status-color) 10%,var(--surface)); }
+.work-status b { font-variant-numeric:tabular-nums; }
+.work-needs_decision,.work-unknown { --status-color:var(--warn); }
+.work-blocked { --status-color:var(--bad); }
+.work-working,.work-ready,.work-awaiting_acceptance { --status-color:var(--accent); }
+.work-delivered { --status-color:var(--ok); }
+.work-no_change_needed { --status-color:var(--no-change); }
+.work-deferred { --status-color:var(--deferred); }
+.work-outcome { margin-block:14px; font-size:13px; }
+.ledger-note { margin-block:12px 0; margin-inline:18px; font-size:11px; color:var(--muted); }
+.owner-summary { margin-block-start:14px; font-size:12px; color:var(--muted); }
 tr.selected { background:var(--soft); }
 button { position:relative; font:inherit; cursor:pointer; color:var(--accent); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; touch-action:manipulation; }
 button::after { content:""; position:absolute; inset:min(0px,(100% - 44px) / 2); }
@@ -69,7 +95,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visibl
 .task-picker { border:0; background:none; display:flex; gap:12px; align-items:baseline; inline-size:100%; text-align:start; padding:0; color:var(--ink); }
 .task-picker b { color:var(--accent); font-size:12px; flex-shrink:0; }
 .task-picker span { font-size:13px; }
-.lifecycle { display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.45px; margin-inline-start:8px; }
+.lifecycle { display:block; }
 .signal { inline-size:27px; block-size:27px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:16px; font-weight:650; }
 .verified { color:var(--ok); background:var(--ok-bg); }
 .pending { color:var(--warn); background:var(--warn-bg); }
@@ -78,8 +104,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visibl
 .legend { display:flex; gap:14px; flex-wrap:wrap; margin-block-start:14px; font-size:11px; color:var(--muted); }
 .legend span { display:flex; align-items:center; gap:5px; }
 .legend .signal { inline-size:19px; block-size:19px; font-size:12px; }
-.decision { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:9px 12px; margin-block:7px; background:var(--warn-bg); border-inline-start:3px solid var(--warn); border-radius:4px; }
-.decision-preview { min-inline-size:0; }
+.decision { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; padding:9px 12px; background:var(--warn-bg); border-inline-start:3px solid var(--warn); border-radius:4px; }
+.decision-preview { flex:1 1 20rem; min-inline-size:0; }
 .decision-picker { display:flex; gap:10px; align-items:baseline; padding:0; border:0; background:none; text-align:start; color:var(--ink); }
 .decision-picker b { font-size:12px; color:var(--warn); flex-shrink:0; }
 .decision-picker span { font-size:13px; }
@@ -131,14 +157,18 @@ textarea { display:block; inline-size:100%; field-sizing:content; min-block-size
 pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; background:var(--bg); border-radius:5px; font:11px/1.6 ui-monospace,monospace; }
 .history { font-size:12px; color:var(--muted); padding-inline-start:20px; }
 [hidden] { display:none !important; }
-@container (inline-size < 42rem) {
+@container (inline-size < 60rem) {
   thead { position:absolute; inline-size:1px; block-size:1px; overflow:clip; clip-path:inset(50%); }
   tbody { display:block; }
   tbody tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:8px 10px; border-block-end:1px solid var(--line); }
   td { display:block; padding:7px 3px; border:0; }
-  td:first-child { grid-column:1 / 4; }
-  td:nth-child(2) { grid-column:4; font-size:11px; overflow-wrap:normal; }
-  td:nth-child(n+3)::before { content:attr(data-label); display:block; min-block-size:32px; margin-block-end:4px; color:var(--muted); font-size:10px; line-height:1.4; }
+  td:first-child { grid-column:1 / 3; }
+  td:nth-child(2) { grid-column:3 / 5; }
+  td:nth-child(3),td:nth-child(4) { grid-column:1 / -1; }
+  td:nth-child(n+2)::before { content:attr(data-label); display:block; margin-block-end:4px; color:var(--muted); font-size:10px; line-height:1.4; }
+  td:nth-child(n+5)::before { min-block-size:32px; }
+  tbody tr.group-heading { display:block; padding:0; }
+  .group-heading th { display:block; }
   tr:not([id]) td { grid-column:1 / -1; }
   .task-picker { display:block; overflow-wrap:anywhere; }
   .task-picker span { display:block; margin-block-start:3px; }
@@ -148,11 +178,13 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
 <body data-first-task="{{FIRST_TASK}}">
 <main>
 <header id="run-overview"><div><h1>{{TITLE}}</h1><p class="notice">{{NOTICE}}</p><p class="muted">Goal: {{GOAL}}</p></div><div class="meta">Run {{RUN_ID}}<br>Updated {{UPDATED}}<br>{{REFRESH_STATUS}}</div></header>
-<div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{TASK_COUNT}}</b><span>tasks</span></div><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div>
+<div class="stats" id="work-summary" aria-label="Work totals"><div class="stat"><b>{{TASK_COUNT}}</b><span>total tasks</span></div><div class="stat"><b>{{REMAINING_COUNT}}</b><span>need work</span></div><div class="stat"><b>{{RESOLVED_COUNT}}</b><span>resolved for this run</span></div>{{UNKNOWN_STAT}}</div>
+<div class="work-counts" id="work-counts" aria-label="Work status breakdown">{{WORK_COUNTS}}</div>
 <div class="layout">
-<section class="panel matrix" id="task-matrix"><h2>Work at a glance</h2><p class="muted">Select a task to inspect its blocker, next action, and retained proof.</p><table><thead><tr><th scope="col">Ticket / task</th><th scope="col">Work owner</th><th scope="col">PR<br>readiness</th><th scope="col">Code<br>publication</th><th scope="col">Deployment</th><th scope="col">Business<br>acceptance</th></tr></thead><tbody>{{ROWS}}</tbody></table><div class="legend" aria-label="Milestone legend"><span><i class="signal verified" aria-hidden="true">✓</i>Verified</span><span><i class="signal pending" aria-hidden="true">…</i>Pending</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not requested</span></div></section>
-<section class="panel" id="decisions"><h2>Needs your decision</h2>{{DECISIONS}}</section>
+<section class="panel matrix" id="task-matrix"><h2>Work at a glance</h2><p class="muted">Select a task for its retained proof and full assignment.</p><table><thead><tr><th scope="col">Ticket / task</th><th scope="col">Work status / outcome</th><th scope="col">Reason / next action</th><th scope="col">Owner lifecycle</th><th scope="col" aria-label="PR readiness"><abbr title="PR readiness">PR</abbr></th><th scope="col" aria-label="Code publication"><abbr title="Code publication">Pub.</abbr></th><th scope="col" aria-label="Deployment"><abbr title="Deployment">Deploy</abbr></th><th scope="col" aria-label="Business acceptance"><abbr title="Business acceptance">Accept</abbr></th></tr></thead>{{ROWS}}</table><div class="legend" aria-label="Milestone legend"><span><i class="signal verified" aria-hidden="true">✓</i>Verified</span><span><i class="signal pending" aria-hidden="true">…</i>Pending</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not requested</span></div><p class="ledger-note">Milestones: PR readiness · Code publication · Deployment · Business acceptance.</p><p class="ledger-note">Resolved for this run does not mean delivered. Deferred work retains a revisit trigger. Owner closure is separate.</p></section>
+<section class="panel" id="decisions"><h2>Needs your decision ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section>
 </div>
+<details class="owner-summary"><summary>Owner lifecycle counts</summary><div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div></details>
 <details class="panel archive" id="retained-proof"><summary>Retained proof. Expand receipts and limitations.</summary>{{PROOFS}}</details>
 <details class="panel archive" id="change-history"><summary>Corrections and history</summary><ul class="history">{{HISTORY}}</ul></details>
 </main>
@@ -283,8 +315,9 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
   document.querySelectorAll('[data-context]').forEach(button => button.addEventListener('click', () => copy(button.dataset.context, button)));
   document.getElementById('copy-question').addEventListener('click', () => copy(field.value));
   document.addEventListener('click', event => {
-    const link = event.target.closest('a[href^="#task-"], a[href^="#proof-"]');
+    const link = event.target.closest('a[href^="#task-"], a[href^="#proof-"], a[href^="#decision-"]');
     if (link?.hash.startsWith('#task-')) { event.preventDefault(); selectTask(link.hash.slice(6)); }
+    else if (link?.hash.startsWith('#decision-')) { event.preventDefault(); openDecision(link.hash.slice(10)); }
     else if (link && link.hash === location.hash) { event.preventDefault(); revealHash(); }
   });
   function revealHash() {

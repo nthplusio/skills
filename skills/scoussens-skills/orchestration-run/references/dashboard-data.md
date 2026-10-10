@@ -118,6 +118,66 @@ IDs or named external dependencies. `blocker` states the actionable hold, or is
 empty. `next_action` stays visible. `obligations` lists assigned unfinished work
 such as required CI, a requested review, or merge landing.
 
+### Work status and resolution
+
+Record `work` separately from `owner.state` in every new or resumed row:
+
+```json
+{
+  "work": {
+    "state": "deferred",
+    "reason": "The user moved this change out of the current run.",
+    "receipt": "Q4: user deferred this ticket in the owner conversation; retain the actual message link or receipt ID.",
+    "revisit": "Reassess after the authentication fix is accepted.",
+    "evidence": []
+  }
+}
+```
+
+`state` selects one group in the ledger. `reason` is nonempty text describing
+the observed condition or result, not a repeat of the status label.
+
+| Group | States | Meaning |
+| --- | --- | --- |
+| Needs attention | `needs_decision`, `blocked`, `waiting`, `unknown` | A pending decision, actionable blocker, another wait, or insufficient information to classify. |
+| Moving or ready | `working`, `ready`, `awaiting_acceptance` | Work underway, ready to assign/start, or awaiting the requested review or business acceptance. |
+| Resolved for this run | `delivered`, `no_change_needed`, `cancelled`, `deferred` | The assigned finish line is proven, investigation establishes no change is needed, or an authorized decision removes the work from this run. |
+
+Use `delivered` only for the assigned `done_when` scope. A review-ready finish
+line can be delivered without publication or deployment; the four milestones
+still describe those independently. `delivered` and `no_change_needed` require
+`work.evidence` naming accepted, nonfailed retained proof. For `cancelled` and
+`deferred`, `receipt` identifies the actual authorizing decision and its scope.
+`deferred` also requires a nonempty `revisit` date or observable trigger. A
+suggestion to defer is still unfinished work until the authorized decision exists.
+
+Every resolved row has no blocker, no unfinished obligations, and no pending or
+blocked requested milestone. Before cancellation or deferral, retain the decision
+and prior milestone verdicts in history. Withdraw only the obligations and
+milestone requests covered by that decision, preserving already verified claims
+and their proof. Record withdrawn milestone scope in its note with
+`not_requested`; never turn cancellation into a verified milestone. Settle any
+remaining runtime release or handoff before resolving the row.
+
+`needs_decision` requires a pending decision whose `task_ids` includes this row.
+`blocked` requires an actionable `blocker`. `unknown` needs a reason and a next
+inspection action. An old check time or unchanged activity alone establishes
+neither a blocker nor a stall. Keep real `owner.last_checked_at` timestamps;
+missing check times display as unrecorded rather than fresh.
+
+The summary partitions total tasks into work remaining, resolved for this run,
+and any rows needing classification. It separately counts each work state.
+Cancellation and deferral never count as delivered. Owner counts are secondary.
+The ledger shows reasons, next actions, revisit triggers and related decision
+IDs without requiring a dialog. Task dialogs and copied context retain the work
+outcome, resolution receipt and outcome proof.
+
+Records without `work` still render: active/waiting owners receive an explicitly
+qualified activity-based status. Complete/closed owners show **Needs
+classification**, not Delivered. On resume, recover actual outcomes from retained
+results and decisions before replacing this fallback. The renderer validates
+internal consistency, not whether a receipt really authorized the resolution.
+
 Every task has all four `milestones`:
 
 | Key | Meaning |

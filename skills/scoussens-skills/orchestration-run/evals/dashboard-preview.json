@@ -28,6 +28,7 @@
     {
       "id": "UI-101", "title": "Keep the pinned column visible",
       "done_when": "The isolated pinning fix and required tests are prepared for review.",
+      "work": {"state": "delivered", "reason": "The assigned review-ready patch and local proof are retained. Publication was not requested.", "evidence": ["E1"]},
       "owner": {"id": "ui-owner", "label": "UI owner", "href": "", "state": "closed", "location": "Retained fixture worktree and branch", "handoff": "Pinning patch and E1 retained. Resume this owner for pinning follow-up."},
       "resources": ["pinning region only"], "blocked_by": [], "blocker": "", "next_action": "Complete. Reuse E1 for this unchanged claim.", "obligations": [],
       "milestones": {
@@ -40,6 +41,7 @@
     {
       "id": "API-102", "title": "Prepare scoped persistence fix",
       "done_when": "The focused fix meets its agreed local review criteria, with inherited failures disclosed.",
+      "work": {"state": "working", "reason": "The patch is ready; runtime release and handoff remain."},
       "owner": {"id": "api-owner", "label": "API owner", "href": "", "state": "active", "location": "Fixture API worktree", "handoff": ""},
       "resources": ["API persistence files", "runtime lane until handoff"], "blocked_by": [], "blocker": "", "next_action": "Retain the final handoff, release the runtime lane, and close the owner.", "obligations": [],
       "milestones": {
@@ -52,6 +54,7 @@
     {
       "id": "REVIEW-103", "title": "Obtain the required review",
       "done_when": "The required review is actually posted and its result retained.",
+      "work": {"state": "blocked", "reason": "The workflow passed but posted no review."},
       "owner": {"id": "review-owner", "label": "Review owner", "href": "", "state": "waiting", "location": "Fixture review workflow", "handoff": ""},
       "resources": ["review workflow"], "blocked_by": ["EXT reviewer result"], "blocker": "The workflow passed but posted no review.", "next_action": "Ask the review owner to recover the missing result. Do not replay the green job by default.", "obligations": ["Required posted review"],
       "milestones": {
@@ -64,6 +67,7 @@
     {
       "id": "API-104", "title": "Correct hierarchy regressions",
       "done_when": "The three reproduced regressions are corrected and proven by the existing owner.",
+      "work": {"state": "working", "reason": "The owner is correcting three reproduced regressions."},
       "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "location": "Fixture hierarchy worktree", "handoff": ""},
       "resources": ["hierarchy transformation"], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
       "milestones": {
@@ -76,6 +80,7 @@
     {
       "id": "OPS-105", "title": "Publish the reviewer configuration",
       "done_when": "Configuration publication fits explicitly approved side effects.",
+      "work": {"state": "needs_decision", "reason": "Publication would trigger a broader deployment; approval is missing."},
       "owner": {"id": "reviewer-owner", "label": "Reviewer owner", "href": "", "state": "waiting", "location": "Fixture reviewer worktree", "handoff": ""},
       "resources": ["reviewer configuration"], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
       "milestones": {
@@ -88,6 +93,7 @@
     {
       "id": "ENV-106", "title": "Use the authenticated runtime lane",
       "done_when": "The requested runtime check finishes in an exclusive lane.",
+      "work": {"state": "blocked", "reason": "API-102 holds the lane; the earlier attempt was interrupted."},
       "owner": {"id": "runtime-owner", "label": "Runtime owner", "href": "", "state": "waiting", "location": "Fixture authenticated environment", "handoff": ""},
       "resources": ["one authenticated runtime lane"], "blocked_by": ["API-102"], "blocker": "API-102 holds the lane; the earlier attempt was interrupted.", "next_action": "Reserve the lane after API-102 releases it. Other tickets continue.", "obligations": ["Finish the assigned runtime check"],
       "milestones": {
@@ -100,6 +106,7 @@
     {
       "id": "SHIP-107", "title": "Deliver the accepted change",
       "done_when": "Publication, intended runtime revision, and requested business checks each have proof.",
+      "work": {"state": "delivered", "reason": "The requested publication, deployment and business checks are accepted.", "evidence": ["E9"]},
       "owner": {"id": "delivery-owner", "label": "Delivery owner", "href": "", "state": "closed", "location": "Retained fixture delivery worktree", "handoff": "Independent delivery observations retained as E9. Resume or transfer explicitly for follow-up."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "Complete. Evidence remains available after owner closure.", "obligations": [],
       "milestones": {
@@ -107,6 +114,58 @@
         "code_publication": {"state": "verified", "note": "Requested branch and PR published", "evidence": ["E9"]},
         "deployment": {"state": "verified", "note": "Intended revision observed in target runtime", "evidence": ["E9"]},
         "business_acceptance": {"state": "verified", "note": "Specified business checks accepted", "evidence": ["E9"]}
+      }
+    },
+    {
+      "id": "TRIAGE-108", "title": "Investigate duplicate source identities",
+      "done_when": "Determine whether a current defect requires a change.",
+      "work": {"state": "no_change_needed", "reason": "Investigation found no current defect; no implementation is needed.", "evidence": ["E10"]},
+      "owner": {"id": "triage-owner", "label": "Triage owner", "href": "", "state": "closed", "location": "Retained fixture investigation", "handoff": "E10 retains the investigation and its scope."},
+      "resources": [], "blocked_by": [], "blocker": "", "next_action": "No follow-up in this run.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "not_requested", "note": "Investigation only", "evidence": []},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "UI-109", "title": "Optimize exchange latency",
+      "done_when": "Reduce the agreed exchange latency.",
+      "work": {"state": "cancelled", "reason": "The user removed this optimization from the run.", "receipt": "Synthetic Q-cancel answer: cancel UI-109 and withdraw its implementation request."},
+      "owner": {"id": "latency-owner", "label": "Latency owner", "href": "", "state": "complete", "location": "Retained fixture notes", "handoff": "Cancellation scope retained; no runtime reservation remains. Closure is unavailable."},
+      "resources": [], "blocked_by": [], "blocker": "", "next_action": "No implementation follow-up; close the owner when supported.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "not_requested", "note": "Request withdrawn by Q-cancel; prior state retained in history", "evidence": []},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "UI-110", "title": "Improve logout recovery",
+      "done_when": "Restore the agreed draft after logout.",
+      "work": {"state": "deferred", "reason": "The user moved draft recovery out of this run.", "receipt": "Synthetic Q-auth answer: defer UI-110 until the authentication fix is accepted.", "revisit": "After the authentication fix is accepted."},
+      "owner": {"id": "recovery-owner", "label": "Recovery owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Deferral decision and trigger retained. Reuse this owner for this ticket."},
+      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Reassess the trigger on resume.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "not_requested", "note": "Request deferred by Q-auth", "evidence": []},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
+      }
+    },
+    {
+      "id": "UI-111", "title": "Restore explicit tree selection",
+      "done_when": "Restore the requested selection behavior.",
+      "work": {"state": "deferred", "reason": "The user postponed this change to planning.", "receipt": "Synthetic Q-plan answer: defer UI-111 to the next planning cycle.", "revisit": "At the next planning cycle."},
+      "owner": {"id": "selection-owner", "label": "Selection owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Planning trigger retained; resume this owner only within authorized scope."},
+      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Bring the ticket back to planning.", "obligations": [],
+      "milestones": {
+        "pr_readiness": {"state": "not_requested", "note": "Request deferred by Q-plan", "evidence": []},
+        "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "deployment": {"state": "not_requested", "note": "", "evidence": []},
+        "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
     }
   ],
@@ -119,11 +178,14 @@
     {"id": "E6", "label": "Expanded regression evidence", "scope": "Synthetic three hierarchy behaviors", "result": "failed", "assessment": "limited", "note": "Current readiness is blocked; fixes stay with the existing owner.", "output": "SYNTHETIC RECEIPT\nown dimension: missing\nfolder ordering: incorrect\norphan description: extra level", "href": ""},
     {"id": "E7", "label": "Relevant compatibility proof", "scope": "Synthetic behavioral difference behind old workflow hash", "result": "passed", "assessment": "accepted", "note": "Matching bytes are not required by this fixture's contract.", "output": "SYNTHETIC RECEIPT\nrelevant foreground behavior: passed\nstop behavior: passed\nmissing-result gate: passed", "href": ""},
     {"id": "E8", "label": "Interrupted runtime attempt", "scope": "Synthetic shared-runtime attempt", "result": "interrupted", "assessment": "limited", "note": "Keep the interrupted request separate from any later successful run.", "output": "SYNTHETIC RECEIPT\nrequest: interrupted before result\nno acceptance verdict", "href": ""},
-    {"id": "E9", "label": "Separate delivery observations", "scope": "Synthetic requested publication, runtime, and business criteria", "result": "observed", "assessment": "accepted", "note": "Each observation is independent. Local tests alone would not suffice.", "output": "SYNTHETIC RECEIPT\nrequired review material/checks: prepared\nrequested branch/PR: published\ntarget runtime revision: intended revision observed\nspecified business checks: accepted", "href": ""}
+    {"id": "E9", "label": "Separate delivery observations", "scope": "Synthetic requested publication, runtime, and business criteria", "result": "observed", "assessment": "accepted", "note": "Each observation is independent. Local tests alone would not suffice.", "output": "SYNTHETIC RECEIPT\nrequired review material/checks: prepared\nrequested branch/PR: published\ntarget runtime revision: intended revision observed\nspecified business checks: accepted", "href": ""},
+    {"id": "E10", "label": "No-change investigation", "scope": "Synthetic reported duplicate source identities", "result": "observed", "assessment": "accepted", "note": "Investigation result, not implementation delivery.", "output": "SYNTHETIC RECEIPT\nreported identities resolve to distinct source records\nno current defect found in the assigned scope", "href": ""}
   ],
   "history": [
     "API-104: earlier ready implication superseded after E6. E5 retained.",
     "OPS-105: hash-only hold removed after relevant compatibility proof. Approval hold remains.",
-    "UI-101 and SHIP-107: proof and handoff retained before successful owner closure."
+    "UI-101 and SHIP-107: proof and handoff retained before successful owner closure.",
+    "UI-109: Q-cancel withdrew the pending PR-readiness request; cancellation retained before owner completion.",
+    "UI-110 and UI-111: Q-auth and Q-plan withdrew this run's implementation requests and retained revisit triggers. No delivery claim."
   ]
 }
