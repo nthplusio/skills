@@ -10,6 +10,14 @@ Saved state uses repository `.orchestration/discovery.json` and schema-version-2
 `.orchestration/config.json`. Owner operations use selected flat capabilities
 internally; they do not replace the saved-file contract.
 
+The coordination scenarios retain their original ticket set and omit `work`
+to exercise recovery of legacy records. `test_dashboard.py` separately checks
+explicit work outcomes, grouped rows and totals, decision links, copied resolution
+context, and refusal to resolve work without settled scope and supporting proof
+or decisions. The synthetic `dashboard-preview.json` includes delivery,
+no-change, cancellation and two deferral examples; its statuses and receipts
+are not live project evidence.
+
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |
 | `discovery-no-interview` | Discovery 0 | Save sourced, timestamped observations through the real discovery checker, with no preference interview or setup writes. |
