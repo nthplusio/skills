@@ -32,8 +32,12 @@
       "owner": {"id": "ui-owner", "label": "UI owner", "href": "", "state": "closed", "location": "Retained fixture worktree and branch", "handoff": "Pinning patch and E1 retained. Resume this owner for pinning follow-up."},
       "resources": ["pinning region only"], "blocked_by": [], "blocker": "", "next_action": "Complete. Reuse E1 for this unchanged claim.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "verified", "note": "Local pinning scope only", "evidence": ["E1"]},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -45,8 +49,12 @@
       "owner": {"id": "api-owner", "label": "API owner", "href": "", "state": "active", "location": "Fixture API worktree", "handoff": ""},
       "resources": ["API persistence files", "runtime lane until handoff"], "blocked_by": [], "blocker": "", "next_action": "Retain the final handoff, release the runtime lane, and close the owner.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "verified", "note": "Scoped local proof. E3 remains an inherited suite failure.", "evidence": ["E2"]},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "No live persistence claim", "evidence": []}
       }
@@ -58,8 +66,12 @@
       "owner": {"id": "review-owner", "label": "Review owner", "href": "", "state": "waiting", "location": "Fixture review workflow", "handoff": ""},
       "resources": ["review workflow"], "blocked_by": ["EXT reviewer result"], "blocker": "The workflow passed but posted no review.", "next_action": "Ask the review owner to recover the missing result. Do not replay the green job by default.", "obligations": ["Required posted review"],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "blocked", "note": "Required review missing; E4 proves only job success", "evidence": ["E4"]},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -68,11 +80,15 @@
       "id": "API-104", "title": "Correct hierarchy regressions",
       "done_when": "The three reproduced regressions are corrected and proven by the existing owner.",
       "work": {"state": "working", "summary": "Testing found three problems. The team is fixing them.", "reason": "The owner is correcting three reproduced regressions."},
-      "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "location": "Fixture hierarchy worktree", "handoff": ""},
+      "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "activity": "Two subagents are fixing the regressions; a third reruns the expanded checks.", "location": "Fixture hierarchy worktree", "handoff": ""},
       "resources": ["hierarchy transformation"], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "blocked", "note": "E5 superseded by E6", "evidence": ["E5", "E6"]},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -84,8 +100,12 @@
       "owner": {"id": "reviewer-owner", "label": "Reviewer owner", "href": "", "state": "waiting", "location": "Fixture reviewer worktree", "handoff": ""},
       "resources": ["reviewer configuration"], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "verified", "note": "Relevant compatibility proven, despite different hash", "evidence": ["E7"]},
         "code_publication": {"state": "blocked", "note": "Awaiting Q1, not another compatibility test", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "Indirect effect needs explicit scope", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -94,11 +114,15 @@
       "id": "ENV-106", "title": "Use the authenticated runtime lane",
       "done_when": "The requested runtime check finishes in an exclusive lane.",
       "work": {"state": "blocked", "summary": "Waiting for a shared test environment that another item is using.", "reason": "API-102 holds the lane; the earlier attempt was interrupted."},
-      "owner": {"id": "runtime-owner", "label": "Runtime owner", "href": "", "state": "waiting", "location": "Fixture authenticated environment", "handoff": ""},
+      "owner": {"id": "runtime-owner", "label": "Runtime owner", "href": "", "state": "blocked", "activity": "Paused until API-102 releases the shared runtime environment.", "location": "Fixture authenticated environment", "handoff": ""},
       "resources": ["one authenticated runtime lane"], "blocked_by": ["API-102"], "blocker": "API-102 holds the lane; the earlier attempt was interrupted.", "next_action": "Reserve the lane after API-102 releases it. Other tickets continue.", "obligations": ["Finish the assigned runtime check"],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "pending", "note": "Interrupted evidence retained as E8", "evidence": ["E8"]},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -110,8 +134,12 @@
       "owner": {"id": "delivery-owner", "label": "Delivery owner", "href": "", "state": "closed", "location": "Retained fixture delivery worktree", "handoff": "Independent delivery observations retained as E9. Resume or transfer explicitly for follow-up."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "Complete. Evidence remains available after owner closure.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "verified", "note": "Approach chosen from two options", "evidence": ["E12"]},
         "pr_readiness": {"state": "verified", "note": "Required review material and checks", "evidence": ["E9"]},
         "code_publication": {"state": "verified", "note": "Requested branch and PR published", "evidence": ["E9"]},
+        "review": {"state": "verified", "note": "Required review posted on the published PR", "evidence": ["E13"]},
+        "verification": {"state": "verified", "note": "Checked against the plan and acceptance criteria before deployment", "evidence": ["E13"]},
         "deployment": {"state": "verified", "note": "Intended revision observed in target runtime", "evidence": ["E9"]},
         "business_acceptance": {"state": "verified", "note": "Specified business checks accepted", "evidence": ["E9"]}
       }
@@ -123,8 +151,12 @@
       "owner": {"id": "triage-owner", "label": "Triage owner", "href": "", "state": "closed", "location": "Retained fixture investigation", "handoff": "E10 retains the investigation and its scope."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "No follow-up in this run.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "verified", "note": "Investigation closed the question", "evidence": ["E10"]},
         "pr_readiness": {"state": "not_requested", "note": "Investigation only", "evidence": []},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -136,8 +168,12 @@
       "owner": {"id": "latency-owner", "label": "Latency owner", "href": "", "state": "complete", "location": "Retained fixture notes", "handoff": "Cancellation scope retained; no runtime reservation remains. Closure is unavailable."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "No implementation follow-up; close the owner when supported.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "not_requested", "note": "Request withdrawn by Q-cancel; prior state retained in history", "evidence": []},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -149,8 +185,12 @@
       "owner": {"id": "recovery-owner", "label": "Recovery owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Deferral decision and trigger retained. Reuse this owner for this ticket."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "Reassess the trigger on resume.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "not_requested", "note": "Request deferred by Q-auth", "evidence": []},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -162,8 +202,12 @@
       "owner": {"id": "selection-owner", "label": "Selection owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Planning trigger retained; resume this owner only within authorized scope."},
       "resources": [], "blocked_by": [], "blocker": "", "next_action": "Bring the ticket back to planning.", "obligations": [],
       "milestones": {
+        "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
+        "researched": {"state": "not_requested", "note": "", "evidence": []},
         "pr_readiness": {"state": "not_requested", "note": "Request deferred by Q-plan", "evidence": []},
         "code_publication": {"state": "not_requested", "note": "", "evidence": []},
+        "review": {"state": "not_requested", "note": "", "evidence": []},
+        "verification": {"state": "not_requested", "note": "", "evidence": []},
         "deployment": {"state": "not_requested", "note": "", "evidence": []},
         "business_acceptance": {"state": "not_requested", "note": "", "evidence": []}
       }
@@ -179,7 +223,10 @@
     {"id": "E7", "label": "Relevant compatibility proof", "scope": "Synthetic behavioral difference behind old workflow hash", "result": "passed", "assessment": "accepted", "note": "Matching bytes are not required by this fixture's contract.", "output": "SYNTHETIC RECEIPT\nrelevant foreground behavior: passed\nstop behavior: passed\nmissing-result gate: passed", "href": ""},
     {"id": "E8", "label": "Interrupted runtime attempt", "scope": "Synthetic shared-runtime attempt", "result": "interrupted", "assessment": "limited", "note": "Keep the interrupted request separate from any later successful run.", "output": "SYNTHETIC RECEIPT\nrequest: interrupted before result\nno acceptance verdict", "href": ""},
     {"id": "E9", "label": "Separate delivery observations", "scope": "Synthetic requested publication, runtime, and business criteria", "result": "observed", "assessment": "accepted", "note": "Each observation is independent. Local tests alone would not suffice.", "output": "SYNTHETIC RECEIPT\nrequired review material/checks: prepared\nrequested branch/PR: published\ntarget runtime revision: intended revision observed\nspecified business checks: accepted", "href": ""},
-    {"id": "E10", "label": "No-change investigation", "scope": "Synthetic reported duplicate source identities", "result": "observed", "assessment": "accepted", "note": "Investigation result, not implementation delivery.", "output": "SYNTHETIC RECEIPT\nreported identities resolve to distinct source records\nno current defect found in the assigned scope", "href": ""}
+    {"id": "E10", "label": "No-change investigation", "scope": "Synthetic reported duplicate source identities", "result": "observed", "assessment": "accepted", "note": "Investigation result, not implementation delivery.", "output": "SYNTHETIC RECEIPT\nreported identities resolve to distinct source records\nno current defect found in the assigned scope", "href": ""},
+    {"id": "E11", "label": "Ticket definitions", "scope": "Synthetic tickets selected for this run", "result": "observed", "assessment": "accepted", "note": "Each ticket names its outcome and acceptance criteria.", "output": "SYNTHETIC RECEIPT\nselected tickets: outcome and acceptance criteria present", "href": ""},
+    {"id": "E12", "label": "Delivery research notes", "scope": "Synthetic SHIP-107 approach comparison", "result": "observed", "assessment": "accepted", "note": "A research subagent compared two approaches; the owner chose one.", "output": "SYNTHETIC RECEIPT\noptions compared: 2\nchosen: incremental rollout", "href": ""},
+    {"id": "E13", "label": "Review and spec verification", "scope": "Synthetic SHIP-107 published PR", "result": "passed", "assessment": "accepted", "note": "Posted review plus an agent check against the plan and acceptance criteria.", "output": "SYNTHETIC RECEIPT\nposted reviews: 1 approved\nacceptance criteria checked: 4 of 4", "href": ""}
   ],
   "history": [
     "API-104: earlier ready implication superseded after E6. E5 retained.",

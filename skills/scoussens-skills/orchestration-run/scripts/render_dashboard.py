@@ -11,13 +11,30 @@ import re
 from urllib.parse import urlsplit
 
 
-# Plain label for the overview, technical label for drill-in, and a one-line explanation.
-MILESTONES = {
-    "pr_readiness": ("Built & checked", "PR readiness", "The change is built and its checks are ready for code review."),
+# Business stages in delivery order: plain label, technical label, one-line explanation.
+# The first two and review/verification are optional so older records still render.
+STAGES = {
+    "defined": ("Defined", "Definition", "The goal and acceptance criteria are written down and agreed."),
+    "researched": ("Researched", "Research", "Open questions are investigated and an approach is chosen."),
+    "pr_readiness": ("Implemented", "PR readiness", "The change is built and its checks are ready for code review."),
     "code_publication": ("Submitted", "Code publication", "The change is shared as a branch or pull request."),
+    "review": ("Reviewed", "Code review", "The requested code review is complete."),
+    "verification": ("Verified", "Verification", "An agent has checked the change against the plan and spec."),
     "deployment": ("Deployed", "Deployment", "The change is running in the intended environment."),
-    "business_acceptance": ("Signed off", "Business acceptance", "The business has accepted the result."),
+    "business_acceptance": ("Accepted", "Business acceptance", "Users have accepted the deployed result."),
 }
+REQUIRED_STAGES = ("pr_readiness", "code_publication", "deployment", "business_acceptance")
+NOT_RECORDED = {"state": "not_requested", "note": "Not recorded in this status record.", "evidence": []}
+# Orchestration status of the agent that owns the ticket.
+OWNER_STATES = {
+    "active": "Working",
+    "waiting": "Waiting",
+    "blocked": "Blocked",
+    "unreachable": "Not responding",
+    "complete": "Finished",
+    "closed": "Closed",
+}
+OPEN_OWNER_STATES = ("active", "waiting", "blocked", "unreachable")
 STATES = {
     "verified": ("Done", "✓"),
     "pending": ("In progress", "…"),
@@ -61,11 +78,24 @@ def work_status(task):
     if "work" in task:
         return task["work"]
     owner_state = task["owner"]["state"]
-    state = {"active": "working", "waiting": "waiting"}.get(owner_state, "unknown")
+    state = {"active": "working", "waiting": "waiting", "blocked": "blocked"}.get(owner_state, "unknown")
     if state == "unknown":
         return {"state": state, "summary": "We're confirming how this item ended.",
                 "reason": "Outcome not recorded; inspect the retained result before classifying."}
     return {"state": state, "reason": "Work status inferred from owner activity; confirm at the next scan."}
+
+
+def stages(task):
+    return {key: task["milestones"].get(key, NOT_RECORDED) for key in STAGES}
+
+
+def stage_position(task):
+    """Return (current, target): the first unfinished requested stage and the last requested one."""
+    phases = stages(task)
+    requested = [key for key in STAGES if phases[key]["state"] != "not_requested"]
+    if not requested:
+        return None, None
+    return next((key for key in requested if phases[key]["state"] != "verified"), None), requested[-1]
 
 
 def indexed(records):
@@ -137,15 +167,27 @@ def render(data, hosted=False):
         owner_id = task["owner"]["id"]
         if not isinstance(owner_id, str) or not owner_id.strip():
             raise ValueError(f"{task['id']}: owner needs its actual harness ID")
-        if task["owner"]["state"] not in ("active", "waiting", "complete", "closed"):
+        if task["owner"]["state"] not in OWNER_STATES:
             raise ValueError(f"{task['id']}: invalid owner state")
+        if task["owner"]["state"] == "blocked" and not task["blocker"].strip():
+            raise ValueError(f"{task['id']}: blocked owner needs an actionable blocker")
+        activity = task["owner"].get("activity")
+        if activity is not None and (not isinstance(activity, str) or not activity.strip()):
+            raise ValueError(f"{task['id']}: owner activity must be nonempty text when present")
         if owner_id in owners:
             raise ValueError(f"{task['id']}: owner {owner_id} is already bound to another ticket; use that ticket's owner or a separate owner")
         owners[owner_id] = task["owner"]["state"]
-        for key in MILESTONES:
+        unknown = set(task["milestones"]) - set(STAGES)
+        if unknown:
+            raise ValueError(f"{task['id']}: unknown stage {', '.join(sorted(unknown))}")
+        for key in STAGES:
+            if key not in task["milestones"]:
+                if key in REQUIRED_STAGES:
+                    raise ValueError(f"{task['id']}: missing stage {key}")
+                continue
             phase = task["milestones"][key]
             if phase["state"] not in STATES:
-                raise ValueError(f"{task['id']}: invalid milestone state")
+                raise ValueError(f"{task['id']}: invalid stage state")
             for proof_id in phase["evidence"]:
                 if proof_id not in evidence:
                     raise ValueError(f"{task['id']}: missing proof {proof_id}")
@@ -155,12 +197,12 @@ def render(data, hosted=False):
                     or evidence[proof_id]["result"] in ("failed", "interrupted")
                     for proof_id in phase["evidence"]
                 ):
-                    raise ValueError(f"{task['id']}: verified milestone needs accepted supporting proof")
+                    raise ValueError(f"{task['id']}: verified stage needs accepted supporting proof")
         if task["owner"]["state"] in ("complete", "closed"):
             if task["obligations"] or task["blocker"] or not task["owner"]["handoff"].strip():
                 raise ValueError(f"{task['id']}: completed owner needs a handoff and settled obligations")
             if any(phase["state"] in ("pending", "blocked") for phase in task["milestones"].values()):
-                raise ValueError(f"{task['id']}: unfinished milestone prevents owner completion")
+                raise ValueError(f"{task['id']}: unfinished stage prevents owner completion")
         work = work_status(task)
         if not isinstance(work, dict) or work.get("state") not in WORK_STATES:
             raise ValueError(f"{task['id']}: invalid work state")
@@ -176,7 +218,7 @@ def render(data, hosted=False):
             if task["obligations"] or task["blocker"]:
                 raise ValueError(f"{task['id']}: resolved work needs settled obligations and no blocker")
             if any(phase["state"] in ("pending", "blocked") for phase in task["milestones"].values()):
-                raise ValueError(f"{task['id']}: unfinished milestone prevents work resolution")
+                raise ValueError(f"{task['id']}: unfinished stage prevents work resolution")
         elif "work" in task and work["state"] != "unknown" and task["owner"]["state"] in ("complete", "closed"):
             raise ValueError(f"{task['id']}: unfinished work prevents owner completion")
         if work["state"] in ("delivered", "no_change_needed"):
@@ -226,15 +268,38 @@ def render(data, hosted=False):
         return list(dict.fromkeys([key for phase in task["milestones"].values() for key in phase["evidence"]]
                                   + work_status(task).get("evidence", [])))
 
+    def stage_text(task):
+        current, target = stage_position(task)
+        if target is None:
+            return "No stages requested", ""
+        if work_status(task)["state"] in ("cancelled", "deferred"):
+            reached = [key for key, phase in stages(task).items() if phase["state"] == "verified"]
+            return (f"Stopped after {STAGES[reached[-1]][0]}" if reached else "Stopped before starting"), ""
+        if current is None:
+            return f"{STAGES[target][0]} ✓", "Reached this run's target"
+        state = "blocked" if stages(task)[current]["state"] == "blocked" else "in progress"
+        return f"{STAGES[current][0]} — {state}", f"Target: {STAGES[target][0]}"
+
+    def stepper(task):
+        phases = stages(task)
+        current, _ = stage_position(task)
+        steps = []
+        for key, (plain_label, _, _) in STAGES.items():
+            state = phases[key]["state"]
+            state_label = STATES[state][0]
+            steps.append(f'<span class="step {state}{" current" if key == current else ""}" role="img" '
+                         f'aria-label="{plain_label}: {state_label}" title="{plain_label}: {state_label}"></span>')
+        return f'<span class="stepper">{"".join(steps)}</span>'
+
     def issue_data(task):
         work = work_status(task)
-        states = "".join(f'<dt>{plain_label}</dt><dd>{STATES[task["milestones"][key]["state"]][0]}</dd>'
-                         for key, (plain_label, _, _) in MILESTONES.items())
+        stage, target = stage_text(task)
         return (f'<section class="issue-data"><h3>{task["id"]} · {escape(task["title"])}</h3><dl>'
                 f'<dt>Status</dt><dd>{WORK_STATES[work["state"]][0]} · {escape(plain(work))}</dd>'
-                + states + f'<dt>Holding it up</dt><dd>{escape(task["blocker"] or "Nothing")}</dd>'
+                f'<dt>Stage</dt><dd>{escape(stage)}{" · " + escape(target) if target else ""}</dd>'
+                f'<dt>Agent</dt><dd>{escape(task["owner"]["label"])} · {OWNER_STATES[task["owner"]["state"]]}</dd>'
+                f'<dt>Holding it up</dt><dd>{escape(task["blocker"] or "Nothing")}</dd>'
                 f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
-                f'<dt>Work owner</dt><dd>{escape(task["owner"]["label"])} · {task["owner"]["state"]}</dd>'
                 f'<dt>Evidence</dt><dd>{proof_links(task_proof_ids(task)) or "None retained"}</dd></dl></section>')
 
     def question(task, subject):
@@ -246,7 +311,7 @@ def render(data, hosted=False):
 
     def signal(state):
         label, symbol = STATES[state]
-        return f'<span class="signal {state}" role="img" aria-label="{label}" title="{label}">{symbol}</span>'
+        return f'<span class="signal {state}" aria-hidden="true">{symbol}</span>'
 
     first = next((task["id"] for task in tasks.values() if task["blocker"]), next(iter(tasks), ""))
     rows, details = {group: [] for group in GROUPS}, []
@@ -254,10 +319,12 @@ def render(data, hosted=False):
     for task in tasks.values():
         key = task["id"]
         owner = task["owner"]
+        agent = OWNER_STATES[owner["state"]]
         work = work_status(task)
         label, group = WORK_STATES[work["state"]]
         counts[work["state"]] += 1
         work_badge = f'<span class="work-status work-{work["state"]}">{label}</span>'
+        agent_badge = f'<span class="agent-status agent-{owner["state"]}">{agent}</span>'
         related = [item for item in decisions.values() if key in item.get("task_ids", [])]
         decision_links = " · ".join(anchor(f'#decision-{item["id"]}', item["id"]) for item in related)
         story = escape(plain(work))
@@ -265,30 +332,42 @@ def render(data, hosted=False):
             story += f'<small class="revisit">We\'ll revisit: {escape(work["revisit"])}</small>'
         if related:
             story += f'<small class="row-decisions">Waiting on your decision: {decision_links}</small>'
-        cells, plain_steps, technical_steps = [], [], []
-        for phase_key, (plain_label, technical_label, help_text) in MILESTONES.items():
-            phase = task["milestones"][phase_key]
-            badge = signal(phase["state"])
-            cells.append(f'<td data-label="{plain_label}">{badge}</td>')
-            plain_steps.append(f'<li>{badge}<div><b>{plain_label}</b><span>{STATES[phase["state"]][0]}</span>'
-                               f'<small>{help_text}</small></div></li>')
+        stage, target = stage_text(task)
+        current, _ = stage_position(task)
+        plain_steps, technical_steps = [], []
+        for phase_key, (plain_label, technical_label, help_text) in STAGES.items():
+            phase = stages(task)[phase_key]
+            plain_steps.append(f'<li class="{phase["state"]}{" current" if phase_key == current else ""}">{signal(phase["state"])}<div><b>{plain_label}</b>'
+                               f'<span>{STATES[phase["state"]][0]}</span><small>{help_text}</small></div></li>')
+            if phase["state"] == "not_requested" and not phase["note"].strip():
+                continue
             technical_steps.append(
-                f'<div class="phase">{badge}<div><b>{technical_label}</b><span><code>{phase["state"]}</code></span>'
+                f'<div class="phase">{signal(phase["state"])}<div><b>{technical_label}</b> <code>{phase_key}</code><span><code>{phase["state"]}</code></span>'
                 f'<small>{escape(phase["note"]) or "No note."} {proof_links(phase["evidence"])}</small></div></div>')
         rows[group].append(
-            f'<tr id="row-{key}" data-work-state="{work["state"]}"><td class="task-cell" data-label="Item">'
+            f'<tr id="row-{key}" data-work-state="{work["state"]}" data-owner-state="{owner["state"]}"><td class="task-cell" data-label="Item">'
             f'<button class="task-picker" data-task="{key}" aria-pressed="false" aria-haspopup="dialog">'
             f'<span>{escape(task["title"])}</span><small>{key}</small></button></td>'
+            f'<td data-label="Stage" class="stage-cell">{stepper(task)}<b>{escape(stage)}</b>'
+            + (f'<small>{escape(target)}</small>' if target else "") + '</td>'
             f'<td data-label="Status">{work_badge}</td>'
             f'<td data-label="What\'s happening" class="reason-cell">{story}</td>'
-            + "".join(cells) + '</tr>'
+            f'<td data-label="Agent" class="agent-cell">{agent_badge}</td></tr>'
         )
-        lifecycle = "Complete, closure pending / unavailable" if owner["state"] == "complete" else owner["state"].capitalize()
+        lifecycle = "Complete, closure pending / unavailable" if owner["state"] == "complete" else agent
         checked = owner.get("last_checked_at")
         resources = ", ".join(task["resources"]) or "None shared"
         dependencies = ", ".join(task["blocked_by"]) or "None"
         obligations = "; ".join(task["obligations"]) or "None outstanding"
-        owner_link = anchor(owner.get("href"), owner["label"])
+        orchestration = (
+            f'<dt>Status</dt><dd>{agent_badge} <code>{owner["state"]}</code>'
+            + (f' · {escape(lifecycle)}' if owner["state"] == "complete" else "") + '</dd>'
+            + (f'<dt>Doing now</dt><dd>{escape(owner["activity"])}</dd>' if owner.get("activity") else "")
+            + f'<dt>Agent</dt><dd>{anchor(owner.get("href"), owner["label"])} <code>{escape(owner["id"])}</code></dd>'
+            f'<dt>Last checked</dt><dd>{escape(checked or "Check time not recorded")}</dd>'
+            f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd>'
+            f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd>'
+        )
         technical = (
             f'<dt>Work state</dt><dd><code>{work["state"]}</code> · {escape(work["reason"])}</dd>'
             f'<dt>Blocker</dt><dd>{escape(task["blocker"] or "None")}</dd>'
@@ -296,21 +375,19 @@ def render(data, hosted=False):
             f'<dt>Done when</dt><dd>{escape(task["done_when"])}</dd>'
             + (f'<dt>Decision receipt</dt><dd>{escape(work["receipt"])}</dd>' if work.get("receipt") else "")
             + (f'<dt>Outcome proof</dt><dd>{proof_links(work["evidence"])}</dd>' if work.get("evidence") else "")
-            + f'<dt>Work owner</dt><dd>{owner_link} <code>{escape(owner["id"])}</code> · {lifecycle}'
-            f'<small class="checked">{escape("Last checked " + checked if checked else "Check time not recorded")}</small></dd>'
-            f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd>'
-            f'<dt>Resources</dt><dd>{escape(resources)}</dd><dt>Dependencies</dt><dd>{escape(dependencies)}</dd>'
+            + f'<dt>Resources</dt><dd>{escape(resources)}</dd><dt>Dependencies</dt><dd>{escape(dependencies)}</dd>'
             f'<dt>Obligations</dt><dd>{escape(obligations)}</dd>'
-            f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd>'
         )
         details.append(
             f'<details class="task-detail" id="task-{key}"{" open" if key == first else ""}><summary>{escape(task["title"])} <small>{key}</small></summary>'
             f'<section class="plain-view"><div class="work-outcome">{work_badge}<p>{escape(plain(work))}</p>'
             + (f'<p><b>We\'ll revisit:</b> {escape(work["revisit"])}</p>' if work.get("revisit") else "")
             + (f'<p><b>Waiting on your decision:</b> {decision_links}</p>' if related else "")
-            + f'</div><ol class="steps" aria-label="Progress">{"".join(plain_steps)}</ol></section>'
+            + f'</div><h3>Business progress <small>{escape(stage)}{" · " + escape(target) if target else ""}</small></h3>'
+            f'<ol class="steps" aria-label="Business progress">{"".join(plain_steps)}</ol></section>'
+            f'<section class="technical"><h3>Agent (orchestration)</h3><dl class="tech-grid">{orchestration}</dl></section>'
             f'<section class="technical"><h3>Technical details</h3><dl class="tech-grid">{technical}</dl>'
-            f'<h4>Milestones and evidence</h4>{"".join(technical_steps)}</section>'
+            f'<h4>Stages and evidence</h4>{"".join(technical_steps) or "<p class=muted>No stages requested.</p>"}</section>'
             f'<section class="agent-tools"><div class="detail-heading"><h3>Ask about this item</h3>'
             f'<button class="quiet" data-copy-id="{key}">Copy ID</button></div>'
             f'<div class="question-options"><button data-question="{escape(question(task, "status"), quote=True)}">Prepare status question</button>'
@@ -411,19 +488,16 @@ def render(data, hosted=False):
         "METER": meter or '<span class="segment segment-empty" style="flex-grow:1"></span>',
         "METER_LABEL": escape(", ".join(f"{count} {label.lower()}" for _, label, count in segments if count) or "No items"),
         "METER_LEGEND": meter_legend,
-        "ACTIVE_COUNT": str(sum(state == "active" for state in owners.values())),
-        "WAITING_COUNT": str(sum(state == "waiting" for state in owners.values())),
-        "CLOSED_COUNT": str(sum(state == "closed" for state in owners.values())),
-        "COMPLETE_STAT": (f'<div class="stat"><b>{sum(state == "complete" for state in owners.values())}</b><span>complete, not closed</span></div>'
-                          if "complete" in owners.values() else ""),
+        "AGENT_COUNTS": "".join(f'<span class="agent-status agent-{state}"><b>{count}</b> {label}</span>'
+                                 for state, label in OWNER_STATES.items()
+                                 if (count := sum(value == state for value in owners.values())))
+                        or '<span class="muted">No agents assigned yet.</span>',
         "WORK_COUNTS": "".join(f'<span class="work-status work-{state}"><b>{count}</b> {WORK_STATES[state][0]}</span>'
                                 for state, count in counts.items() if count),
-        "ROWS": "".join(f'<tbody class="group-{group}"><tr class="group-heading"><th scope="rowgroup" colspan="7">{label} ({len(rows[group])})</th></tr>'
+        "ROWS": "".join(f'<tbody class="group-{group}"><tr class="group-heading"><th scope="rowgroup" colspan="5">{label} ({len(rows[group])})</th></tr>'
                         + "".join(rows[group]) + '</tbody>' for group, label in GROUPS.items() if rows[group])
-                or '<tbody><tr><td colspan="7">No items are assigned yet.</td></tr></tbody>',
-        "MILESTONE_HEADERS": "".join(f'<th scope="col" title="{help_text}">{plain_label}</th>'
-                                     for plain_label, _, help_text in MILESTONES.values()),
-        "MILESTONE_KEY": "".join(f'<li><b>{plain_label}</b> {help_text}</li>' for plain_label, _, help_text in MILESTONES.values()),
+                or '<tbody><tr><td colspan="5">No items are assigned yet.</td></tr></tbody>',
+        "STAGE_KEY": "".join(f'<li><b>{plain_label}</b> {help_text}</li>' for plain_label, _, help_text in STAGES.values()),
         "DECISION_COUNT": str(len(decisions)),
         "DETAILS": "".join(details) or '<p>Select an item after one is assigned.</p>',
         "DECISIONS": "".join(decision_html) or '<p class="muted">Nothing needs your decision right now.</p>',

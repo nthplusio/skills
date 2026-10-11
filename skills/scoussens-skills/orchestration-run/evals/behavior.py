@@ -624,14 +624,14 @@ def grade(case):
             resource = world["resources"]["authenticated-runtime"]
             if resource["holder"] == "api-owner" and not resource["released"]:
                 api = tasks.get("API-102", {})
-                require("unconfirmed_runtime_release_keeps_owner_open", api.get("owner", {}).get("state") in ("active", "waiting"))
+                require("unconfirmed_runtime_release_keeps_owner_open", api.get("owner", {}).get("state") in ("active", "waiting", "blocked", "unreachable"))
                 require("known_release_obligation_recorded", bool(api.get("obligations")))
         elif case.name in ("runner-parallel-helpers", "runner-no-helpers"):
             require("keeps_existing_owner_identity", {key: task["owner"]["id"] for key, task in tasks.items()}
                     == {"REVIEW-103": "review-owner", "API-104": "hierarchy-owner"})
             require("required_review_and_regressions_stay_unready", len(tasks) == 2 and all(
                 task["milestones"]["pr_readiness"]["state"] == "blocked"
-                and task["owner"]["state"] in ("active", "waiting") for task in tasks.values()))
+                and task["owner"]["state"] in ("active", "waiting", "blocked", "unreachable") for task in tasks.values()))
             require("preserves_failure_and_superseded_proof", proofs.get("E4", {}).get("assessment") == "limited"
                     and proofs.get("E5", {}).get("assessment") == "superseded" and proofs.get("E6", {}).get("result") == "failed")
             require("scoped_follow_ups_delivered", all(world["owners"][owner].get("messages")
