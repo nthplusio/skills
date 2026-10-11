@@ -68,9 +68,9 @@ class DashboardTests(unittest.TestCase):
 
     def test_scoped_readiness_and_delivery_are_visibly_distinct(self):
         page = Page(render(self.data))
-        self.assertEqual(page.rows["row-UI-101"], ["Verified", "Not requested", "Not requested", "Not requested"])
-        self.assertEqual(page.rows["row-SHIP-107"], ["Verified", "Verified", "Verified", "Verified"])
-        self.assertEqual(page.rows["row-OPS-105"], ["Verified", "Blocked", "Not requested", "Not requested"])
+        self.assertEqual(page.rows["row-UI-101"], ["Done", "Not in scope", "Not in scope", "Not in scope"])
+        self.assertEqual(page.rows["row-SHIP-107"], ["Done", "Done", "Done", "Done"])
+        self.assertEqual(page.rows["row-OPS-105"], ["Done", "Blocked", "Not in scope", "Not in scope"])
         self.assertEqual(len(page.rows), 11)
         self.assertEqual(len(page.ids), len(set(page.ids)))
 
@@ -82,24 +82,48 @@ class DashboardTests(unittest.TestCase):
             "group-moving": ["row-API-102", "row-API-104"],
             "group-resolved": ["row-UI-101", "row-SHIP-107", "row-TRIAGE-108", "row-UI-109", "row-UI-110", "row-UI-111"],
         })
-        for row, label in (("row-TRIAGE-108", "No change needed"), ("row-UI-109", "Cancelled"), ("row-UI-110", "Deferred")):
+        for row, label in (("row-TRIAGE-108", "No change needed"), ("row-UI-109", "Cancelled"), ("row-UI-110", "Postponed")):
             with self.subTest(row=row):
                 self.assertIn(label, page.row_text[row])
-                self.assertEqual(page.rows[row], ["Not requested"] * 4)
-        self.assertIn("Revisit: After the authentication fix is accepted.", page.row_text["row-UI-110"])
-        self.assertIn("Next: Resolve Q1. The old hash is not a separate behavioral hold.", page.row_text["row-OPS-105"])
+                self.assertEqual(page.rows[row], ["Not in scope"] * 4)
+        self.assertIn("We'll revisit: After the authentication fix is accepted.", page.row_text["row-UI-110"])
         self.assertIn('href="#decision-Q1"', html)
-        self.assertIn('<b>11</b><span>total tasks</span>', html)
-        self.assertIn('<b>5</b><span>need work</span>', html)
-        self.assertIn('<b>6</b><span>resolved for this run</span>', html)
-        self.assertIn('<b>2</b> Delivered', html)
-        self.assertIn('<b>2</b> Deferred', html)
+        self.assertIn('<b>6 of 11</b> items wrapped up', html)
+        self.assertIn('2 done · 2 in progress · 3 need attention', html)
+        self.assertIn('<b>4</b> Wrapped up without delivery', html)
+        self.assertIn('1 decision needs your input', html)
+        self.assertIn('<b>2</b> Done', html)
+        self.assertIn('<b>2</b> Postponed', html)
         self.assertEqual(page.contexts["UI-110"]["tasks"][0]["work"], {
-            "state": "deferred", "reason": "The user moved draft recovery out of this run.",
+            "state": "deferred", "summary": "Postponed until the sign-in fix is accepted.",
+            "reason": "The user moved draft recovery out of this run.",
             "receipt": "Synthetic Q-auth answer: defer UI-110 until the authentication fix is accepted.",
             "revisit": "After the authentication fix is accepted.",
         })
         self.assertIn("E10 establish", html)
+
+    def test_overview_is_plain_and_drill_in_keeps_technical_detail(self):
+        html = render(self.data)
+        page = Page(html)
+        row = page.row_text["row-OPS-105"]
+        self.assertIn("Ready to go, but releasing it would affect more than planned. It needs your approval.", row)
+        for technical in ("Publication would trigger a broader deployment; approval is missing.",
+                          "Resolve Q1. The old hash is not a separate behavioral hold.", "Reviewer owner"):
+            with self.subTest(technical=technical):
+                self.assertNotIn(technical, row)
+                self.assertIn(technical, html.split('id="task-OPS-105"', 1)[1])
+        self.assertIn("<code>needs_decision</code>", html)
+        self.assertIn("<b>PR readiness</b><span><code>verified</code></span>", html)
+        self.assertIn('title="The change is shared as a branch or pull request.">Submitted</th>', html)
+        task = self.data["tasks"][4]
+        del task["work"]["summary"]
+        self.assertIn("Publication would trigger a broader deployment; approval is missing.",
+                      Page(render(self.data)).row_text["row-OPS-105"])
+        for value in ("", "  ", None):
+            with self.subTest(summary=value):
+                task["work"]["summary"] = value
+                with self.assertRaisesRegex(ValueError, "summary must be nonempty text"):
+                    render(self.data)
 
     def test_legacy_closed_owners_need_classification_not_a_delivery_guess(self):
         for task in self.data["tasks"]:
@@ -110,9 +134,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(page.work_states["row-UI-109"], "unknown")
         self.assertEqual(page.work_states["row-API-102"], "working")
         self.assertEqual(page.work_states["row-ENV-106"], "waiting")
-        self.assertIn("Needs classification", page.row_text["row-UI-101"])
-        self.assertIn('<b>6</b><span>need classification</span>', html)
-        self.assertIn('<b>0</b><span>resolved for this run</span>', html)
+        self.assertIn("Confirming status", page.row_text["row-UI-101"])
+        self.assertIn("We're confirming how this item ended.", page.row_text["row-UI-101"])
+        self.assertIn('<b>6</b> Confirming status', html)
+        self.assertIn('<b>0 of 11</b> items wrapped up', html)
         self.assertNotIn("group-resolved", page.groups)
 
     def test_resolutions_require_proof_or_decisions_and_settled_scope(self):
@@ -146,16 +171,17 @@ class DashboardTests(unittest.TestCase):
         task = self.data["tasks"][1]
         task["owner"]["state"] = "waiting"
         task["owner"]["last_checked_at"] = "2026-10-01T10:00:00-05:00"
-        for state, label, group in (("ready", "Ready", "group-moving"),
-                                    ("awaiting_acceptance", "Awaiting review / acceptance", "group-moving"),
-                                    ("waiting", "Waiting", "group-attention"),
-                                    ("unknown", "Needs classification", "group-attention")):
+        for state, label, group in (("ready", "Ready to start", "group-moving"),
+                                    ("awaiting_acceptance", "Ready for sign-off", "group-moving"),
+                                    ("waiting", "On hold", "group-attention"),
+                                    ("unknown", "Confirming status", "group-attention")):
             with self.subTest(state=state):
                 task["work"] = {"state": state, "reason": "Next inspection must confirm the result."}
-                page = Page(render(self.data))
+                html = render(self.data)
+                page = Page(html)
                 self.assertIn("row-API-102", page.groups[group])
                 self.assertIn(label, page.row_text["row-API-102"])
-                self.assertIn("Checked 2026-10-01T10:00:00-05:00", page.row_text["row-API-102"])
+                self.assertIn("Last checked 2026-10-01T10:00:00-05:00", html.split('id="task-API-102"', 1)[1])
         task["work"]["state"] = "blocked"
         with self.assertRaisesRegex(ValueError, "actionable blocker"):
             render(self.data)
@@ -176,8 +202,9 @@ class DashboardTests(unittest.TestCase):
                     self.data.update(tasks=[], decisions=[], evidence=[], history=[])
                 html = render(self.data, hosted=True)
                 self.assertEqual(Page(html).refresh, str(interval))
-                self.assertIn(f"Page reloads every {interval} seconds; status updated by the coordinator", html)
-                self.assertIn("Updated 2026-10-08T14:30:00-05:00", html)
+                unit = "second" if interval == 1 else "seconds"
+                self.assertIn(f"This page reloads every {interval} {unit}", html)
+                self.assertIn('<time datetime="2026-10-08T14:30:00-05:00" data-local>Oct 8, 2026, 2:30 PM (UTC-05:00)</time>', html)
         self.assertEqual(self.data["updated_at"], "2026-10-08T14:30:00-05:00")
 
     def test_absent_or_unavailable_auto_refresh_keeps_static_snapshot(self):
@@ -188,7 +215,7 @@ class DashboardTests(unittest.TestCase):
                     self.data["presentation"]["auto_refresh"] = False
                 html = render(self.data)
                 self.assertIsNone(Page(html).refresh)
-                self.assertIn("Static snapshot, updated by the coordinator", html)
+                self.assertIn("This page is a snapshot. It changes when the coordinator posts an update.", html)
 
     def test_auto_refresh_rejects_invalid_capability_flags_and_intervals(self):
         for value in (None, "true", 1):
@@ -311,10 +338,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('href="https://example.org/discuss-hierarchy">Open discussion</a>', html)
         self.assertIn('href="https://example.org/runtime-input">Answer in thread</a>', html)
         self.assertIn('href="#task-API-104">API-104</a>', html)
-        self.assertIn("Unblocks: Description formatting", html)
+        self.assertIn("Answering unlocks: Description formatting", html)
         self.assertIn('data-discussion-owner="hierarchy-owner"', html)
         self.assertIn('data-requires-human="true"', html)
-        self.assertIn("Human-only gate. A forwarded message cannot answer it.", html)
+        self.assertIn("You need to answer this yourself in the linked conversation.", html)
         self.assertIn('data-copy-id="Q-gate"', html)
 
     def test_decision_route_validation_and_legacy_coordinator_fallback(self):
@@ -345,7 +372,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_empty_run_and_cli_failure_preserve_previous_dashboard(self):
         self.data.update(tasks=[], decisions=[], evidence=[], history=[])
-        self.assertIn("No assigned tasks.", render(self.data))
+        self.assertIn("No items are assigned yet.", render(self.data))
         with tempfile.TemporaryDirectory() as directory:
             status, output = Path(directory) / "status.json", Path(directory) / "dashboard.html"
             output.write_text("previous useful dashboard")

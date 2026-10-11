@@ -1,7 +1,12 @@
 # Dashboard data
 
 `status.json` is the coordinator's local display record, not a receipt format
-workers must implement. The renderer turns it into one self-contained HTML file
+workers must implement. The dashboard's main readers are non-technical testers
+and executives tracking progress. Write the overview fields (`title`, `goal`,
+`work.summary`, and each decision's `text`, `recommendation` and `unblocks`) in
+plain language, without ticket jargon, agent terms or proof IDs. Technical fields
+(`reason`, `blocker`, `next_action`, milestone notes, owner and proof) appear
+only when a reader opens an item or decision. The renderer turns it into one self-contained HTML file
 without fetching data or calling harness tools. See the synthetic
 [`evals/dashboard-preview.json`](../evals/dashboard-preview.json) for the shape.
 
@@ -126,6 +131,7 @@ Record `work` separately from `owner.state` in every new or resumed row:
 {
   "work": {
     "state": "deferred",
+    "summary": "Postponed until the sign-in fix is accepted.",
     "reason": "The user moved this change out of the current run.",
     "receipt": "Q4: user deferred this ticket in the owner conversation; retain the actual message link or receipt ID.",
     "revisit": "Reassess after the authentication fix is accepted.",
@@ -135,13 +141,19 @@ Record `work` separately from `owner.state` in every new or resumed row:
 ```
 
 `state` selects one group in the ledger. `reason` is nonempty text describing
-the observed condition or result, not a repeat of the status label.
+the observed condition or result, not a repeat of the status label. `summary`
+is an optional, nonempty sentence that tells a non-technical reader what is
+happening and, when relevant, what they need to do. The overview shows `summary`
+and falls back to `reason`; the item dialog shows both. Add a summary to every
+new or resumed row, and update it whenever the state or reason changes.
 
-| Group | States | Meaning |
+The overview uses plain labels. The item dialog also shows the raw state key.
+
+| Group | States (overview label) | Meaning |
 | --- | --- | --- |
-| Needs attention | `needs_decision`, `blocked`, `waiting`, `unknown` | A pending decision, actionable blocker, another wait, or insufficient information to classify. |
-| Moving or ready | `working`, `ready`, `awaiting_acceptance` | Work underway, ready to assign/start, or awaiting the requested review or business acceptance. |
-| Resolved for this run | `delivered`, `no_change_needed`, `cancelled`, `deferred` | The assigned finish line is proven, investigation establishes no change is needed, or an authorized decision removes the work from this run. |
+| Needs attention | `needs_decision` (Needs a decision), `blocked` (Blocked), `waiting` (On hold), `unknown` (Confirming status) | A pending decision, actionable blocker, another wait, or insufficient information to classify. |
+| In progress | `working` (In progress), `ready` (Ready to start), `awaiting_acceptance` (Ready for sign-off) | Work underway, ready to assign/start, or awaiting the requested review or business acceptance. |
+| Wrapped up | `delivered` (Done), `no_change_needed` (No change needed), `cancelled` (Cancelled), `deferred` (Postponed) | The assigned finish line is proven, investigation establishes no change is needed, or an authorized decision removes the work from this run. |
 
 Use `delivered` only for the assigned `done_when` scope. A review-ready finish
 line can be delivered without publication or deployment; the four milestones
@@ -165,30 +177,33 @@ inspection action. An old check time or unchanged activity alone establishes
 neither a blocker nor a stall. Keep real `owner.last_checked_at` timestamps;
 missing check times display as unrecorded rather than fresh.
 
-The summary partitions total tasks into work remaining, resolved for this run,
-and any rows needing classification. It separately counts each work state.
-Cancellation and deferral never count as delivered. Owner counts are secondary.
-The ledger shows reasons, next actions, revisit triggers and related decision
-IDs without requiring a dialog. Task dialogs and copied context retain the work
-outcome, resolution receipt and outcome proof.
+The progress summary shows how many items are wrapped up, a meter split into
+Done, Wrapped up without delivery, In progress and Needs attention, a link to
+pending decisions, and a count for each work state. Cancellation and deferral
+never count as Done. The ledger shows each item's plain summary, revisit trigger
+and related decision IDs without requiring a dialog. Owner lifecycle, check
+times, reasons, blockers, next actions, milestone notes and proof appear in the
+item dialog and under Technical reference. Task dialogs and copied context
+retain the work outcome, resolution receipt and outcome proof.
 
 Records without `work` still render: active/waiting owners receive an explicitly
-qualified activity-based status. Complete/closed owners show **Needs
-classification**, not Delivered. On resume, recover actual outcomes from retained
+qualified activity-based status. Complete/closed owners show **Confirming
+status**, not Done. On resume, recover actual outcomes from retained
 results and decisions before replacing this fallback. The renderer validates
 internal consistency, not whether a receipt really authorized the resolution.
 
 Every task has all four `milestones`:
 
-| Key | Meaning |
-| --- | --- |
-| `pr_readiness` | Implementation and required proof/review material are prepared. Not an actual review. |
-| `code_publication` | The specified branch/PR has actually been published. Not a merge or deployment. |
-| `deployment` | The intended revision is running in the specified environment. |
-| `business_acceptance` | The requested business behavior is accepted against its stated criteria. |
+| Key | Overview label | Meaning |
+| --- | --- | --- |
+| `pr_readiness` | Built & checked | Implementation and required proof/review material are prepared. Not an actual review. |
+| `code_publication` | Submitted | The specified branch/PR has actually been published. Not a merge or deployment. |
+| `deployment` | Deployed | The intended revision is running in the specified environment. |
+| `business_acceptance` | Signed off | The requested business behavior is accepted against its stated criteria. |
 
 Each milestone has a `state`, `note`, and `evidence` list of proof IDs.
-States are `verified`, `pending`, `blocked`, and `not_requested`. A `verified`
+States are `verified` (Done), `pending` (In progress), `blocked` (Blocked), and
+`not_requested` (Not in scope). A `verified`
 milestone must reference proof assessed as `accepted`. `note` scopes the claim,
 including the exact code-publication artifact or deployment target where relevant.
 For an unrequested milestone, use an empty evidence list and explain nothing

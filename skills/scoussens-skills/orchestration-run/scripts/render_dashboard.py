@@ -11,32 +11,50 @@ import re
 from urllib.parse import urlsplit
 
 
+# Plain label for the overview, technical label for drill-in, and a one-line explanation.
 MILESTONES = {
-    "pr_readiness": "PR readiness",
-    "code_publication": "Code publication",
-    "deployment": "Deployment",
-    "business_acceptance": "Business acceptance",
+    "pr_readiness": ("Built & checked", "PR readiness", "The change is built and its checks are ready for code review."),
+    "code_publication": ("Submitted", "Code publication", "The change is shared as a branch or pull request."),
+    "deployment": ("Deployed", "Deployment", "The change is running in the intended environment."),
+    "business_acceptance": ("Signed off", "Business acceptance", "The business has accepted the result."),
 }
 STATES = {
-    "verified": ("Verified", "✓"),
-    "pending": ("Pending", "…"),
+    "verified": ("Done", "✓"),
+    "pending": ("In progress", "…"),
     "blocked": ("Blocked", "!"),
-    "not_requested": ("Not requested", "—"),
+    "not_requested": ("Not in scope", "—"),
 }
 WORK_STATES = {
-    "needs_decision": ("Needs decision", "attention"),
+    "needs_decision": ("Needs a decision", "attention"),
     "blocked": ("Blocked", "attention"),
-    "waiting": ("Waiting", "attention"),
-    "unknown": ("Needs classification", "attention"),
-    "working": ("Working", "moving"),
-    "ready": ("Ready", "moving"),
-    "awaiting_acceptance": ("Awaiting review / acceptance", "moving"),
-    "delivered": ("Delivered", "resolved"),
+    "waiting": ("On hold", "attention"),
+    "unknown": ("Confirming status", "attention"),
+    "working": ("In progress", "moving"),
+    "ready": ("Ready to start", "moving"),
+    "awaiting_acceptance": ("Ready for sign-off", "moving"),
+    "delivered": ("Done", "resolved"),
     "no_change_needed": ("No change needed", "resolved"),
     "cancelled": ("Cancelled", "resolved"),
-    "deferred": ("Deferred", "resolved"),
+    "deferred": ("Postponed", "resolved"),
 }
-GROUPS = {"attention": "Needs attention", "moving": "Moving or ready", "resolved": "Resolved for this run"}
+GROUPS = {"attention": "Needs attention", "moving": "In progress", "resolved": "Wrapped up"}
+
+
+def friendly_time(moment):
+    offset = moment.strftime("%z")
+    zone = "UTC" if offset == "+0000" else f"UTC{offset[:3]}:{offset[3:]}"
+    hour = moment.hour % 12 or 12
+    return f"{moment:%b} {moment.day}, {moment.year}, {hour}:{moment:%M} {'AM' if moment.hour < 12 else 'PM'} ({zone})"
+
+
+def friendly_interval(seconds):
+    if seconds % 3600 == 0:
+        count, unit = seconds // 3600, "hour"
+    elif seconds % 60 == 0:
+        count, unit = seconds // 60, "minute"
+    else:
+        count, unit = seconds, "second"
+    return f"{count} {unit}{'' if count == 1 else 's'}"
 
 
 def work_status(task):
@@ -44,8 +62,10 @@ def work_status(task):
         return task["work"]
     owner_state = task["owner"]["state"]
     state = {"active": "working", "waiting": "waiting"}.get(owner_state, "unknown")
-    return {"state": state, "reason": "Outcome not recorded; inspect the retained result before classifying."
-            if state == "unknown" else "Work status inferred from owner activity; confirm at the next scan."}
+    if state == "unknown":
+        return {"state": state, "summary": "We're confirming how this item ended.",
+                "reason": "Outcome not recorded; inspect the retained result before classifying."}
+    return {"state": state, "reason": "Work status inferred from owner activity; confirm at the next scan."}
 
 
 def indexed(records):
@@ -95,13 +115,13 @@ def render(data, hosted=False):
     if type(auto_refresh) is not bool:
         raise ValueError("presentation.auto_refresh must be boolean")
     refresh_meta = ""
-    refresh_status = "Static snapshot, updated by the coordinator"
+    refresh_status = "This page is a snapshot. It changes when the coordinator posts an update."
     if auto_refresh:
         interval = data.get("monitoring", {}).get("interval_seconds")
         if type(interval) is not int or interval < 1:
             raise ValueError("automatic refresh needs a positive integer monitoring.interval_seconds")
         refresh_meta = f'<meta http-equiv="refresh" content="{interval}">'
-        refresh_status = f"Page reloads every {interval} seconds; status updated by the coordinator"
+        refresh_status = f"This page reloads every {friendly_interval(interval)} to show the coordinator's latest update."
     evidence = indexed(data["evidence"])
     tasks = indexed(data["tasks"])
     decisions = indexed(data["decisions"])
@@ -146,6 +166,8 @@ def render(data, hosted=False):
             raise ValueError(f"{task['id']}: invalid work state")
         if not isinstance(work.get("reason"), str) or not work["reason"].strip():
             raise ValueError(f"{task['id']}: work needs a reason")
+        if "summary" in work and (not isinstance(work["summary"], str) or not work["summary"].strip()):
+            raise ValueError(f"{task['id']}: work summary must be nonempty text when present")
         proof_ids = work.get("evidence", [])
         if not isinstance(proof_ids, list) or any(key not in evidence for key in proof_ids):
             raise ValueError(f"{task['id']}: work evidence must name retained proof")
@@ -197,27 +219,34 @@ def render(data, hosted=False):
             packet["answer_route"] = {"owner_id": owner["id"], "label": owner["label"], "href": owner.get("href", "")}
         return escape(json.dumps(packet, indent=2, ensure_ascii=False), quote=True)
 
+    def plain(work):
+        return work.get("summary") or work["reason"]
+
+    def task_proof_ids(task):
+        return list(dict.fromkeys([key for phase in task["milestones"].values() for key in phase["evidence"]]
+                                  + work_status(task).get("evidence", [])))
+
     def issue_data(task):
-        states = "".join(f'<dt>{label}</dt><dd>{STATES[task["milestones"][key]["state"]][0]}</dd>'
-                         for key, label in MILESTONES.items())
         work = work_status(task)
-        ids = dict.fromkeys([key for phase in task["milestones"].values() for key in phase["evidence"]]
-                            + work.get("evidence", []))
+        states = "".join(f'<dt>{plain_label}</dt><dd>{STATES[task["milestones"][key]["state"]][0]}</dd>'
+                         for key, (plain_label, _, _) in MILESTONES.items())
         return (f'<section class="issue-data"><h3>{task["id"]} · {escape(task["title"])}</h3><dl>'
-                f'<dt>Work outcome</dt><dd>{WORK_STATES[work["state"]][0]} · {escape(work["reason"])}</dd>'
-                f'<dt>Work owner</dt><dd>{escape(task["owner"]["label"])} · {task["owner"]["state"]}</dd>'
-                + states + f'<dt>Blocker</dt><dd>{escape(task["blocker"] or "None")}</dd>'
+                f'<dt>Status</dt><dd>{WORK_STATES[work["state"]][0]} · {escape(plain(work))}</dd>'
+                + states + f'<dt>Holding it up</dt><dd>{escape(task["blocker"] or "Nothing")}</dd>'
                 f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
-                f'<dt>Retained proof</dt><dd>{proof_links(ids) or "None retained"}</dd></dl></section>')
+                f'<dt>Work owner</dt><dd>{escape(task["owner"]["label"])} · {task["owner"]["state"]}</dd>'
+                f'<dt>Evidence</dt><dd>{proof_links(task_proof_ids(task)) or "None retained"}</dd></dl></section>')
 
     def question(task, subject):
         if subject == "proof":
-            ids = dict.fromkeys([key for phase in task["milestones"].values() for key in phase["evidence"]]
-                                + work_status(task).get("evidence", []))
-            text = f"What does retained proof {', '.join(ids) or 'for this task'} establish, and what remains unverified?"
+            text = f"What does retained proof {', '.join(task_proof_ids(task)) or 'for this task'} establish, and what remains unverified?"
         else:
             text = "What is the blocker and next action, and does anything need my decision?"
         return f"In orchestration run {data['run_id']}, task {task['id']}: {text}"
+
+    def signal(state):
+        label, symbol = STATES[state]
+        return f'<span class="signal {state}" role="img" aria-label="{label}" title="{label}">{symbol}</span>'
 
     first = next((task["id"] for task in tasks.values() if task["blocker"]), next(iter(tasks), ""))
     rows, details = {group: [] for group in GROUPS}, []
@@ -226,65 +255,73 @@ def render(data, hosted=False):
         key = task["id"]
         owner = task["owner"]
         work = work_status(task)
-        state, group = WORK_STATES[work["state"]]
+        label, group = WORK_STATES[work["state"]]
         counts[work["state"]] += 1
-        work_badge = f'<span class="work-status work-{work["state"]}">{state}</span>'
-        outcome = escape(work["reason"])
-        if work.get("revisit"):
-            outcome += f'<small class="revisit">Revisit: {escape(work["revisit"])}</small>'
-        if group != "resolved":
-            outcome += f'<small class="row-action">Next: {escape(task["next_action"])}</small>'
-        if task["blocker"] and task["blocker"] != work["reason"]:
-            outcome += f'<small class="row-blocker">Hold: {escape(task["blocker"])}</small>'
+        work_badge = f'<span class="work-status work-{work["state"]}">{label}</span>'
         related = [item for item in decisions.values() if key in item.get("task_ids", [])]
+        decision_links = " · ".join(anchor(f'#decision-{item["id"]}', item["id"]) for item in related)
+        story = escape(plain(work))
+        if work.get("revisit"):
+            story += f'<small class="revisit">We\'ll revisit: {escape(work["revisit"])}</small>'
         if related:
-            outcome += '<small class="row-decisions">' + " · ".join(anchor(f'#decision-{item["id"]}', item["id"]) for item in related) + '</small>'
-        cells, phases = [], []
-        for phase_key, label in MILESTONES.items():
+            story += f'<small class="row-decisions">Waiting on your decision: {decision_links}</small>'
+        cells, plain_steps, technical_steps = [], [], []
+        for phase_key, (plain_label, technical_label, help_text) in MILESTONES.items():
             phase = task["milestones"][phase_key]
-            state, symbol = STATES[phase["state"]]
-            badge = f'<span class="signal {phase["state"]}" role="img" aria-label="{state}" title="{state}">{symbol}</span>'
-            cells.append(f'<td data-label="{label}">{badge}</td>')
-            phases.append(f'<div class="phase">{badge}<div><b>{label}</b><span>{state}</span><small>{escape(phase["note"])} {proof_links(phase["evidence"])}</small></div></div>')
-        lifecycle = "Complete, closure pending / unavailable" if owner["state"] == "complete" else owner["state"].capitalize()
-        checked = owner.get("last_checked_at")
+            badge = signal(phase["state"])
+            cells.append(f'<td data-label="{plain_label}">{badge}</td>')
+            plain_steps.append(f'<li>{badge}<div><b>{plain_label}</b><span>{STATES[phase["state"]][0]}</span>'
+                               f'<small>{help_text}</small></div></li>')
+            technical_steps.append(
+                f'<div class="phase">{badge}<div><b>{technical_label}</b><span><code>{phase["state"]}</code></span>'
+                f'<small>{escape(phase["note"]) or "No note."} {proof_links(phase["evidence"])}</small></div></div>')
         rows[group].append(
-            f'<tr id="row-{key}" data-work-state="{work["state"]}"><td class="task-cell" data-label="Task"><button class="task-picker" data-task="{key}" aria-pressed="false">'
-            f'<b>{key}</b><span>{escape(task["title"])}</span></button></td>'
-            f'<td data-label="Work status / outcome">{work_badge}</td>'
-            f'<td data-label="Reason / next action" class="reason-cell">{outcome}</td>'
-            f'<td data-label="Owner lifecycle" class="owner-cell">{anchor(owner.get("href"), owner["label"])}<small class="lifecycle">{lifecycle}</small>'
-            f'<small class="checked">{escape("Checked " + checked if checked else "Check time not recorded")}</small></td>'
+            f'<tr id="row-{key}" data-work-state="{work["state"]}"><td class="task-cell" data-label="Item">'
+            f'<button class="task-picker" data-task="{key}" aria-pressed="false" aria-haspopup="dialog">'
+            f'<span>{escape(task["title"])}</span><small>{key}</small></button></td>'
+            f'<td data-label="Status">{work_badge}</td>'
+            f'<td data-label="What\'s happening" class="reason-cell">{story}</td>'
             + "".join(cells) + '</tr>'
         )
+        lifecycle = "Complete, closure pending / unavailable" if owner["state"] == "complete" else owner["state"].capitalize()
+        checked = owner.get("last_checked_at")
         resources = ", ".join(task["resources"]) or "None shared"
         dependencies = ", ".join(task["blocked_by"]) or "None"
         obligations = "; ".join(task["obligations"]) or "None outstanding"
+        owner_link = anchor(owner.get("href"), owner["label"])
+        technical = (
+            f'<dt>Work state</dt><dd><code>{work["state"]}</code> · {escape(work["reason"])}</dd>'
+            f'<dt>Blocker</dt><dd>{escape(task["blocker"] or "None")}</dd>'
+            f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
+            f'<dt>Done when</dt><dd>{escape(task["done_when"])}</dd>'
+            + (f'<dt>Decision receipt</dt><dd>{escape(work["receipt"])}</dd>' if work.get("receipt") else "")
+            + (f'<dt>Outcome proof</dt><dd>{proof_links(work["evidence"])}</dd>' if work.get("evidence") else "")
+            + f'<dt>Work owner</dt><dd>{owner_link} <code>{escape(owner["id"])}</code> · {lifecycle}'
+            f'<small class="checked">{escape("Last checked " + checked if checked else "Check time not recorded")}</small></dd>'
+            f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd>'
+            f'<dt>Resources</dt><dd>{escape(resources)}</dd><dt>Dependencies</dt><dd>{escape(dependencies)}</dd>'
+            f'<dt>Obligations</dt><dd>{escape(obligations)}</dd>'
+            f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd>'
+        )
         details.append(
-            f'<details class="task-detail" id="task-{key}"{" open" if key == first else ""}><summary>{key} · {escape(task["title"])}</summary>'
-            f'<div class="detail-heading"><span>{escape(owner["label"])} · {owner["state"].capitalize()}</span>'
+            f'<details class="task-detail" id="task-{key}"{" open" if key == first else ""}><summary>{escape(task["title"])} <small>{key}</small></summary>'
+            f'<section class="plain-view"><div class="work-outcome">{work_badge}<p>{escape(plain(work))}</p>'
+            + (f'<p><b>We\'ll revisit:</b> {escape(work["revisit"])}</p>' if work.get("revisit") else "")
+            + (f'<p><b>Waiting on your decision:</b> {decision_links}</p>' if related else "")
+            + f'</div><ol class="steps" aria-label="Progress">{"".join(plain_steps)}</ol></section>'
+            f'<section class="technical"><h3>Technical details</h3><dl class="tech-grid">{technical}</dl>'
+            f'<h4>Milestones and evidence</h4>{"".join(technical_steps)}</section>'
+            f'<section class="agent-tools"><div class="detail-heading"><h3>Ask about this item</h3>'
             f'<button class="quiet" data-copy-id="{key}">Copy ID</button></div>'
             f'<div class="question-options"><button data-question="{escape(question(task, "status"), quote=True)}">Prepare status question</button>'
-            f'<button data-question="{escape(question(task, "proof"), quote=True)}">Prepare proof question</button></div>'
-            f'<div class="work-outcome">{work_badge}<p>{escape(work["reason"])}</p>'
-            + (f'<p><b>Revisit:</b> {escape(work["revisit"])}</p>' if work.get("revisit") else "")
-            + (f'<p><b>Decision receipt:</b> {escape(work["receipt"])}</p>' if work.get("receipt") else "")
-            + (f'<p><b>Outcome proof:</b> {proof_links(work["evidence"])}</p>' if work.get("evidence") else "")
-            + '</div>'
-            f'<div class="blocker"><b>Blocker</b><p>{escape(task["blocker"] or "None")}</p></div>'
-            f'<div class="next"><b>Next action</b><p>{escape(task["next_action"])}</p></div>'
-            + "".join(phases)
-            + f'<details class="assignment"><summary>Assignment and resources</summary><dl><dt>Done when</dt><dd>{escape(task["done_when"])}</dd>'
-            f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd><dt>Resources</dt><dd>{escape(resources)}</dd>'
-            f'<dt>Dependencies</dt><dd>{escape(dependencies)}</dd><dt>Obligations</dt><dd>{escape(obligations)}</dd>'
-            f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd></dl></details>'
+            f'<button data-question="{escape(question(task, "proof"), quote=True)}">Prepare evidence question</button></div>'
             f'<div class="share-actions"><button data-discussion-owner="{escape(owner["id"], quote=True)}" '
             f'data-discussion-label="{escape(owner["label"], quote=True)}" data-discussion-href="{link(owner.get("href", ""), hosted)}" '
             f'data-context="{context_packet([key])}">Copy context for agent</button>'
             f'{anchor(owner.get("href"), "Open work owner conversation") if owner.get("href") else escape(owner["label"] + " (" + owner["id"] + ")")}'
-            '<small>Copy, then paste into this owner\'s existing conversation. Copy does not send.'
+            '<small>Copy, then paste into this owner\'s existing conversation. Copy does not send anything.'
             + (' No direct link is configured.' if not owner.get("href") else "")
-            + '</small><p class="share-feedback" role="status" aria-live="polite"></p></div>'
+            + '</small><p class="share-feedback" role="status" aria-live="polite"></p></div></section>'
             '</details>'
         )
     proofs = []
@@ -324,50 +361,73 @@ def render(data, hosted=False):
                       f'data-discussion-href="{link(href, hosted)}" data-requires-human="{str(human).lower()}"')
         prompt = f"In orchestration run {data['run_id']}, decision {item['id']}: {item['text']} Explain the recommendation and the consequence of each option."
         affected_links = " · ".join(anchor(f"#task-{key}", key) for key in affected)
+        unblocks = escape(item.get("unblocks") or "Discuss the pending choice")
+        answer_with = escape(discussion.get("label", "Coordinator"))
         decision_html.append(
             f'<article class="decision" id="decision-{item["id"]}"><div class="decision-preview">'
             f'<button class="decision-picker" data-decision="{item["id"]}" aria-haspopup="dialog" aria-controls="decision-dialog">'
             f'<b>{item["id"]}</b><span>{escape(item["text"])}</span></button>'
-            f'<small>{affected_links}{" · " if affected else ""}Unblocks: {escape(item.get("unblocks") or "Discuss the pending choice")}'
-            f' · {escape(discussion.get("label", "Coordinator"))}{" · Human only" if human else ""}</small></div>'
+            f'<small>{"Affects " + affected_links + " · " if affected else ""}Answering unlocks: {unblocks}'
+            f' · Answer with: {answer_with}{" · You must answer this yourself" if human else ""}</small></div>'
             f'<button class="quiet" {attributes} data-decision="{item["id"]}" data-copy-id="{item["id"]}">Copy {item["id"]}</button>'
             f'<div class="decision-detail" data-decision="{item["id"]}" hidden><div class="context-columns"><section><p class="decision-question">{escape(item["text"])}</p>'
-            f'<dl><dt>Recommendation</dt><dd>{escape(item["recommendation"])}</dd>'
-            f'<dt>Affected tasks</dt><dd>{affected_links or "Run-level decision"}</dd>'
-            f'<dt>An answer unblocks</dt><dd>{escape(item.get("unblocks") or "Discuss the pending choice")}</dd>'
-            f'<dt>Answer destination</dt><dd>{escape(discussion.get("label", "Coordinator"))}</dd></dl>'
-            + ('<p class="human-warning">Human-only gate. A forwarded message cannot answer it. '
-               'You must answer the existing dialog yourself; copying cannot unlock it.</p>' if human else "")
-            + '</section><section>' + "".join(issue_data(tasks[key]) for key in affected) + '</section></div>'
+            f'<dl><dt>Our recommendation</dt><dd>{escape(item["recommendation"])}</dd>'
+            f'<dt>Affects</dt><dd>{affected_links or "The whole run"}</dd>'
+            f'<dt>Answering unlocks</dt><dd>{unblocks}</dd>'
+            f'<dt>Where to answer</dt><dd>{answer_with}</dd></dl>'
+            + ('<p class="human-warning">You need to answer this yourself in the linked conversation. '
+               'A forwarded or copied message cannot answer it.</p>' if human else "")
+            + '</section><section><h3 class="column-heading">Technical context</h3>' + "".join(issue_data(tasks[key]) for key in affected) + '</section></div>'
             + f'<div class="share-actions"><button {attributes} data-context="{context_packet(affected, item)}">Copy context for agent</button>{route}'
-            + ('<small>Copying prepares context only. Answer the existing human-only dialog yourself.</small>' if human else
+            + ('<small>Copying prepares context only. Answer the existing dialog yourself.</small>' if human else
                '<small>Copy, then open the conversation and paste. Neither action sends a message.</small>')
             + '<p class="share-feedback" role="status" aria-live="polite"></p></div>'
               f'<div class="decision-actions"><button class="quiet" {attributes} data-copy-id="{item["id"]}">Copy ID</button>'
               f'<button class="quiet" {attributes} data-question="{escape(prompt, quote=True)}">Prepare {item["id"]} question</button></div></div></article>'
         )
+    total = len(tasks)
+    done = counts["delivered"]
+    closed_other = len(rows["resolved"]) - done
+    segments = [("done", "Done", done), ("closed", "Wrapped up without delivery", closed_other),
+                ("moving", "In progress", len(rows["moving"])), ("attention", "Needs attention", len(rows["attention"]))]
+    meter = "".join(f'<span class="segment segment-{name}" style="flex-grow:{count}" title="{label}: {count}"></span>'
+                    for name, label, count in segments if count)
+    meter_legend = "".join(f'<li><i class="swatch segment-{name}" aria-hidden="true"></i><b>{count}</b> {label}</li>'
+                           for name, label, count in segments if count)
+    if total:
+        headline = (f'<b>{len(rows["resolved"])} of {total}</b> items wrapped up'
+                    f' <span class="headline-detail">· {done} done · {len(rows["moving"])} in progress · {len(rows["attention"])} need attention</span>')
+    else:
+        headline = "No items are assigned yet."
+    callout = (f'<a class="callout" href="#decisions">{len(decisions)} decision{"s" if len(decisions) != 1 else ""} '
+               f'need{"s" if len(decisions) == 1 else ""} your input →</a>' if decisions else "")
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
         "GOAL": escape(data["goal"]), "UPDATED": escape(data["updated_at"]),
+        "UPDATED_FRIENDLY": escape(friendly_time(updated)),
         "REFRESH_META": refresh_meta, "REFRESH_STATUS": refresh_status,
-        "NOTICE": escape(data.get("notice", "")), "TASK_COUNT": str(len(tasks)),
+        "NOTICE": escape(data.get("notice", "")), "TASK_COUNT": str(total),
+        "HEADLINE": headline, "CALLOUT": callout,
+        "METER": meter or '<span class="segment segment-empty" style="flex-grow:1"></span>',
+        "METER_LABEL": escape(", ".join(f"{count} {label.lower()}" for _, label, count in segments if count) or "No items"),
+        "METER_LEGEND": meter_legend,
         "ACTIVE_COUNT": str(sum(state == "active" for state in owners.values())),
         "WAITING_COUNT": str(sum(state == "waiting" for state in owners.values())),
         "CLOSED_COUNT": str(sum(state == "closed" for state in owners.values())),
         "COMPLETE_STAT": (f'<div class="stat"><b>{sum(state == "complete" for state in owners.values())}</b><span>complete, not closed</span></div>'
                           if "complete" in owners.values() else ""),
-        "REMAINING_COUNT": str(sum(count for state, count in counts.items() if WORK_STATES[state][1] != "resolved" and state != "unknown")),
-        "RESOLVED_COUNT": str(len(rows["resolved"])),
-        "UNKNOWN_STAT": (f'<div class="stat"><b>{counts["unknown"]}</b><span>need classification</span></div>' if counts["unknown"] else ""),
         "WORK_COUNTS": "".join(f'<span class="work-status work-{state}"><b>{count}</b> {WORK_STATES[state][0]}</span>'
                                 for state, count in counts.items() if count),
-        "ROWS": "".join(f'<tbody class="group-{group}"><tr class="group-heading"><th scope="rowgroup" colspan="8">{label} ({len(rows[group])})</th></tr>'
+        "ROWS": "".join(f'<tbody class="group-{group}"><tr class="group-heading"><th scope="rowgroup" colspan="7">{label} ({len(rows[group])})</th></tr>'
                         + "".join(rows[group]) + '</tbody>' for group, label in GROUPS.items() if rows[group])
-                or '<tbody><tr><td colspan="8">No assigned tasks.</td></tr></tbody>',
+                or '<tbody><tr><td colspan="7">No items are assigned yet.</td></tr></tbody>',
+        "MILESTONE_HEADERS": "".join(f'<th scope="col" title="{help_text}">{plain_label}</th>'
+                                     for plain_label, _, help_text in MILESTONES.values()),
+        "MILESTONE_KEY": "".join(f'<li><b>{plain_label}</b> {help_text}</li>' for plain_label, _, help_text in MILESTONES.values()),
         "DECISION_COUNT": str(len(decisions)),
-        "DETAILS": "".join(details) or '<p>Select a task after one is assigned.</p>',
-        "DECISIONS": "".join(decision_html) or '<p class="muted">Nothing needs your decision.</p>',
-        "PROOFS": "".join(proofs) or '<p class="muted">No retained proof yet.</p>',
+        "DETAILS": "".join(details) or '<p>Select an item after one is assigned.</p>',
+        "DECISIONS": "".join(decision_html) or '<p class="muted">Nothing needs your decision right now.</p>',
+        "PROOFS": "".join(proofs) or '<p class="muted">No evidence retained yet.</p>',
         "HISTORY": "".join(f'<li>{escape(item)}</li>' for item in data["history"]) or '<li>No material changes recorded.</li>',
         "QUESTION": escape(question(tasks[first], "status") if first else f"In orchestration run {data['run_id']}: what work is assigned?"),
         "COORDINATOR": anchor(data["presentation"].get("coordinator_href"), "Open coordinator") if data["presentation"].get("coordinator_href") else "Paste into your coordinator conversation.",
