@@ -42,11 +42,30 @@ a { color:var(--accent); text-underline-offset:3px; }
 small,.muted { color:var(--muted); }
 header .meta { flex:0 1 25rem; min-inline-size:0; margin-inline-start:auto; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
 .notice { color:var(--warn); font-size:12px; }
+header .goal { font-size:14px; margin-block-start:6px; }
+header .meta p { margin-block:0 4px; }
+.summary { margin-block:16px 18px; padding:16px 18px; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+.headline-row { display:flex; flex-wrap:wrap; gap:8px 20px; align-items:baseline; justify-content:space-between; }
+.headline { margin:0; font-size:15px; }
+.headline b { font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
+.headline-detail { color:var(--muted); font-size:13px; }
+.callout { padding:5px 12px; border-radius:20px; font-size:13px; font-weight:600; color:var(--ink); background:var(--warn-bg); border:1px solid color-mix(in oklch,var(--warn) 50%,var(--line)); text-decoration:none; }
+.meter { display:flex; gap:2px; block-size:12px; margin-block:12px 8px; }
+.segment { min-inline-size:6px; border-radius:4px; }
+.segment-done { background:var(--ok); }
+.segment-closed { background:var(--neutral); }
+.segment-moving { background:var(--accent); }
+.segment-attention { background:var(--warn); }
+.segment-empty { background:var(--line); }
+.meter-legend { display:flex; flex-wrap:wrap; gap:4px 18px; padding:0; margin:0; list-style:none; font-size:12px; color:var(--muted); }
+.meter-legend li { display:flex; gap:6px; align-items:center; }
+.meter-legend b { color:var(--ink); font-variant-numeric:tabular-nums; }
+.swatch { inline-size:10px; block-size:10px; border-radius:3px; }
 .stats { display:flex; flex-wrap:wrap; gap:8px 28px; padding-block:8px; margin-block:10px; border-block:1px solid var(--line); }
 .stat { display:flex; gap:8px; align-items:baseline; }
 .stat b { font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
 .stat span { color:var(--muted); font-size:12px; }
-.work-counts { display:flex; flex-wrap:wrap; gap:8px; margin-block:12px 18px; }
+.work-counts { display:flex; flex-wrap:wrap; gap:8px; margin-block:14px 0; }
 .layout { display:grid; gap:14px; }
 #decisions { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr)); gap:10px; min-inline-size:0; }
 #decisions h2 { grid-column:1 / -1; margin:0; }
@@ -58,18 +77,15 @@ header .meta { flex:0 1 25rem; min-inline-size:0; margin-inline-start:auto; font
 table { border-collapse:collapse; inline-size:100%; table-layout:fixed; }
 th,td { padding:6px 10px; border-block-end:1px solid var(--line); vertical-align:middle; }
 th { padding-inline:5px; font-size:11px; font-weight:550; color:var(--muted); background:color-mix(in oklch,var(--bg) 50%,var(--surface)); text-align:center; white-space:nowrap; }
-thead th:first-child { inline-size:23%; }
-thead th:nth-child(2) { inline-size:16%; }
-thead th:nth-child(3) { inline-size:25%; }
-thead th:nth-child(4) { inline-size:16%; }
-thead th:nth-child(-n+4) { text-align:start; }
-thead th:nth-child(n+5) { white-space:normal; }
-thead abbr { text-decoration:none; }
+thead th:first-child { inline-size:26%; }
+thead th:nth-child(2) { inline-size:14%; }
+thead th:nth-child(3) { inline-size:32%; }
+thead th:nth-child(-n+3) { text-align:start; }
+thead th:nth-child(n+4) { white-space:normal; cursor:help; }
 td { text-align:center; }
-td:nth-child(-n+4) { text-align:start; }
-.reason-cell,.owner-cell { font-size:12px; }
-.reason-cell small,.owner-cell small { display:block; font-size:11px; margin-block-start:4px; }
-.row-blocker { color:var(--bad); }
+td:nth-child(-n+3) { text-align:start; }
+.reason-cell { font-size:13px; }
+.reason-cell small { display:block; font-size:12px; margin-block-start:4px; }
 .group-heading th { text-align:start; padding:8px 18px; font-size:12px; border-inline-start:4px solid var(--group-color); }
 .group-attention { --group-color:var(--warn); }
 .group-moving { --group-color:var(--accent); }
@@ -84,7 +100,7 @@ td:nth-child(-n+4) { text-align:start; }
 .work-deferred { --status-color:var(--deferred); }
 .work-outcome { margin-block:14px; font-size:13px; }
 .ledger-note { margin-block:12px 0; margin-inline:18px; font-size:11px; color:var(--muted); }
-.owner-summary { margin-block-start:14px; font-size:12px; color:var(--muted); }
+.owner-summary .stats { border-block-end:0; margin-block-end:0; }
 tr.selected { background:var(--soft); }
 button { position:relative; font:inherit; cursor:pointer; color:var(--accent); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; touch-action:manipulation; }
 button::after { content:""; position:absolute; inset:min(0px,(100% - 44px) / 2); }
@@ -92,10 +108,12 @@ button:active,summary:active { background:var(--soft); }
 a:active { color:color-mix(in oklch,var(--accent) 80%,var(--ink)); }
 @media (hover: hover) and (pointer: fine) { button:hover { border-color:var(--accent); } }
 button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-.task-picker { border:0; background:none; display:flex; gap:12px; align-items:baseline; inline-size:100%; text-align:start; padding:0; color:var(--ink); }
-.task-picker b { color:var(--accent); font-size:12px; flex-shrink:0; }
-.task-picker span { font-size:13px; }
-.lifecycle { display:block; }
+.task-picker { border:0; background:none; display:block; inline-size:100%; text-align:start; padding:0; color:var(--ink); }
+.task-picker span { display:block; font-size:14px; font-weight:550; color:var(--accent); text-decoration:underline; text-decoration-color:color-mix(in oklch,var(--accent) 35%,transparent); text-underline-offset:3px; }
+.task-picker small { display:block; font-size:11px; margin-block-start:2px; }
+.milestone-key { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap:4px 18px; padding:0; margin-block:10px 0; margin-inline:18px; list-style:none; font-size:11px; color:var(--muted); }
+.milestone-key b { color:var(--ink); }
+code { font:11px/1.4 ui-monospace,monospace; padding:1px 4px; border-radius:4px; background:var(--bg); }
 .signal { inline-size:27px; block-size:27px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:16px; font-weight:650; }
 .verified { color:var(--ok); background:var(--ok-bg); }
 .pending { color:var(--warn); background:var(--warn-bg); }
@@ -129,8 +147,22 @@ dialog::backdrop { background:color-mix(in oklch,oklch(.21 .025 264) 50%,transpa
 .human-warning { padding:12px; margin-block-start:18px; border-inline-start:3px solid var(--warn); border-radius:4px; color:var(--warn); background:var(--warn-bg); font-size:13px; }
 summary { cursor:pointer; }
 #selected-task > summary { font-size:13px; font-weight:600; }
-.task-detail > summary { font-size:15px; font-weight:650; margin-block-end:10px; }
-.detail-heading { display:flex; gap:8px; justify-content:space-between; align-items:center; color:var(--muted); font-size:11px; }
+.task-detail > summary { font-size:17px; font-weight:650; margin-block-end:10px; }
+.task-detail > summary small { font-size:12px; font-weight:400; margin-inline-start:6px; }
+.detail-heading { display:flex; gap:8px; justify-content:space-between; align-items:center; }
+.detail-heading h3,.technical h3,.column-heading { margin:0; font-size:13px; }
+.work-outcome p { font-size:15px; }
+.steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr)); gap:8px; padding:0; margin-block:14px 0; list-style:none; }
+.steps li { display:flex; gap:9px; align-items:start; padding:10px; border:1px solid var(--line); border-radius:8px; }
+.steps .signal { inline-size:23px; block-size:23px; font-size:13px; flex-shrink:0; }
+.steps b { display:block; font-size:13px; }
+.steps span:not(.signal) { display:block; font-size:12px; }
+.steps small { display:block; font-size:11px; line-height:1.4; margin-block-start:3px; }
+.technical,.agent-tools { margin-block-start:18px; padding-block-start:14px; border-block-start:1px solid var(--line); }
+.technical h4 { margin-block:16px 4px; font-size:12px; color:var(--muted); }
+.tech-grid { display:grid; grid-template-columns:minmax(7rem,max-content) 1fr; gap:6px 14px; font-size:12px; }
+.tech-grid dt { margin:0; }
+.tech-grid .checked { display:block; margin-block-start:2px; }
 .blocker,.next { margin-block:12px; font-size:13px; }
 .blocker > b,.next > b { font-size:11px; color:var(--muted); }
 .phase { display:flex; align-items:start; gap:10px; padding-block:9px; border-block-start:1px solid var(--line); }
@@ -150,7 +182,9 @@ dd { margin-block:2px 0; margin-inline:0; overflow-wrap:anywhere; }
 textarea { display:block; inline-size:100%; field-sizing:content; min-block-size:6lh; max-block-size:18lh; resize:vertical; border:1px solid var(--line); border-radius:6px; margin-block:8px; padding:9px; color:var(--ink); font:max(16px,1rem)/1.5 system-ui,sans-serif; background:var(--bg); }
 .question-panel small { display:block; font-size:11px; margin-block-start:8px; }
 #copy-feedback { min-block-size:18px; color:var(--ok); }
-.archive { margin-block-start:20px; }
+.section-label { margin-block:32px 0; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.technical-footer { margin-block-start:20px; font-size:11px; color:var(--muted); }
+.archive { margin-block-start:12px; }
 .archive > summary { font-size:13px; font-weight:600; }
 .receipt { margin-block:10px; border:1px solid var(--line); border-radius:6px; padding:10px 12px; font-size:12px; }
 .receipt summary span { color:var(--muted); display:inline-block; margin-inline-start:10px; font-size:11px; }
@@ -164,32 +198,32 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
   td { display:block; padding:7px 3px; border:0; }
   td:first-child { grid-column:1 / 3; }
   td:nth-child(2) { grid-column:3 / 5; }
-  td:nth-child(3),td:nth-child(4) { grid-column:1 / -1; }
+  td:nth-child(3) { grid-column:1 / -1; }
   td:nth-child(n+2)::before { content:attr(data-label); display:block; margin-block-end:4px; color:var(--muted); font-size:10px; line-height:1.4; }
-  td:nth-child(n+5)::before { min-block-size:32px; }
+  td:nth-child(n+4)::before { min-block-size:16px; }
   tbody tr.group-heading { display:block; padding:0; }
   .group-heading th { display:block; }
   tr:not([id]) td { grid-column:1 / -1; }
-  .task-picker { display:block; overflow-wrap:anywhere; }
-  .task-picker span { display:block; margin-block-start:3px; }
+  .task-picker { overflow-wrap:anywhere; }
 }
 </style>
 </head>
 <body data-first-task="{{FIRST_TASK}}">
 <main>
-<header id="run-overview"><div><h1>{{TITLE}}</h1><p class="notice">{{NOTICE}}</p><p class="muted">Goal: {{GOAL}}</p></div><div class="meta">Run {{RUN_ID}}<br>Updated {{UPDATED}}<br>{{REFRESH_STATUS}}</div></header>
-<div class="stats" id="work-summary" aria-label="Work totals"><div class="stat"><b>{{TASK_COUNT}}</b><span>total tasks</span></div><div class="stat"><b>{{REMAINING_COUNT}}</b><span>need work</span></div><div class="stat"><b>{{RESOLVED_COUNT}}</b><span>resolved for this run</span></div>{{UNKNOWN_STAT}}</div>
-<div class="work-counts" id="work-counts" aria-label="Work status breakdown">{{WORK_COUNTS}}</div>
+<header id="run-overview"><div><h1>{{TITLE}}</h1><p class="notice">{{NOTICE}}</p><p class="goal"><b>Goal:</b> {{GOAL}}</p></div><div class="meta"><p>Last updated <time datetime="{{UPDATED}}" data-local>{{UPDATED_FRIENDLY}}</time> <span id="updated-ago"></span></p><p>{{REFRESH_STATUS}}</p></div></header>
+<section class="summary" id="work-summary" aria-label="Progress summary"><div class="headline-row"><p class="headline">{{HEADLINE}}</p>{{CALLOUT}}</div><div class="meter" role="img" aria-label="Progress: {{METER_LABEL}}">{{METER}}</div><ul class="meter-legend">{{METER_LEGEND}}</ul><div class="work-counts" id="work-counts" aria-label="Count by status">{{WORK_COUNTS}}</div></section>
 <div class="layout">
-<section class="panel matrix" id="task-matrix"><h2>Work at a glance</h2><p class="muted">Select a task for its retained proof and full assignment.</p><table><thead><tr><th scope="col">Ticket / task</th><th scope="col">Work status / outcome</th><th scope="col">Reason / next action</th><th scope="col">Owner lifecycle</th><th scope="col" aria-label="PR readiness"><abbr title="PR readiness">PR</abbr></th><th scope="col" aria-label="Code publication"><abbr title="Code publication">Pub.</abbr></th><th scope="col" aria-label="Deployment"><abbr title="Deployment">Deploy</abbr></th><th scope="col" aria-label="Business acceptance"><abbr title="Business acceptance">Accept</abbr></th></tr></thead>{{ROWS}}</table><div class="legend" aria-label="Milestone legend"><span><i class="signal verified" aria-hidden="true">✓</i>Verified</span><span><i class="signal pending" aria-hidden="true">…</i>Pending</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not requested</span></div><p class="ledger-note">Milestones: PR readiness · Code publication · Deployment · Business acceptance.</p><p class="ledger-note">Resolved for this run does not mean delivered. Deferred work retains a revisit trigger. Owner closure is separate.</p></section>
-<section class="panel" id="decisions"><h2>Needs your decision ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section>
+<section class="panel matrix" id="task-matrix"><h2>All items</h2><p class="muted">Select an item to see its full technical details.</p><table><thead><tr><th scope="col">Item</th><th scope="col">Status</th><th scope="col">What's happening</th>{{MILESTONE_HEADERS}}</tr></thead>{{ROWS}}</table><div class="legend" aria-label="Progress legend"><span><i class="signal verified" aria-hidden="true">✓</i>Done</span><span><i class="signal pending" aria-hidden="true">…</i>In progress</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not in scope</span></div><ul class="milestone-key">{{MILESTONE_KEY}}</ul><p class="ledger-note">Wrapped up includes items that were cancelled, postponed or needed no change. Only items marked Done were delivered.</p></section>
+<section class="panel" id="decisions"><h2>Decisions we need from you ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section>
 </div>
-<details class="owner-summary"><summary>Owner lifecycle counts</summary><div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div></details>
-<details class="panel archive" id="retained-proof"><summary>Retained proof. Expand receipts and limitations.</summary>{{PROOFS}}</details>
-<details class="panel archive" id="change-history"><summary>Corrections and history</summary><ul class="history">{{HISTORY}}</ul></details>
+<h2 class="section-label">Technical reference</h2>
+<details class="panel archive" id="retained-proof"><summary>Evidence and test results</summary>{{PROOFS}}</details>
+<details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
+<details class="panel archive owner-summary"><summary>Agent activity</summary><div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div></details>
+<footer class="technical-footer">Run <code>{{RUN_ID}}</code> · Snapshot <code>{{UPDATED}}</code></footer>
 </main>
 <dialog id="decision-dialog" aria-labelledby="decision-title" aria-describedby="decision-help"><div class="dialog-heading"><h2 id="decision-title">Decision</h2><button id="close-decision" autofocus>Close</button></div><p id="decision-help">Answer in the linked conversation. Copy controls prepare text; they do not send it.</p><div id="decision-content"></div></dialog>
-<dialog id="task-dialog" aria-labelledby="task-title"><div class="dialog-heading"><h2 id="task-title">Task details</h2><button id="close-task" autofocus>Close</button></div><section id="selected-task">{{DETAILS}}<details class="question-panel" id="question-panel"><summary id="question-target">Question for the coordinator</summary><label for="question-text">Prepared text</label><textarea id="question-text">{{QUESTION}}</textarea><button id="copy-question">Copy prepared text</button><p id="copy-feedback" role="status" aria-live="polite"></p><small id="question-instructions">Copy does not send. Paste into the coordinator conversation.</small><small id="question-destination">{{COORDINATOR}}</small><small id="question-interaction">{{INTERACTION}}</small></details></section></dialog>
+<dialog id="task-dialog" aria-labelledby="task-title"><div class="dialog-heading"><h2 id="task-title">Item details</h2><button id="close-task" autofocus>Close</button></div><section id="selected-task">{{DETAILS}}<details class="question-panel" id="question-panel"><summary id="question-target">Question for the coordinator</summary><label for="question-text">Prepared text</label><textarea id="question-text">{{QUESTION}}</textarea><button id="copy-question">Copy prepared text</button><p id="copy-feedback" role="status" aria-live="polite"></p><small id="question-instructions">Copy does not send anything. Paste into the coordinator conversation.</small><small id="question-destination">{{COORDINATOR}}</small><small id="question-interaction">{{INTERACTION}}</small></details></section></dialog>
 <script>
 (() => {
   const field = document.getElementById('question-text');
@@ -237,7 +271,7 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
     target.textContent = (button?.dataset.context ? 'Context for ' : 'Question for ') + label;
     instructions.textContent = human
       ? 'Answer the human-only dialog in this thread. Copy does not send or unlock it.'
-      : 'Copy does not send. Paste into ' + label + "'s conversation.";
+      : 'Copy does not send anything. Paste into ' + label + "'s conversation.";
     interaction.hidden = Boolean(owner);
     destination.hidden = dialog.open;
     if (owner) {
@@ -330,6 +364,19 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
       target.open = true;
       target.parentElement.closest('details').open = true;
       target.scrollIntoView();
+    }
+  }
+  const stamp = document.querySelector('time[data-local]');
+  const when = new Date(stamp.dateTime);
+  if (!Number.isNaN(when.getTime())) {
+    stamp.title = stamp.dateTime;
+    stamp.textContent = when.toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'});
+    const minutes = Math.round((Date.now() - when.getTime()) / 60000);
+    if (minutes >= 0) {
+      const relative = new Intl.RelativeTimeFormat(undefined, {numeric:'auto'});
+      document.getElementById('updated-ago').textContent = '(' + (minutes < 60 ? relative.format(-minutes, 'minute')
+        : minutes < 2880 ? relative.format(-Math.round(minutes / 60), 'hour')
+        : relative.format(-Math.round(minutes / 1440), 'day')) + ')';
     }
   }
   selectTask(document.body.dataset.firstTask, false);

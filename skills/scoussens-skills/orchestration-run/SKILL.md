@@ -323,13 +323,18 @@ Refresh at step 3's cycle boundaries, including dependency/approval changes,
 corrected verdicts and owner closure. Record each task's `work` status and reason
 under the [work status contract](references/dashboard-data.md#work-status-and-resolution).
 Recover missing outcomes from retained results and decisions; closure alone
-leaves the outcome unclassified. Show all tasks in a grouped ledger: Needs
-attention, Moving or ready, and Resolved for this run. Keep reasons, next actions,
-deferral triggers and pending decision links visible beside the work status.
-Summarize remaining work and each resolution separately; keep owner lifecycle
-secondary and all four milestone indicators independent. Keep one decision queue
-below the ledger.
-Selecting a task opens its blocker, next action, and proof in a bounded dialog.
+leaves the outcome unclassified. The dashboard serves non-technical testers and
+executives first: give every row a plain-language `work.summary`, and write the
+goal and decision text the same way. Keep technical wording in `reason`,
+`blocker`, `next_action` and milestone notes, which appear when a reader opens
+an item. Show all tasks in a grouped ledger: Needs attention, In progress, and
+Wrapped up. Keep each plain summary, deferral trigger and pending decision link
+visible beside the work status.
+Summarize wrapped-up work and each resolution separately; keep owner lifecycle
+in the technical reference and all four milestone indicators independent. Keep
+one decision queue below the ledger, linked from the progress summary.
+Selecting a task opens a plain summary and progress steps, followed by its
+technical details: reason, blocker, next action, owner, milestones and proof.
 Selecting a decision opens its focused dialog. Default to a closed dialog on
 initial load unless the user requests a selected decision up front. Keep unblock
 previews and copyable IDs in the queue, with the recommendation and authoritative
