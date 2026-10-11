@@ -77,13 +77,11 @@ header .meta p { margin-block:0 4px; }
 table { border-collapse:collapse; inline-size:100%; table-layout:fixed; }
 th,td { padding:6px 10px; border-block-end:1px solid var(--line); vertical-align:middle; }
 th { padding-inline:5px; font-size:11px; font-weight:550; color:var(--muted); background:color-mix(in oklch,var(--bg) 50%,var(--surface)); text-align:center; white-space:nowrap; }
-thead th:first-child { inline-size:26%; }
-thead th:nth-child(2) { inline-size:14%; }
-thead th:nth-child(3) { inline-size:32%; }
-thead th:nth-child(-n+3) { text-align:start; }
-thead th:nth-child(n+4) { white-space:normal; cursor:help; }
-td { text-align:center; }
-td:nth-child(-n+3) { text-align:start; }
+thead th:first-child { inline-size:24%; }
+thead th:nth-child(2) { inline-size:19%; }
+thead th:nth-child(3) { inline-size:14%; }
+thead th:nth-child(5) { inline-size:11%; }
+th,td { text-align:start; }
 .reason-cell { font-size:13px; }
 .reason-cell small { display:block; font-size:12px; margin-block-start:4px; }
 .group-heading th { text-align:start; padding:8px 18px; font-size:12px; border-inline-start:4px solid var(--group-color); }
@@ -100,7 +98,27 @@ td:nth-child(-n+3) { text-align:start; }
 .work-deferred { --status-color:var(--deferred); }
 .work-outcome { margin-block:14px; font-size:13px; }
 .ledger-note { margin-block:12px 0; margin-inline:18px; font-size:11px; color:var(--muted); }
-.owner-summary .stats { border-block-end:0; margin-block-end:0; }
+.count-row { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-block-start:12px; }
+.count-row .work-counts { margin:0; }
+.count-label { inline-size:8.5rem; font-size:11px; font-weight:600; color:var(--muted); }
+.agent-status { --agent-color:var(--neutral); display:inline-flex; gap:6px; align-items:center; font-size:12px; color:var(--ink); }
+.agent-status::before { content:""; inline-size:8px; block-size:8px; border-radius:50%; background:var(--agent-color); }
+.work-counts .agent-status { padding:3px 9px; border:1px dashed var(--line); border-radius:20px; }
+.agent-active { --agent-color:var(--accent); }
+.agent-waiting,.agent-unreachable { --agent-color:var(--warn); }
+.agent-blocked { --agent-color:var(--bad); }
+.agent-complete { --agent-color:var(--ok); }
+.agent-cell { font-size:12px; }
+.stage-cell b { display:block; font-size:13px; font-weight:600; margin-block-start:6px; }
+.stage-cell small { display:block; font-size:11px; }
+.stepper { display:flex; gap:2px; }
+.step { flex:1 1 0; max-inline-size:22px; block-size:8px; border-radius:4px; background:var(--line); }
+.step.verified { background:var(--ok); }
+.step.pending { background:color-mix(in oklch,var(--warn) 55%,var(--surface)); }
+.step.blocked { background:var(--bad); }
+.step.not_requested { background:color-mix(in oklch,var(--line) 60%,transparent); }
+.step.current { outline:2px solid var(--ink); outline-offset:1px; }
+.legend .step { display:inline-block; inline-size:18px; flex:none; }
 tr.selected { background:var(--soft); }
 button { position:relative; font:inherit; cursor:pointer; color:var(--accent); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; touch-action:manipulation; }
 button::after { content:""; position:absolute; inset:min(0px,(100% - 44px) / 2); }
@@ -113,12 +131,13 @@ button:focus-visible,a:focus-visible,summary:focus-visible,textarea:focus-visibl
 .task-picker small { display:block; font-size:11px; margin-block-start:2px; }
 .milestone-key { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr)); gap:4px 18px; padding:0; margin-block:10px 0; margin-inline:18px; list-style:none; font-size:11px; color:var(--muted); }
 .milestone-key b { color:var(--ink); }
+.stage-key { list-style:decimal inside; }
 code { font:11px/1.4 ui-monospace,monospace; padding:1px 4px; border-radius:4px; background:var(--bg); }
 .signal { inline-size:27px; block-size:27px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-size:16px; font-weight:650; }
-.verified { color:var(--ok); background:var(--ok-bg); }
-.pending { color:var(--warn); background:var(--warn-bg); }
-.blocked { color:var(--bad); background:var(--bad-bg); }
-.not_requested { color:var(--neutral); background:var(--neutral-bg); }
+.signal.verified { color:var(--ok); background:var(--ok-bg); }
+.signal.pending { color:var(--warn); background:var(--warn-bg); }
+.signal.blocked { color:var(--bad); background:var(--bad-bg); }
+.signal.not_requested { color:var(--neutral); background:var(--neutral-bg); }
 .legend { display:flex; gap:14px; flex-wrap:wrap; margin-block-start:14px; font-size:11px; color:var(--muted); }
 .legend span { display:flex; align-items:center; gap:5px; }
 .legend .signal { inline-size:19px; block-size:19px; font-size:12px; }
@@ -152,8 +171,12 @@ summary { cursor:pointer; }
 .detail-heading { display:flex; gap:8px; justify-content:space-between; align-items:center; }
 .detail-heading h3,.technical h3,.column-heading { margin:0; font-size:13px; }
 .work-outcome p { font-size:15px; }
-.steps { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr)); gap:8px; padding:0; margin-block:14px 0; list-style:none; }
+.plain-view h3 { margin-block:16px 0; font-size:13px; }
+.plain-view h3 small { font-weight:400; margin-inline-start:6px; }
+.steps { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,12.5rem),1fr)); gap:8px; padding:0; margin-block:10px 0; list-style:none; }
 .steps li { display:flex; gap:9px; align-items:start; padding:10px; border:1px solid var(--line); border-radius:8px; }
+.steps li.not_requested { opacity:.6; }
+.steps li.current { border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink); }
 .steps .signal { inline-size:23px; block-size:23px; font-size:13px; flex-shrink:0; }
 .steps b { display:block; font-size:13px; }
 .steps span:not(.signal) { display:block; font-size:12px; }
@@ -168,6 +191,7 @@ summary { cursor:pointer; }
 .phase { display:flex; align-items:start; gap:10px; padding-block:9px; border-block-start:1px solid var(--line); }
 .phase .signal { inline-size:23px; block-size:23px; font-size:13px; flex-shrink:0; }
 .phase b { font-size:11px; display:inline; }
+.phase code { font-size:10px; }
 .phase span:not(.signal) { font-size:11px; color:var(--muted); margin-inline-start:8px; }
 .phase small { display:block; font-size:11px; line-height:1.45; margin-block-start:3px; }
 .assignment { padding-block:10px; border-block-start:1px solid var(--line); font-size:12px; }
@@ -194,13 +218,10 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
 @container (inline-size < 60rem) {
   thead { position:absolute; inline-size:1px; block-size:1px; overflow:clip; clip-path:inset(50%); }
   tbody { display:block; }
-  tbody tr { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:8px 10px; border-block-end:1px solid var(--line); }
+  tbody tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:8px 10px; border-block-end:1px solid var(--line); }
   td { display:block; padding:7px 3px; border:0; }
-  td:first-child { grid-column:1 / 3; }
-  td:nth-child(2) { grid-column:3 / 5; }
-  td:nth-child(3) { grid-column:1 / -1; }
+  td:first-child,td:nth-child(4) { grid-column:1 / -1; }
   td:nth-child(n+2)::before { content:attr(data-label); display:block; margin-block-end:4px; color:var(--muted); font-size:10px; line-height:1.4; }
-  td:nth-child(n+4)::before { min-block-size:16px; }
   tbody tr.group-heading { display:block; padding:0; }
   .group-heading th { display:block; }
   tr:not([id]) td { grid-column:1 / -1; }
@@ -211,15 +232,14 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
 <body data-first-task="{{FIRST_TASK}}">
 <main>
 <header id="run-overview"><div><h1>{{TITLE}}</h1><p class="notice">{{NOTICE}}</p><p class="goal"><b>Goal:</b> {{GOAL}}</p></div><div class="meta"><p>Last updated <time datetime="{{UPDATED}}" data-local>{{UPDATED_FRIENDLY}}</time> <span id="updated-ago"></span></p><p>{{REFRESH_STATUS}}</p></div></header>
-<section class="summary" id="work-summary" aria-label="Progress summary"><div class="headline-row"><p class="headline">{{HEADLINE}}</p>{{CALLOUT}}</div><div class="meter" role="img" aria-label="Progress: {{METER_LABEL}}">{{METER}}</div><ul class="meter-legend">{{METER_LEGEND}}</ul><div class="work-counts" id="work-counts" aria-label="Count by status">{{WORK_COUNTS}}</div></section>
+<section class="summary" id="work-summary" aria-label="Progress summary"><div class="headline-row"><p class="headline">{{HEADLINE}}</p>{{CALLOUT}}</div><div class="meter" role="img" aria-label="Progress: {{METER_LABEL}}">{{METER}}</div><ul class="meter-legend">{{METER_LEGEND}}</ul><div class="count-row"><span class="count-label">Business status</span><div class="work-counts" id="work-counts" aria-label="Count by business status">{{WORK_COUNTS}}</div></div><div class="count-row"><span class="count-label">Agents</span><div class="work-counts" id="agent-counts" aria-label="Count by agent status">{{AGENT_COUNTS}}</div></div></section>
 <div class="layout">
-<section class="panel matrix" id="task-matrix"><h2>All items</h2><p class="muted">Select an item to see its full technical details.</p><table><thead><tr><th scope="col">Item</th><th scope="col">Status</th><th scope="col">What's happening</th>{{MILESTONE_HEADERS}}</tr></thead>{{ROWS}}</table><div class="legend" aria-label="Progress legend"><span><i class="signal verified" aria-hidden="true">✓</i>Done</span><span><i class="signal pending" aria-hidden="true">…</i>In progress</span><span><i class="signal blocked" aria-hidden="true">!</i>Blocked</span><span><i class="signal not_requested" aria-hidden="true">—</i>Not in scope</span></div><ul class="milestone-key">{{MILESTONE_KEY}}</ul><p class="ledger-note">Wrapped up includes items that were cancelled, postponed or needed no change. Only items marked Done were delivered.</p></section>
+<section class="panel matrix" id="task-matrix"><h2>All items</h2><p class="muted">Select an item to see its full technical details.</p><table><thead><tr><th scope="col">Item</th><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">What's happening</th><th scope="col">Agent</th></tr></thead>{{ROWS}}</table><div class="legend" aria-label="Stage legend"><span><i class="step verified" aria-hidden="true"></i>Done</span><span><i class="step pending" aria-hidden="true"></i>In progress</span><span><i class="step blocked" aria-hidden="true"></i>Blocked</span><span><i class="step not_requested" aria-hidden="true"></i>Not in scope</span><span><i class="step pending current" aria-hidden="true"></i>Current stage</span></div><p class="ledger-note"><b>Stage</b> and <b>Status</b> describe the work. <b>Agent</b> describes the AI agent doing it. An agent stays open until every requested stage is done, so a waiting agent often means the work is waiting on a review, a deployment or you.</p><ol class="milestone-key stage-key">{{STAGE_KEY}}</ol><p class="ledger-note">Wrapped up includes items that were cancelled, postponed or needed no change. Only items marked Done were delivered.</p></section>
 <section class="panel" id="decisions"><h2>Decisions we need from you ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section>
 </div>
 <h2 class="section-label">Technical reference</h2>
 <details class="panel archive" id="retained-proof"><summary>Evidence and test results</summary>{{PROOFS}}</details>
 <details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
-<details class="panel archive owner-summary"><summary>Agent activity</summary><div class="stats" id="owner-counts" aria-label="Owner counts"><div class="stat"><b>{{ACTIVE_COUNT}}</b><span>active owners</span></div><div class="stat"><b>{{WAITING_COUNT}}</b><span>waiting owners</span></div><div class="stat"><b>{{CLOSED_COUNT}}</b><span>closed owners</span></div>{{COMPLETE_STAT}}</div></details>
 <footer class="technical-footer">Run <code>{{RUN_ID}}</code> · Snapshot <code>{{UPDATED}}</code></footer>
 </main>
 <dialog id="decision-dialog" aria-labelledby="decision-title" aria-describedby="decision-help"><div class="dialog-heading"><h2 id="decision-title">Decision</h2><button id="close-decision" autofocus>Close</button></div><p id="decision-help">Answer in the linked conversation. Copy controls prepare text; they do not send it.</p><div id="decision-content"></div></dialog>

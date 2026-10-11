@@ -62,15 +62,29 @@ class Page(HTMLParser):
             self.row = None
 
 
+STAGE_LABELS = ("Defined", "Researched", "Implemented", "Submitted", "Reviewed", "Verified", "Deployed", "Accepted")
+
+
+def stage_row(*states):
+    return [f"{label}: {state}" for label, state in zip(STAGE_LABELS, states)]
+
+
+OUT = "Not in scope"
+
+
 class DashboardTests(unittest.TestCase):
     def setUp(self):
         self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
 
     def test_scoped_readiness_and_delivery_are_visibly_distinct(self):
         page = Page(render(self.data))
-        self.assertEqual(page.rows["row-UI-101"], ["Done", "Not in scope", "Not in scope", "Not in scope"])
-        self.assertEqual(page.rows["row-SHIP-107"], ["Done", "Done", "Done", "Done"])
-        self.assertEqual(page.rows["row-OPS-105"], ["Done", "Blocked", "Not in scope", "Not in scope"])
+        self.assertEqual(page.rows["row-UI-101"], stage_row("Done", OUT, "Done", OUT, OUT, OUT, OUT, OUT))
+        self.assertEqual(page.rows["row-SHIP-107"], stage_row(*["Done"] * 8))
+        self.assertEqual(page.rows["row-OPS-105"], stage_row("Done", OUT, "Done", "Blocked", OUT, OUT, OUT, OUT))
+        self.assertIn("Submitted — blocked", page.row_text["row-OPS-105"])
+        self.assertIn("Target: Submitted", page.row_text["row-OPS-105"])
+        self.assertIn("Implemented ✓", page.row_text["row-UI-101"])
+        self.assertIn("Accepted ✓", page.row_text["row-SHIP-107"])
         self.assertEqual(len(page.rows), 11)
         self.assertEqual(len(page.ids), len(set(page.ids)))
 
@@ -82,10 +96,14 @@ class DashboardTests(unittest.TestCase):
             "group-moving": ["row-API-102", "row-API-104"],
             "group-resolved": ["row-UI-101", "row-SHIP-107", "row-TRIAGE-108", "row-UI-109", "row-UI-110", "row-UI-111"],
         })
-        for row, label in (("row-TRIAGE-108", "No change needed"), ("row-UI-109", "Cancelled"), ("row-UI-110", "Postponed")):
+        for row, label, stage in (("row-TRIAGE-108", "No change needed", "Researched ✓"),
+                                  ("row-UI-109", "Cancelled", "Stopped after Defined"),
+                                  ("row-UI-110", "Postponed", "Stopped after Defined")):
             with self.subTest(row=row):
                 self.assertIn(label, page.row_text[row])
-                self.assertEqual(page.rows[row], ["Not in scope"] * 4)
+                self.assertIn(stage, page.row_text[row])
+                self.assertEqual(page.rows[row][2:], stage_row(*[OUT] * 8)[2:])
+        self.assertNotIn("Reached this run's target", page.row_text["row-UI-110"])
         self.assertIn("We'll revisit: After the authentication fix is accepted.", page.row_text["row-UI-110"])
         self.assertIn('href="#decision-Q1"', html)
         self.assertIn('<b>6 of 11</b> items wrapped up', html)
@@ -113,8 +131,8 @@ class DashboardTests(unittest.TestCase):
                 self.assertNotIn(technical, row)
                 self.assertIn(technical, html.split('id="task-OPS-105"', 1)[1])
         self.assertIn("<code>needs_decision</code>", html)
-        self.assertIn("<b>PR readiness</b><span><code>verified</code></span>", html)
-        self.assertIn('title="The change is shared as a branch or pull request.">Submitted</th>', html)
+        self.assertIn("<b>PR readiness</b> <code>pr_readiness</code><span><code>verified</code></span>", html)
+        self.assertIn("<li><b>Submitted</b> The change is shared as a branch or pull request.</li>", html)
         task = self.data["tasks"][4]
         del task["work"]["summary"]
         self.assertIn("Publication would trigger a broader deployment; approval is missing.",
@@ -133,12 +151,51 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(page.work_states["row-UI-101"], "unknown")
         self.assertEqual(page.work_states["row-UI-109"], "unknown")
         self.assertEqual(page.work_states["row-API-102"], "working")
-        self.assertEqual(page.work_states["row-ENV-106"], "waiting")
+        self.assertEqual(page.work_states["row-ENV-106"], "blocked")
+        self.assertEqual(page.work_states["row-REVIEW-103"], "waiting")
         self.assertIn("Confirming status", page.row_text["row-UI-101"])
         self.assertIn("We're confirming how this item ended.", page.row_text["row-UI-101"])
         self.assertIn('<b>6</b> Confirming status', html)
         self.assertIn('<b>0 of 11</b> items wrapped up', html)
         self.assertNotIn("group-resolved", page.groups)
+
+    def test_business_stage_and_agent_status_are_separate(self):
+        html = render(self.data)
+        page = Page(html)
+        self.assertIn('<b>2</b> Working</span>', html)
+        self.assertIn('<b>1</b> Blocked</span>', html)
+        self.assertIn('<b>5</b> Closed</span>', html)
+        # The business target is reached while the agent is still working on its handoff.
+        self.assertIn("Implemented ✓", page.row_text["row-API-102"])
+        self.assertIn("Working", page.row_text["row-API-102"])
+        self.assertIn("Two subagents are fixing the regressions", html.split('id="task-API-104"', 1)[1])
+        task = self.data["tasks"][5]
+        task["blocker"] = ""
+        task["work"] = {"state": "waiting", "reason": "Lane is held."}
+        with self.assertRaisesRegex(ValueError, "blocked owner needs an actionable blocker"):
+            render(self.data)
+        task["owner"]["state"] = "unreachable"
+        self.assertIn("Not responding", Page(render(self.data)).row_text["row-ENV-106"])
+        task["owner"]["activity"] = " "
+        with self.assertRaisesRegex(ValueError, "owner activity must be nonempty text"):
+            render(self.data)
+
+    def test_stages_reject_unknown_keys_and_tolerate_older_records(self):
+        task = self.data["tasks"][0]
+        task["milestones"]["shipped"] = {"state": "verified", "note": "", "evidence": ["E1"]}
+        with self.assertRaisesRegex(ValueError, "unknown stage shipped"):
+            render(self.data)
+        del task["milestones"]["shipped"]
+        del task["milestones"]["deployment"]
+        with self.assertRaisesRegex(ValueError, "missing stage deployment"):
+            render(self.data)
+        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        for task in self.data["tasks"]:
+            for key in ("defined", "researched", "review", "verification"):
+                del task["milestones"][key]
+        page = Page(render(self.data))
+        self.assertEqual(page.rows["row-UI-101"], stage_row(OUT, OUT, "Done", OUT, OUT, OUT, OUT, OUT))
+        self.assertIn("No stages requested", page.row_text["row-TRIAGE-108"])
 
     def test_resolutions_require_proof_or_decisions_and_settled_scope(self):
         baseline = deepcopy(self.data)
@@ -164,7 +221,7 @@ class DashboardTests(unittest.TestCase):
         task = self.data["tasks"][8]
         task["owner"]["state"] = "active"
         task["milestones"]["pr_readiness"]["state"] = "pending"
-        with self.assertRaisesRegex(ValueError, "unfinished milestone prevents work resolution"):
+        with self.assertRaisesRegex(ValueError, "unfinished stage prevents work resolution"):
             render(self.data)
 
     def test_unfinished_states_and_check_times_do_not_imply_success_or_stalls(self):
@@ -181,7 +238,7 @@ class DashboardTests(unittest.TestCase):
                 page = Page(html)
                 self.assertIn("row-API-102", page.groups[group])
                 self.assertIn(label, page.row_text["row-API-102"])
-                self.assertIn("Last checked 2026-10-01T10:00:00-05:00", html.split('id="task-API-102"', 1)[1])
+                self.assertIn("<dt>Last checked</dt><dd>2026-10-01T10:00:00-05:00</dd>", html.split('id="task-API-102"', 1)[1])
         task["work"]["state"] = "blocked"
         with self.assertRaisesRegex(ValueError, "actionable blocker"):
             render(self.data)
@@ -258,7 +315,7 @@ class DashboardTests(unittest.TestCase):
     def test_unfinished_milestone_blocks_complete_owner(self):
         task = self.data["tasks"][0]
         task["milestones"]["code_publication"]["state"] = "pending"
-        with self.assertRaisesRegex(ValueError, "unfinished milestone"):
+        with self.assertRaisesRegex(ValueError, "unfinished stage"):
             render(self.data)
 
     def test_one_owner_cannot_be_assigned_to_two_tickets_even_after_closure(self):
@@ -274,8 +331,9 @@ class DashboardTests(unittest.TestCase):
         self.data["tasks"] = self.data["tasks"][:7]
         self.data["tasks"][0]["owner"]["state"] = "complete"
         html = render(self.data)
-        self.assertIn('<b>1</b><span>complete, not closed</span>', html)
-        self.assertIn('<b>1</b><span>closed owners</span>', html)
+        self.assertIn('<b>1</b> Finished</span>', html)
+        self.assertIn('<b>1</b> Closed</span>', html)
+        self.assertIn("Complete, closure pending / unavailable", html)
 
     def test_missing_and_superseded_proof_do_not_mark_verified(self):
         phase = self.data["tasks"][0]["milestones"]["pr_readiness"]
@@ -296,7 +354,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_copied_questions_name_run_task_and_retained_proof(self):
         html = render(self.data)
-        self.assertIn("In orchestration run template-preview, task API-104: What does retained proof E5, E6 establish", html)
+        self.assertIn("In orchestration run template-preview, task API-104: What does retained proof E11, E5, E6 establish", html)
         self.assertIn("In orchestration run template-preview, decision Q1:", html)
         self.assertIn('data-copy-id="UI-101"', html)
         self.assertIn("Copy does not send", html)

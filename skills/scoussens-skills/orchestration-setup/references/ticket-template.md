@@ -58,7 +58,7 @@ Excluded: <What this ticket does not change.>
 <Blocking ticket IDs or external decisions, or None.>
 
 ## Required proof and finish line
-<Checks/artifacts that prove the criteria, plus the requested delivery milestone.>
+<Checks/artifacts that prove the criteria, plus the target stage: Defined, Researched, Implemented, Submitted, Reviewed, Verified, Deployed, or Accepted.>
 <Name any shared actions requiring separate authorization.>
 ```
 

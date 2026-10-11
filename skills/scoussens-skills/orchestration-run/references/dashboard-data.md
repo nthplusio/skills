@@ -5,10 +5,21 @@ workers must implement. The dashboard's main readers are non-technical testers
 and executives tracking progress. Write the overview fields (`title`, `goal`,
 `work.summary`, and each decision's `text`, `recommendation` and `unblocks`) in
 plain language, without ticket jargon, agent terms or proof IDs. Technical fields
-(`reason`, `blocker`, `next_action`, milestone notes, owner and proof) appear
-only when a reader opens an item or decision. The renderer turns it into one self-contained HTML file
-without fetching data or calling harness tools. See the synthetic
-[`evals/dashboard-preview.json`](../evals/dashboard-preview.json) for the shape.
+(`reason`, `blocker`, `next_action`, stage notes, owner and proof) appear
+only when a reader opens an item or decision. The renderer turns the record into
+one self-contained HTML file without fetching data or calling harness tools. See
+the synthetic [`evals/dashboard-preview.json`](../evals/dashboard-preview.json)
+for the shape.
+
+Each task row records three independent views of status:
+
+| View | Field | Answers |
+| --- | --- | --- |
+| [Business stage](#business-stages) | `milestones` | Where is the work, against this run's target stage? |
+| [Business status](#work-status-and-resolution) | `work` | Is it moving, waiting on someone, or how did it end? |
+| [Agent status](#task-fields) | `owner.state`, `owner.activity` | What is the agent that owns the ticket doing? |
+
+Stages advance only on accepted proof, whatever the agent's state.
 
 ## Run fields
 
@@ -99,8 +110,22 @@ template uses them for selection, links, host comments, and copyable questions.
 Each row represents one ticket in the repository's confirmed ticket source.
 `id` is its stable ticket ID, `title` is the outcome, and `done_when` names the
 assigned completion criterion. `owner` contains its actual harness `id`, `label`,
-optional `href`, `state`, `location`, and `handoff`. Its state is `active`,
-`waiting`, `complete`, or `closed`. An owner ID belongs to exactly one ticket;
+optional `href`, `state`, optional `activity`, `location`, and `handoff`.
+
+| `owner.state` | Overview label | Meaning |
+| --- | --- | --- |
+| `active` | Working | The agent is working, possibly through its own subagents. |
+| `waiting` | Waiting | The agent is idle until an answer, a review, a deployment or another event arrives. |
+| `blocked` | Blocked | The agent cannot proceed. Requires an actionable `blocker`. |
+| `unreachable` | Not responding | The coordinator could not inspect the agent. Record the attempt in `next_action` or `history`. |
+| `complete` | Finished | Work and obligations are settled; closure is unavailable or pending. |
+| `closed` | Closed | The harness close/archive operation succeeded. |
+
+`activity` is an optional, nonempty sentence describing what the agent is doing
+now, such as "A research subagent is comparing two caching approaches." Record it
+from inspected state or an actual progress report.
+
+An owner ID belongs to exactly one ticket;
 the renderer rejects duplicate owner IDs across rows, including closed owners.
 For monitored runs, `owner.last_checked_at` records that owner's actual latest
 state inspection with timezone, or `null` while uninspected. An unchanged scan
@@ -156,7 +181,7 @@ The overview uses plain labels. The item dialog also shows the raw state key.
 | Wrapped up | `delivered` (Done), `no_change_needed` (No change needed), `cancelled` (Cancelled), `deferred` (Postponed) | The assigned finish line is proven, investigation establishes no change is needed, or an authorized decision removes the work from this run. |
 
 Use `delivered` only for the assigned `done_when` scope. A review-ready finish
-line can be delivered without publication or deployment; the four milestones
+line can be delivered without publication or deployment; the stages
 still describe those independently. `delivered` and `no_change_needed` require
 `work.evidence` naming accepted, nonfailed retained proof. For `cancelled` and
 `deferred`, `receipt` identifies the actual authorizing decision and its scope.
@@ -164,11 +189,11 @@ still describe those independently. `delivered` and `no_change_needed` require
 suggestion to defer is still unfinished work until the authorized decision exists.
 
 Every resolved row has no blocker, no unfinished obligations, and no pending or
-blocked requested milestone. Before cancellation or deferral, retain the decision
-and prior milestone verdicts in history. Withdraw only the obligations and
-milestone requests covered by that decision, preserving already verified claims
-and their proof. Record withdrawn milestone scope in its note with
-`not_requested`; never turn cancellation into a verified milestone. Settle any
+blocked requested stage. Before cancellation or deferral, retain the decision
+and prior stage verdicts in history. Withdraw only the obligations and
+stage requests covered by that decision, preserving already verified claims
+and their proof. Record withdrawn stage scope in its note with
+`not_requested`; never turn cancellation into a verified stage. Settle any
 remaining runtime release or handoff before resolving the row.
 
 `needs_decision` requires a pending decision whose `task_ids` includes this row.
@@ -177,40 +202,44 @@ inspection action. An old check time or unchanged activity alone establishes
 neither a blocker nor a stall. Keep real `owner.last_checked_at` timestamps;
 missing check times display as unrecorded rather than fresh.
 
-The progress summary shows how many items are wrapped up, a meter split into
-Done, Wrapped up without delivery, In progress and Needs attention, a link to
-pending decisions, and a count for each work state. Cancellation and deferral
-never count as Done. The ledger shows each item's plain summary, revisit trigger
-and related decision IDs without requiring a dialog. Owner lifecycle, check
-times, reasons, blockers, next actions, milestone notes and proof appear in the
-item dialog and under Technical reference. Task dialogs and copied context
-retain the work outcome, resolution receipt and outcome proof.
-
 Records without `work` still render: active/waiting owners receive an explicitly
 qualified activity-based status. Complete/closed owners show **Confirming
 status**, not Done. On resume, recover actual outcomes from retained
 results and decisions before replacing this fallback. The renderer validates
 internal consistency, not whether a receipt really authorized the resolution.
 
-Every task has all four `milestones`:
+### Business stages
 
-| Key | Overview label | Meaning |
-| --- | --- | --- |
-| `pr_readiness` | Built & checked | Implementation and required proof/review material are prepared. Not an actual review. |
-| `code_publication` | Submitted | The specified branch/PR has actually been published. Not a merge or deployment. |
-| `deployment` | Deployed | The intended revision is running in the specified environment. |
-| `business_acceptance` | Signed off | The requested business behavior is accepted against its stated criteria. |
+`milestones` holds the business stages in delivery order. Every task has all
+eight; when resuming an older record, add any missing `defined`, `researched`,
+`review` and `verification` stages from retained proof.
 
-Each milestone has a `state`, `note`, and `evidence` list of proof IDs.
+| Order | Key | Overview label | Meaning |
+| --- | --- | --- | --- |
+| 1 | `defined` | Defined | The outcome and acceptance criteria are written down and agreed. A ticket that arrives defined can cite the ticket as proof. |
+| 2 | `researched` | Researched | Open questions are investigated and an approach is chosen. Not requested when no research is needed. |
+| 3 | `pr_readiness` | Implemented | Implementation and required proof/review material are prepared. Not an actual review. |
+| 4 | `code_publication` | Submitted | The specified branch/PR has actually been published. Not a merge or deployment. |
+| 5 | `review` | Reviewed | The requested code review actually produced its required result. |
+| 6 | `verification` | Verified | An agent checked the change against the plan and spec before deployment. |
+| 7 | `deployment` | Deployed | The intended revision is running in the specified environment. |
+| 8 | `business_acceptance` | Accepted | Users accepted the deployed behavior against its stated criteria. |
+
+Mark every stage beyond this run's finish line `not_requested`: the last
+requested stage is the target stage, and the first unverified requested stage is
+the current stage. Stages stay independent: each needs its own proof, and a
+verified later stage leaves earlier stages unverified.
+
+Each stage has a `state`, `note`, and `evidence` list of proof IDs.
 States are `verified` (Done), `pending` (In progress), `blocked` (Blocked), and
 `not_requested` (Not in scope). A `verified`
-milestone must reference proof assessed as `accepted`. `note` scopes the claim,
+stage must reference proof assessed as `accepted`. `note` scopes the claim,
 including the exact code-publication artifact or deployment target where relevant.
-For an unrequested milestone, use an empty evidence list and explain nothing
+For an unrequested stage, use an empty evidence list and explain nothing
 unless it prevents a likely misunderstanding.
 
 A complete/closed owner needs a retained `handoff`, no unfinished obligations,
-no blocker, and all requested milestones verified. These checks prevent display
+no blocker, and all requested stages verified. These checks prevent display
 contradictions; they cannot verify that a human actually discharged an obligation.
 
 ## Evidence fields
@@ -219,8 +248,8 @@ Each entry has a stable `id`, `label`, `scope`, `result`, `assessment`, `note`,
 and either `href` or literal `output`. Results are `passed`, `failed`,
 `interrupted`, or `observed`. Assessments are `accepted`, `limited`, or
 `superseded`. This distinguishes a check's outcome from whether it supports the
-claimed milestone. A green workflow may be `passed` but `limited` for review
-completion. Only accepted proof supports a verified display milestone.
+claimed stage. A green workflow may be `passed` but `limited` for review
+completion. Only accepted proof supports a verified display stage.
 
 Retain raw evidence outside the owner's disposable context. A link must remain
 usable after closure. Keep failed/interrupted entries after successful evidence

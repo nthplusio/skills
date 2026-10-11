@@ -98,7 +98,9 @@ before replacing an owner or taking over its implementation yourself.
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
 from setup and this run explicitly, excluding all three orchestration skills. Owners
-may load additional role-specific skills and use bounded helpers. Pass relevant
+may load additional role-specific skills and should launch bounded helpers
+(subagents) for research, review preparation, verification and other separable
+tasks within the ticket. Pass relevant
 instructions to those helpers too; do not assume inheritance or launch recursive
 coordinators. Use the harness's supported briefing mechanism if direct skill
 loading is unavailable. Include step 3's status collection and decision routing
@@ -213,7 +215,7 @@ answer, source and outcome in its conversation for inspection; the user need
 not repeat it to the coordinator.
 Record the decision and scope once, and remove it from the pending queue.
 Answering changes the decision queue, not the owner's activity status. Update
-owner activity from inspected state or an actual progress report; a delivery
+owner state and `owner.activity` from inspected state or an actual progress report; a delivery
 receipt proves communication, not that the owner resumed work.
 
 Inspect native input gates using configured capabilities. A human-only gate
@@ -225,7 +227,7 @@ responsiveness. Prefer the decision queue while unrelated owners continue;
 retain the real dashboard update time when refresh is unavailable during a wait.
 
 Record approval scope, destination, and side effects and carry that permission
-to the relevant owners. A milestone goal is not approval for a shared database
+to the relevant owners. A target stage is not approval for a shared database
 write, access/secrets change, push, merge, or deployment. Include indirect
 effects such as auto-merge or an automatic deployment before seeking approval.
 Ask again only when the action exceeds the granted scope.
@@ -255,10 +257,11 @@ incorrect conclusion superseded, link its correction, and update the current
 verdict. Do not erase earlier failure or portray artifact inspection as a new
 execution. See [representative cases](references/orchestration-cases.md).
 
-Keep PR readiness, code publication, deployment, and business acceptance separate.
+Keep each business stage separate: definition, research, PR readiness, code
+publication, review, verification, deployment, and business acceptance.
 Required CI/reviews must actually produce the required result. A green workflow
 without a posted review is not a review; local tests do not prove live persistence.
-Mark unrequested milestones **Not requested**, not blocked. Record extra required
+Mark unrequested stages **Not requested**, not blocked. Record extra required
 steps, such as landing a merge, as obligations rather than implying a published
 PR is merged.
 
@@ -326,44 +329,23 @@ Recover missing outcomes from retained results and decisions; closure alone
 leaves the outcome unclassified. The dashboard serves non-technical testers and
 executives first: give every row a plain-language `work.summary`, and write the
 goal and decision text the same way. Keep technical wording in `reason`,
-`blocker`, `next_action` and milestone notes, which appear when a reader opens
-an item. Show all tasks in a grouped ledger: Needs attention, In progress, and
-Wrapped up. Keep each plain summary, deferral trigger and pending decision link
-visible beside the work status.
-Summarize wrapped-up work and each resolution separately; keep owner lifecycle
-in the technical reference and all four milestone indicators independent. Keep
-one decision queue below the ledger, linked from the progress summary.
-Selecting a task opens a plain summary and progress steps, followed by its
-technical details: reason, blocker, next action, owner, milestones and proof.
-Selecting a decision opens its focused dialog. Default to a closed dialog on
-initial load unless the user requests a selected decision up front. Keep unblock
-previews and copyable IDs in the queue, with the recommendation and authoritative
-answer route in the dialog.
-Keep history and raw proof expandable. Stamp the real update time; do not imply
-that a page reload advances the coordinator's snapshot time.
+`blocker`, `next_action` and stage notes, which appear when a reader opens
+an item. Record all three status views for every row: stage, work status and
+agent status. Stamp `updated_at` with the real update time.
 
-Keep task, proof, decision, and run IDs stable. The template lets the user copy
-an ID, a question, or the selected issue/decision context with its snapshot time,
-states, blocker, next action, proof IDs and approval constraints. Task/proof
-questions go to the coordinator; task context goes to its existing work owner.
-Decision context and questions use their recorded discussion route, with a
-direct-thread instruction for human-only gates. Keep the work owner distinct
-from that answer destination. Show affected tasks and what each decision unblocks
-beside its recommendation.
-Record the coordinator link and any configured native comment/message mechanism
-in `presentation`. Put Copy context before the existing conversation link;
-the user copies, opens and pastes. Neither action sends a message or grants
-approval. Use host-native interaction when supported; do not invent a chat backend
-or claim delivery from a clipboard action. Interpret answers against the same
-record and update it without asking the user to repeat a decision already made
-in its authoritative conversation.
+Keep task, proof, decision, and run IDs stable; the page uses them for links,
+copied questions and copied context. Record the coordinator link and any
+configured native comment/message mechanism in `presentation`. Use host-native
+interaction when supported. A clipboard copy is preparation, not delivery or
+approval. Interpret answers against the same record and update it without asking
+the user to repeat a decision already made in its authoritative conversation.
 
-Render representative states and inspect the result when creating or changing
-the template. Routine data updates need the renderer check and a correct
-destination update, not repeated screenshots of an unchanged layout.
+When creating or changing the template or renderer, follow
+[dashboard layout](references/dashboard-layout.md) and verify the change as it
+describes.
 
 Chat updates cover decisions needed, material blockers/plan changes, and reached
-milestones. Say what changed, what needs attention, and the recommendation where
+stages. Say what changed, what needs attention, and the recommendation where
 applicable. Link the dashboard; leave routine receipts and investigation detail
 there. Honor harness progress requirements with brief updates.
 
@@ -400,7 +382,7 @@ Inspect due deferral triggers on resume and at coordination scans. When a trigge
 fires, expose the follow-up for the same ticket and owner within the authorized
 run scope; otherwise queue the required decision instead of silently restarting it.
 
-Hypothetical future work and unrequested milestones do not keep a completed
+Hypothetical future work and unrequested stages do not keep a completed
 owner open. Never delete evidence to clean up.
 
 Keep the owner reference after closure. Resume that owner for later follow-up
@@ -408,7 +390,7 @@ when supported; otherwise transfer ownership explicitly using the retained
 handoff. Closure does not make a ticket ownerless.
 
 **Done when** each assignment meets its finish line or has a recorded authorized
-resolution, all remaining requested milestones are verified, known obligations are settled,
+resolution, all remaining requested stages are verified, known obligations are settled,
 completed owners have been closed or have truthful closure limitations, and the
 status matches that result. The final chat states actual delivery, limitations,
 and the dashboard location or presentation hold without repeating its audit trail.
