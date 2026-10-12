@@ -389,19 +389,19 @@ class DashboardTests(unittest.TestCase):
         self.data["decisions"] += [
             {"id": "Q-local", "text": "Choose the description format?", "recommendation": "Use full labels.",
              "task_ids": ["API-104"], "unblocks": "Description formatting",
-             "discussion": {"owner_id": "hierarchy-owner", "label": "Hierarchy owner",
-                            "href": "https://example.org/discuss-hierarchy"}},
-            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime thread.",
+             "discussion": {"owner_id": "list-owner", "label": "List owner",
+                            "href": "https://example.org/discuss-list"}},
+            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime owner conversation.",
              "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in", "requires_human": True,
              "discussion": {"owner_id": "runtime-owner", "label": "Runtime owner",
                             "href": "https://example.org/runtime-input"}},
         ]
         html = render(self.data, hosted=True)
-        self.assertIn('href="https://example.org/discuss-hierarchy">Open discussion</a>', html)
-        self.assertIn('href="https://example.org/runtime-input">Answer in thread</a>', html)
+        self.assertIn('href="https://example.org/discuss-list">Open discussion</a>', html)
+        self.assertIn('href="https://example.org/runtime-input">Answer in conversation</a>', html)
         self.assertIn('href="#task-API-104">API-104</a>', html)
         self.assertIn("Answering unlocks: Description formatting", html)
-        self.assertIn('data-discussion-owner="hierarchy-owner"', html)
+        self.assertIn('data-discussion-owner="list-owner"', html)
         self.assertIn('data-requires-human="true"', html)
         self.assertIn("You need to answer this yourself in the linked conversation.", html)
         self.assertIn('data-copy-id="Q-gate"', html)
@@ -574,11 +574,11 @@ class LifecycleTests(unittest.TestCase):
         acceptance.update(state="pending", note="Product owner sign-off")
         with self.assertRaisesRegex(ValueError, "API-102.business_acceptance.accountable"):
             render(self.data)
-        acceptance.update(accountable="Product owner (Megan)")
+        acceptance.update(accountable="Product owner (Sam)")
         with self.assertRaisesRegex(ValueError, "API-102.business_acceptance.revisit"):
             render(self.data)
         acceptance.update(revisit="Friday demo")
-        self.assertIn("Sign-off by Product owner (Megan); revisit Friday demo.", render(self.data))
+        self.assertIn("Sign-off by Product owner (Sam); revisit Friday demo.", render(self.data))
 
     def test_closed_run_has_nothing_open_or_scheduled(self):
         self.data["closed_at"] = "2026-10-08T15:00:00-05:00"

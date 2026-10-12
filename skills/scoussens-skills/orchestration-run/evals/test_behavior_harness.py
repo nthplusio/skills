@@ -111,7 +111,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         self.run_cli("prepare", str(root), "--cases", "runner-parallel-helpers")
         jobs = [
             {"owner": "review-owner", "brief": "Assess E4; follow up for the missing review only.", "follow_up": "Recover the required posted review."},
-            {"owner": "hierarchy-owner", "brief": "Assess E5/E6; follow up for the three regressions only.", "follow_up": "Correct the three reported regressions."},
+            {"owner": "list-owner", "brief": "Assess E5/E6; follow up for the three regressions only.", "follow_up": "Correct the three reported regressions."},
         ]
         result = self.run_cli("call", str(root / "runner-parallel-helpers"), "invoke-helpers", json.dumps({"jobs": jobs}))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -123,7 +123,7 @@ class BehaviorHarnessTests(unittest.TestCase):
             for report in batch["reports"]
         ], [
             ("review-owner", ["E4"], {"delivered": "review-owner", "text": "Recover the required posted review."}),
-            ("hierarchy-owner", ["E5", "E6"], {"delivered": "hierarchy-owner", "text": "Correct the three reported regressions."}),
+            ("list-owner", ["E5", "E6"], {"delivered": "list-owner", "text": "Correct the three reported regressions."}),
         ])
 
     def test_retaining_helper_proof_is_not_reinspection(self):
@@ -134,7 +134,7 @@ class BehaviorHarnessTests(unittest.TestCase):
                 case = root / "runner-parallel-helpers"
                 self.run_cli("call", str(case), "invoke-helpers", json.dumps({"jobs": [
                     {"owner": "review-owner", "brief": "Assess the new report", "follow_up": "Recover the posted review"},
-                    {"owner": "hierarchy-owner", "brief": "Assess the new report", "follow_up": "Correct the three regressions"},
+                    {"owner": "list-owner", "brief": "Assess the new report", "follow_up": "Correct the three regressions"},
                 ]}))
                 result = self.run_cli("call", str(case), operation, '{"owner":"review-owner"}')
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -221,7 +221,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         self.assertEqual(json.loads(queued.stdout), {"queued": "runtime-owner", "requiresHuman": True})
         owner = json.loads(self.run_cli("call", str(case), "inspect", '{"owner":"runtime-owner"}').stdout)
         self.assertEqual(owner["awaitingUserInput"]["decision_id"], "Q3")
-        answered = self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: use leaf labels, local formatting only."}')
+        answered = self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: use short labels, local formatting only."}')
         self.assertEqual(json.loads(answered.stdout), {"delivered": "api-owner", "answered_dialog": "Q4"})
 
     def test_decision_grader_rejects_duplicate_answers_false_gates_and_inferred_progress(self):
@@ -232,15 +232,15 @@ class BehaviorHarnessTests(unittest.TestCase):
         status = json.loads(self.run_cli("call", str(case), "restore").stdout)
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
         self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
-        self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: the user chose leaf labels; local formatting only."}')
+        self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: the user chose short labels; local formatting only."}')
         self.run_cli("call", str(case), "inspect", '{"owner":"ui-owner"}')
         status["decisions"] = [item for item in status["decisions"] if item["id"] != "Q4"]
         for item in status["decisions"]:
-            owner = {"Q1": "fixture-coordinator", "Q2": "hierarchy-owner", "Q3": "runtime-owner"}[item["id"]]
+            owner = {"Q1": "fixture-coordinator", "Q2": "list-owner", "Q3": "runtime-owner"}[item["id"]]
             item["discussion"] = {"owner_id": owner, "label": owner,
                                   "href": f"https://example.org/conversations/{'coordinator' if item['id'] == 'Q1' else owner}"}
             item["requires_human"] = item["id"] == "Q3"
-        status["history"].append("Q4: the user chose leaf labels; local formatting only.")
+        status["history"].append("Q4: the user chose short labels; local formatting only.")
         status_path = "state/runs/template-preview/status.json"
         self.run_cli("call", str(case), "write", json.dumps({"path": status_path, "content": status}))
         self.run_cli("call", str(case), "render")
@@ -253,7 +253,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         status["decisions"][2]["requires_human"] = False
         next(task for task in status["tasks"] if task["id"] == "API-102")["owner"]["state"] = "active"
         self.run_cli("call", str(case), "write", json.dumps({"path": status_path, "content": status}))
-        self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: use leaf labels again."}')
+        self.run_cli("call", str(case), "message", '{"owner":"api-owner","text":"Q4: use short labels again."}')
         self.assertEqual(self.run_cli("grade", str(root)).returncode, 1)
         checks = json.loads((root / "mechanical-results.json").read_text())[0]["checks"]
         self.assertFalse(checks["human_gate_remains_pending"])

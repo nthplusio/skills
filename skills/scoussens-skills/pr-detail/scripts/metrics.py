@@ -11,11 +11,11 @@ but an unfair claim. Three of these were mis-derived by hand while this skill
 was being built:
 
   * Commit churn. `gh pr view --json commits` includes commits authored by
-    OTHER people when the branch absorbed upstream work. On PR #2094 that was
+    OTHER people when the branch absorbed upstream work. On one PR that was
     8 of 11 commits — attributing all 11 to the author would have tripled the
     churn figure for someone who wrote 3.
-  * Finding categories. The AI reviewer's `_(source: ...)_` tag is often
-    MULTI-valued ("bug scan, framework, QA"). Grouping on the raw string
+  * Finding categories. An AI reviewer's `_(source: ...)_` tag can be
+    MULTI-valued ("bugs, style"). Grouping on the raw string
     invents categories and undercounts the real ones.
   * CI history. `statusCheckRollup` only describes the newest commit, so a PR
     that was red for a day reads as clean. Failures are counted per commit.
@@ -101,8 +101,8 @@ def main():
     # --- reviews -------------------------------------------------------
     # Three-way split, not two. The author's own replies land in the reviews
     # array as COMMENTED submissions, and counting them as reviews of the PR
-    # is nonsense — on PR #1215 that reported 40+ "human reviews" that were
-    # the author answering feedback on his own change.
+    # is nonsense — on one PR that reported 40+ "human reviews" that were
+    # the author answering feedback on their own change.
     reviews = sorted(pr.get("reviews") or [], key=lambda r: r.get("submittedAt") or "")
     bot_reviews = [r for r in reviews if is_bot((r.get("author") or {}).get("login"))]
     author_replies = [r for r in reviews
@@ -113,8 +113,8 @@ def main():
     # Each bot submission is one round. Counting timeline `review_dismissed`
     # events instead under-counts: the newest round is never dismissed, and
     # pagination can clip the tail.
-    # Two different bots review here (the house panel and Copilot); one
-    # combined "rounds" number hides which. Break out by login.
+    # Repos may run several review bots; one combined "rounds" number
+    # hides which. Break out by login.
     rounds_by_bot = {}
     for r in bot_reviews:
         who = (r.get("author") or {}).get("login")
@@ -126,14 +126,14 @@ def main():
                       if (r.get("author") or {}).get("login") != author), None)
 
     # The review-SLA clock starts when review is ASKED FOR, not when the branch
-    # first got a PR. PR #1215 sat as a draft for 21 days; measuring from
+    # first got a PR. One PR sat as a draft for 21 days; measuring from
     # createdAt reported a 355h "SLA breach" against reviewers who had not yet
     # been asked for anything.
     rfr = next((ts(e["at"]) for e in timeline if e.get("event") == "ready_for_review"), None)
     sla_start = rfr or opened
 
-    # A review can land while the PR is still a draft (Copilot commented on
-    # #1215 six days before it was marked ready), which makes a naive
+    # A review can land while the PR is still a draft (a bot commented on
+    # one PR six days before it was marked ready), which makes a naive
     # "first review minus ready_for_review" go NEGATIVE. Zero is the honest
     # reading: the feedback was already there when review was requested.
     def response_hours(first):
@@ -151,7 +151,7 @@ def main():
         head = nodes[0]
         body = head.get("body") or ""
         m = SOURCE_TAG.search(body)
-        # Multi-valued tags ("bug scan, framework") must be split, or the
+        # Multi-valued tags ("bugs, style") must be split, or the
         # category histogram invents combined categories and undercounts real ones.
         tags = [s.strip().lower() for s in m.group(1).split(",")] if m else ["untagged"]
         for tag in tags:

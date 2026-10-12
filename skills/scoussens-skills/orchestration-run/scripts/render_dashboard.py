@@ -595,7 +595,7 @@ def render(data, hosted=False):
             raise ValueError(f"{item['id']}: human-only gate needs a discussion owner")
         href = discussion.get("href", "")
         if discussion:
-            route = (anchor(href, "Answer in thread" if human else "Open discussion") if href
+            route = (anchor(href, "Answer in conversation" if human else "Open discussion") if href
                      else escape(f"Discuss with {discussion['label']} ({discussion['owner_id']})"))
         else:
             route = anchor(data["presentation"].get("coordinator_href"), "Open coordinator")

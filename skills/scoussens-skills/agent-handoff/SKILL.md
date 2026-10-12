@@ -162,8 +162,8 @@ you observed.
 Preflight — stop if any line disagrees.
 - `git rev-parse --short HEAD` → a4f19c2
 - `git status --porcelain` → 3 modified files, the ones listed under Context
-- `gh pr checks 214` → green
-- NTPL-88 in the tracker → In Progress, assigned to you
+- `gh pr checks 101` → green
+- ABC-123 in the tracker → In Progress, assigned to you
 ```
 
 Four to six lines. A preflight long enough to skim past is a preflight nobody

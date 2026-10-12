@@ -29,7 +29,7 @@
     {"id": "A2", "scope": "Swap the shared test database during one maintenance window", "task_ids": ["SHIP-107"], "side_effects": "Readers see the replacement database; the original is kept for rollback.", "receipt": "Synthetic answer to Q-window", "granted_at": "2026-10-08T12:00:00-05:00", "expires_at": "2026-10-08T13:00:00-05:00", "state": "consumed"}
   ],
   "follow_ups": [
-    {"id": "F1", "from_task": "SHIP-107", "text": "Resume the paused nightly import jobs after the database swap.", "owner": "OPS-112", "trigger": "After the rollback copy is dropped"},
+    {"id": "F1", "from_task": "SHIP-107", "text": "Resume the paused scheduled jobs after the database swap.", "owner": "OPS-112", "trigger": "After the rollback copy is dropped"},
     {"id": "F2", "from_task": "API-102", "text": "Check persistence against the live service; this run proved it only locally.", "owner": null}
   ],
   "presentation": {
@@ -103,11 +103,11 @@
       }
     },
     {
-      "id": "API-104", "title": "Correct hierarchy regressions",
+      "id": "API-104", "title": "Correct list-view regressions",
       "done_when": "The three reproduced regressions are corrected and proven by the existing owner.",
       "work": {"state": "working", "summary": "Testing found three problems. The team is fixing them.", "reason": "The owner is correcting three reproduced regressions."},
-      "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "activity": "Two subagents are fixing the regressions; a third reruns the expanded checks.", "location": "Fixture hierarchy worktree", "handoff": ""},
-      "resources": ["hierarchy transformation"], "runtime": [], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
+      "owner": {"id": "list-owner", "label": "List owner", "href": "", "state": "active", "activity": "Two subagents are fixing the regressions; a third reruns the expanded checks.", "location": "Fixture list worktree", "handoff": ""},
+      "resources": ["list rendering"], "runtime": [], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -124,7 +124,7 @@
       "done_when": "Configuration publication fits explicitly approved side effects.",
       "work": {"state": "needs_decision", "summary": "Ready to go, but releasing it would affect more than planned. It needs your approval.", "reason": "Publication would trigger a broader deployment; approval is missing."},
       "owner": {"id": "reviewer-owner", "label": "Reviewer owner", "href": "", "state": "waiting", "location": "Fixture reviewer worktree", "handoff": ""},
-      "resources": ["reviewer configuration"], "runtime": [], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
+      "resources": ["reviewer configuration"], "runtime": [], "blocked_by": ["EXT user approval Q1"], "blocker": "Merging to the main branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -244,8 +244,8 @@
     {"id": "E2", "label": "Focused API checks", "scope": "Synthetic agreed local review scope", "result": "passed", "assessment": "accepted", "note": "Does not establish authenticated live persistence.", "output": "SYNTHETIC RECEIPT\nfocused checks: 32 passed on each selected runtime", "href": ""},
     {"id": "E3", "label": "Inherited whole-suite failure", "scope": "Synthetic full-suite baseline", "result": "failed", "assessment": "limited", "note": "Retained alongside scoped success; not erased.", "output": "SYNTHETIC RECEIPT\nwhole suite: inherited baseline failures remain", "href": ""},
     {"id": "E4", "label": "Green job, missing review", "scope": "Synthetic workflow result versus posted reviews", "result": "passed", "assessment": "limited", "note": "Supports job success only. No review was delivered.", "output": "SYNTHETIC RECEIPT\nworkflow conclusion: success\nposted reviews: []", "href": ""},
-    {"id": "E5", "label": "Earlier incomplete readiness evidence", "scope": "Synthetic narrow hierarchy investigation", "result": "passed", "assessment": "superseded", "note": "The earlier ready implication was corrected by E6.", "output": "SYNTHETIC RECEIPT\nnarrow merge checks: passed\nexpanded behavior was not checked", "href": ""},
-    {"id": "E6", "label": "Expanded regression evidence", "scope": "Synthetic three hierarchy behaviors", "result": "failed", "assessment": "limited", "note": "Current readiness is blocked; fixes stay with the existing owner.", "output": "SYNTHETIC RECEIPT\nown dimension: missing\nfolder ordering: incorrect\norphan description: extra level", "href": ""},
+    {"id": "E5", "label": "Earlier incomplete readiness evidence", "scope": "Synthetic narrow list-view investigation", "result": "passed", "assessment": "superseded", "note": "The earlier ready implication was corrected by E6.", "output": "SYNTHETIC RECEIPT\nnarrow merge checks: passed\nexpanded behavior was not checked", "href": ""},
+    {"id": "E6", "label": "Expanded regression evidence", "scope": "Synthetic three list-view behaviors", "result": "failed", "assessment": "limited", "note": "Current readiness is blocked; fixes stay with the existing owner.", "output": "SYNTHETIC RECEIPT\nsort order: incorrect\nempty-state label: missing\nnested item indent: extra level", "href": ""},
     {"id": "E7", "label": "Relevant compatibility proof", "scope": "Synthetic behavioral difference behind old workflow hash", "result": "passed", "assessment": "accepted", "note": "Matching bytes are not required by this fixture's contract.", "output": "SYNTHETIC RECEIPT\nrelevant foreground behavior: passed\nstop behavior: passed\nmissing-result gate: passed", "href": ""},
     {"id": "E8", "label": "Interrupted runtime attempt", "scope": "Synthetic shared-runtime attempt", "result": "interrupted", "assessment": "limited", "note": "Keep the interrupted request separate from any later successful run.", "output": "SYNTHETIC RECEIPT\nrequest: interrupted before result\nno acceptance verdict", "href": ""},
     {"id": "E9", "label": "Separate delivery observations", "scope": "Synthetic requested publication, runtime, and business criteria", "result": "observed", "assessment": "accepted", "note": "Each observation is independent. Local tests alone would not suffice.", "output": "SYNTHETIC RECEIPT\nrequired review material/checks: prepared\nrequested branch/PR: published\ntarget runtime revision: intended revision observed\nspecified business checks: accepted", "href": ""},

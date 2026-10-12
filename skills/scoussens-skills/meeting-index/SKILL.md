@@ -55,18 +55,19 @@ Every adapter normalises to the same record, and the steps below are written
 against it:
 
 ```json
-{ "id": "…", "title": "…", "start": "2026-08-21T18:06:03Z", "duration_ms": 4769000 }
+{ "id": "…", "title": "…", "start": "2026-01-15T15:00:00Z", "duration_ms": 3600000 }
 ```
 
 ## Enumerate the window; do not trust a title search
 
 The instinct is to search recording titles for the topic. Resist it. Recording
 titles — especially auto-generated ones — name the *subject of the discussion*,
-not the thing the discussion was about. A search for a product's own name once
-matched 9 recordings across a 500-record library while the window actually held
-41 meetings about it, because those meetings were titled "Auth Migration
-Review", "Schema Cutover", "Billing Rework". A title filter on that data does
-not narrow the set, it silently loses most of it.
+not the thing the discussion was about. A search for a product's own name can
+match a handful of recordings across a library of hundreds while the window
+holds dozens of meetings about that product, because those meetings are titled
+after what was discussed: "Example Topic A Review", "Example Topic B Cutover".
+A title filter on that data does not narrow the set, it silently loses most of
+it.
 
 So **enumerate the whole window by date, then classify by content.** Running a
 title search *as well* is worth it as a cross-check — if it surfaces something
@@ -84,12 +85,11 @@ themselves very differently:
   and get exactly 40 back, and a complete response is indistinguishable from a
   clipped one.
 
-That is not hypothetical. An unfiltered `page_size: 40` call once returned
-exactly 40 records that happened to stop part-way through the earliest day of
-the window. The resulting index shipped missing five meetings and nearly three
-hours — including a 77-minute architecture review that was the origin of two of
-the threads the index had attributed to later meetings. Nothing in the response
-indicated a problem.
+For example, an unfiltered `page_size: 40` call can return exactly 40 records
+that stop part-way through the earliest day of the window. An index built from
+it ships without those meetings, and if one of them is where a thread began, the
+index attributes that thread to a later meeting. Nothing in the response
+indicates a problem.
 
 Two habits prevent it:
 
@@ -113,8 +113,8 @@ different project or client that happens to sit in the same date range.
 Interviews and one-to-ones are a judgement call — lean toward including and
 labelling them rather than dropping them silently.
 
-**Name the exclusions in the output.** "39 of 47 recordings, and here are the 8
-I left out and why" is a claim the user can check. Silently indexing 39 of 47
+**Name the exclusions in the output.** "40 of 48 recordings, and here are the 8
+I left out and why" is a claim the user can check. Silently indexing 40 of 48
 looks identical to missing 8, and the reader has no way to tell which happened.
 This is the cheapest trust you will ever buy.
 
@@ -140,9 +140,9 @@ Three hazards worth expecting:
   generated. That is a signal it was accidental, not a reason to retry.
 - **Proper nouns and numbers are the least reliable content in any summary.**
   Speech-to-text mangles names of people, products and companies, and summaries
-  inherit every variant: one product name came through four different ways in a
-  single week, a colleague's name appeared as five different spellings and every
-  one was wrong, and a numeric constant arrived with a digit missing. Normalise
+  inherit every variant: one product name can arrive several different ways in a
+  single week, a person's name can appear in several spellings with none of them
+  right, and a numeric constant can lose a digit. Normalise
   variants of the same entity to one spelling, prefer a spelling the user has
   used over one the transcript produced, and treat any name or magic number you
   have *only* from a transcript as provisional. Where such a value matters, say

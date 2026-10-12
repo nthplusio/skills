@@ -39,19 +39,19 @@ cost a real, user-caught bug the first time this skill ran).
     reason isn't useful to the reader.
   - `REVIEW_REQUIRED` or `null` → **fetch the full review history** before
     labeling anything: `gh pr view <n> --json reviews --jq '[.reviews[] |
-    select(.state != "DISMISSED")]'` (exclude `DISMISSED` — this repo's
-    automated reviewer dismisses its own prior review whenever new commits
-    land, so a dismissed entry describes a stale commit, not the PR as it
-    stands now). Then:
+    select(.state != "DISMISSED")]'` (exclude `DISMISSED` — some automated
+    reviewers dismiss their own prior review whenever new commits land, so a
+    dismissed entry describes a stale commit, not the PR as it stands now).
+    Then:
     - If that filtered list is **empty** → genuinely untouched: the quiet
-      **"awaiting review"** pill is accurate here, and only here.
+      **"awaiting review"** pill is accurate in this case, and only this one.
     - If it's **non-empty** (one or more `COMMENTED` reviews, human or
       bot) → the PR *has* been reviewed, just without a formal verdict —
       label it **"no blocking issues"** (or similar; it must read as
       distinct from both "approved" and "awaiting review"), and pull a
       short excerpt from the latest surviving review's body the same way
-      as the `CHANGES_REQUESTED` case — automated reviews here typically
-      state findings explicitly ("No blocking issues found", a resolved
+      as the `CHANGES_REQUESTED` case — some automated reviewers state
+      findings explicitly ("No blocking issues found", a resolved
       prior comment, etc.), so there's real substance to quote, not just a
       label.
 

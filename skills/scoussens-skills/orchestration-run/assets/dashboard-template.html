@@ -291,14 +291,14 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
     const human = button?.dataset.requiresHuman === 'true';
     target.textContent = (button?.dataset.context ? 'Context for ' : 'Question for ') + label;
     instructions.textContent = human
-      ? 'Answer the human-only dialog in this thread. Copy does not send or unlock it.'
+      ? 'Answer the human-only dialog in the linked conversation. Copy does not send or unlock it.'
       : 'Copy does not send anything. Paste into ' + label + "'s conversation.";
     interaction.hidden = Boolean(owner);
     destination.hidden = dialog.open;
     if (owner) {
       const href = button.dataset.discussionHref;
       const node = document.createElement(href ? 'a' : 'span');
-      node.textContent = href ? (human ? 'Answer in thread' : 'Open discussion') : label + ' (' + owner + ')';
+      node.textContent = href ? (human ? 'Answer in conversation' : 'Open discussion') : label + ' (' + owner + ')';
       if (href) node.href = href;
       destination.replaceChildren(node);
     } else {

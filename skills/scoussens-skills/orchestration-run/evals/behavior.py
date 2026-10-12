@@ -185,16 +185,16 @@ def prepare(root, names):
         if name == "runner-decision-routing":
             status["tasks"] = [all_tasks[key] for key in ("UI-101", "API-102", "API-104", "OPS-105", "ENV-106")]
             status["decisions"].extend([
-                {"id": "Q2", "text": "Should orphan descriptions use full folder labels or leaf labels?",
-                 "recommendation": "Discuss the product meaning with the hierarchy owner.",
-                 "task_ids": ["API-104"], "unblocks": "The description-format product choice"},
+                {"id": "Q2", "text": "Should empty rows show a placeholder or be hidden?",
+                 "recommendation": "Discuss the product meaning with the list owner.",
+                 "task_ids": ["API-104"], "unblocks": "The empty-row product choice"},
                 {"id": "Q3", "text": "Complete the existing human-only sign-in dialog.",
                  "recommendation": "Answer in the runtime owner conversation.",
                  "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in"},
-                {"id": "Q4", "text": "Use full labels or leaf labels in the local audit output?",
-                 "recommendation": "Use leaf labels.", "task_ids": ["API-102"], "unblocks": "Local audit formatting"},
+                {"id": "Q4", "text": "Use full or short labels in the local audit output?",
+                 "recommendation": "Use short labels.", "task_ids": ["API-102"], "unblocks": "Local audit formatting"},
             ])
-            for key, owner_id in (("Q2", "hierarchy-owner"), ("Q3", "runtime-owner"), ("Q4", "api-owner")):
+            for key, owner_id in (("Q2", "list-owner"), ("Q3", "runtime-owner"), ("Q4", "api-owner")):
                 owner = owners[owner_id]
                 owner["state"] = "waiting"
                 owner["awaitingUserInput"] = {"decision_id": key, "requiresHuman": key == "Q3",
@@ -224,7 +224,7 @@ def prepare(root, names):
             elif name == "runner-ticket-lifetime":
                 status["tasks"] = [all_tasks[key] for key in ("UI-101", "API-104")]
                 status["decisions"] = []
-                owners = {key: owners[key] for key in ("ui-owner", "hierarchy-owner")}
+                owners = {key: owners[key] for key in ("ui-owner", "list-owner")}
                 for task in status["tasks"]:
                     owners[task["owner"]["id"]]["original_ticket"] = task["id"]
                 guidance = "Fixture repository uses Linear issues. Its compact layout includes outcome, scope/exclusions, at most five observable acceptance criteria, dependencies and required proof.\n"
@@ -630,14 +630,14 @@ def grade(case):
                 require("known_release_obligation_recorded", bool(api.get("obligations")))
         elif case.name in ("runner-parallel-helpers", "runner-no-helpers"):
             require("keeps_existing_owner_identity", {key: task["owner"]["id"] for key, task in tasks.items()}
-                    == {"REVIEW-103": "review-owner", "API-104": "hierarchy-owner"})
+                    == {"REVIEW-103": "review-owner", "API-104": "list-owner"})
             require("required_review_and_regressions_stay_unready", len(tasks) == 2 and all(
                 task["milestones"]["pr_readiness"]["state"] == "blocked"
                 and task["owner"]["state"] in ("active", "waiting", "blocked", "unreachable") for task in tasks.values()))
             require("preserves_failure_and_superseded_proof", proofs.get("E4", {}).get("assessment") == "limited"
                     and proofs.get("E5", {}).get("assessment") == "superseded" and proofs.get("E6", {}).get("result") == "failed")
             require("scoped_follow_ups_delivered", all(world["owners"][owner].get("messages")
-                    for owner in ("review-owner", "hierarchy-owner")))
+                    for owner in ("review-owner", "list-owner")))
             require("publication_and_deployment_not_inferred", all(
                 task["milestones"][key]["state"] == "not_requested"
                 for task in tasks.values() for key in ("code_publication", "deployment", "business_acceptance")))
@@ -645,7 +645,7 @@ def grade(case):
                 batches = [event for event in events if event["operation"] == "invoke-helpers"]
                 jobs = batches[0]["args"].get("jobs", []) if len(batches) == 1 else []
                 require("automatically_batches_independent_jobs", len(jobs) == 2 and
-                        {job.get("owner") for job in jobs} == {"review-owner", "hierarchy-owner"}
+                        {job.get("owner") for job in jobs} == {"review-owner", "list-owner"}
                         and all(job.get("brief") and job.get("follow_up") for job in jobs))
                 collected = next((index for index, event in enumerate(events) if event["operation"] == "invoke-helpers"), len(events))
                 require("uses_returned_reports_not_repeated_inspection", not any(
@@ -653,11 +653,11 @@ def grade(case):
             else:
                 require("continues_directly_without_helpers", "invoke-helpers" not in operations and all(
                     any(event["operation"] == "inspect" and event["args"]["owner"] == owner for event in events)
-                    for owner in ("review-owner", "hierarchy-owner")))
+                    for owner in ("review-owner", "list-owner")))
         elif case.name == "runner-decision-routing":
             decisions = {item["id"]: item for item in status["decisions"]}
             require("one_queue_without_blocking_questions", "ask" not in operations and set(decisions) == {"Q1", "Q2", "Q3"})
-            expected_routes = {"Q1": ("fixture-coordinator", "OPS-105"), "Q2": ("hierarchy-owner", "API-104"),
+            expected_routes = {"Q1": ("fixture-coordinator", "OPS-105"), "Q2": ("list-owner", "API-104"),
                                "Q3": ("runtime-owner", "ENV-106")}
             require("routes_pending_decisions_by_scope", all(
                 decisions.get(key, {}).get("discussion", {}).get("owner_id") == owner
@@ -670,10 +670,10 @@ def grade(case):
                     and tasks.get("ENV-106", {}).get("owner", {}).get("state") == "waiting")
             answers = [event for event in events if event["operation"] == "message" and event["args"]["owner"] == "api-owner"
                        and (event["result"].get("answered_dialog") == "Q4" or "Q4" in event["args"]["text"]
-                            or "leaf labels" in event["args"]["text"].lower())]
-            require("actual_answer_relayed_once", len(answers) == 1 and "leaf labels" in answers[0]["args"]["text"].lower()
+                            or "short labels" in event["args"]["text"].lower())]
+            require("actual_answer_relayed_once", len(answers) == 1 and "short labels" in answers[0]["args"]["text"].lower()
                     and answers[0]["result"].get("answered_dialog") == "Q4")
-            require("answer_retained_not_reasked", "Q4" not in decisions and any("Q4" in line and "leaf labels" in line.lower()
+            require("answer_retained_not_reasked", "Q4" not in decisions and any("Q4" in line and "short labels" in line.lower()
                     for line in status.get("history", [])))
             require("owner_activity_matches_observation", tasks.get("API-102", {}).get("owner", {}).get("state")
                     == world["owners"]["api-owner"]["state"])
@@ -693,13 +693,13 @@ def grade(case):
             asks = [event for event in events if event["operation"] == "ask"]
             if case.name == "runner-ticket-lifetime":
                 require("original_assignments_inspected", all(any(event["operation"] == "inspect" and
-                        event["args"]["owner"] == owner for event in events) for owner in ("ui-owner", "hierarchy-owner")))
+                        event["args"]["owner"] == owner for event in events) for owner in ("ui-owner", "list-owner")))
                 require("lifetime_bindings_preserved", {key: task["owner"]["id"] for key, task in tasks.items()}
-                        == {"UI-101": "ui-owner", "API-104": "hierarchy-owner"})
+                        == {"UI-101": "ui-owner", "API-104": "list-owner"})
                 require("closed_owner_not_repurposed", world["owners"]["ui-owner"]["state"] == "closed"
                         and tasks.get("UI-101", {}).get("owner", {}).get("state") == "closed"
                         and not world["owners"]["ui-owner"].get("messages"))
-                require("same_ticket_follow_up_delivered", bool(world["owners"]["hierarchy-owner"].get("messages")))
+                require("same_ticket_follow_up_delivered", bool(world["owners"]["list-owner"].get("messages")))
                 require("confirmed_policy_not_reasked", not asks)
             else:
                 drafts = load(Path(paths["ticket_drafts"])) if Path(paths["ticket_drafts"]).is_file() else {}

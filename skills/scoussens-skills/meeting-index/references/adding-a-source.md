@@ -17,7 +17,7 @@ because the skill needs very little from a source.
 **Four fields**, normalised to this record:
 
 ```json
-{ "id": "…", "title": "…", "start": "2026-08-21T18:06:03Z", "duration_ms": 4769000 }
+{ "id": "…", "title": "…", "start": "2026-01-15T15:00:00Z", "duration_ms": 3600000 }
 ```
 
 | Field | Meaning | Watch for |

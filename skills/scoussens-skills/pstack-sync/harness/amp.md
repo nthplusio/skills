@@ -4,9 +4,9 @@ How pstack's needs map onto Amp. Built and maintained per [`../references/adapti
 
 ## Destination
 
-- **Skills directory**: the Workspace Skills repository clone at `~/.cache/amp/repositories/ampcode.com-workspace-skills`. Prepare it by fetching and `git reset --hard origin/main`, or clone it with the command `amp skills repositories` prints for Workspace Skills; that output must list it as writable. Source: `building-skills` skill.
-- **Publish**: commit in the clone, then `git push` after the user confirms; a push changes skills for every workspace member. Source: `building-skills` skill.
-- **Reload**: `reload_skills` tool after the push. Source: Amp tool list.
+- **Skills directory**: the user's choice of three; ask when they have not said. The Workspace Skills repository (clone at `~/.cache/amp/repositories/ampcode.com-workspace-skills`) shares the skills with every workspace member. The User Skills repository keeps them personal. A project's `.agents/skills/` limits them to that project. For either repository, prepare its clone by fetching and `git reset --hard origin/main`, or clone it with the command `amp skills repositories` prints for it; that output must list it as writable. Source: `building-skills` skill.
+- **Publish**: for a skills repository, commit in the clone, then `git push` after the user confirms; a push to the Workspace Skills repository changes skills for every workspace member. For `.agents/skills/`, the files take effect in that checkout, and committing them follows the project's own process. Source: `building-skills` skill.
+- **Reload**: `reload_skills` tool after publishing. Source: Amp tool list.
 - **Name shadowing**: local, built-in, and personal skills mask a workspace skill with the same name. Source: ampcode.com/docs/customize/skills, "Skill Sources and Precedence".
 
 ## Needs

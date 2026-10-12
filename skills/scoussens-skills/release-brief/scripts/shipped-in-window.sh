@@ -17,7 +17,7 @@
 # squash or rebase merge rewrites hashes and makes released work look unmerged.
 #
 # Usage:
-#   shipped-in-window.sh --since 2026-08-17 [--until 2026-08-21] \
+#   shipped-in-window.sh --since 2026-01-12 [--until 2026-01-16] \
 #                        [--production master] [--integration staging] [--remote origin]
 #   shipped-in-window.sh --release v2.3.0 [--production main]
 #

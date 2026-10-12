@@ -62,8 +62,8 @@ A summary figure invites arithmetic, so make each one survive it.
   fact. They diverge whenever a fix is released while its issue stays open for
   the reporter to confirm. Pick the verb the number actually supports, and
   footnote the exception rather than rounding it away.
-- State the window beside the figure. "34 pull requests" means nothing without
-  "merged Monday 17 to Friday 21".
+- State the window beside the figure. "25 pull requests" means nothing without
+  "merged Monday 12 to Friday 16".
 - Prefer figures you can rebuild from the same command twice.
 - Do not report a metric you did not measure. *Zero regressions* requires
   evidence, not the absence of a report.
