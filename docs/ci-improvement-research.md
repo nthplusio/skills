@@ -158,8 +158,8 @@ and entitlement. Recheck the linked documentation before applying a design.
 | Medium | Ownerless-work deletion and reversible implementation | Versioned reusable-component contracts, image and pin updates, ownership, retention, and recurring maintenance cost. |
 | Medium | Latency and consumption comparisons | Trustworthy feedback and time-to-green measures that include failures. Use application-level delivery outcomes as guardrails, not CI optimization targets. |
 
-Local evidence collected in the [source thread](https://example.org/thread)
-through direct inspection and a synthetic fixture in its `nthplusio/skills` checkout:
+Local evidence collected through direct inspection of this repository at
+commit `1175987` and a synthetic fixture:
 
 - `scripts/gh_ci_baseline.py` under the skill fetches at most 100 jobs without
   pagination, fetches only the latest retry attempt, and measures elapsed time
@@ -170,8 +170,8 @@ through direct inspection and a synthetic fixture in its `nthplusio/skills` chec
   longest job queue 120 seconds. Trigger-to-completion is 540 seconds. These
   quantities have different origins. Do not add the queue to elapsed, because
   it overlaps that interval. This is not a real CI benchmark or speedup claim.
-- All three existing evals are read-only. Eval 2 expects two jobs, while the
-  source thread's local `.github/workflows/validate.yml` has `validate`,
+- All three existing evals are read-only. Eval 2 expects two jobs, while
+  this repository's `.github/workflows/validate.yml` at `1175987` has `validate`,
   `plugins`, and `builder-agrees`. These findings identify incomplete mode
   coverage and a stale fixture, not evidence that repository CI is unhealthy.
 

@@ -16,7 +16,7 @@ const basename = (path: string) => path.trim().replace(/\/+$/, '').split('/').po
 // No session call gives the branch, so it comes from git in the working directory.
 const branchOf = async ($: EngineInterface, cwd: string) => {
   const r = await $.process.run(['git', '--no-optional-locks', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'])
-  return r.exitCode === 0 ? basename(r.stdout) : ''
+  return r.exitCode === 0 ? r.stdout.trim() : ''
 }
 
 const refresh = async ($: EngineInterface) => {
