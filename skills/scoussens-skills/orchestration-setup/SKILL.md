@@ -18,7 +18,8 @@ once and keep each harness's choices under its discovered name.
 Read `<repository-root>/.orchestration/config.json`, or the user's explicit path
 or `ORCHESTRATION_CONFIG`. Read its `discovery_file`, resolved relative to the
 configuration directory. Without configuration, use the repository's
-`.orchestration/discovery.json`. Identify the current harness from runtime context.
+`.orchestration/discovery.json`. The harness name is the saved `harnesses` key
+for the product running here.
 
 If discovery is absent, malformed, missing this harness, or contradicted by
 the current context, load `orchestration-discovery` first. Give it the selected

@@ -96,7 +96,8 @@ and agent discovery:
 2. `/orchestration-setup` calls discovery if needed, then interviews for project
    ticket policy, shared worker skills, storage, and run defaults. It saves
    `.orchestration/config.json` with a profile for each harness.
-3. `/orchestration-run` identifies the current harness and resolves its profile.
+3. `/orchestration-run` resolves the profile saved under the harness name that
+   discovery recorded.
    A short confirmation covers the selected tickets, finish line, dashboard
    audience, and scan interval. Resume reuses confirmed run choices.
 

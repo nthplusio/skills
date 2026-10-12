@@ -16,12 +16,13 @@ coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and recover the run
 
-Identify the current harness name from runtime context. Read
-`<repository-root>/.orchestration/config.json`, or the explicit path or
-`ORCHESTRATION_CONFIG`. Resolve its saved profile with:
+Read `<repository-root>/.orchestration/config.json`, or the explicit path or
+`ORCHESTRATION_CONFIG`. The harness name is its saved `harnesses` key for the
+product running here, exactly as discovery recorded it. Resolve its saved
+profile with:
 
 ```bash
-python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --harness '<current harness name>'
+python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --harness '<saved harness name>'
 ```
 
 Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
