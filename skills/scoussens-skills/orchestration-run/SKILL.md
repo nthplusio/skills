@@ -81,7 +81,7 @@ The [run lifecycle](references/dashboard-data.md#run-lifecycle) defines these ch
 Use setup's confirmed ticket policy. Inspect selected tickets against it, not
 the repository's general configuration again. For an unclear ticket, resolve
 its missing outcome or proof before assignment. For independent outcomes or too
-many criteria, use [split proposals](../orchestration-setup/references/ticket-template.md)
+many criteria, use [split proposals](references/ticket-template.md)
 and await approval. Hold only affected assignments.
 
 Each persistent work owner is bound to one ticket for its lifetime. Each ticket
