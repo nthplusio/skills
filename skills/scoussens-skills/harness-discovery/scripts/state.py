@@ -109,6 +109,17 @@ def check_discovery(discovery):
             if facts["helpers"][field] is not None and type(facts["helpers"][field]) is not bool:
                 raise ValueError(f"helpers.{field} must be boolean or null")
         text(facts["skills"]["brief"], "skills.brief")
+        for section, fields in {"helpers": ("readonly",), "skills": ("locations", "reload"),
+                                "instructions": ("user", "project"), "models": ("select", "list")}.items():
+            if section not in facts:
+                continue
+            if not isinstance(facts[section], dict):
+                raise ValueError(f"{name}.{section} must be an object")
+            for field in fields:
+                if facts[section].get(field) is not None:
+                    text(facts[section][field], f"{name}.{section}.{field}")
+        if facts.get("ask_user") is not None:
+            text(facts["ask_user"], f"{name}.ask_user")
         texts(facts["limitations"], "limitations")
         if not isinstance(facts["artifacts"], list):
             raise ValueError("artifacts must be a list")

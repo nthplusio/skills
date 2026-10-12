@@ -27,7 +27,8 @@ It moves and upgrades state saved by earlier versions, refuses to overwrite a
 conflicting file, and prints what it changed. Tell the user what it moved. When
 the user names an older configuration elsewhere, pass it with `--from <path>`;
 migrate copies it and leaves the original unchanged. Then read both files when
-they exist. Identify the current harness from runtime context.
+they exist. Identify the current harness by its canonical product name, as
+`harness-discovery` records it.
 
 If discovery is absent, malformed, missing this harness, or contradicted by
 the current context, load `harness-discovery` first for the same repository.

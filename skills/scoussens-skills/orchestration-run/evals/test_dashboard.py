@@ -722,6 +722,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(amp["defaults"], {"finish_line": "merged PRs", "destination": "portal", "interval_seconds": 15})
         self.assertEqual(terminal["defaults"], {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 90})
         self.assertEqual(amp["skills"], {"load": "Load by skill name", "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
+                                        "locations": None, "reload": None,
                                         "shared": ["speak-clearly", "test-behavior", "amp-proof"], "stages": {}})
         self.assertEqual(terminal["skills"]["shared"], ["speak-clearly", "test-behavior", "terminal-proof"])
         self.assertFalse(self.marker.exists())
@@ -797,7 +798,8 @@ class ConfigTests(unittest.TestCase):
         selected = self.selected("Claude Code")
         self.assertEqual(selected["owners"], {"launch": None, "inspect": None, "message": None,
                                              "collect": None, "close": None, "resume": None, "workspace_model": "shared"})
-        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None})
+        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None,
+                                              "readonly": None})
         self.assertEqual(selected["monitoring"], {"notifications": None, "wait": None, "wake": None})
         self.assertEqual(selected["evidence"], {"transfer": None, "retain_before_close": None})
         self.assertEqual(selected["artifacts"], [])
