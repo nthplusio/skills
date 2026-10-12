@@ -79,6 +79,18 @@ class ChainContractTests(unittest.TestCase):
         self.assertEqual(skill_for("/harness-discovery"), "harness-discovery")
         self.assertEqual(skill_for("/orchestration-setup"), "orchestration-setup")
 
+    def test_each_hand_off_is_stated_once_in_the_body(self):
+        bodies = {name: (SKILLS / name / "SKILL.md").read_text().split("---", 2)[2] for name in NAMES}
+        run = bodies["orchestration-run"]
+        self.assertIn("When `resolve` exits 0", run)
+        self.assertIn("do not read the", run)
+        self.assertNotIn("Install `harness-discovery`, `orchestration-setup` and this skill together", run)
+        for phrase in ("run orchestration-setup", "repair this harness profile with orchestration-setup", "run state.py migrate"):
+            self.assertIn(phrase, run)
+        self.assertIn("run harness-discovery", bodies["orchestration-setup"])
+        self.assertEqual(sum(body.lower().count("load `orchestration-setup`") for body in bodies.values()), 1)
+        self.assertEqual(sum(body.lower().count("load `harness-discovery`") for body in bodies.values()), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

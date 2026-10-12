@@ -13,8 +13,9 @@ description: >-
 # Harness discovery
 
 Save observed facts for any skill that needs them: `orchestration-setup` and
-`orchestration-run`, `pstack-sync`, and skills that publish HTML. Discovery
-describes what works; each caller decides what to use.
+`orchestration-run`, `pstack-sync`, and skills that publish HTML. A caller loaded
+this skill, or the user named `/harness-discovery`. Discovery describes what
+works; each caller decides what to use. Do not start an orchestration from here.
 
 ## 1. Identify the harness and read saved discovery
 
