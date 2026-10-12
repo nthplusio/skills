@@ -6,21 +6,50 @@
       "name": "ca-bundle-incident",
       "prompt": "teach me PR 1875 in acme/shop — I need to understand the CA bundle thing well enough to explain it to the team on Monday",
       "expected_output": "Self-contained HTML artifact teaching PR #1875. Should identify the spine (undici's `ca` option replaces Node's trust store rather than extending it, so 6 corporate certs silently dropped 144 Mozilla roots), map all 10 changed files including the 4 new ones, and include an operable element — most naturally a trust-store composition toggle.",
-      "files": []
+      "files": [],
+      "assertions": [
+        "standalone_html: one complete HTML document with no external script or style URLs",
+        "file_map_complete: every file the PR changes is named in the page",
+        "selfcheck_present: 6 to 14 predict-then-check questions in any form",
+        "interaction_simulates_model: an operable element runs this PR's own mechanism, not a quiz",
+        "page_weight_reasonable: embedded fonts stay under 120 KB and weigh less than the page content",
+        "real_error_string: quotes the real UNABLE_TO_GET_ISSUER_CERT_LOCALLY error",
+        "spine_identified: explains that undici's ca option replaces Node's trust store rather than extending it, dropping the 144 Mozilla roots"
+      ]
     },
     {
       "id": 1,
       "name": "redos-regex",
       "prompt": "can you help me understand https://github.com/acme/shop/pull/1872 — I'm reviewing some similar regex code and I want to actually get why the old pattern was slow, not just be told it was",
       "expected_output": "Self-contained HTML artifact teaching PR #1872. Should identify the spine (the outer `*` wraps a character class that already contains `/`, so the matcher has exponentially many ways to split the same string), include a live regex input or complexity demo that actually runs both patterns, and surface the unresolved reviewer concern about the n=100 test hanging CI rather than failing.",
-      "files": []
+      "files": [],
+      "assertions": [
+        "standalone_html: one complete HTML document with no external script or style URLs",
+        "file_map_complete: every file the PR changes is named in the page",
+        "selfcheck_present: 6 to 14 predict-then-check questions in any form",
+        "interaction_simulates_model: an operable element runs this PR's own mechanism, not a quiz",
+        "page_weight_reasonable: embedded fonts stay under 120 KB and weigh less than the page content",
+        "both_patterns_verbatim: shows the old and new patterns exactly as the PR has them",
+        "spine_identified: explains that the outer * wraps a character class that already contains /, so one string splits exponentially many ways",
+        "reviewer_concern_surfaced: reports the open concern that the n=100 test would hang CI rather than fail"
+      ]
     },
     {
       "id": 2,
       "name": "asyncio-lock-race",
       "prompt": "walk me through PR 1874, I have to answer questions about it",
       "expected_output": "Self-contained HTML artifact teaching PR #1874. Should identify the spine (asyncio.Lock only binds to a loop on its contended acquire path, so an orphaned waiter poisons the cached lock for every later caller), include a steppable timeline or interleaving explorer, and report honestly that the PR merged with changes still requested about the except-RuntimeError scope.",
-      "files": []
+      "files": [],
+      "assertions": [
+        "standalone_html: one complete HTML document with no external script or style URLs",
+        "file_map_complete: every file the PR changes is named in the page",
+        "selfcheck_present: 6 to 14 predict-then-check questions in any form",
+        "interaction_simulates_model: an operable element runs this PR's own mechanism, not a quiz",
+        "page_weight_reasonable: embedded fonts stay under 120 KB and weigh less than the page content",
+        "poisoning_explained: names _waiters and _locks when explaining how one orphaned waiter poisons the cached lock",
+        "spine_identified: explains that asyncio.Lock binds to a loop only on its contended acquire path",
+        "merge_state_honest: reports that the PR merged with changes still requested about the except RuntimeError scope"
+      ]
     }
   ]
 }
