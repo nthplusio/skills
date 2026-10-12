@@ -8,5 +8,5 @@ charges or a price. The proposed two-shard trial has two jobs of 5 minutes
 each, including duplicated setup. The current job takes 8 minutes. These are
 synthetic comparable observations, not a prediction that all sharding doubles work.
 
-Main push consumers: Railway deploy gate waits for its check suite, and the
-`migrate` job has `needs: verify`.
+Main push consumers: the deployment service's deploy gate waits for its check
+suite, and the `migrate` job has `needs: verify`.

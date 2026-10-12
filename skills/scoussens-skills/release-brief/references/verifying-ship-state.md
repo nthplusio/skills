@@ -76,10 +76,10 @@ a forge API reports merge times in UTC. A promotion made at 21:00−05:00 is
 therefore *yesterday* to git and *today* to the API, and any date filter run
 across that boundary drops it from one side silently.
 
-This is not hypothetical. In one two-branch repository, three of the four
-promotions inside a Monday-to-Friday window carried git timestamps of
-`2026-08-16T21:00−05:00`, `21:59−05:00`, and `2026-08-17T00:45−05:00`. A
-`--since 2026-08-17` filter returned one release; the forge reported four.
+For example, suppose that in a two-branch repository, three of the four
+promotions inside a Monday-to-Friday window carry git timestamps of
+`2026-01-11T21:00−05:00`, `22:30−05:00`, and `23:45−05:00`. A
+`--since 2026-01-12` filter returns one release; the forge reports four.
 
 Two habits avoid it:
 
@@ -91,7 +91,7 @@ Two habits avoid it:
   release in range begins.
 
 Where an exact cutoff matters, give git an unambiguous instant —
-`--since '2026-08-17T00:00:00Z'` — rather than a bare date.
+`--since '2026-01-12T00:00:00Z'` — rather than a bare date.
 
 ## Confirming a web change reached the browser
 

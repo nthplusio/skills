@@ -1,15 +1,15 @@
 # Dashboard data
 
 `status.json` is the coordinator's local display record, not a receipt format
-workers must implement. The dashboard's main readers are non-technical testers
-and executives tracking progress. Write the overview fields (`title`, `goal`,
-`work.summary`, and each decision's `text`, `recommendation` and `unblocks`) in
-plain language, without ticket jargon, agent terms or proof IDs. Technical fields
-(`reason`, `blocker`, `next_action`, stage notes, owner and proof) appear
-only when a reader opens an item or decision. The renderer turns the record into
-one self-contained HTML file without fetching data or calling harness tools. See
-the synthetic [`evals/dashboard-preview.json`](../evals/dashboard-preview.json)
-for the shape.
+workers must implement. The dashboard's main readers are non-technical
+stakeholders, such as testers or executives, tracking progress. Write the
+overview fields (`title`, `goal`, `work.summary`, and each decision's `text`,
+`recommendation` and `unblocks`) in plain language, without ticket jargon, agent
+terms or proof IDs. Technical fields (`reason`, `blocker`, `next_action`, stage
+notes, owner and proof) appear only when a reader opens an item or decision. The
+renderer turns the record into one self-contained HTML file without fetching
+data or calling harness tools. See the synthetic
+[`evals/dashboard-preview.json`](../evals/dashboard-preview.json) for the shape.
 
 Each task row records three independent views of status:
 

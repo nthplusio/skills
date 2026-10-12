@@ -112,7 +112,14 @@ function checkLinks(skillDir) {
       const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
       for (const [, href] of prose.matchAll(/\]\(<?([^)\s>]+)>?\)/g)) {
         if (/^[a-z][a-z0-9+.-]*:|^#/i.test(href)) continue
-        const target = resolve(dirname(full), decodeURIComponent(href.split('#')[0]))
+        let path
+        try {
+          path = decodeURIComponent(href.split('#')[0])
+        } catch {
+          err(rel, `link ${href} has malformed percent-encoding`)
+          continue
+        }
+        const target = resolve(dirname(full), path)
         if (!existsSync(target)) err(rel, `link ${href} points to a missing file`)
         else if (target !== skillDir && !target.startsWith(skillDir + sep)) {
           err(rel, `link ${href} leaves the skill directory; the installed skill cannot follow it`)
@@ -142,6 +149,10 @@ function checkEvals(skillDir, name) {
     err(rel, `invalid JSON: ${e.message}`)
     return
   }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    err(rel, 'must be a JSON object')
+    return
+  }
   if (data.skill_name !== name) err(rel, `skill_name "${data.skill_name}" does not match the skill name "${name}"`)
   if (!Array.isArray(data.evals) || data.evals.length === 0) {
     err(rel, '`evals` must be a non-empty array')
@@ -149,6 +160,10 @@ function checkEvals(skillDir, name) {
   }
   const seen = new Set()
   for (const ev of data.evals) {
+    if (ev === null || typeof ev !== 'object' || Array.isArray(ev)) {
+      err(rel, 'every entry in `evals` must be an object')
+      continue
+    }
     const label = `eval ${ev.id}`
     if (!Number.isInteger(ev.id)) err(rel, `${label}: id must be an integer`)
     else if (seen.has(ev.id)) err(rel, `${label}: duplicate id`)
@@ -158,6 +173,10 @@ function checkEvals(skillDir, name) {
     }
     if (!Array.isArray(ev.assertions) || ev.assertions.length === 0 || !ev.assertions.every((a) => typeof a === 'string' && a.trim())) {
       err(rel, `${label}: \`assertions\` must be a non-empty list of strings`)
+    }
+    if (ev.files !== undefined && (!Array.isArray(ev.files) || !ev.files.every((f) => typeof f === 'string'))) {
+      err(rel, `${label}: \`files\` must be a list of paths`)
+      continue
     }
     for (const file of ev.files ?? []) {
       if (!existsSync(join(ROOT, file))) err(rel, `${label}: file ${file} does not exist (paths are from the repository root)`)

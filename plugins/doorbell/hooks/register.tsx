@@ -100,7 +100,7 @@ async function bound($: EngineInterface, url: string, cwd: string) {
   const role = roles.find(r => r.active && r.inboxId && r.bindings.includes(cwd))
   const approved = await $.store.get(key('authority', url, cwd)) as Authority | undefined
   // An observed unbinding or replacement invalidates approval even if the old
-  // binding later returns. Retain the mandate text for customer reconfirmation.
+  // binding later returns. Retain the mandate text for user reconfirmation.
   if (approved && !approved.requiresConfirmation && (!role || approved.identity !== identity(role))) {
     await $.store.set(key('authority', url, cwd), { ...approved, requiresConfirmation: true })
   }

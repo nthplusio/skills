@@ -5,7 +5,7 @@ description: >-
   ledger of what every reviewer said and whether it was acted on, and a scored
   evaluation of the execution, published as an HTML artifact. Load this only
   when the user explicitly asks how a PR went — "how did this PR go", "review
-  the process on #812", "retrospective on this pull request", "how did this
+  the process on #101", "retrospective on this pull request", "how did this
   developer handle that change", "why did this PR take three weeks". Do not
   load it to teach the code a PR changed, to produce a review verdict on
   something still open, or to recap a period of merged work; answer those
@@ -78,27 +78,27 @@ Then gather what the scripts deliberately do not:
 
 - `gh pr diff <N> --repo <owner/repo>` — you need the actual change to judge
   scope and testing, not just its size.
-- The linked Linear issue. Extract the ticket ID from the title and
+- The linked tracker issue. Extract the ticket ID from the title and
   `headRefName` case-insensitively (`[A-Za-z]{2,10}-[0-9]{1,6}`, uppercased);
-  branch names here are lowercase, so an uppercase-only pattern misses tickets
-  that appear only in the branch. Call `mcp__linear__get_issue` for each
-  surviving ID — a 404 just means the regex matched something that wasn't a
-  ticket, so drop it silently. **The issue's acceptance criteria are the scope
+  branch names are often lowercase, so an uppercase-only pattern misses tickets
+  that appear only in the branch. Look up each surviving ID in the tracker
+  (Linear: `mcp__linear__get_issue`; otherwise its equivalent) — a 404 just
+  means the regex matched something that wasn't a ticket, so drop it silently. **The issue's acceptance criteria are the scope
   yardstick**: "did this do what was asked, and only what was asked" is not
   answerable from the diff alone.
 - The repo's own standards, so the evaluation grades against the team's rules
-  rather than your preferences: `CLAUDE.md`, `docs/conventions.md`, and any ADR
-  the PR or its review cites. In this repo, ADR 042 is explicitly the layering
-  that PR review scores new code against, and ADR 039 sets the review SLA
-  (24h to first response, 48h to a decision). Cite the rule by name when a
-  finding turns on one.
+  rather than your preferences: `CLAUDE.md`, any conventions doc, and any ADR
+  the PR or its review cites. If the repo documents a layering rule or a
+  review SLA (for example in an ADR), cite it by name when a finding turns on
+  one, and set `PR_DETAIL_SLA_HOURS` to a published SLA so `metrics.py`
+  reports breaches against it.
 
 ## Step 4 — Separate the three actors before reading a single comment
 
 A PR's comment stream mixes three kinds of participant, and conflating them
 produces claims that are simply false about a person:
 
-1. **The AI reviewer** — whichever bot login this repo uses; find it with
+1. **The AI reviewer** — whichever bot login the repo uses; find it with
    `gh pr view <n> --json reviews -q '.reviews[].author.login'` rather than
    assuming a name. It is `[bot]`-suffixed in timeline events and un-suffixed in
    `reviews`, so match both forms. Its findings are real
@@ -107,7 +107,7 @@ produces claims that are simply false about a person:
 2. **Human reviewers.** A human choosing to `REQUEST_CHANGES` is the strongest
    quality signal on the PR, because a person spent their own time deciding it
    wasn't ready.
-3. **Pure automation** — Linear link-backs, per-PR environment postings, label
+3. **Pure automation** — tracker link-backs, per-PR environment postings, label
    bots. These are not feedback. Counting them as review activity inflates
    "engagement" with noise.
 
@@ -140,28 +140,27 @@ the loops. Call out, in prose next to the timeline:
 
 Do not invent praise or criticism. Both sides are already written down.
 
-**The good side has a real source.** This repo's AI review body carries a
-**Strengths** section (2–3 concrete positives as reviewer judgment) and a
-**What the panel verified** section (one bullet per dimension that ran, naming
-what was checked and found sound). That is genuine, specific, attributable
-praise — use it, quoted, rather than writing your own generous summary. Human
+**The good side has a real source.** If the AI reviewer's body has a
+strengths or verified section (concrete positives, or what was checked and
+found sound), quote it. That is genuine, specific, attributable praise — use
+it rather than writing your own generous summary. Human
 approvals and any positive review comments belong here too. If a PR was
 approved, say by whom.
 
 **The bad side is the finding threads.** For each, the artifact needs four
 things, and the fourth is the one that takes work:
 
-1. What was raised — the finding's own title (`**[Title]**` opens each inline
-   comment here) and a trimmed excerpt in the reviewer's words. Paraphrase
-   loses the precise objection, which is the useful part.
-2. Who raised it and in which category — the `_(source: bug scan | conventions |
-   framework | history | QA)_` tag. Note the tag is often **multi-valued**;
-   `metrics.py` splits it, so trust its `byCategory` over your own count.
+1. What was raised — the finding's own title, if it has one (`metrics.py`
+   reads a leading `**[Title]**`), and a trimmed excerpt in the reviewer's
+   words. Paraphrase loses the precise objection, which is the useful part.
+2. Who raised it and in which category — if its comments carry a category tag
+   (`_(source: ...)_`), `metrics.py` splits by it. A tag can be
+   **multi-valued**, so trust its `byCategory` over your own count.
 3. Where — real path and line.
 4. **What actually happened to it.** This is the part that separates an honest
    ledger from a scary one. A thread's `isResolved` flag is *weak evidence*: an
    unresolved thread can mean "still broken" or it can mean "fixed in the next
-   commit and nobody clicked the button." On PR #2094 all seven threads read as
+   commit and nobody clicked the button." On one PR all seven threads read as
    unresolved at merge, and the author had replied in none of them — but the
    fix may well be sitting in the diff. **Go look**: read the later commits and
    the merged code at that path. Then classify it honestly as *fixed in code* /
@@ -183,9 +182,9 @@ shows that sentence next to the bar, never behind a click.
 | Dimension | What it measures | Evidence to cite |
 |---|---|---|
 | **Correctness** | Did it work, and did defects escape? | Blocking findings and their fate; human `CHANGES_REQUESTED`; post-merge fixes or reverts |
-| **Scope discipline** | Did it do what was asked, and only that? | Diff size vs. the ticket; files unrelated to the ticket; the AI review's `Validated against <ID>` acceptance-criteria verdicts (`:x:` = a criterion the panel couldn't confirm) |
-| **Testing** | Was it verified before others had to? | Test files in the diff; the QA persona's notes; the PR body's own testing section; whether findings were the kind a test would have caught |
-| **Convention adherence** | Does it match how this repo builds things? | `conventions` and `framework` findings; ADR 042 layering; named rules from `docs/conventions.md` |
+| **Scope discipline** | Did it do what was asked, and only that? | Diff size vs. the ticket; files unrelated to the ticket; any acceptance-criteria verdicts in the AI review (a criterion it couldn't confirm) |
+| **Testing** | Was it verified before others had to? | Test files in the diff; any testing notes in the AI review; the PR body's own testing section; whether findings were the kind a test would have caught |
+| **Convention adherence** | Does it match how the repo builds things? | Convention or framework findings; documented layering rules; named rules from the repo's conventions docs |
 | **Review responsiveness** | How did they handle feedback? | Hours from review to their next commit; threads replied to; findings addressed vs. left; whether pushback was reasoned |
 | **Submission readiness** | Was it ready when they asked for review? | CI state on the first pushed commit; `commitsWithFailingChecks`; fixup-style commits; draft hygiene; force-pushes after review |
 
@@ -212,13 +211,13 @@ is about a person and may outlive the conversation that produced it.
   "Careless" is neither. The behavior is also the more useful of the two,
   because it names something that can change.
 - **Say what you couldn't see.** If the PR predates the AI reviewer, or the
-  diff was too large to read in full, or the Linear issue had no acceptance
+  diff was too large to read in full, or the ticket had no acceptance
   criteria, put that in the artifact as a stated limit on the assessment. A
   confident evaluation built on partial evidence is the failure mode with the
   worst consequences here.
 - **Attribute every delay to whoever held it.** A PR open eight days
   because review took six of them is a *flow* problem — worth surfacing against
-  ADR 039's SLA, and worth surfacing as the reviewer's, not the author's.
+  the repo's review SLA if it publishes one, and as the reviewer's, not the author's.
 - **One PR is one data point.** Say so, in the artifact, when the run is
   standalone. Anyone reading a scored evaluation will be tempted to generalize
   from it, and the artifact should push back on that itself rather than relying
@@ -230,7 +229,7 @@ is about a person and may outlive the conversation that produced it.
 
 ## Step 8 — Build and publish
 
-Load the `artifact-design` skill first. This is a decision-support document —
+If an artifact-design skill is available, load it first. This is a decision-support document —
 someone reads it before a conversation with a colleague. Dense, legible,
 scannable in two minutes and re-readable in ten. Restraint matters more than
 usual: visual drama around a person's evaluation reads as editorializing.
@@ -238,10 +237,10 @@ usual: visual drama around a person's evaluation reads as editorializing.
 Layout, top to bottom:
 
 1. **Masthead** — PR title, number linking to GitHub, author, base branch,
-   merge state, linked Linear ticket, and the hard numbers (+adds/−dels, files,
+   merge state, linked ticket, and the hard numbers (+adds/−dels, files,
    days open, review rounds, findings). Facts only.
 2. **Summary** — what the PR set out to do and whether it did it, grounded in
-   the Linear issue rather than the diff stat.
+   the ticket rather than the diff stat.
 3. **Timeline** — a vertical time-ordered track, each entry with actor and
    timestamp, visually distinguishing the three actor classes from Step 4.
    Annotate the gaps and loops (Step 5) inline; an unannotated event list is

@@ -5,19 +5,19 @@
 # an earlier version of this script tried three different git-log
 # strategies (grep the default "Merge pull request #N" title, --first-parent
 # traversal, --merges + --since/--until) and every one of them silently
-# UNDER-COUNTED real merged PRs in this repo, for reasons that turned out to
+# UNDER-COUNTED real merged PRs, for reasons that turned out to
 # be structural, not fixable with a better regex or a wider date net:
 #
 #   - Squash merges land as a single-parent commit — invisible to `--merges`
-#     entirely. This repo has squash merging enabled and uses it heavily.
+#     entirely. Repos that squash-merge lose most of their PRs this way.
 #   - Stacked PRs (a PR opened against a co-worker's feature branch, not
 #     against this branch) show up in this branch's ancestry once THEIR
 #     base branch eventually merges too — but they never targeted this
 #     branch. "What was this PR's base ref" is GitHub metadata with no
 #     git-graph equivalent, especially once the head ref is deleted on
-#     merge (this repo does that by default).
+#     merge (a common repo setting).
 #   - --first-parent looked like the fix for merge noise, but it isn't:
-#     in a repo merging faster than ~1 PR per instant (true here), only
+#     in a repo merging faster than ~1 PR per instant, only
 #     one PR at a time can occupy the first-parent slot — every other PR
 #     that lands nearby becomes reachable only via someone else's SECOND
 #     parent. --first-parent's own "spine" ends up far shorter than the
@@ -54,8 +54,8 @@ error: gh is not authenticated (gh auth status failed).
 
 This script deliberately has no git-log fallback: every fallback strategy
 tried during development silently under-counted real merged PRs (squash
-merges and stacked PRs are invisible to plain commit-ancestry walks in
-this repo — see the comment block at the top of this file). A degraded
+merges and stacked PRs are invisible to plain commit-ancestry walks —
+see the comment block at the top of this file). A degraded
 answer that looks complete is worse than a clear error here.
 
 Run `gh auth login` and retry.

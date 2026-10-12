@@ -49,11 +49,9 @@ rg -il 'retainer|per hour|/hr|hourly|rate card|statement of work|\bSOW\b|pricing
 
 Also check published documents the repository does not hold — prior proposals,
 pricing pages, or agreements the user shared earlier in the conversation. If
-the client is on a support plan, its additional-hours rate is almost always
-the right rate to quote, and the plan may carry entitlements that reduce the
-bill — included hours that can be redirected, free scoping, a partner discount.
-Apply them; they are the client's already, and finding them is worth more
-goodwill than any discount you invent.
+an existing agreement sets a rate for additional work, quote that rate, and
+apply any entitlements it grants. They are the client's already, and finding
+them is worth more goodwill than any discount you invent.
 
 When there is genuinely nothing, ask. Do not guess a market rate.
 
@@ -175,7 +173,7 @@ python3 scripts/check-totals.py <file> --rate <hourly-rate>
 ```
 
 The script reads HTML or Markdown tables, sums each numeric and currency
-column including ranges like `16–20` and `$1,920–$2,400`, compares them to any
+column including ranges like `16–20` and `$1,600–$2,000`, compares them to any
 stated total, and — given a rate — checks that money equals hours times that
 rate on every row. Run it after every edit pass, not once at the end.
 

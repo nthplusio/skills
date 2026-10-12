@@ -233,11 +233,11 @@
     const note = s.note;
     const entries = s.entries || [];
     const title = s.description + (entries.length ? `\nEntry points: ${entries.join(" · ")}` : "");
-    const dags = entries.length ? `<div class="dags" title="Entry points">${entries.map((entry) => esc(entry).replace(/([/_])/g, "$1<wbr>")).join("<br>")}</div>` : "";
+    const entryList = entries.length ? `<div class="entries" title="Entry points">${entries.map((entry) => esc(entry).replace(/([/_])/g, "$1<wbr>")).join("<br>")}</div>` : "";
     return `<div class="stagecell ${extraClass || ""}"><button type="button" class="stagebox ${stageClass(stageId)}${active}" data-stage="${esc(stageId)}" title="${esc(title)}" aria-pressed="${!!active}">
       <span class="stagelabel">${esc(s.label)}</span>
       <span class="stagecounts">${plural(ids.length, "rule")} · ⚑${countFlagged(ids)}</span>
-      ${progressBar(ids)}<span class="stageextra">${loop}${note ? `<span class="lanenote">${esc(note)}</span>` : ""}</span></button>${extraClass ? "" : dags}</div>`;
+      ${progressBar(ids)}<span class="stageextra">${loop}${note ? `<span class="lanenote">${esc(note)}</span>` : ""}</span></button>${extraClass ? "" : entryList}</div>`;
   }
   function renderMap() {
     const main = MAP_ORDER.map((id, i) => (i ? `<div class="arrow" aria-hidden="true">→</div>` : "") + stageBox(id)).join("");

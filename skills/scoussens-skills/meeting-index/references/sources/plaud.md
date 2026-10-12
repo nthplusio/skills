@@ -25,9 +25,9 @@ Verified against a real account holding several hundred recordings.
 ```json
 {
   "id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
-  "name": "08-21 Weekly Meeting: Example Topic A, Example Topic B",
-  "created_at": "2026-08-21T19:25:37",
-  "start_at": "2026-01-15T15:00:00.925000",
+  "name": "01-15 Weekly Sync: Example Topic A, Example Topic B",
+  "created_at": "2026-01-15T16:00:00",
+  "start_at": "2026-01-15T15:00:00.000000",
   "duration": 3600000
 }
 ```
@@ -51,9 +51,9 @@ Map to the normalised record:
 
 **Use the dates.** `query` is a case-insensitive substring match on `name` only
 — and because Plaud names recordings after their topic, it under-recalls badly.
-Measured on one real week: `query` for the product's own name matched 9
-recordings across 500 scanned, of which **2 fell inside a window that actually
-held 41 meetings about it**. Run it as a cross-check if you like; never as the
+A `query` for a product's own name can match a handful of recordings across the
+whole library, and only one or two of them inside **a window that holds dozens
+of meetings about it**. Run it as a cross-check if you like; never as the
 population.
 
 ### The two truncation behaviours
@@ -64,10 +64,10 @@ population.
   `truncated` field at all**. A clipped response is byte-identical to a complete
   one.
 
-The second one has already caused a real failure: `page_size: 40` returned
-exactly 40 records, stopping part-way through the earliest day, and the index
-shipped five meetings and 2.8 hours short. Lead with dates, and re-list the
-boundary days on their own to confirm nothing was clipped.
+The second one fails silently: `page_size: 40` can return exactly 40 records
+that stop part-way through the earliest day, and an index built from them ships
+meetings short with no warning. Lead with dates, and re-list the boundary days
+on their own to confirm nothing was clipped.
 
 ## Fetching summaries
 
@@ -87,14 +87,14 @@ Two Plaud-specific gotchas:
 ### Do not reach for `get_file`
 
 `get_file` bundles the full transcript with the metadata. One call on a
-mid-length meeting returned **64,951 characters** and blew a context budget for
-no benefit, since `list_files` already supplied name, timestamps and duration.
+mid-length meeting can return **tens of thousands of characters** and blow a
+context budget for no benefit, since `list_files` already supplied name, timestamps and duration.
 Use it only as a last-resort fallback when `get_note` will not return at all.
 
 ### Recordings with no summary
 
 Very short recordings never get one generated, so `get_note` fails on them
-permanently — a 16-second clip whose entire transcript was one word, for
+permanently — a clip of a few seconds whose entire transcript is one word, for
 instance. Treat a permanent failure on a sub-minute recording as confirmation it
 was accidental, and exclude it rather than retrying.
 
@@ -107,9 +107,9 @@ never assume a zone.
 
 ## Transcription quality
 
-Worth knowing before you quote anything. Across a single week of one account,
-one product name appeared as four different spellings, a client's initials were
-rendered as a shorter acronym in one meeting, a person's name appeared five
-different ways with none correct, and a negative numeric constant lost a digit.
+Worth knowing before you quote anything. Within a single week, one product name
+can appear in several spellings, an organisation's initials can come back as a
+different acronym, a person's name can appear several ways with none correct,
+and a numeric constant can lose a digit.
 Normalise aggressively, prefer spellings the user has used, and mark anything
 you have only from a transcript as provisional.

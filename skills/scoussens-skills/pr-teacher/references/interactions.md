@@ -63,8 +63,8 @@ actually has, which is "what would break if I still imported the old path?"
 
 **CI, build, and workflow changes.** A simulated run with real measured
 timings from the PR, where they can toggle the change on and off and watch
-total duration and failure point move. `#1884`-style work — moving a gate
-earlier — is invisible as prose and obvious as a bar that shrinks.
+total duration and failure point move. Work that moves a gate earlier in the
+pipeline is invisible as prose and obvious as a bar that shrinks.
 
 **A genuinely mechanical PR** — a dependency bump, a rename, a formatting
 pass. Do not manufacture an interaction. Say the change is mechanical, show

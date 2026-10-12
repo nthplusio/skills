@@ -13,8 +13,8 @@ fails only where a genuine mismatch is unambiguous.
 
 Usage:
     check-totals.py proposal.html
-    check-totals.py proposal.html --rate 120
-    check-totals.py proposal.md --rate 120 --strict
+    check-totals.py proposal.html --rate 100
+    check-totals.py proposal.md --rate 100 --strict
 
 Exit status is 1 if any check fails, so it can gate a send. --strict also
 fails on anything reported as NEEDS EYE.

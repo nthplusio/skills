@@ -319,9 +319,9 @@ class BrHelpers(unittest.TestCase):
                          ["OR", "ORD", "BI"])
 
     def test_grouped_module_strings_cover_their_files(self):
-        self.assertTrue(br.covers("pkg/codecs/_nfc.py, _repair.py", "pkg/codecs/_repair.py"))
-        self.assertTrue(br.covers("pkg/ext/aws (vpc, nlb)", "pkg/ext/aws/nlb/main.py"))
-        self.assertFalse(br.covers("pkg/ext/aws (vpc, nlb)", "pkg/ext/gcp/main.py"))
+        self.assertTrue(br.covers("pkg/billing/_tax.py, _fees.py", "pkg/billing/_fees.py"))
+        self.assertTrue(br.covers("pkg/ext/cloud (net, lb)", "pkg/ext/cloud/lb/main.py"))
+        self.assertFalse(br.covers("pkg/ext/cloud (net, lb)", "pkg/ext/gcp/main.py"))
 
     def test_module_paths_relative_to_a_single_area_root_are_accepted(self):
         area = {"paths": ["packages/billing"]}

@@ -19,8 +19,8 @@ searching for the word.
 
 A **thread** is something that *moved*, or conspicuously failed to. It has a
 shape across time: it started somewhere, something happened to it, and it is now
-in some state. "The session-expiry bug was misdiagnosed as token expiry for two
-weeks, then traced to unparsed error codes on Wednesday, and the fix is in but
+in some state. "The export timeout was blamed on the database for two weeks,
+then traced to an unbounded retry loop on Wednesday, and the fix is in but
 unverifiable without a production deploy" is a thread. It has a beginning, a
 turn and an unresolved edge.
 

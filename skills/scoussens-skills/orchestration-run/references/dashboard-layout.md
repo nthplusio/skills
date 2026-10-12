@@ -4,9 +4,10 @@ The contract for `assets/dashboard-template.html` and `scripts/render_dashboard.
 Read it before creating or changing either one. Routine runs only write
 `status.json`; the [dashboard data](dashboard-data.md) contract covers that.
 
-The page has two audiences. The overview serves non-technical testers and
-executives, so it uses plain labels and each row's `work.summary`. Selecting an
-item or decision drills in to the technical detail for engineers and agents.
+The page has two audiences. The overview serves non-technical stakeholders,
+such as testers or executives, so it uses plain labels and each row's
+`work.summary`. Selecting an item or decision drills in to the technical detail
+for engineers and agents.
 
 ## Overview
 
@@ -68,5 +69,7 @@ blocker, next action, proof IDs and approval constraints.
 Render [`evals/dashboard-preview.json`](../evals/dashboard-preview.json), which
 covers every work state and stage outcome, and inspect the overview, an item
 dialog and a decision dialog at desktop and phone widths. Then run the
-orchestration evals (`npm run test:orchestration`). Routine data updates need
-only the renderer check, not repeated screenshots of an unchanged layout.
+orchestration evals
+(`python3 -B -m unittest discover -s <this skill's folder>/evals -v`).
+Routine data updates need only the renderer check, not repeated screenshots of
+an unchanged layout.
