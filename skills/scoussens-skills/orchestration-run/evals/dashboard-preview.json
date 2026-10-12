@@ -1,6 +1,7 @@
 {
   "schema_version": 2,
   "run_id": "template-preview",
+  "skill_version": "synthetic-preview",
   "title": "Orchestration preview",
   "goal": "Get each fix ready for review, and release only the changes we've been asked to ship.",
   "updated_at": "2026-10-08T14:30:00-05:00",
@@ -26,6 +27,10 @@
   "approvals": [
     {"id": "A1", "scope": "Push owner branches and open draft pull requests for this run's tickets", "task_ids": [], "side_effects": "Each draft pull request starts its preview environment.", "receipt": "Synthetic run confirmation", "granted_at": "2026-10-08T09:00:00-05:00", "expires_at": null, "state": "active"},
     {"id": "A2", "scope": "Swap the shared test database during one maintenance window", "task_ids": ["SHIP-107"], "side_effects": "Readers see the replacement database; the original is kept for rollback.", "receipt": "Synthetic answer to Q-window", "granted_at": "2026-10-08T12:00:00-05:00", "expires_at": "2026-10-08T13:00:00-05:00", "state": "consumed"}
+  ],
+  "follow_ups": [
+    {"id": "F1", "from_task": "SHIP-107", "text": "Resume the paused nightly import jobs after the database swap.", "owner": "OPS-112", "trigger": "After the rollback copy is dropped"},
+    {"id": "F2", "from_task": "API-102", "text": "Check persistence against the live service; this run proved it only locally.", "owner": null}
   ],
   "presentation": {
     "destination": "local",

@@ -45,6 +45,14 @@ whether a check is needed. Conversation recovery follows the harness's rules.
 If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
+Record the skill version a run follows in `skill_version`, using
+`python3 <this skill's folder>/scripts/render_dashboard.py --skill-version`. On
+resume, and whenever this skill reloads mid-run, compare it with the saved
+value. When it differs, read what changed in the data contract and this file,
+migrate the record, then save the new version and one history line naming the
+change. Schema 1 records migrate as the
+[run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
+
 **Done when** the current harness resolves to valid setup. On resume, ownership,
 choices, and proof assessments are restored before assigning work.
 
@@ -117,6 +125,25 @@ loading is unavailable. Include step 3's status collection and decision routing
 in owner briefs so owners can discuss ticket-local choices with the user and
 record the outcome in their own conversations.
 
+Status stays passive, but every brief names the escalations an owner must send
+to the coordinator, because only the coordinator can act on them: a needed
+approval for a shared action, a human-only gate the owner opened, an approval
+window that expired, and work that exceeds the assigned scope. Each escalation
+starts with `ESCALATION <ticket ID>` and names the approval or decision it
+needs. Nothing else needs a message. When the harness adds its own
+reply-to-coordinator instructions, the brief states which of them still apply.
+
+Brief owners to bind every user answer to one pending decision before acting:
+restate the decision ID and its question, and apply the answer only to that
+decision. When an answer could fit two pending decisions or reads as broader
+than the question asked, such as "land it" while a layout question is open,
+ask which decision it settles. Relay answers with the decision ID and the
+original question.
+
+When setup resolves `skills.stages`, pass the skills listed for a stage when an
+owner begins that stage, such as a start-work skill for Submitted or a review
+skill for Reviewed.
+
 **Done when** run choices are confirmed, every assigned row is one ticket with
 one lifetime-bound owner, and each owner has a checkable finish
 line and resource/dependency boundaries. Unconfirmed definitions or splits are
@@ -176,7 +203,12 @@ Repeat this cycle while assigned work or known obligations remain:
    under step 5, and reconcile completion/closure under step 6. Record each
    owner's actual check time. Refresh the record and selected dashboard after
    each periodic scan and meaningful event, including an unchanged scan's real
-   timestamp. Keep retained proof assessments; inspection is not a rerun of tests.
+   timestamp. An unchanged scan updates check times and `unchanged_scans` only;
+   it adds no history line. History records changes in at most 800 characters,
+   with detail in proof. Keep retained proof assessments; inspection is not a
+   rerun of tests. Check retained runtime dates the way deferral triggers are
+   checked: when a `runtime` entry's `until` passes, queue its cleanup or
+   extension decision.
 4. If obligations remain, wait for a notification or the next scan deadline,
    then repeat. Long helper calls and caller-blocking dialogs delay inspection;
    record a missed check honestly and scan when control returns. The dashboard
@@ -223,7 +255,10 @@ Keep one pending decision queue in the current record, ordered by blocked work
 and urgency. Each decision has a stable ID, affected tasks, a concise question,
 recommendation, what its answer unblocks, and one authoritative discussion owner
 and link or harness handle. Surface several independent decisions together
-instead of serial blocking coordinator dialogs. The user can discuss a local
+instead of serial blocking coordinator dialogs. When two or more tasks wait on
+the same kind of shared action, such as publishing or merging, raise one
+decision that lists each task with its proof, current checks and side effects,
+and accept an answer that approves any subset by ticket ID. The user can discuss a local
 choice in its owner thread or give quick answers by ID to the coordinator.
 Relay exact user answers to the discussion owner when the harness permits it.
 An owner can apply a local answer within existing authorization and record the
@@ -282,7 +317,10 @@ Required CI/reviews must actually produce the required result. A green workflow
 without a posted review is not a review; local tests do not prove live persistence.
 Mark unrequested stages **Not requested**, not blocked. Record extra required
 steps, such as landing a merge, as obligations rather than implying a published
-PR is merged.
+PR is merged. A requested business acceptance stage names the person who signs
+off in `accountable` and a date or event in `revisit`. Without both, mark it
+**Not requested** and record the sign-off as a follow-up instead of keeping its
+owner waiting indefinitely.
 
 **Done when** each consequential verdict cites sufficient proof within its scope,
 and any repeated validation has a named reason recorded before execution.
@@ -384,7 +422,7 @@ there. Honor harness progress requirements with brief updates.
 or clearly private proof, or the record explicitly holds unselected presentation
 without writing HTML. A presentation hold does not hold unrelated owner work.
 
-## 6. Close completed owners and finish the run
+## 6. Close completed owners
 
 Decide completion before checking whether the harness can close an owner:
 
@@ -419,7 +457,10 @@ fires, expose the follow-up for the same ticket and owner within the authorized
 run scope; otherwise queue the required decision instead of silently restarting it.
 
 Hypothetical future work and unrequested stages do not keep a completed
-owner open. Never delete evidence to clean up.
+owner open. Never delete evidence to clean up. Before an owner finishes, move
+known work beyond its target stage, such as live acceptance after a merge or
+resuming paused jobs after a reset, into `follow_ups` with its ticket owner,
+or with no owner so the page shows it needs one.
 
 Keep the owner reference after closure. Resume that owner for later follow-up
 when supported; otherwise transfer ownership explicitly using the retained
@@ -428,5 +469,23 @@ handoff. Closure does not make a ticket ownerless.
 **Done when** each assignment meets its finish line or has a recorded authorized
 resolution, all remaining requested stages are verified, known obligations are settled,
 completed owners have been closed or have truthful closure limitations, and the
-status matches that result. The final chat states actual delivery, limitations,
-and the dashboard location or presentation hold without repeating its audit trail.
+status matches that result.
+
+## 7. Close the run
+
+Close the run when every owner is complete or closed and no decision is pending,
+or when the user ends it:
+
+1. Inventory every `runtime` entry. Release what the run's authorization covers
+   and retain the rest with a reason and date.
+2. Clear scheduled wakes and set `next_check_at` to `null`.
+3. Give every follow-up a ticket owner, or ask the user to accept it unowned.
+4. Close completed owners the harness can close, and list any left open with
+   the reason.
+5. Within the publication scope, delete merged branches the run created.
+6. Read back the ticket tracker so its states match the record.
+7. Set `closed_at`, render a final dashboard and verify the served page.
+
+**Done when** the renderer accepts the closed record. The final chat states
+actual delivery, follow-ups and their owners, retained runtime and its dates,
+limitations, and the dashboard location, without repeating its audit trail.

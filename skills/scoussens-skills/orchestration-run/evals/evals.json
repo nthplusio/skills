@@ -277,6 +277,69 @@
         "limitation_once: records a LIMITED fetch once and reuses it on later scans"
       ],
       "files": []
+    },
+    {
+      "id": 21,
+      "name": "skill-reload-migration",
+      "prompt": "Mid-run, the user says: 'reload the orchestration run skill and use the new version'. The saved status.json has schema_version 1, four top-level fields the contract does not define, and approvals recorded inside run_choices.",
+      "expected_output": "Reloads the skill, compares skill_version, moves the unknown fields and approvals into contract fields or history, adds runtime entries, confirms any missing run choices, sets schema_version 2 and records the new skill_version with one history line. Re-renders and passes the renderer.",
+      "assertions": [
+        "version_compared: reads the saved and current skill_version before writing",
+        "fields_migrated: leaves no unknown top-level field and records approvals in approvals",
+        "history_once: adds a single history line naming the migration",
+        "renderer_passes: the migrated record renders under schema 2"
+      ],
+      "files": []
+    },
+    {
+      "id": 22,
+      "name": "escalation-channel",
+      "prompt": "Brief a new owner for OPS-210, a shared database reset that will need approval for each destructive step and a maintenance window. Routine status is collected passively. The harness adds its own instructions telling owners to reply to the coordinator when done.",
+      "expected_output": "The brief keeps routine status passive, lists the escalations the owner must send (approval needed, human-only gate opened, window expired, scope exceeded) with the ESCALATION prefix, and says which harness reply instructions still apply.",
+      "assertions": [
+        "passive_status: assigns no heartbeat or routine report",
+        "escalations_listed: names each escalation trigger and the ESCALATION <ticket ID> prefix",
+        "harness_conflict_resolved: states how the harness's own reply instructions apply"
+      ],
+      "files": []
+    },
+    {
+      "id": 23,
+      "name": "answer-binding",
+      "prompt": "ABC-211's owner has two pending questions: Q7 whether to defer the relation schema, and Q8 whether to show separate named-level columns or one positional column. The user replies in that conversation: 'land without a decision on relation schema'.",
+      "expected_output": "The owner binds the answer to Q7 only, restates it, keeps Q8 pending and asks it again in plain words. No implementation that depends on Q8 resumes.",
+      "assertions": [
+        "bound_to_one_decision: records the answer against Q7 with its source",
+        "q8_still_pending: keeps Q8 in the queue and asks it again",
+        "no_overreach: resumes no work that depends on Q8"
+      ],
+      "files": []
+    },
+    {
+      "id": 24,
+      "name": "batched-publication",
+      "prompt": "API-212, UI-213, ABC-214 and API-215 each have review-ready branches with green required checks. The run's publication scope is draft. Merging to the integration branch deploys to the shared development environment.",
+      "expected_output": "Raises one decision listing the four tasks with proof, checks and the deployment side effect, asking for merge approval by ticket ID. Records each approved subset in approvals and merges nothing that was not approved.",
+      "assertions": [
+        "one_decision: raises a single decision covering all four tasks",
+        "side_effect_named: names the deployment each merge triggers",
+        "subset_respected: merges only the ticket IDs the user approved and records that approval"
+      ],
+      "files": []
+    },
+    {
+      "id": 25,
+      "name": "run-close-out",
+      "prompt": "All owners in the run are complete or closed. A fifteen-minute wake is still scheduled, API-216 holds a warehouse fixture, a follow-up to verify live acceptance after a merge has no owner, and two merged branches remain. Publication scope is merge.",
+      "expected_output": "Works through the close-out list: releases or retains the fixture with a reason and date, clears the wake, gets the follow-up a ticket owner or the user's acceptance that it stays unowned, deletes the merged branches, reads back the tracker, sets closed_at and renders a final dashboard that the renderer accepts.",
+      "assertions": [
+        "runtime_settled: the fixture is released or retained with a reason and date",
+        "wake_cleared: no scheduled check remains",
+        "follow_up_owned: the follow-up has an owner or a recorded user acceptance",
+        "branches_deleted: merged branches are deleted within the publication scope",
+        "closed_record_renders: the record with closed_at passes the renderer"
+      ],
+      "files": []
     }
   ]
 }

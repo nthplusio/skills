@@ -15,7 +15,10 @@ item or decision drills in to the technical detail for engineers and agents.
 - **Progress summary:** how many items are wrapped up; a meter split into Done,
   Wrapped up without delivery, In progress and Needs attention; a link to pending
   decisions; and separate counts by business status and by agent status.
-  Cancellation and deferral never count as Done.
+  Cancellation and deferral never count as Done. Delivered rows whose code was
+  never published show **Done, not submitted** and are counted in the headline.
+  Callouts link to follow-ups that need an owner and to kept resources past
+  their cleanup date.
 - **Ledger:** every task, grouped into Needs attention, In progress and Wrapped up.
   Each row shows the three status views side by side: a stage stepper with the
   current stage and target stage, the business status, and the agent status.
@@ -23,8 +26,12 @@ item or decision drills in to the technical detail for engineers and agents.
   row without opening a dialog. Keep every stage indicator independent.
 - **Decision queue:** one queue below the ledger. Each entry keeps its unblock
   preview, affected tasks, answer route and a copyable ID.
-- **Technical reference:** expandable evidence and history, plus the run ID and
-  raw snapshot time.
+- **Follow-up work:** below the decision queue, each follow-up with its source
+  item, its owner or "Needs an owner", and any trigger.
+- **Technical reference:** expandable evidence, running and kept resources
+  (overdue retention marked), approvals with state and expiry, and history,
+  plus the run ID and raw snapshot time. The header notice also carries the
+  skill-version migration and closed-run notices.
 
 ## Dialogs
 
@@ -32,7 +39,8 @@ Default to a closed dialog on initial load unless the user requests a selected
 decision up front.
 
 - **Item dialog:** plain summary and stage cards first; then agent status
-  (state, activity, owner link and ID, last check, location, handoff); then
+  (state, activity, owner link and ID, last check, location, handoff, retained
+  code and runtime); then
   technical details (work state and reason, blocker, next action, done-when,
   receipt, outcome proof, resources, dependencies, obligations); then each
   requested stage's note and proof; then the copy tools.

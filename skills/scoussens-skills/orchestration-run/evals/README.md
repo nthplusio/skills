@@ -58,6 +58,9 @@ The additional monitoring prompts are not wired into this mock harness:
   idle-scan limit, and routine scans that use `check_served.py` instead of
   screenshots. `LifecycleTests` in `test_dashboard.py` covers the matching
   schema 2 record rules; these prompts cover the coordinator's actions.
+- Runner 21 through 25 check skill-version migration, the escalation channel
+  in owner briefs, binding a terse answer to one decision, one batched merge
+  decision, and the run close-out list.
 
 Run those prompts with controlled tool responses and retain the waits, state
 observations, follow-ups and record/dashboard writes in order. Until then they
