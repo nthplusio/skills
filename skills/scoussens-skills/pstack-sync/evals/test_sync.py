@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ import unittest
 
 SKILL = Path(__file__).resolve().parent.parent
 DISCOVERY_SKILL = SKILL.parent / "harness-discovery"
+SCRIPT = SKILL / "scripts" / "sync.py"
 sys.path.insert(0, str(SKILL / "scripts"))
 import sync  # noqa: E402
 
@@ -106,6 +108,164 @@ class DiscoveryTests(unittest.TestCase):
         for name in ("Amp", "Claude Code", "Codex CLI", " Cursor ", "GPT-5 Agent"):
             with self.subTest(name=name):
                 self.assertEqual(sync.slug(name), state.slug(name))
+
+
+def skill(name, body):
+    return f"---\nname: {name}\ndescription: {name}\n---\n\n{body}\n"
+
+
+def plugin(name):
+    return {f"{name}/.cursor-plugin/plugin.json": json.dumps({"name": name}), f"{name}/LICENSE": f"{name} license\n"}
+
+
+ALPHA_DESLOP = "Run `/deslop` from `cursor-team-kit` before each commit.\n"
+UPSTREAM = {
+    **plugin(sync.ROOT_PLUGIN),
+    f"{sync.SUBDIR}/alpha/SKILL.md": skill("alpha", ALPHA_DESLOP + "Spawn `Task` with `subagent_type: \"helper\"`.\n"
+                                           "Draft it with Cursor's built-in `create-skill` skill, then use the **beta** skill."),
+    f"{sync.SUBDIR}/beta/SKILL.md": skill("beta", "pstack has no `/orchestrate` skill; another plugin provides it.\n"
+                                          "Repeat with `/loop` until green, per the **tidy** principle skill."),
+    f"{sync.SUBDIR}/principle-tidy/SKILL.md": skill("principle-tidy", "Keep it tidy."),
+    f"{sync.ROOT_PLUGIN}/agents/helper.md": "---\nname: helper\n---\n\nYou are helper. Follow the **beta** skill.\n",
+    **plugin("cursor-team-kit"),
+    "cursor-team-kit/skills/deslop/SKILL.md": skill("deslop", "Collect evidence for `verify`."),
+    "cursor-team-kit/skills/verify/SKILL.md": skill("verify", "Prove it."),
+    "cursor-team-kit/skills/unused/SKILL.md": skill("unused", "Nobody hands off here."),
+    **plugin("orchestrate"),
+    "orchestrate/skills/orchestrate/SKILL.md": skill("orchestrate", "Orchestrate."),
+}
+PROFILE = "# Harness profile: test\n\n| Need | Support | test equivalent | Source |\n| --- | --- | --- | --- |\n"
+
+
+class DependencyTests(unittest.TestCase):
+    """sync against a small cursor/plugins built in a temporary directory and fetched over file://."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.tmp = Path(temporary.name)
+        self.skills = self.tmp / "skills"
+        (self.skills / sync.SELF / "harness").mkdir(parents=True)
+        shutil.copy(SKILL / "needs.json", self.skills / sync.SELF / "needs.json")
+        self.profile(PROFILE)
+
+    def profile(self, text):
+        (self.skills / sync.SELF / "harness" / "test.md").write_text(text)
+
+    def upstream(self, files=UPSTREAM):
+        repo = self.tmp / "plugins"
+        shutil.rmtree(repo, ignore_errors=True)
+        for path, text in files.items():
+            (repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (repo / path).write_text(text)
+        git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "plugins"], check=True)
+        return repo
+
+    def run_sync(self, command="sync", *args):
+        env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()}
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), command, "--harness", "test",
+                                 "--repo", str(self.skills), *args], env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout) if command != "status" else result.stdout
+
+    def manifest(self, **changes):
+        path = self.skills / sync.SELF / "manifest.json"
+        data = json.loads(path.read_text())
+        data.update(changes)
+        path.write_text(json.dumps(data))
+        return data
+
+    def test_installs_what_pstack_hands_off_to_transitively_and_nothing_else(self):
+        self.upstream()
+        report = self.run_sync()
+        self.assertEqual(sorted(report["added"]),
+                         sorted(["alpha", "beta", "principle-tidy", "deslop", "verify", sync.AGENTS]))
+        self.assertEqual(report["dependencies"]["installed"], {
+            "deslop": "cursor-team-kit/skills/deslop", "verify": "cursor-team-kit/skills/verify",
+            f"{sync.AGENTS}/helper.md": f"{sync.ROOT_PLUGIN}/agents/helper.md"})
+        self.assertEqual(sorted(p.name for p in (self.skills / sync.AGENTS).iterdir()), ["helper.md"])
+        self.assertEqual(sorted(p.name for p in (self.skills / sync.SELF).glob("LICENSE-*")),
+                         ["LICENSE-cursor-team-kit", f"LICENSE-{sync.ROOT_PLUGIN}"])
+        self.assertNotIn(sync.AGENTS, report["needs_adaptation"], "a definition naming itself dispatches nothing")
+        self.assertEqual(report["needs_adaptation"]["alpha"]["SKILL.md"]["needs"]["custom-subagents"], ["helper"])
+
+    def test_a_second_sync_changes_nothing(self):
+        self.upstream()
+        first = self.run_sync()
+        second = self.run_sync()
+        self.assertEqual((second["added"], second["updated"], second["removed"]), ([], [], []))
+        self.assertEqual(second["unchanged_count"], len(first["added"]))
+        self.assertEqual(second["needs_adaptation"], first["needs_adaptation"])
+
+    def test_handoffs_without_a_profile_mapping_are_unresolved(self):
+        self.upstream()
+        report = self.run_sync("sync", "--dry-run")
+        self.assertEqual(report["dependencies"]["unresolved"],
+                         {"create-skill": ["alpha/SKILL.md"], "orchestrate": ["beta/SKILL.md"]})
+        self.profile(PROFILE + "| `companion-skills` | partial | `create-skill` → the harness's skill writer. | test |\n")
+        report = self.run_sync("sync", "--dry-run")
+        self.assertEqual(list(report["dependencies"]["unresolved"]), ["orchestrate"])
+        self.assertIn("create-skill", report["needs_adaptation"]["alpha"]["SKILL.md"]["needs"]["companion-skills"])
+
+    def test_excluding_a_dependency_drops_what_only_it_needed_and_flags_its_handoffs(self):
+        self.upstream()
+        self.run_sync()
+        self.manifest(exclude=["deslop"])
+        report = self.run_sync()
+        self.assertEqual(sorted(report["removed"]), ["deslop", "verify"])
+        self.assertEqual(report["dependencies"]["excluded"], {"deslop": ["alpha/SKILL.md"]})
+        self.assertFalse((self.skills / "deslop").exists())
+
+    def test_a_dependency_an_unmanaged_skill_has_is_left_to_it(self):
+        self.upstream()
+        (self.skills / "deslop").mkdir()
+        (self.skills / "deslop" / "SKILL.md").write_text(skill("deslop", "Mine."))
+        report = self.run_sync()
+        self.assertEqual(report["dependencies"]["existing"], ["deslop"])
+        self.assertNotIn("deslop", report["added"])
+        self.assertNotIn("verify", report["added"])
+        self.assertEqual((self.skills / "deslop" / "SKILL.md").read_text(), skill("deslop", "Mine."))
+
+    def test_a_name_two_named_plugins_provide_is_ambiguous(self):
+        files = {**UPSTREAM, **plugin("thermos"), "thermos/skills/deslop/SKILL.md": skill("deslop", "Other."),
+                 f"{sync.SUBDIR}/alpha/SKILL.md": skill("alpha", "Run `/deslop` from `cursor-team-kit` or `thermos`.")}
+        self.upstream(files)
+        report = self.run_sync("sync", "--dry-run")
+        self.assertEqual(report["dependencies"]["ambiguous"],
+                         {"deslop": ["cursor-team-kit/skills/deslop", "thermos/skills/deslop"]})
+        self.assertNotIn("deslop", report["added"])
+
+    def test_an_adaptation_recorded_before_a_dependency_installed_is_flagged_until_recorded(self):
+        self.upstream()
+        transforms = {"test": {"accept": [], "global": [], "files": {"alpha/SKILL.md": {
+            "transforms": [{"find": ALPHA_DESLOP, "replace": "Strip slop yourself before each commit.\n"}],
+            "accepted": []}}}}
+        (self.skills / sync.SELF / "transform.json").write_text(json.dumps(transforms))
+        report = self.run_sync()
+        self.assertEqual(report["needs_adaptation"]["alpha"]["SKILL.md"]["dependencies"], ["deslop", "helper"])
+        self.assertNotIn("dependencies", report["needs_adaptation"]["beta"]["SKILL.md"])
+        installed = self.skills / "alpha" / "SKILL.md"
+        installed.write_text(installed.read_text().replace("Strip slop yourself before each commit.\n", ALPHA_DESLOP))
+        self.run_sync("record", "alpha/SKILL.md")
+        report = self.run_sync()
+        self.assertNotIn("alpha", report["needs_adaptation"])
+        self.assertIn("Dependencies (3)", self.run_sync("status"))
+
+
+class HandoffNameTests(unittest.TestCase):
+    def test_forms(self):
+        text = ("Use the `create-skill` skill, the **tidy** principle skill, `/add-plugin pstack`, Cursor's "
+                "built-in babysit skill, and `subagent_type: \"helper\"`. Keep the harness in `/tmp`. "
+                "Cursor's built-in for authoring.")
+        self.assertEqual(sync.handoff_names(text),
+                         {"create-skill", "principle-tidy", "add-plugin", "babysit", "helper"})
+
+    def test_mentions_match_the_forms_renames_rewrite(self):
+        text = "Run `/deslop`, `verify`, **beta**, /alpha, and [x](../gamma/SKILL.md); not playbooks/delta.md."
+        self.assertEqual(sync.mentions(text), {"deslop", "verify", "beta", "alpha", "gamma"})
 
 
 class ShippedStateTests(unittest.TestCase):

@@ -35,6 +35,18 @@ A need that names `discovery` fields in `needs.json` takes its facts from the re
 
 **Profile the rest from evidence**, in this order: the tools and instructions in your own context (what you can call right now), the harness's skill and configuration docs, its CLI `--help`, and its config directories. Fill the Source column for every row. A support level you cannot source is a guess; mark it `none` until you can. Answer every need the profile owns, including ones no current file flags; the script reports `profile_gaps` for flagged needs with neither a row nor discovered facts.
 
+## Hand-offs and dependencies
+
+pstack hands work to other skills. `sync.py` sorts each hand-off in a synced file into one of three cases.
+
+- **Dependency.** A file hands off to a skill by writing `` `name` ``, `/name`, `**name**`, or a `../name/` link, and to a subagent definition (`<plugin>/agents/<name>.md` in `cursor/plugins`) by writing its name. The hand-off counts when exactly one plugin in scope provides the name. The scope is the referencing skill's own plugin, plus each plugin the skill names as `` `plugin` `` or "plugin plugin". The skill or definition then installs beside pstack and goes through the same rendering, markers, and transforms, and its own hand-offs are followed in turn. A name two in-scope plugins provide is reported under `dependencies.ambiguous` and not installed. A skill name an unmanaged skill already has is left to that skill and listed under `dependencies.existing`.
+- **Companion.** A hand-off the skills directory will not have becomes a `companion-skills` marker on the file. That covers a Cursor built-in (the `` `create-skill` `` skill, the built-in babysit skill, `` `/add-plugin` ``), a skill from a plugin the file does not name, and a name in `exclude`. The profile's `companion-skills` row maps each companion to the harness's equivalent; a name the row does not mention in backticks is listed in `dependencies.unresolved`. A companion whose slash command another need's markers cover, such as `/loop`, belongs to that need instead. Once a file is adapted, the harness's own skills it names count as companions too; add them to the harness's `accept` regexes once so they stop flagging.
+- **Excluded.** A name in `exclude` that a synced file still hands off to is listed under `dependencies.excluded`, with the files. Rewrite those hand-offs per the profile, or remove the name from `exclude`.
+
+Subagent definitions install as `pstack-agents/<name>.md`, which is not a skill. Every file that names one is flagged under `custom-subagents`, and the profile row says how this harness dispatches it. In a harness without named subagents, that is a generic subagent whose prompt points at the definition file.
+
+When a dependency installs for the first time, each file with a recorded adaptation that hands off to it gets a `dependencies` entry: an adaptation made while the dependency was missing may have cut the hand-off. Restore any hand-off it cut, then record the file.
+
 ## Adapting a file
 
 Read every flagged file in full, scripts included; the markers are hints. For each construct, look up its need in the profile and apply the row, or apply the discovered facts the report gives in `harness_facts`. Keep each rewrite **minimal**: change the construct and the words that depend on it, and keep the skill's structure, voice, and intent, so upstream changes replay cleanly.

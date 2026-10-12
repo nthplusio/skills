@@ -1,5 +1,5 @@
 {
-  "_doc": "Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields.",
+  "_doc": "Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields. A need with detect also gets markers sync.py finds from cursor/plugins and the skills directory: unavailable (hand-offs the directory will not have) or agents (subagent definitions named).",
   "needs": [
     {
       "id": "skill-locations",
@@ -207,38 +207,30 @@
     },
     {
       "id": "companion-skills",
-      "uses": "Hand off to skills that ship outside pstack: Cursor built-ins (create-skill, babysit) and other Cursor plugins (cursor-team-kit: deslop, control-cli, control-ui).",
+      "detect": "unavailable",
+      "uses": "Hand off to a skill, command, or subagent the skills directory will not have: a Cursor built-in (create-skill, babysit, /add-plugin), a skill from a plugin the file does not name, or anything in exclude. Skills and subagent definitions pstack hands off to in cursor/plugins install as dependencies, so they are not companions.",
       "cursor": [
         "create-skill",
-        "cursor-team-kit",
-        "/deslop",
-        "control-cli",
-        "control-ui"
+        "Cursor's built-in babysit skill",
+        "/add-plugin"
       ],
       "markers": [
-        "\\bcursor-team-kit\\b",
-        "\\bcreate-skill\\b",
-        "\\bdeslop\\b",
-        "\\bcontrol-(?:cli|ui)\\b"
+        "\\bcreate-skill\\b"
       ],
-      "question": "Does the harness have a skill that does the same job as each companion skill?",
+      "question": "Does the harness have a skill or command that does the same job as each companion? Name each one in this need's profile row, or the sync report lists it as unresolved.",
       "fallback": "Name the harness skill with the same job; otherwise cut the hand-off and say the skill is unavailable."
     },
     {
       "id": "custom-subagents",
-      "uses": "Named subagent definitions pstack ships in pstack/agents/ (poteto-agent, Comment Sicko) that skills dispatch by name.",
+      "detect": "agents",
+      "uses": "Named subagent definitions (pstack's poteto-agent and comment-sicko, or any plugin's agents/*.md) that skills dispatch by name. pstack-sync installs each one a synced file names as pstack-agents/<name>.md.",
       "cursor": [
-        "poteto-agent",
-        "Comment Sicko",
+        "subagent_type: \"poteto-agent\"",
         "pstack/agents/*.md"
       ],
-      "markers": [
-        "\\bpoteto-agent\\b",
-        "\\bComment Sicko\\b",
-        "\\bcomment-sicko\\b"
-      ],
+      "markers": [],
       "question": "Can the harness define named subagents with their own instructions, and where?",
-      "fallback": "Dispatch a generic subagent and put the role's instructions in its prompt."
+      "fallback": "Dispatch a generic subagent with a prompt that tells it to read and follow pstack-agents/<name>.md first."
     }
   ]
 }
