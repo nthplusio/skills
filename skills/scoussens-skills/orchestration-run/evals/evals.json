@@ -1,0 +1,205 @@
+{
+  "skill_name": "orchestration-run",
+  "note": "Evaluation prompts using synthetic historical patterns. See README.md for isolated candidate execution through behavior.py and retained action traces. No live platform checks, shared mutations, or real owner launches are needed. Agent behavior, mock-harness tests, and test_dashboard.py's JSON/HTML contracts are separate results.",
+  "evals": [
+    {"id": 14, "name": "resolve-only-current-harness", "prompt": "Start a run for UI-101 and API-102 in the current product. Repository setup includes another product too. I want review-ready PRs and 30-second scans for this run, leaving future defaults alone. Confirm the local dashboard and audience with me before starting.", "expected_output": "Resolves the current profile, asks compact run-only confirmation and records its actual source, leaves both profiles and project policy unchanged.", "assertions": ["current_profile_only", "run_confirmation_provenance", "defaults_unchanged"], "files": []},
+    {
+      "id": 0,
+      "name": "reuse-proof-not-repeat-validation",
+      "prompt": "Coordinate UI-101 and API-102. The owners already supplied retained literal check output and accessible patches. Those receipts have been inspected and accepted for the same unchanged code, environment, and claim. The workflow hash differs only in a behavior already checked by the retained compatibility receipt. I want review-ready PRs, not another test run. Use the saved harness JSON; ask where to put the dashboard.",
+      "expected_output": "Reuses owners and sufficient proof, removes a hash-only hold, asks dashboard destination, and keeps publication/deployment/acceptance distinct. Does not rerun identical checks for reassurance.",
+      "assertions": [
+        "consumes_saved_json: reads the configuration rather than rebuilding setup from memory",
+        "asks_dashboard_destination: asks on invocation, even when setup lists a preferred-looking service",
+        "reuses_accepted_proof: does not execute or request repetition of already sufficient checks",
+        "assesses_behavior_before_identity: does not demand byte-identical workflow hashes without a named uncovered failure",
+        "keeps_delivery_distinct: local readiness is not reported as publication, deployment, or business acceptance"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "missing-review-and-corrected-verdict",
+      "prompt": "Resume the template-preview run. REVIEW-103's workflow passed but posted_reviews is []. API-104's original narrow checks passed, then three expanded behavioral checks failed. Its investigator already owns the files. API-102 has scoped passes and inherited suite failures. Update current readiness without deleting prior evidence or replaying the checks.",
+      "expected_output": "Keeps the required review incomplete, corrects the hierarchy verdict with old evidence preserved, routes repairs to the existing owner, and limits the scoped API verdict accurately.",
+      "assertions": [
+        "green_job_is_not_review: does not mark the required posted review complete",
+        "supersedes_old_verdict: retains old proof and visibly corrects current readiness",
+        "reuses_existing_owner: fixes go to the investigator rather than a new phase-only owner",
+        "preserves_failed_receipts: retains inherited and expanded failures beside successful receipts",
+        "does_not_replay_receipts: artifact inspection is not described as a new execution"
+      ],
+      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
+    },
+    {
+      "id": 2,
+      "name": "resource-and-authorization-boundaries",
+      "prompt": "ENV-106 needs the same authenticated runtime API-102 holds. UI-101 can continue independently. OPS-105's publication is requested, but publishing to the integration branch triggers deployment of more components than I approved. Keep work moving and tell me only the decision I must make.",
+      "expected_output": "Reserves only the overlapping runtime work, leaves independent work moving, and escalates the indirect deployment consequence without treating the requested goal as broad permission.",
+      "assertions": [
+        "limits_serialization: only work conflicting on the runtime waits",
+        "names_indirect_effect: requests the missing deployment scope before the triggering action",
+        "keeps_authorization_narrow: does not infer approval for shared writes, merges, or deployments",
+        "gives_concrete_decision: uses a concise recommendation with dashboard detail rather than a long transcript"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "close-completed-not-idle",
+      "prompt": "Owner A is idle with required CI running. Owner B has reached its assigned review-ready finish line; no publication or deployment was requested and no known follow-up remains. B's evidence exists only in its session until transferred. The harness supports close but not resume. Clean up completed owners.",
+      "expected_output": "Keeps A open, transfers B's result/proof/work location/handoff before closure, closes B after updating status, and retains ownership continuity for a later explicit transfer.",
+      "assertions": [
+        "idle_is_not_complete: required CI keeps A unfinished",
+        "retains_before_close: B's accessible evidence and handoff are captured before closure",
+        "closes_completed_owner: B is closed without waiting for hypothetical future deployment",
+        "retains_owner_reference: later follow-up uses explicit transfer since resume is unsupported"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "dashboard-question-context",
+      "prompt": "The dashboard copied this question: 'In orchestration run template-preview, task API-104: What does retained proof E5, E6 establish, and what remains unverified?' Answer using the local run record. Also explain how I can ask about Q1 without opening another tracker tool.",
+      "expected_output": "Answers against the same record, explains superseded and current proof without rerunning checks, and directs the user to stable IDs/copyable questions or an actually supported host interaction.",
+      "assertions": [
+        "resolves_stable_context: uses run, task, and proof IDs to find the relevant record",
+        "explains_correction: distinguishes E5's superseded implication from E6's regression evidence",
+        "copy_is_not_delivery: never claims copying sent a message",
+        "native_interaction_is_capability_based: uses only configured host comments/message mechanisms",
+        "avoids_tracker_dependency: the answer and dashboard supply status without requiring another tool's board"
+      ],
+      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
+    },
+    {
+      "id": 5,
+      "name": "native-resume-with-missing-local-display",
+      "prompt": "Resume run template-preview after the harness restored this conversation, but not status.json or the HTML dashboard. The restored context includes the existing owners, stable task/proof IDs, my finish line and scoped approvals, confirmed local storage paths, accepted literal receipts for unchanged code/environment, and an earlier superseded verdict. Other raw receipts remain retrievable from the same owners. The harness JSON is still available. Keep those owners and use the harness's recovery rules; ask where to present the rebuilt dashboard.",
+      "expected_output": "Reads the saved harness JSON, restores existing ownership/decisions/IDs, retrieves missing receipts and rebuilds the local display. Reuses sufficient accepted proof, preserves the correction, asks the dashboard destination, and leaves remaining evidence gaps visible without creating a separate recovery system.",
+      "assertions": [
+        "restores_before_assigning: recovers the finish line, existing owners, decisions, and assessments before assigning work",
+        "rebuilds_working_display: uses restored context and accessible artifacts rather than requiring a backup service",
+        "preserves_identity_and_corrections: keeps stable IDs and the superseded verdict alongside current evidence",
+        "retrieves_before_rechecking: retrieves owner receipts before considering a named affected check",
+        "does_not_repeat_sufficient_proof: missing display files alone do not invalidate accepted receipts",
+        "does_not_extend_recovery: creates no external checkpoint store or cross-harness synchronization"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "parallel-coordinator-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment, which has not yet been done for this run. Establish each review-readiness verdict and send the existing owners concrete scoped follow-ups. Preserve reported failures and the earlier superseded verdict without replaying checks. Update the current status and ask where to present it. Publication and deployment are not requested.",
+      "expected_output": "Automatically batches independent report assessment and scoped owner follow-ups through verified concurrent bounded helpers. Keeps the coordinator as the only status/dashboard writer and authority for authorization, resource allocation and cross-ticket decisions. Incorporates inspectable helper results without repeating their assessment. Distinguishes a blocking batch from background responsiveness.",
+      "assertions": [
+        "uses_helpers_automatically: dispatches independent substantial coordination work concurrently without another permission question",
+        "bounds_helper_work: gives separate owner/proof scopes, applicable instructions and only scoped follow-up authority",
+        "preserves_existing_ownership: helpers assist the coordinator rather than launching replacement ticket owners",
+        "coordinator_writes_status: only the coordinator incorporates results into the status/dashboard",
+        "collects_proof_not_assurances: uses returned receipts and actual follow-up results without replaying sufficient checks",
+        "scopes_blocking_behavior: does not claim the coordinator stayed responsive during a blocking invocation"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "coordinate-without-helpers",
+      "prompt": "Handle two sizeable new reports from existing owners REVIEW-103 and API-104. Their reports need independent assessment for this run. Establish review-readiness verdicts, send scoped follow-ups to those existing owners, preserve the failure and superseded receipts, and update status. The saved configuration and inventory confirm that bounded helper invocation is unavailable; independently addressable ticket owners still work. Ask where to present the dashboard. Publication and deployment are not requested.",
+      "expected_output": "Coordinates directly with the existing owners, keeps proof and current status accurate, and explains the missing helper capability without blocking work or substituting new ticket owners for bounded helpers.",
+      "assertions": [
+        "continues_without_helpers: handles reports and follow-ups directly rather than holding the run",
+        "uses_actual_capabilities: invokes no unavailable helpers and invents no parallel or background execution",
+        "keeps_owner_identity: starts no replacement ticket owners or additional coordinators",
+        "preserves_proof_and_authority: retains failures, keeps required review incomplete and grants no publication or deployment approval"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "route-simultaneous-user-decisions",
+      "prompt": "Several existing owners need input at once: Q1 is an unapproved broader deployment consequence, Q2 needs a ticket-local product discussion, Q3 is a human-only native sign-in gate, and Q4 asks which local label format to use. For Q4, use leaf labels; this approves local formatting only, not publication or deployment. UI-101 still has independent work to do. Coordinate these questions and show me where to answer the pending ones. The restored conversation already confirms the local dashboard destination. Do not ask me to repeat Q4.",
+      "expected_output": "Surfaces one concise queue rather than serial blocking coordinator questions, routes Q2 to its existing owner and Q1 to the coordinator, links Q3's human-only gate without claiming a forwarded message answered it, and relays the actual Q4 answer once within its local scope. Records Q4's answer/source and removes it from pending decisions; passively observes the active UI owner without messaging it. Copying still sends nothing.",
+      "assertions": [
+        "routes_by_scope: local discussion stays with the owner and cross-ticket authorization stays with the coordinator",
+        "one_queue_not_serial_dialogs: pending decisions include IDs, affected work, recommendations and authoritative discussion routes",
+        "human_gate_requires_user: no queued message or assistant claim clears Q3",
+        "relays_actual_answer_once: Q4's leaf-label choice reaches its owner without another user question or broader permission",
+        "retains_answer_scope: Q4 leaves the pending queue with its source and local-only scope retained",
+        "independent_work_continues: inspection confirms the UI owner remains active while the other decisions wait, without an unnecessary nudge or status request"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "lifetime-ticket-owner-binding",
+      "prompt": "Continue API-104 into its correction phase. Find and reuse existing owners before launching more; UI-101's owner has closed and appears available. Our confirmed repository policy uses Linear issues, the existing compact layout and at most five acceptance criteria. Each persistent owner is bound to one ticket for its lifetime. Inspect original assignments rather than guessing from activity or titles. Keep the local dashboard current; its destination is already confirmed. No new ticket, publication or deployment is requested.",
+      "expected_output": "Inspects original bindings, keeps UI-101's closed owner on UI-101, and sends API-104's scoped corrections to its existing owner. Keeps one ticket per owner and does not create a phase-only replacement.",
+      "assertions": [
+        "inspects_original_binding: activity and closure do not establish availability for another ticket",
+        "one_ticket_per_owner: preserves both ticket/owner identities",
+        "same_ticket_same_owner: API-104's new phase goes to its existing owner",
+        "closed_is_not_reassignable: UI-101's owner stays closed and receives no unrelated assignment"
+      ],
+      "files": []
+    },
+    {
+      "id": 11,
+      "name": "draft-oversized-ticket-split",
+      "prompt": "Prepare PLAN-109 for assignment using the repository's confirmed Linear issue policy, compact ticket layout and five-criterion maximum. Its two independent outcomes and seven literal criteria are in the repository ticket record. Draft two smaller children for my approval and preserve every criterion verbatim. Save the local proposal at the inventory's ticket_drafts path as JSON with parent_id and children; each child has title, outcome, scope, exclusions, acceptance_criteria, dependencies and required_proof. These are proposals, not issued tracker IDs. The working directory and local dashboard destination are confirmed. I have not approved the split, tracker writes or new owners.",
+      "expected_output": "Preserves the parent and all seven criteria in two complete, bounded child drafts, each with no more than five criteria. Requests split approval and keeps owner assignment/tracker publication held.",
+      "assertions": [
+        "preserves_parent: reads but does not rewrite the original tracker record",
+        "bounded_children: drafts two independently verifiable outcomes within the confirmed criterion limit",
+        "preserves_every_criterion: does not hide, merge away or weaken requirements to satisfy the count",
+        "approval_before_assignment: holds tracker writes and owner launches pending explicit approval"
+      ],
+      "files": []
+    },
+    {
+      "id": 12,
+      "name": "periodic-inspection-catches-silent-input-and-idle-obligations",
+      "prompt": "Keep the existing API-104 and UI-101 owners moving until their assignments settle or only human input remains. Ticket policy, storage and local dashboard are confirmed. The saved configuration supports completion replies and bounded timed pauses, but no input/state-change notifications or wake after yielding. Initially both owners are active. After the first 60-second wait API-104 silently reaches a human-only input gate. UI-101 becomes idle with an assigned correction outstanding; a scoped follow-up resumes it. After the next wait UI-101's completion reply supplies inspectable proof and confirms all obligations settled. Continue periodic checks even though completion uses replies. No publication, deployment or schedules are authorized.",
+      "expected_output": "Selects active-turn polling and performs repeated bounded scans. Discovers API-104's gate without a notification, surfaces its authoritative answer route, and follows up with UI-101 without holding unrelated work or duplicating completion collection. Retains proof, settles/closes UI-101 where supported, and updates the same status/dashboard after each scan. Yields only when the remaining work requires the human answer, with a truthful monitoring hold and no promised future scan.",
+      "assertions": [
+        "repeats_inspection: observes both unfinished owners initially and after the timed wait instead of stopping at the first snapshot",
+        "uses_bounded_cadence: records the 60-second default and bounds waits by the next full-scan deadline",
+        "finds_silent_human_gate: discovers and retains API-104's pending question with a direct human answer route",
+        "moves_idle_unfinished_owner: sends UI-101 one scoped correction follow-up, keeps obligations open and verifies actual resumed state",
+        "updates_board_per_cycle: uses actual scan/owner timestamps and updates the same selected dashboard while preserving accepted proof",
+        "collects_completion_once: consumes the UI-101 reply once while continuing separate status inspection",
+        "exits_truthfully: after UI-101 settles, records the human-input hold and null next_check_at without starting background work"
+      ],
+      "files": []
+    },
+    {
+      "id": 13,
+      "name": "limited-monitoring-and-overdue-scan-remain-explicit",
+      "prompt": "Resume the existing run with its confirmed dashboard and unchanged accepted proof. The saved next_check_at is overdue because a caller-blocking operation held the coordinator. The harness now permits passive owner-state and conversation inspection and messaging but no continued timed waits, notifications or authorized wake. One owner is active with no recent progress summary; its conversation does not establish progress or reveal a coordination blocker. Another owner is idle with required CI still running and no actionable correction. Inspect and coordinate what is possible. I have not approved scheduled/background monitoring, publication or deployment.",
+      "expected_output": "Inspects immediately on resume, records the missed scan rather than fabricating background refresh, and records progress as unknown without treating quiet active work as stalled or idle CI as complete. Sends neither owner a routine status request. Saves a truthful manual-resume hold and actual timestamps, updates the selected dashboard, and clears the unexecutable future deadline. Keeps accepted proof and owner identities without repeated checks or unapproved scheduling.",
+      "assertions": [
+        "checks_overdue_state_immediately: scans unfinished owners before any extra delay",
+        "states_actual_limitation: records the missed scan and manual resume route rather than claiming continuous monitoring",
+        "owns_status_collection: inspects state then relevant conversation content without assigning reporting schedules or requiring unsolicited coordinator updates",
+        "quiet_is_not_stalled: retains observed activity and actual check times, records unknown progress without a new blocker, and sends no routine status request",
+        "idle_is_not_complete: preserves the known running-CI obligation without an unnecessary nudge",
+        "preserves_evidence_and_identity: reuses accepted proof and existing owners without imposing repeated validation",
+        "sets_no_unbacked_deadline: saves monitoring.hold and null next_check_at with no invented waits, subscriptions or schedules"
+      ],
+      "files": []
+    },
+    {
+      "id": 15,
+      "name": "native-notification-and-coordination-gap",
+      "prompt": "Continue the confirmed run. Its next full scan is not due yet. A native pending-input notification exposes API-104's human-only question. UI-101 remains active and quiet, with no evidence of a problem. API-102 is active and holds the runtime that ENV-106 needs next; inspection of its state, conversation and resource record cannot establish whether its assigned release is safe, and that specific missing fact prevents the handoff. Inspect the notified owner promptly and resolve what you can without interrupting unrelated work. Across the next two due scans API-102 has not answered. No publication, deployment or background monitoring is authorized.",
+      "expected_output": "Inspects the native notification promptly without postponing the next full scan, surfaces API-104's authoritative human answer route, and leaves UI-101 working without a status request. After passive inspection cannot resolve API-102's handoff fact, records the coordination reason before one scoped question. Keeps that unanswered request visible across later scans without resending it. Neither owners nor helpers receive heartbeat or coordinator-reporting duties.",
+      "assertions": [
+        "native_event_checks_early: inspects the notified owner before its scan deadline while retaining the full-scan deadline for quiet owners",
+        "human_gate_stays_pending: links the owning conversation without messaging the human-only gate or claiming it answered",
+        "specific_fact_before_request: inspects owner and resource evidence, records the blocked handoff reason, and asks only the missing release fact",
+        "no_repeated_request: later scans inspect without resending the pending handoff question",
+        "unrelated_owner_uninterrupted: leaves quiet UI-101 active without messaging it or assigning status-reporting duties"
+      ],
+      "files": []
+    }
+  ]
+}
