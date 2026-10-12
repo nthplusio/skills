@@ -189,9 +189,4 @@ the build-specific types used by `tsc`; those types are gitignored. Mod tests fi
 public commands, host-origin prompt events, Stop events, and public MCP calls in
 Claude Code's own test runtime. No private plugin helper is tested.
 
-These checks do not verify a live model conversation, production OAuth, or the
-authorized production worktree/crash scenario. Backend release is a separate
-prerequisite; even after release is confirmed, production access, test customer,
-and configuration require explicit approval. Issue
-[agentdoorbell #88](https://github.com/nthplusio/agentdoorbell/issues/88) stays open
-until that authorized verification also passes.
+These checks do not exercise a live model conversation or production OAuth.

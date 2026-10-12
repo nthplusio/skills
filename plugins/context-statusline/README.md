@@ -5,7 +5,7 @@ context window, prompt cache warmth, and the git repo and branch.
 
 ```
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ◆ Opus 5.5   ctx 450k ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌▓▓▓▓▓▓▓▌▓░░░▏░░▏░▏░ 1M (550k left)   cache warm 57m · hit 97%    platform   ui-676 │
+│ ◆ Opus 5.5   ctx 450k ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▌▓▓▓▓▓▓▓▌▓░░░▏░░▏░▏░ 1M (550k left)   cache warm 57m · hit 97%    demo-app   fix-42 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -50,7 +50,7 @@ shrinks from 40 cells to 20, then parts give way in this order:
 
 1. The repository name, trimmed to 12 cells and then dropped.
 2. The cache hit rate.
-3. The branch, trimmed from the front (`…ui-676`) and then dropped.
+3. The branch, trimmed from the front (`…fix-42`) and then dropped.
 4. The room note.
 5. The cache segment.
 6. The bar shrinks to 10 cells, then the `ctx` label and the bar go.

@@ -178,7 +178,7 @@ export const cellWidth = (s: string): number => {
 }
 
 // Cuts `s` to at most `max` cells, an ellipsis marking the cut at its end or
-// its start ("…ui-676": a branch's tail says the most).
+// its start ("…fix-42": a branch's tail says the most).
 export const truncate = (s: string, max: number, from: 'end' | 'start' = 'end'): string => {
   if (cellWidth(s) <= max) return s
   if (max < 1) return ''

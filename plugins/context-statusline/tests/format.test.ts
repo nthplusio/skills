@@ -9,7 +9,7 @@ import {
 } from '../hooks/format.ts'
 import type { Layout } from '../hooks/format.ts'
 
-const GIT = { repo: 'platform', branch: 'development' }
+const GIT = { repo: 'demo-app', branch: 'development' }
 const M = 1000000
 
 describe('meterColor', () => {
@@ -140,8 +140,8 @@ describe('cellWidth and truncate', () => {
     expect(['abc', '◆ ▓░▌▏·…', '機能', '👍', 'é', `${REPO_ICON}${BRANCH_ICON}`].map(cellWidth)).toEqual([3, 8, 4, 2, 1, 2])
   })
   test('cuts to the cells given, the ellipsis at the end or the start', async () => {
-    expect(truncate('platform-services', 10)).toBe('platform-…')
-    expect(truncate('sethcoussens/ui-676', 10, 'start')).toBe('…ns/ui-676')
+    expect(truncate('demo-app-services', 10)).toBe('demo-app-…')
+    expect(truncate('contributor/fix-42', 10, 'start')).toBe('…or/fix-42')
     expect(truncate('機能ブランチ', 6)).toBe('機能…')
     expect(truncate('short', 10)).toBe('short')
   })
@@ -211,7 +211,7 @@ describe('layout', () => {
     const l = at(200)
     expect([...parts(l)]).toEqual(['repo', 'branch', 'hit', 'room', 'cache', 'ctxLabel', 'bar'])
     expect(barCells(l)).toBe(MAX_BAR)
-    expect(l.git).toEqual({ repoIcon: `${REPO_ICON} `, repo: 'platform  ', branchIcon: `${BRANCH_ICON} `, branch: 'development' })
+    expect(l.git).toEqual({ repoIcon: `${REPO_ICON} `, repo: 'demo-app  ', branchIcon: `${BRANCH_ICON} `, branch: 'development' })
   })
   test('the bar shrinks to its least before anything else gives way', async () => {
     expect(parts(at(116)).has('repo')).toBe(true)
@@ -234,10 +234,10 @@ describe('layout', () => {
     expect(at(20).model).toBe('◆ Opus 5…')
   })
   test('a long branch is trimmed from the start, a long repo from the end, before either goes', async () => {
-    const long = formatStatus({ modelId: 'claude-opus-5-5', tokens: 450000, cap: M, git: { repo: 'intellilake-platform-services', branch: 'sethcoussens/ui-676-long-feature-branch' } })
+    const long = formatStatus({ modelId: 'claude-opus-5-5', tokens: 450000, cap: M, git: { repo: 'example-company-repo-services', branch: 'contributor/abc-123-long-feature-branch' } })
     const repoTrimmed = at(155, long)
-    expect(repoTrimmed.git?.repo).toMatch(/^intellilake-.*…  $/)
-    expect(repoTrimmed.git?.branch).toBe('sethcoussens/ui-676-long-feature-branch')
+    expect(repoTrimmed.git?.repo).toMatch(/^example-.*…  $/)
+    expect(repoTrimmed.git?.branch).toBe('contributor/abc-123-long-feature-branch')
     const branchTrimmed = at(115, long)
     expect(branchTrimmed.git?.repo).toBe('')
     expect(branchTrimmed.git?.branch).toMatch(/^….*feature-branch$/)
@@ -249,7 +249,7 @@ describe('layout across every width', () => {
     formatStatus({ modelId: 'claude-opus-5-5', tokens, cap, git })
   const STATES: [string, StatusSegments, CacheSegment | null][] = [
     ['everything', status(450000, M, GIT), formatCache(SRC, 3 * MIN, H)],
-    ['long names', status(450000, M, { repo: 'intellilake-platform-services', branch: 'sethcoussens/ui-676-long-feature-branch' }), formatCache(SRC, 3 * MIN, H)],
+    ['long names', status(450000, M, { repo: 'example-company-repo-services', branch: 'contributor/abc-123-long-feature-branch' }), formatCache(SRC, 3 * MIN, H)],
     ['wide characters', status(450000, M, { repo: '倉庫', branch: '機能/ブランチ-テスト' }), formatCache(SRC, 3 * MIN, H)],
     ['cold cache, 200k window', status(120000, 200000, GIT), formatCache(SRC, 72 * MIN, H)],
     ['at the cap', status(M, M, GIT), formatCache({ ...SRC, isForfeited: true }, MIN, H)],
@@ -283,9 +283,9 @@ const wire = (on: On, tokens: number, repo: boolean) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: { tokens, window: M } } }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
-  on('session.cwd', () => ({ value: '/work/platform' }))
-  on('session.repo', () => ({ value: repo ? { root: '/work/platform', remote: null, internal: false, name: null } : null }))
-  on('process.run', () => ({ value: { exitCode: 0, stdout: 'sethcoussens/ui-676\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  on('session.cwd', () => ({ value: '/work/demo-app' }))
+  on('session.repo', () => ({ value: repo ? { root: '/work/demo-app', remote: null, internal: false, name: null } : null }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: 'jdoe/fix-42\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
     return h(Text, null, 'engine') as RenderElement
@@ -306,13 +306,13 @@ const BAR_450K = '▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓�
 
 test('draws a rounded card above the prompt, its segments held at their width', async ($, on) => {
   wire(on, 450000, true)
-  await $.session.start({ cwd: '/work/platform', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/work/demo-app', surface: 'terminal', isInteractive: true })
   const ui = await mountBand($, 120)
   const card = await ui.drawn()
   expect(card).toMatchObject({ type: 'Box', props: { borderStyle: 'round', flexDirection: 'row', justifyContent: 'space-between', width: 120 } })
   expect((await ui.find({ type: 'Text', text: /^◆ / }))?.text).toBe('◆ Opus 5.5')
   expect((await ui.find({ type: 'Text', text: /^ctx / }))?.text).toBe(`ctx 450k ${BAR_450K} 1M (550k left)`)
-  expect((await ui.find({ type: 'Text', text: // }))?.text).toBe(`${REPO_ICON} platform  ${BRANCH_ICON} ui-676`)
+  expect((await ui.find({ type: 'Text', text: // }))?.text).toBe(`${REPO_ICON} demo-app  ${BRANCH_ICON} jdoe/fix-42`)
   expect(await ui.find({ type: 'Text', text: /^cache / })).toBeUndefined()
   const boxes = (await ui.findAll({ type: 'Box' })).filter(b => b.props.flexShrink !== undefined)
   expect(boxes.map(b => b.props.flexShrink)).toEqual([0, 0, 1])
