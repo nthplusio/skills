@@ -30,6 +30,12 @@ choices. They are not current ticket status or extra standing authorization.
 | A user approves a maintenance action after its window has closed. | Mark the approval expired, keep its record and ask for a new window. | Acting on stale permission because the word "approved" arrived. |
 | Three scans in a row change nothing, and only people can unblock the remaining work. | Clear the scheduled wake, record the hold and post one summary of the answers needed. | Scanning and re-rendering every few minutes for days with no change. |
 | A routine scan finds new status but the template is unchanged. | Render, update the destination and run `check_served.py`; reuse a recorded LIMITED result. | Screenshots, DOM inspection and served-byte comparisons by hand on every scan. |
+| The skill reloads mid-run with a changed data contract. | Compare `skill_version`, migrate the record, save the new version and one history line. | Writing new fields beside old ones until the record matches neither contract. |
+| An owner told not to report needs approval for a shared write. | Send one `ESCALATION <ticket ID>` message naming the approval; keep routine status passive. | Owners stalling silently, or reporting every step because the rules conflict. |
+| The user answers "land it" while two decisions are pending in the owner's conversation. | Restate which decision ID the answer settles, and ask when it could fit either. | Applying a terse answer to a question it never addressed. |
+| Four pull requests are green and wait on merge approval. | Raise one decision listing each with proof, checks and side effects; accept a subset by ticket ID. | Asking the user to approve the same kind of action four times across four threads. |
+| A merged change still needs live acceptance, and the reset left nightly jobs paused. | Record each as a follow-up with its ticket owner before the owner finishes. | Marking work complete while its remaining consequences have no owner. |
+| Every owner is finished, but a schedule, a fixture and an unowned follow-up remain. | Run the close-out list, then set `closed_at`. | Leaving the loop, resources and loose ends running after the work is done. |
 
 The runnable local checks validate JSON and HTML contracts. The prompts in
 `evals/evals.json` test the agent's decisions. Running the former does not mean

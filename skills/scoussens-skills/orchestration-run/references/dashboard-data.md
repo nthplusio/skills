@@ -32,8 +32,9 @@ Stages advance only on accepted proof, whatever the agent's state.
 - `config_path`: absolute path of repository setup this run reads.
 - `harness_name`: current harness name, exactly as keyed in setup. Required for
   new runs. Recover older records' name from their original context, not the model.
-- `run_choices`: selected ticket IDs, finish line, destination, interval, and
-  `confirmed_from` identifying the actual user instruction or answer. Defaults
+- `run_choices`: selected ticket IDs, target stage, publication scope, idle-scan
+  limit, destination, interval, and `confirmed_from` identifying the actual user
+  instruction or answer. Schema 1 records may carry a text finish line instead. Defaults
   propose choices for a new run. Resume reuses these choices without another
   interview. Run overrides leave project policy and harness defaults unchanged.
 - `monitoring`: required for new coordinated runs; older records can omit it
@@ -275,6 +276,21 @@ Schema 2 adds these fields, and the renderer enforces them:
   and an `until` timestamp. A finished owner or resolved row cannot hold runtime.
   A retained entry past its `until` date appears as overdue cleanup on the page.
   `resources` keeps describing file and responsibility areas, not instances.
+- `skill_version` records the skill version this run follows, from
+  `render_dashboard.py --skill-version`. A different current version shows a
+  migration notice on the page.
+- `history` entries are at most 800 characters. Unchanged scans add none.
+- `follow_ups` lists work found beyond a task's target stage. Each entry has an
+  `id`, `from_task` (an assigned row), `text`, `owner` (the ticket or person
+  who owns it, or `null`) and an optional `trigger`. The page asks for owners
+  for entries with `null`.
+- A pending or blocked `business_acceptance` stage carries `accountable`, the
+  person who signs off, and `revisit`, a date or event.
+- `closed_at` marks a closed run. The renderer then requires every owner to be
+  complete or closed, no held runtime, an owner for every follow-up, no pending
+  decision and no scheduled check.
+- A delivered row whose implementation was verified but never published shows
+  as **Done, not submitted**, and the headline counts those rows separately.
 - When an owner is `complete` or `closed` with verified `pr_readiness` and
   unverified `code_publication`, `owner.retained_code` keeps that code outside
   its workspace: `kind` is `pushed_branch`, `bundle` or `patch`, `ref` locates
@@ -283,7 +299,9 @@ Schema 2 adds these fields, and the renderer enforces them:
 To bring a schema 1 record up to schema 2 on resume, move unknown top-level
 fields into `history` or the fields above, record approvals already granted in
 the run, add each task's `runtime` and confirm the missing run choices with the
-user. Then set `schema_version` to `2` and record the migration in `history`.
+user. Shorten history entries over 800 characters, keeping their detail in a
+retained proof entry. Then set `schema_version` to `2` and record the migration
+in `history`.
 
 ## Evidence fields
 
