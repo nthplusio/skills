@@ -214,6 +214,7 @@ textarea { display:block; inline-size:100%; field-sizing:content; min-block-size
 .receipt summary span { color:var(--muted); display:inline-block; margin-inline-start:10px; font-size:11px; }
 pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; background:var(--bg); border-radius:5px; font:11px/1.6 ui-monospace,monospace; }
 .history { font-size:12px; color:var(--muted); padding-inline-start:20px; }
+.history small { display:block; margin-block-end:6px; }
 [hidden] { display:none !important; }
 @container (inline-size < 60rem) {
   thead { position:absolute; inline-size:1px; block-size:1px; overflow:clip; clip-path:inset(50%); }
@@ -235,11 +236,11 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
 <section class="summary" id="work-summary" aria-label="Progress summary"><div class="headline-row"><p class="headline">{{HEADLINE}}</p>{{CALLOUT}}</div><div class="meter" role="img" aria-label="Progress: {{METER_LABEL}}">{{METER}}</div><ul class="meter-legend">{{METER_LEGEND}}</ul><div class="count-row"><span class="count-label">Business status</span><div class="work-counts" id="work-counts" aria-label="Count by business status">{{WORK_COUNTS}}</div></div><div class="count-row"><span class="count-label">Agents</span><div class="work-counts" id="agent-counts" aria-label="Count by agent status">{{AGENT_COUNTS}}</div></div></section>
 <div class="layout">
 <section class="panel matrix" id="task-matrix"><h2>All items</h2><p class="muted">Select an item to see its full technical details.</p><table><thead><tr><th scope="col">Item</th><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">What's happening</th><th scope="col">Agent</th></tr></thead>{{ROWS}}</table><div class="legend" aria-label="Stage legend"><span><i class="step verified" aria-hidden="true"></i>Done</span><span><i class="step pending" aria-hidden="true"></i>In progress</span><span><i class="step blocked" aria-hidden="true"></i>Blocked</span><span><i class="step not_requested" aria-hidden="true"></i>Not in scope</span><span><i class="step pending current" aria-hidden="true"></i>Current stage</span></div><p class="ledger-note"><b>Stage</b> and <b>Status</b> describe the work. <b>Agent</b> describes the AI agent doing it. An agent stays open until every requested stage is done, so a waiting agent often means the work is waiting on a review, a deployment or you.</p><ol class="milestone-key stage-key">{{STAGE_KEY}}</ol><p class="ledger-note">Wrapped up includes items that were cancelled, postponed or needed no change. Only items marked Done were delivered.</p></section>
-<section class="panel" id="decisions"><h2>Decisions we need from you ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section>
+<section class="panel" id="decisions"><h2>Decisions we need from you ({{DECISION_COUNT}})</h2>{{DECISIONS}}</section><section class="panel" id="follow-ups"><h2>Follow-up work</h2><p class="muted">Work this run found but did not take on. Each item needs an owner before the run closes.</p><ul class="history">{{FOLLOW_UPS}}</ul></section>
 </div>
 <h2 class="section-label">Technical reference</h2>
 <details class="panel archive" id="retained-proof"><summary>Evidence and test results</summary>{{PROOFS}}</details>
-<details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
+<details class="panel archive" id="runtime"><summary>Running and kept resources</summary><ul class="history">{{RUNTIME}}</ul></details><details class="panel archive" id="approvals"><summary>Approvals</summary><ul class="history">{{APPROVALS}}</ul></details><details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
 <footer class="technical-footer">Run <code>{{RUN_ID}}</code> · Snapshot <code>{{UPDATED}}</code></footer>
 </main>
 <dialog id="decision-dialog" aria-labelledby="decision-title" aria-describedby="decision-help"><div class="dialog-heading"><h2 id="decision-title">Decision</h2><button id="close-decision" autofocus>Close</button></div><p id="decision-help">Answer in the linked conversation. Copy controls prepare text; they do not send it.</p><div id="decision-content"></div></dialog>

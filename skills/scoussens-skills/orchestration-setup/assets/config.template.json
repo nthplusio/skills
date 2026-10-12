@@ -11,7 +11,8 @@
       "criteria_limit": 5,
       "confirmed_from": "REPLACE_WITH_USER_CONFIRMATION_SOURCE"
     },
-    "shared_skills": []
+    "shared_skills": [],
+    "stage_skills": {}
   },
   "harnesses": {
     "REPLACE_WITH_DISCOVERED_HARNESS_NAME": {

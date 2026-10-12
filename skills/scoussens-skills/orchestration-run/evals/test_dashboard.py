@@ -14,7 +14,7 @@ RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
 DISCOVERY = RUNNER.parent / "orchestration-discovery"
 sys.path.insert(0, str(RUNNER / "scripts"))
-from render_dashboard import render
+from render_dashboard import render, skill_version
 
 
 class Page(HTMLParser):
@@ -75,6 +75,7 @@ OUT = "Not in scope"
 class DashboardTests(unittest.TestCase):
     def setUp(self):
         self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data["skill_version"] = skill_version()
 
     def test_scoped_readiness_and_delivery_are_visibly_distinct(self):
         page = Page(render(self.data))
@@ -107,7 +108,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("We'll revisit: After the authentication fix is accepted.", page.row_text["row-UI-110"])
         self.assertIn('href="#decision-Q1"', html)
         self.assertIn('<b>6 of 11</b> items wrapped up', html)
-        self.assertIn('2 done · 2 in progress · 3 need attention', html)
+        self.assertIn('2 done (1 not submitted) · 2 in progress · 3 need attention', html)
         self.assertIn('<b>4</b> Wrapped up without delivery', html)
         self.assertIn('1 decision needs your input', html)
         self.assertIn('<b>2</b> Done', html)
@@ -190,6 +191,7 @@ class DashboardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing stage deployment"):
             render(self.data)
         self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data["skill_version"] = skill_version()
         for task in self.data["tasks"]:
             for key in ("defined", "researched", "review", "verification"):
                 del task["milestones"][key]
@@ -254,9 +256,9 @@ class DashboardTests(unittest.TestCase):
         self.data["presentation"]["auto_refresh"] = True
         for interval, hold in ((1, None), (17, "Paused for user input"), (137, "Run complete")):
             with self.subTest(interval=interval, hold=hold):
-                self.data["monitoring"] = {"interval_seconds": interval, "hold": hold, "next_check_at": None}
+                self.data["monitoring"].update(interval_seconds=interval, hold=hold, next_check_at=None)
                 if hold == "Run complete":
-                    self.data.update(tasks=[], decisions=[], evidence=[], history=[])
+                    self.data.update(tasks=[], decisions=[], evidence=[], history=[], approvals=[], follow_ups=[])
                 html = render(self.data, hosted=True)
                 self.assertEqual(Page(html).refresh, str(interval))
                 unit = "second" if interval == 1 else "seconds"
@@ -265,7 +267,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.data["updated_at"], "2026-10-08T14:30:00-05:00")
 
     def test_absent_or_unavailable_auto_refresh_keeps_static_snapshot(self):
-        self.data["monitoring"] = {"interval_seconds": 17}
+        self.data["monitoring"].update(interval_seconds=17)
         for explicit in (False, True):
             with self.subTest(explicit=explicit):
                 if explicit:
@@ -281,11 +283,12 @@ class DashboardTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "presentation.auto_refresh must be boolean"):
                     render(self.data)
         self.data["presentation"]["auto_refresh"] = True
+        del self.data["monitoring"]["interval_seconds"]
         with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
             render(self.data)
         for interval in (None, 0, -1, True, "17", 1.5):
             with self.subTest(interval=interval):
-                self.data["monitoring"] = {"interval_seconds": interval}
+                self.data["monitoring"].update(interval_seconds=interval)
                 with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
                     render(self.data)
 
@@ -429,17 +432,188 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(html.count('<script>'), 1)
 
     def test_empty_run_and_cli_failure_preserve_previous_dashboard(self):
-        self.data.update(tasks=[], decisions=[], evidence=[], history=[])
+        self.data.update(tasks=[], decisions=[], evidence=[], history=[], approvals=[], follow_ups=[])
         self.assertIn("No items are assigned yet.", render(self.data))
         with tempfile.TemporaryDirectory() as directory:
             status, output = Path(directory) / "status.json", Path(directory) / "dashboard.html"
             output.write_text("previous useful dashboard")
-            self.data["schema_version"] = 2
+            self.data["schema_version"] = 99
             status.write_text(json.dumps(self.data))
             result = subprocess.run([sys.executable, str(RUNNER / "scripts" / "render_dashboard.py"), str(status), str(output)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("unsupported dashboard schema_version", result.stderr)
             self.assertEqual(output.read_text(), "previous useful dashboard")
+
+
+class LifecycleTests(unittest.TestCase):
+    """Schema 2 rules: publication scope, durable code, runtime, approvals and idle scans."""
+
+    def setUp(self):
+        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data["skill_version"] = skill_version()
+        self.tasks = {task["id"]: task for task in self.data["tasks"]}
+
+    def test_schema_1_records_keep_rendering_without_lifecycle_fields(self):
+        self.data["schema_version"] = 1
+        self.data.pop("approvals")
+        self.data["extra_notes"] = "legacy field"
+        for task in self.data["tasks"]:
+            task.pop("runtime")
+        self.assertIn("Orchestration preview", render(self.data))
+
+    def test_unknown_top_level_fields_are_rejected(self):
+        self.data["feedback_coordination"] = {}
+        with self.assertRaisesRegex(ValueError, "unknown top-level field feedback_coordination"):
+            render(self.data)
+
+    def test_run_choices_name_target_stage_publication_scope_and_idle_limit(self):
+        for field, value, message in (("target_stage", "review-ready PRs", "target_stage must name a business stage"),
+                                      ("publication_scope", "push", "publication_scope must be one of"),
+                                      ("idle_scan_limit", 0, "idle_scan_limit must be a positive integer")):
+            with self.subTest(field=field):
+                data = deepcopy(self.data)
+                data["run_choices"][field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    render(data)
+
+    def test_publication_request_needs_a_publication_scope(self):
+        self.data["run_choices"]["publication_scope"] = "none"
+        with self.assertRaisesRegex(ValueError, "OPS-105: code publication is requested but this run's publication scope is none"):
+            render(self.data)
+
+    def test_closed_owner_with_unpublished_code_needs_durable_copy(self):
+        owner = self.tasks["UI-101"]["owner"]
+        owner.pop("retained_code")
+        with self.assertRaisesRegex(ValueError, "UI-101: unpublished code must be kept outside the owner's workspace"):
+            render(self.data)
+        owner["retained_code"] = {"kind": "bundle", "ref": "proof/ui-101/pinning.bundle"}
+        with self.assertRaisesRegex(ValueError, "retained_code.checksum"):
+            render(self.data)
+        owner["retained_code"] = {"kind": "pushed_branch", "ref": "origin/ui-101-pinning"}
+        self.assertIn("Pushed branch <code>origin/ui-101-pinning</code>", render(self.data))
+
+    def test_finishing_needs_runtime_released_or_retained_with_reason_and_date(self):
+        runtime = self.tasks["SHIP-107"]["runtime"]
+        runtime.append({"id": "orb", "kind": "sandbox", "ref": "orb-107", "state": "held"})
+        with self.assertRaisesRegex(ValueError, "SHIP-107: release or retain runtime orb"):
+            render(self.data)
+        runtime[-1].update(state="retained")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.reason"):
+            render(self.data)
+        runtime[-1].update(reason="Browser session for the expiry check")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.until needs an ISO 8601 timestamp"):
+            render(self.data)
+
+    def test_retention_past_its_date_is_called_out_for_cleanup(self):
+        html = render(self.data)
+        self.assertNotIn("past its cleanup date", html)
+        self.assertIn("Kept until 2026-10-15T12:00:00-05:00", html)
+        self.tasks["SHIP-107"]["runtime"][0]["until"] = "2026-10-08T12:00:00-05:00"
+        html = render(self.data)
+        self.assertIn('href="#runtime">1 kept resource is past its cleanup date', html)
+        self.assertIn("Cleanup overdue since 2026-10-08T12:00:00-05:00", html)
+
+    def test_expired_approval_cannot_stay_active(self):
+        approval = self.data["approvals"][1]
+        approval["state"] = "active"
+        with self.assertRaisesRegex(ValueError, "A2: approval expired; mark it expired and ask again"):
+            render(self.data)
+        approval["state"] = "expired"
+        self.assertIn("<b>A2</b> Expired", render(self.data))
+        approval["task_ids"] = ["NOPE-1"]
+        with self.assertRaisesRegex(ValueError, "A2: approval names an unknown task"):
+            render(self.data)
+
+    def test_idle_scans_with_only_people_gated_work_must_stop_scheduling(self):
+        for task in self.data["tasks"]:
+            if task["work"]["state"] not in ("delivered", "no_change_needed", "cancelled", "deferred", "needs_decision"):
+                task["work"]["state"] = "waiting"
+                task["blocker"] = task["blocker"] or "Waiting on a person"
+        self.data["monitoring"]["unchanged_scans"] = 3
+        with self.assertRaisesRegex(ValueError, "3 unchanged scans with only people-gated work left"):
+            render(self.data)
+        self.data["monitoring"].update(next_check_at=None, hold="Waiting on Q1; resume when answered")
+        render(self.data)
+        self.data["monitoring"].update(next_check_at="2026-10-08T14:40:00-05:00", unchanged_scans=2)
+        render(self.data)
+
+    def test_implemented_but_unsubmitted_delivery_is_labelled(self):
+        page = render(self.data)
+        row = "".join(Page(page).row_text["row-UI-101"])
+        self.assertIn("Done, not submitted", row)
+        self.assertNotIn("Done, not submitted", "".join(Page(page).row_text["row-SHIP-107"]))
+        self.assertIn("2 done (1 not submitted)", page)
+
+    def test_follow_ups_need_a_source_task_and_unowned_ones_are_called_out(self):
+        page = render(self.data)
+        self.assertIn('href="#follow-ups">1 follow-up needs an owner', page)
+        self.assertIn("Owned by OPS-112", page)
+        self.data["follow_ups"][1]["from_task"] = "NOPE-1"
+        with self.assertRaisesRegex(ValueError, "F2: follow-up needs the assigned task"):
+            render(self.data)
+
+    def test_skill_version_is_required_and_a_mismatch_is_visible(self):
+        self.assertNotIn("The coordinator migrates it", render(self.data))
+        self.data["skill_version"] = "0123abcd4567"
+        self.assertIn("written for orchestration-run 0123abcd4567", render(self.data))
+        del self.data["skill_version"]
+        with self.assertRaisesRegex(ValueError, "skill_version must be nonempty"):
+            render(self.data)
+        result = subprocess.run([sys.executable, "-B", str(RUNNER / "scripts" / "render_dashboard.py"), "--skill-version"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.stdout.strip(), skill_version())
+
+    def test_history_entries_stay_short(self):
+        self.data["history"].append("Scan inspected six owners; all idle and unchanged. " * 20)
+        with self.assertRaisesRegex(ValueError, "history entries \\[5\\] exceed 800 characters"):
+            render(self.data)
+
+    def test_pending_business_acceptance_names_who_signs_off_and_when(self):
+        acceptance = self.tasks["API-102"]["milestones"]["business_acceptance"]
+        acceptance.update(state="pending", note="Product owner sign-off")
+        with self.assertRaisesRegex(ValueError, "API-102.business_acceptance.accountable"):
+            render(self.data)
+        acceptance.update(accountable="Product owner (Sam)")
+        with self.assertRaisesRegex(ValueError, "API-102.business_acceptance.revisit"):
+            render(self.data)
+        acceptance.update(revisit="Friday demo")
+        self.assertIn("Sign-off by Product owner (Sam); revisit Friday demo.", render(self.data))
+
+    def test_closed_run_has_nothing_open_or_scheduled(self):
+        self.data["closed_at"] = "2026-10-08T15:00:00-05:00"
+        with self.assertRaisesRegex(ValueError, "a closed run cannot keep open owner API-102.*held runtime on API-102"
+                                                 ".*unowned follow-up F2.*pending decisions.*a scheduled check"):
+            render(self.data)
+        self.data["tasks"] = [task for task in self.data["tasks"] if task["owner"]["state"] in ("complete", "closed")]
+        self.data["follow_ups"][1]["owner"] = "API-113"
+        self.data["follow_ups"] = [item for item in self.data["follow_ups"]
+                                   if item["from_task"] in {task["id"] for task in self.data["tasks"]}]
+        self.data.update(decisions=[])
+        self.data["monitoring"].update(next_check_at=None, hold="Run closed")
+        self.assertIn("This run closed at 2026-10-08T15:00:00-05:00", render(self.data))
+
+    def test_served_page_check_compares_bytes_without_a_browser(self):
+        import http.server, threading, functools
+        with tempfile.TemporaryDirectory() as directory:
+            page = Path(directory) / "index.html"
+            page.write_text(render(self.data))
+            handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+            handler.log_message = lambda *args: None
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                url = f"http://127.0.0.1:{server.server_port}/index.html"
+                command = [sys.executable, str(RUNNER / "scripts" / "check_served.py"), str(page)]
+                self.assertIn("PASS", subprocess.run(command + [url], capture_output=True, text=True).stdout)
+                local = Path(directory) / "local.html"
+                local.write_text("newer render")
+                result = subprocess.run([command[0], command[1], str(local), url], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1)
+                result = subprocess.run(command + [url.replace("index", "missing")], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("LIMITED", result.stderr)
+            finally:
+                server.shutdown()
 
 
 class ConfigTests(unittest.TestCase):
@@ -527,9 +701,24 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(amp["defaults"], {"finish_line": "merged PRs", "destination": "portal", "interval_seconds": 15})
         self.assertEqual(terminal["defaults"], {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 90})
         self.assertEqual(amp["skills"], {"load": "Load by skill name", "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
-                                        "shared": ["speak-clearly", "test-behavior", "amp-proof"]})
+                                        "shared": ["speak-clearly", "test-behavior", "amp-proof"], "stages": {}})
         self.assertEqual(terminal["skills"]["shared"], ["speak-clearly", "test-behavior", "terminal-proof"])
         self.assertFalse(self.marker.exists())
+
+    def test_stage_skills_are_optional_validated_and_resolved(self):
+        self.config["project"]["stage_skills"] = {"code_publication": ["start-work"], "review": ["pr-ready"]}
+        self.config_path.write_text(json.dumps(self.config))
+        self.assertEqual(self.selected("Amp")["skills"]["stages"], {"code_publication": ["start-work"], "review": ["pr-ready"]})
+        for bad in ({"shipping": ["start-work"]}, {"review": ["orchestration-run"]}):
+            with self.subTest(stage_skills=bad):
+                self.config["project"]["stage_skills"] = bad
+                self.config_path.write_text(json.dumps(self.config))
+                result = subprocess.run([sys.executable, "-B", str(SETUP / "scripts" / "check_config.py"), str(self.config_path)],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1)
+        del self.config["project"]["stage_skills"]
+        self.config_path.write_text(json.dumps(self.config))
+        self.assertEqual(self.selected("Amp")["skills"]["stages"], {})
 
     def test_project_policy_is_retained_for_both_profiles(self):
         for name in ("Amp", "Claude Code"):

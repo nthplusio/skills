@@ -52,6 +52,15 @@ The additional monitoring prompts are not wired into this mock harness:
 - Runner 15 checks early native-input notification handling, an unchanged full-scan
   deadline, and one scoped request for a handoff fact that passive inspection
   cannot resolve. Later scans retain the unanswered request without resending it.
+- Runner 16 through 20 check the run lifecycle: confirming a target stage and
+  publication scope with side effects, keeping unpublished code and runtime
+  settled before closure, refusing an expired approval, stopping after the
+  idle-scan limit, and routine scans that use `check_served.py` instead of
+  screenshots. `LifecycleTests` in `test_dashboard.py` covers the matching
+  schema 2 record rules; these prompts cover the coordinator's actions.
+- Runner 21 through 25 check skill-version migration, the escalation channel
+  in owner briefs, binding a terse answer to one decision, one batched merge
+  decision, and the run close-out list.
 
 Run those prompts with controlled tool responses and retain the waits, state
 observations, follow-ups and record/dashboard writes in order. Until then they

@@ -56,6 +56,9 @@ Resolve project choices first, then the current harness profile:
 2. Worker instructions. Confirm project-wide `shared_skills` and any harness-specific
    additions. Use required baseline guidance as evidence rather than asking again.
    All three orchestration skills belong to the coordinator, not worker briefs.
+   Optionally map business stages to the repository skills that perform them in
+   `project.stage_skills`, such as a start-work skill for `code_publication` or
+   a review skill for `review`. Offer only skills the repository already has.
 3. Storage. Confirm the configuration path and this profile's `run_root` together.
    Explain that run files hold status, dashboards, retained proof, and handoffs.
    Propose `.orchestration/config.json` with `runs/<harness-directory>` relative to

@@ -3,6 +3,7 @@
 
 import argparse
 from datetime import datetime
+import hashlib
 from html import escape
 from ipaddress import ip_address
 import json
@@ -55,6 +56,22 @@ WORK_STATES = {
     "deferred": ("Postponed", "resolved"),
 }
 GROUPS = {"attention": "Needs attention", "moving": "In progress", "resolved": "Wrapped up"}
+# Schema 2 adds the lifecycle contract: publication scope, approvals, runtime and retained code.
+SCHEMA_VERSIONS = (1, 2)
+V2_FIELDS = {"schema_version", "run_id", "title", "goal", "updated_at", "config_path", "harness_name",
+             "notice", "run_choices", "monitoring", "presentation", "decisions", "tasks", "evidence",
+             "history", "approvals", "skill_version", "follow_ups", "closed_at"}
+HISTORY_LIMIT = 800
+PUBLICATION_SCOPES = {
+    "none": "No branch or pull request will be published",
+    "draft": "Owners may push branches and open draft pull requests",
+    "ready": "Owners may also mark pull requests ready for review",
+    "merge": "Owners may also merge pull requests that pass required checks",
+}
+APPROVAL_STATES = {"active": "Active", "consumed": "Used", "expired": "Expired", "revoked": "Revoked"}
+RUNTIME_STATES = {"held": "In use", "released": "Released", "retained": "Kept on purpose"}
+CODE_KINDS = {"pushed_branch": "Pushed branch", "bundle": "Git bundle", "patch": "Patch file"}
+WAITING_ON_PEOPLE = ("needs_decision", "waiting", "awaiting_acceptance")
 
 
 def friendly_time(moment):
@@ -83,6 +100,18 @@ def work_status(task):
         return {"state": state, "summary": "We're confirming how this item ended.",
                 "reason": "Outcome not recorded; inspect the retained result before classifying."}
     return {"state": state, "reason": "Work status inferred from owner activity; confirm at the next scan."}
+
+
+def unsubmitted(task):
+    """Delivered implementation that was never published, so readers do not mistake it for shipped work."""
+    phases = task["milestones"]
+    return (work_status(task)["state"] == "delivered" and phases["pr_readiness"]["state"] == "verified"
+            and phases.get("code_publication", NOT_RECORDED)["state"] != "verified")
+
+
+def work_label(task):
+    state = work_status(task)["state"]
+    return "Done, not submitted" if unsubmitted(task) else WORK_STATES[state][0]
 
 
 def stages(task):
@@ -131,8 +160,131 @@ def link(href, hosted):
     return escape(href, quote=True)
 
 
+def skill_version():
+    """Digest of the files a coordinator follows: instructions, references, assets and scripts."""
+    root = Path(__file__).resolve().parent.parent
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if path.is_file() and relative.parts[0] != "evals" and "__pycache__" not in relative.parts:
+            digest.update(str(relative).encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()[:12]
+
+
+def moment(value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} needs an ISO 8601 timestamp")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} needs a timezone")
+    return parsed
+
+
+def nonempty(value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be nonempty text")
+
+
+def check_lifecycle(data, tasks, updated):
+    """Schema 2 rules. Return runtime entries whose retention date has passed."""
+    unknown = set(data) - V2_FIELDS
+    if unknown:
+        raise ValueError(f"unknown top-level field {', '.join(sorted(unknown))}; extend the contract or keep it in history")
+    choices = data["run_choices"]
+    if choices.get("target_stage") not in STAGES:
+        raise ValueError("run_choices.target_stage must name a business stage")
+    scope = choices.get("publication_scope")
+    if scope not in PUBLICATION_SCOPES:
+        raise ValueError(f"run_choices.publication_scope must be one of {', '.join(PUBLICATION_SCOPES)}")
+    nonempty(choices.get("confirmed_from"), "run_choices.confirmed_from")
+    limit = choices.get("idle_scan_limit")
+    if type(limit) is not int or limit < 1:
+        raise ValueError("run_choices.idle_scan_limit must be a positive integer")
+
+    monitoring = data["monitoring"]
+    unchanged = monitoring.get("unchanged_scans")
+    if type(unchanged) is not int or unchanged < 0:
+        raise ValueError("monitoring.unchanged_scans must be a nonnegative integer")
+    open_work = [task for task in tasks.values() if WORK_STATES[work_status(task)["state"]][1] != "resolved"]
+    if (unchanged >= limit and monitoring.get("next_check_at") and open_work
+            and all(work_status(task)["state"] in WAITING_ON_PEOPLE for task in open_work)):
+        raise ValueError(f"{unchanged} unchanged scans with only people-gated work left: "
+                         "stop scheduled checks, set next_check_at to null and record the hold")
+
+    nonempty(data.get("skill_version"), "skill_version")
+    long = [index for index, item in enumerate(data["history"]) if len(item) > HISTORY_LIMIT]
+    if long:
+        raise ValueError(f"history entries {long} exceed {HISTORY_LIMIT} characters; keep the detail in proof and summarise the change")
+    follow_ups = indexed(data.get("follow_ups", []))
+    for item in follow_ups.values():
+        nonempty(item.get("text"), f"{item['id']}.text")
+        if item.get("from_task") not in tasks:
+            raise ValueError(f"{item['id']}: follow-up needs the assigned task it came from")
+        if item.get("owner") is not None:
+            nonempty(item["owner"], f"{item['id']}.owner")
+
+    approvals = indexed(data["approvals"])
+    for item in approvals.values():
+        for field in ("scope", "receipt", "side_effects"):
+            nonempty(item.get(field), f"{item['id']}.{field}")
+        if item.get("state") not in APPROVAL_STATES:
+            raise ValueError(f"{item['id']}: invalid approval state")
+        if any(key not in tasks for key in item.get("task_ids", [])):
+            raise ValueError(f"{item['id']}: approval names an unknown task")
+        moment(item.get("granted_at"), f"{item['id']}.granted_at")
+        if item.get("expires_at") is not None and item["state"] == "active" \
+                and moment(item["expires_at"], f"{item['id']}.expires_at") <= updated:
+            raise ValueError(f"{item['id']}: approval expired; mark it expired and ask again before acting")
+
+    overdue = []
+    for task in tasks.values():
+        key, owner = task["id"], task["owner"]
+        for entry in indexed(task["runtime"]).values():
+            nonempty(entry.get("kind"), f"{key}.runtime.{entry['id']}.kind")
+            nonempty(entry.get("ref"), f"{key}.runtime.{entry['id']}.ref")
+            if entry.get("state") not in RUNTIME_STATES:
+                raise ValueError(f"{key}: invalid runtime state for {entry['id']}")
+            if entry["state"] == "retained":
+                nonempty(entry.get("reason"), f"{key}.runtime.{entry['id']}.reason")
+                if moment(entry.get("until"), f"{key}.runtime.{entry['id']}.until") <= updated:
+                    overdue.append((key, entry))
+        finished = owner["state"] in ("complete", "closed") or WORK_STATES[work_status(task)["state"]][1] == "resolved"
+        held = [entry["id"] for entry in task["runtime"] if entry["state"] == "held"]
+        if finished and held:
+            raise ValueError(f"{key}: release or retain runtime {', '.join(held)} with a reason and date before finishing")
+        phases = task["milestones"]
+        unpublished = phases["pr_readiness"]["state"] == "verified" and phases["code_publication"]["state"] != "verified"
+        if owner["state"] in ("complete", "closed") and unpublished:
+            code = owner.get("retained_code")
+            if not isinstance(code, dict) or code.get("kind") not in CODE_KINDS:
+                raise ValueError(f"{key}: unpublished code must be kept outside the owner's workspace "
+                                 f"({', '.join(CODE_KINDS)}) before the owner finishes")
+            nonempty(code.get("ref"), f"{key}.owner.retained_code.ref")
+            if code["kind"] != "pushed_branch":
+                nonempty(code.get("checksum"), f"{key}.owner.retained_code.checksum")
+        if scope == "none" and phases["code_publication"]["state"] in ("pending", "blocked"):
+            raise ValueError(f"{key}: code publication is requested but this run's publication scope is none")
+        acceptance = phases["business_acceptance"]
+        if acceptance["state"] in ("pending", "blocked"):
+            nonempty(acceptance.get("accountable"), f"{key}.business_acceptance.accountable")
+            nonempty(acceptance.get("revisit"), f"{key}.business_acceptance.revisit")
+
+    if data.get("closed_at") is not None:
+        moment(data["closed_at"], "closed_at")
+        still_open = [task["id"] for task in tasks.values() if task["owner"]["state"] in OPEN_OWNER_STATES]
+        held = [task["id"] for task in tasks.values() if any(entry["state"] == "held" for entry in task["runtime"])]
+        unowned = [item["id"] for item in follow_ups.values() if not item.get("owner")]
+        problems = ([f"open owner {key}" for key in still_open] + [f"held runtime on {key}" for key in held]
+                    + [f"unowned follow-up {key}" for key in unowned]
+                    + (["pending decisions"] if data["decisions"] else [])
+                    + (["a scheduled check"] if monitoring.get("next_check_at") else []))
+        if problems:
+            raise ValueError(f"a closed run cannot keep {', '.join(problems)}")
+    return approvals, overdue, follow_ups
+
+
 def render(data, hosted=False):
-    if data["schema_version"] != 1:
+    if data["schema_version"] not in SCHEMA_VERSIONS:
         raise ValueError("unsupported dashboard schema_version")
     updated = datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00"))
     if updated.tzinfo is None:
@@ -235,6 +387,7 @@ def render(data, hosted=False):
             raise ValueError(f"{task['id']}: blocked work needs an actionable blocker")
         if work["state"] == "needs_decision" and not any(task["id"] in item.get("task_ids", []) for item in decisions.values()):
             raise ValueError(f"{task['id']}: needs_decision work needs a pending decision naming this task")
+    approvals, overdue, follow_ups = check_lifecycle(data, tasks, updated) if data["schema_version"] >= 2 else ({}, [], {})
 
     def anchor(href, label):
         return f'<a href="{link(href, hosted)}">{escape(label)}</a>' if href else escape(label)
@@ -260,6 +413,12 @@ def render(data, hosted=False):
             owner = tasks[task_ids[0]]["owner"]
             packet["answer_route"] = {"owner_id": owner["id"], "label": owner["label"], "href": owner.get("href", "")}
         return escape(json.dumps(packet, indent=2, ensure_ascii=False), quote=True)
+
+    def runtime_list(entries):
+        return "<br>".join(
+            f'{RUNTIME_STATES[entry["state"]]} · {escape(entry["kind"])} <code>{escape(entry["ref"])}</code>'
+            + (f' · until {escape(entry["until"])} · {escape(entry["reason"])}' if entry["state"] == "retained" else "")
+            for entry in entries)
 
     def plain(work):
         return work.get("summary") or work["reason"]
@@ -295,7 +454,7 @@ def render(data, hosted=False):
         work = work_status(task)
         stage, target = stage_text(task)
         return (f'<section class="issue-data"><h3>{task["id"]} · {escape(task["title"])}</h3><dl>'
-                f'<dt>Status</dt><dd>{WORK_STATES[work["state"]][0]} · {escape(plain(work))}</dd>'
+                f'<dt>Status</dt><dd>{work_label(task)} · {escape(plain(work))}</dd>'
                 f'<dt>Stage</dt><dd>{escape(stage)}{" · " + escape(target) if target else ""}</dd>'
                 f'<dt>Agent</dt><dd>{escape(task["owner"]["label"])} · {OWNER_STATES[task["owner"]["state"]]}</dd>'
                 f'<dt>Holding it up</dt><dd>{escape(task["blocker"] or "Nothing")}</dd>'
@@ -321,7 +480,7 @@ def render(data, hosted=False):
         owner = task["owner"]
         agent = OWNER_STATES[owner["state"]]
         work = work_status(task)
-        label, group = WORK_STATES[work["state"]]
+        label, group = work_label(task), WORK_STATES[work["state"]][1]
         counts[work["state"]] += 1
         work_badge = f'<span class="work-status work-{work["state"]}">{label}</span>'
         agent_badge = f'<span class="agent-status agent-{owner["state"]}">{agent}</span>'
@@ -343,7 +502,9 @@ def render(data, hosted=False):
                 continue
             technical_steps.append(
                 f'<div class="phase">{signal(phase["state"])}<div><b>{technical_label}</b> <code>{phase_key}</code><span><code>{phase["state"]}</code></span>'
-                f'<small>{escape(phase["note"]) or "No note."} {proof_links(phase["evidence"])}</small></div></div>')
+                f'<small>{escape(phase["note"]) or "No note."} {proof_links(phase["evidence"])}'
+                + (f' Sign-off by {escape(phase["accountable"])}; revisit {escape(phase["revisit"])}.' if phase.get("accountable") else "")
+                + '</small></div></div>')
         rows[group].append(
             f'<tr id="row-{key}" data-work-state="{work["state"]}" data-owner-state="{owner["state"]}"><td class="task-cell" data-label="Item">'
             f'<button class="task-picker" data-task="{key}" aria-pressed="false" aria-haspopup="dialog">'
@@ -367,6 +528,11 @@ def render(data, hosted=False):
             f'<dt>Last checked</dt><dd>{escape(checked or "Check time not recorded")}</dd>'
             f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd>'
             f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd>'
+            + (f'<dt>Retained code</dt><dd>{CODE_KINDS[owner["retained_code"]["kind"]]} '
+               f'<code>{escape(owner["retained_code"]["ref"])}</code>'
+               + (f' · checksum <code>{escape(owner["retained_code"]["checksum"])}</code>' if owner["retained_code"].get("checksum") else "")
+               + '</dd>' if owner.get("retained_code") else "")
+            + (f'<dt>Runtime</dt><dd>{runtime_list(task["runtime"])}</dd>' if task.get("runtime") else "")
         )
         technical = (
             f'<dt>Work state</dt><dd><code>{work["state"]}</code> · {escape(work["reason"])}</dd>'
@@ -462,9 +628,34 @@ def render(data, hosted=False):
               f'<div class="decision-actions"><button class="quiet" {attributes} data-copy-id="{item["id"]}">Copy ID</button>'
               f'<button class="quiet" {attributes} data-question="{escape(prompt, quote=True)}">Prepare {item["id"]} question</button></div></div></article>'
         )
+    approval_html = "".join(
+        f'<li id="approval-{item["id"]}"><b>{item["id"]}</b> {APPROVAL_STATES[item["state"]]} · {escape(item["scope"])}'
+        f'<small>Side effects: {escape(item["side_effects"])} · Granted {escape(item["granted_at"])}'
+        f' · {"Expires " + escape(item["expires_at"]) if item.get("expires_at") else "No expiry"}'
+        f' · Source: {escape(item["receipt"])}</small></li>' for item in approvals.values())
+    held = [(task["id"], entry) for task in tasks.values() for entry in task.get("runtime", []) if entry["state"] != "released"]
+    overdue_ids = {(key, entry["id"]) for key, entry in overdue}
+    runtime_html = "".join(
+        f'<li><b>{key}</b> {RUNTIME_STATES[entry["state"]]} · {escape(entry["kind"])} <code>{escape(entry["ref"])}</code>'
+        + (f'<small>{"Cleanup overdue since" if (key, entry["id"]) in overdue_ids else "Kept until"} '
+           f'{escape(entry["until"])} · {escape(entry["reason"])}</small>' if entry["state"] == "retained" else "")
+        + '</li>' for key, entry in held)
+    follow_up_html = "".join(
+        f'<li id="follow-up-{item["id"]}"><b>{item["id"]}</b> {escape(item["text"])}'
+        f'<small>From {anchor("#task-" + item["from_task"], item["from_task"])} · '
+        f'{"Owned by " + escape(item["owner"]) if item.get("owner") else "Needs an owner"}'
+        f'{" · " + escape(item["trigger"]) if item.get("trigger") else ""}</small></li>' for item in follow_ups.values())
+    unowned = sum(1 for item in follow_ups.values() if not item.get("owner"))
+    notice = data.get("notice", "")
+    if data["schema_version"] >= 2 and data["skill_version"] != skill_version():
+        notice = (notice + " " if notice else "") + (f"This record was written for orchestration-run {data['skill_version']}; "
+                  f"the current version is {skill_version()}. The coordinator migrates it on its next scan.")
+    if data.get("closed_at"):
+        notice = (notice + " " if notice else "") + f"This run closed at {data['closed_at']}. The page no longer changes."
     total = len(tasks)
     done = counts["delivered"]
     closed_other = len(rows["resolved"]) - done
+    not_submitted = sum(1 for task in tasks.values() if unsubmitted(task))
     segments = [("done", "Done", done), ("closed", "Wrapped up without delivery", closed_other),
                 ("moving", "In progress", len(rows["moving"])), ("attention", "Needs attention", len(rows["attention"]))]
     meter = "".join(f'<span class="segment segment-{name}" style="flex-grow:{count}" title="{label}: {count}"></span>'
@@ -473,17 +664,25 @@ def render(data, hosted=False):
                            for name, label, count in segments if count)
     if total:
         headline = (f'<b>{len(rows["resolved"])} of {total}</b> items wrapped up'
-                    f' <span class="headline-detail">· {done} done · {len(rows["moving"])} in progress · {len(rows["attention"])} need attention</span>')
+                    f' <span class="headline-detail">· {done} done'
+                    + (f' ({not_submitted} not submitted)' if not_submitted else "")
+                    + f' · {len(rows["moving"])} in progress · {len(rows["attention"])} need attention</span>')
     else:
         headline = "No items are assigned yet."
     callout = (f'<a class="callout" href="#decisions">{len(decisions)} decision{"s" if len(decisions) != 1 else ""} '
                f'need{"s" if len(decisions) == 1 else ""} your input →</a>' if decisions else "")
+    if unowned:
+        callout += (f'<a class="callout" href="#follow-ups">{unowned} follow-up{"s need" if unowned != 1 else " needs"} an owner →</a>')
+    if overdue:
+        callout += (f'<a class="callout" href="#runtime">{len(overdue)} kept resource'
+                    f'{"s are" if len(overdue) != 1 else " is"} past {"their" if len(overdue) != 1 else "its"} cleanup date →</a>')
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
         "GOAL": escape(data["goal"]), "UPDATED": escape(data["updated_at"]),
         "UPDATED_FRIENDLY": escape(friendly_time(updated)),
         "REFRESH_META": refresh_meta, "REFRESH_STATUS": refresh_status,
-        "NOTICE": escape(data.get("notice", "")), "TASK_COUNT": str(total),
+        "NOTICE": escape(notice),
+        "FOLLOW_UPS": follow_up_html or '<li class="muted">No follow-up work recorded.</li>', "TASK_COUNT": str(total),
         "HEADLINE": headline, "CALLOUT": callout,
         "METER": meter or '<span class="segment segment-empty" style="flex-grow:1"></span>',
         "METER_LABEL": escape(", ".join(f"{count} {label.lower()}" for _, label, count in segments if count) or "No items"),
@@ -502,6 +701,8 @@ def render(data, hosted=False):
         "DETAILS": "".join(details) or '<p>Select an item after one is assigned.</p>',
         "DECISIONS": "".join(decision_html) or '<p class="muted">Nothing needs your decision right now.</p>',
         "PROOFS": "".join(proofs) or '<p class="muted">No evidence retained yet.</p>',
+        "APPROVALS": approval_html or '<li class="muted">No approvals recorded.</li>',
+        "RUNTIME": runtime_html or '<li class="muted">Nothing is running or kept for this run.</li>',
         "HISTORY": "".join(f'<li>{escape(item)}</li>' for item in data["history"]) or '<li>No material changes recorded.</li>',
         "QUESTION": escape(question(tasks[first], "status") if first else f"In orchestration run {data['run_id']}: what work is assigned?"),
         "COORDINATOR": anchor(data["presentation"].get("coordinator_href"), "Open coordinator") if data["presentation"].get("coordinator_href") else "Paste into your coordinator conversation.",
@@ -514,10 +715,16 @@ def render(data, hosted=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("status", type=Path)
-    parser.add_argument("output", type=Path)
+    parser.add_argument("status", type=Path, nargs="?")
+    parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--hosted", action="store_true")
+    parser.add_argument("--skill-version", action="store_true", help="print this skill's version and exit")
     args = parser.parse_args()
+    if args.skill_version:
+        print(skill_version())
+        return
+    if args.status is None or args.output is None:
+        parser.error("status and output are required")
     try:
         html = render(json.loads(args.status.read_text()), args.hosted)
         args.output.parent.mkdir(parents=True, exist_ok=True)
