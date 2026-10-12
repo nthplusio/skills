@@ -693,6 +693,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
+    def discovered(self, name):
+        result = self.cli(DISCOVERY, self.discovery_path, "--harness", name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    @staticmethod
+    def optional_facts(facts):
+        return [(facts, "instructions"), (facts, "ask_user"), (facts, "models"), (facts["helpers"], "readonly"),
+                (facts["skills"], "locations"), (facts["skills"], "reload")]
+
     def test_saved_discovery_and_setup_validate_without_selecting_a_profile(self):
         for skill, path, label in ((DISCOVERY, self.discovery_path, "discovery"),
                                    (SETUP, self.config_path, "configuration")):
@@ -719,7 +729,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(terminal["owners"]["workspace_model"], "shared")
         self.assertEqual(amp["defaults"], {"finish_line": "merged PRs", "destination": "portal", "interval_seconds": 15})
         self.assertEqual(terminal["defaults"], {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 90})
-        self.assertEqual(amp["skills"], {"load": "Load by skill name", "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
+        self.assertEqual(amp["skills"], {"load": "Load by skill name", "locations": None, "reload": None,
+                                        "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
                                         "shared": ["speak-clearly", "test-behavior", "amp-proof"], "stages": {}})
         self.assertEqual(terminal["skills"]["shared"], ["speak-clearly", "test-behavior", "terminal-proof"])
         self.assertFalse(self.marker.exists())
@@ -774,7 +785,8 @@ class ConfigTests(unittest.TestCase):
         selected = self.selected("Claude Code")
         self.assertEqual(selected["owners"], {"launch": None, "inspect": None, "message": None,
                                              "collect": None, "close": None, "resume": None, "workspace_model": "shared"})
-        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None})
+        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None, "readonly": None})
+        self.assertEqual([selected[field] for field in ("instructions", "ask_user", "models")], [None, None, None])
         self.assertEqual(selected["monitoring"], {"notifications": None, "wait": None, "wake": None})
         self.assertEqual(selected["evidence"], {"transfer": None, "retain_before_close": None})
         self.assertEqual(selected["artifacts"], [])
@@ -796,6 +808,60 @@ class ConfigTests(unittest.TestCase):
                 result = self.cli(DISCOVERY, self.discovery_path)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("artifact.auto_refresh must be nonempty text", result.stderr)
+
+    def test_discovery_prints_one_entry_by_saved_name_or_slug(self):
+        for name, slug in (("Amp", "amp"), ("Claude Code", "claude-code")):
+            with self.subTest(name=name):
+                printed = self.discovered(name)
+                self.assertEqual(json.loads(printed), self.discovery["harnesses"][name])
+                self.assertEqual(self.discovered(slug), printed)
+        for name in ("AMP", "Claude", "claude code", "Unknown"):
+            with self.subTest(refused=name):
+                result = self.cli(DISCOVERY, self.discovery_path, "--harness", name)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("no saved discovery", result.stderr)
+        self.assertFalse(self.marker.exists())
+
+    def test_discovery_saved_without_optional_facts_still_validates_and_resolves(self):
+        for facts in self.discovery["harnesses"].values():
+            for scope, field in self.optional_facts(facts):
+                del scope[field]
+        self.save()
+        result = self.cli(DISCOVERY, self.discovery_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        printed = json.loads(self.discovered("amp"))
+        self.assertEqual(printed, self.discovery["harnesses"]["Amp"])
+        self.assertTrue(all(field not in scope for scope, field in self.optional_facts(printed)))
+        self.assertTrue(all(field not in scope for scope, field in self.optional_facts(self.selected("Amp"))))
+
+    def test_optional_facts_are_null_or_text_and_reach_the_resolved_profile(self):
+        facts = self.discovery["harnesses"]["Amp"]
+        for scope, field in self.optional_facts(facts):
+            for value in ("", True, 17, ["AGENTS.md"]):
+                with self.subTest(field=field, invalid=value):
+                    scope[field] = value
+                    self.save()
+                    result = self.cli(DISCOVERY, self.discovery_path)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn(f"{field} must be nonempty text", result.stderr)
+            scope[field] = f"Sourced {field} description"
+        self.save()
+        self.assertEqual(json.loads(self.discovered("amp")), facts)
+        selected = self.selected("Amp")
+        for scope, field in self.optional_facts(selected):
+            self.assertEqual(scope[field], f"Sourced {field} description")
+        self.assertFalse(self.marker.exists())
+
+    def test_harness_names_need_distinct_slugs(self):
+        self.discovery["harnesses"]["amp"] = deepcopy(self.discovery["harnesses"]["Amp"])
+        self.save()
+        for arguments in ((), ("--harness", "Amp")):
+            with self.subTest(arguments=arguments):
+                result = self.cli(DISCOVERY, self.discovery_path, *arguments)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("share the slug amp", result.stderr)
 
     def test_all_orchestration_names_are_excluded_from_shared_worker_skills(self):
         original = deepcopy(self.config)

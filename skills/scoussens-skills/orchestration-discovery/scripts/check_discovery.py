@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Validate saved observations without invoking harness operations."""
+"""Validate saved observations, or print one harness's entry, without invoking harness operations."""
 
 import argparse
 from datetime import datetime
 import json
 from pathlib import Path
+
+
+# A missing fact is undiscovered, so files saved before these facts existed stay valid.
+OPTIONAL = ("instructions", "ask_user", "models", "helpers.readonly", "skills.locations", "skills.reload")
 
 
 def text(value, label):
@@ -19,6 +23,10 @@ def texts(value, label):
         text(item, label)
 
 
+def slug(name):
+    return name.lower().replace(" ", "-")
+
+
 def check(discovery):
     if discovery["schema_version"] != 1:
         raise ValueError("unsupported discovery schema_version; run orchestration-discovery")
@@ -29,8 +37,12 @@ def check(discovery):
         text(repository["ticket_template"], "repository.ticket_template")
     if not isinstance(discovery["harnesses"], dict) or not discovery["harnesses"]:
         raise ValueError("harnesses must contain a discovered harness name")
+    slugs = {}
     for name, facts in discovery["harnesses"].items():
         text(name, "harness name")
+        if slug(name) in slugs:
+            raise ValueError(f"{name} and {slugs[slug(name)]} share the slug {slug(name)}")
+        slugs[slug(name)] = name
         for field in ("context", "owner_term", "helper_term"):
             text(facts[field], f"{name}.{field}")
         observed = datetime.fromisoformat(facts["observed_at"].replace("Z", "+00:00"))
@@ -49,6 +61,11 @@ def check(discovery):
             for field in fields:
                 if facts[section][field] is not None:
                     text(facts[section][field], f"{name}.{section}.{field}")
+        for label in OPTIONAL:
+            section, _, field = label.rpartition(".")
+            value = (facts[section] if section else facts).get(field)
+            if value is not None:
+                text(value, f"{name}.{label}")
         if facts["owners"]["workspace_model"] not in ("shared", "isolated", "selectable", "unknown"):
             raise ValueError("owners.workspace_model must describe workspace sharing")
         for field in ("blocks_caller", "follow_up"):
@@ -72,15 +89,25 @@ def check(discovery):
         raise ValueError("replace every template placeholder with a discovered value")
 
 
+def select(discovery, harness):
+    for name, facts in discovery["harnesses"].items():
+        if harness in (name, slug(name)):
+            return facts
+    raise ValueError(f"{harness}: no saved discovery; run orchestration-discovery for this harness")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("discovery", type=Path)
+    parser.add_argument("--harness", help="saved harness name or its slug, such as 'Claude Code' or claude-code")
     args = parser.parse_args()
     try:
-        check(json.loads(args.discovery.read_text()))
+        discovery = json.loads(args.discovery.read_text())
+        check(discovery)
+        selected = None if args.harness is None else select(discovery, args.harness)
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         parser.exit(1, f"FAIL: {error}\n")
-    print(f"PASS: discovery for {args.discovery}")
+    print(f"PASS: discovery for {args.discovery}" if selected is None else json.dumps(selected, indent=2))
 
 
 if __name__ == "__main__":
