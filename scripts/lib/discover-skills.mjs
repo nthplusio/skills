@@ -31,6 +31,20 @@ export function discoverSkillDirs(root) {
   return discover(join(root, CONTAINER))
 }
 
+/** Absolute paths of the skills bundled in marketplace plugins, which the pack
+ *  builder also discovers. */
+export function discoverPluginSkillDirs(root) {
+  let plugins
+  try {
+    plugins = readdirSync(join(root, 'plugins'), { withFileTypes: true })
+  } catch {
+    return []
+  }
+  return plugins
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .flatMap((e) => discover(join(root, 'plugins', e.name, 'skills')))
+}
+
 /** Pack-relative skill paths, e.g. "scoussens-skills/release-brief".
  *  This is the identity the validator reports; the builder reports only the
  *  final segment, so compare with `basename` when talking to the CLI. */
