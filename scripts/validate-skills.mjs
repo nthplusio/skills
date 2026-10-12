@@ -3,6 +3,8 @@
 // builder enforces silently. The builder skips invalid skills and omits binary
 // or oversized files without failing, so a broken pack installs "successfully"
 // with skills missing. This script turns that silence into a non-zero exit.
+// It also applies the Agent Skills specification, which other clients enforce,
+// and checks that each skill still works once installed as a lone directory.
 //
 // It parses frontmatter with `yaml` — the same parser the builder uses — because
 // a reimplementation drifts. A hand-rolled reader here once accepted a
@@ -12,13 +14,25 @@
 //
 // Usage: npm install && node scripts/validate-skills.mjs
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
-import { CONTAINER, discoverSkillDirs, skillPaths } from './lib/discover-skills.mjs'
-import { join, relative, basename } from 'node:path'
+import { CONTAINER, discoverPluginSkillDirs, discoverSkillDirs, skillPaths } from './lib/discover-skills.mjs'
+import { dirname, join, relative, basename, resolve, sep } from 'node:path'
 
 const ROOT = process.cwd()
 const MAX_FILE_BYTES = 2 * 1024 * 1024
+// Limits from the Agent Skills specification (agentskills.io/specification).
+const MAX_NAME = 64
+const MAX_DESCRIPTION = 1024
+const MAX_COMPATIBILITY = 500
+const MAX_SKILL_LINES = 500
+const REFERENCE_TOC_LINES = 300
+// The specification's fields, plus `disable-model-invocation`, which Claude
+// Code reads and the skills CLI passes through.
+const FRONTMATTER_KEYS = new Set([
+  'name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools',
+  'disable-model-invocation',
+])
 
 const errors = []
 const warnings = []
@@ -81,6 +95,100 @@ function checkAssets(skillDir) {
   walk(skillDir)
 }
 
+/** The skills CLI installs one skill directory, so a relative link that leaves
+ *  it resolves in this checkout and breaks after install. */
+function checkLinks(skillDir) {
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.name.endsWith('.md')) continue
+      const rel = relative(ROOT, full)
+      const text = readFileSync(full, 'utf8')
+      const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
+      for (const [, href] of prose.matchAll(/\]\(<?([^)\s>]+)>?\)/g)) {
+        if (/^[a-z][a-z0-9+.-]*:|^#/i.test(href)) continue
+        const target = resolve(dirname(full), decodeURIComponent(href.split('#')[0]))
+        if (!existsSync(target)) err(rel, `link ${href} points to a missing file`)
+        else if (target !== skillDir && !target.startsWith(skillDir + sep)) {
+          err(rel, `link ${href} leaves the skill directory; the installed skill cannot follow it`)
+        }
+      }
+      const lines = text.split('\n').length
+      if (full === join(skillDir, 'SKILL.md')) {
+        if (lines > MAX_SKILL_LINES) warn(rel, `${lines} lines; keep SKILL.md under ${MAX_SKILL_LINES} and move detail to references/`)
+      } else if (lines > REFERENCE_TOC_LINES && !/^#+ +(contents|table of contents)\s*$/im.test(text)) {
+        warn(rel, `${lines} lines without a "Contents" heading; add a table of contents to files over ${REFERENCE_TOC_LINES} lines`)
+      }
+    }
+  }
+  walk(skillDir)
+}
+
+/** evals/evals.json follows skill-creator's schema. Eval `files` are paths from
+ *  the repository root, so one checkout can run every skill's evals. */
+function checkEvals(skillDir, name) {
+  const path = join(skillDir, 'evals', 'evals.json')
+  if (!existsSync(path)) return
+  const rel = relative(ROOT, path)
+  let data
+  try {
+    data = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (e) {
+    err(rel, `invalid JSON: ${e.message}`)
+    return
+  }
+  if (data.skill_name !== name) err(rel, `skill_name "${data.skill_name}" does not match the skill name "${name}"`)
+  if (!Array.isArray(data.evals) || data.evals.length === 0) {
+    err(rel, '`evals` must be a non-empty array')
+    return
+  }
+  const seen = new Set()
+  for (const ev of data.evals) {
+    const label = `eval ${ev.id}`
+    if (!Number.isInteger(ev.id)) err(rel, `${label}: id must be an integer`)
+    else if (seen.has(ev.id)) err(rel, `${label}: duplicate id`)
+    seen.add(ev.id)
+    for (const field of ['prompt', 'expected_output']) {
+      if (typeof ev[field] !== 'string' || !ev[field].trim()) err(rel, `${label}: \`${field}\` must be a non-empty string`)
+    }
+    if (!Array.isArray(ev.assertions) || ev.assertions.length === 0 || !ev.assertions.every((a) => typeof a === 'string' && a.trim())) {
+      err(rel, `${label}: \`assertions\` must be a non-empty list of strings`)
+    }
+    for (const file of ev.files ?? []) {
+      if (!existsSync(join(ROOT, file))) err(rel, `${label}: file ${file} does not exist (paths are from the repository root)`)
+    }
+  }
+}
+
+function checkFrontmatterFields(rel, fm) {
+  for (const key of Object.keys(fm)) {
+    if (!FRONTMATTER_KEYS.has(key)) err(rel, `unknown frontmatter field \`${key}\`; allowed: ${[...FRONTMATTER_KEYS].join(', ')}`)
+  }
+  if (fm.compatibility !== undefined) {
+    if (typeof fm.compatibility !== 'string' || !fm.compatibility.trim()) err(rel, '`compatibility` must be a non-empty string')
+    else if (fm.compatibility.length > MAX_COMPATIBILITY) err(rel, `compatibility is ${fm.compatibility.length} characters; the limit is ${MAX_COMPATIBILITY}`)
+  }
+  if (fm.metadata !== undefined) {
+    if (fm.metadata === null || typeof fm.metadata !== 'object' || Array.isArray(fm.metadata)) {
+      err(rel, '`metadata` must be a key/value mapping')
+    } else {
+      // The skills CLI hides a skill only when `internal` is the boolean true.
+      for (const [key, value] of Object.entries(fm.metadata)) {
+        const ok = key === 'internal' ? typeof value === 'boolean' : typeof value === 'string'
+        if (!ok) err(rel, `metadata.${key} must be a ${key === 'internal' ? 'boolean' : 'string'}; YAML parsed it as ${typeof value}`)
+      }
+    }
+  }
+  if (fm['disable-model-invocation'] !== undefined && typeof fm['disable-model-invocation'] !== 'boolean') {
+    err(rel, '`disable-model-invocation` must be true or false')
+  }
+}
+
 // TODO(you): implement the description-quality policy for this pack.
 //
 // WHY THIS IS YOURS TO DECIDE: `description` is the only text an agent reads
@@ -128,6 +236,7 @@ function validateSkill(skillDir) {
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
       err(rel, `name "${name}" must be lowercase alphanumeric with single hyphens`)
     }
+    if (name.length > MAX_NAME) err(rel, `name is ${name.length} characters; the limit is ${MAX_NAME}`)
     if (name !== dirName) {
       err(rel, `name "${name}" does not match its directory "${dirName}"`)
     }
@@ -140,11 +249,17 @@ function validateSkill(skillDir) {
     err(rel, `description must be a string; YAML parsed it as ${typeof fm.description}`)
   } else if (description.trim() === '') {
     err(rel, 'frontmatter field `description` is empty')
+  } else if (description.length > MAX_DESCRIPTION) {
+    err(rel, `description is ${description.length} characters; the limit is ${MAX_DESCRIPTION}`)
   } else {
     for (const { level, msg } of checkDescriptionQuality(description, name) ?? []) {
       ;(level === 'error' ? err : warn)(rel, msg)
     }
   }
+
+  checkFrontmatterFields(rel, fm)
+  checkLinks(skillDir)
+  checkEvals(skillDir, name)
 
   const body = text.slice(text.indexOf('---', 3) + 3).trim()
   if (!body) warn(rel, 'frontmatter only, no instructions in the body')
@@ -157,14 +272,17 @@ if (skillDirs.length === 0) {
   process.exit(1)
 }
 
-for (const dir of skillDirs) validateSkill(dir)
+const pluginSkillDirs = discoverPluginSkillDirs(ROOT)
+for (const dir of [...skillDirs, ...pluginSkillDirs]) validateSkill(dir)
 
 for (const { file, msg } of warnings) console.warn(`! ${file}: ${msg}`)
 for (const { file, msg } of errors) console.error(`✗ ${file}: ${msg}`)
 
 const names = skillPaths(ROOT)
 if (errors.length > 0) {
-  console.error(`\n${errors.length} error(s) across ${skillDirs.length} skill(s).`)
+  console.error(`\n${errors.length} error(s) across ${skillDirs.length + pluginSkillDirs.length} skill(s).`)
   process.exit(1)
 }
+const pluginNames = pluginSkillDirs.map((d) => relative(ROOT, d))
 console.log(`✓ ${skillDirs.length} skill(s) valid: ${names.join(', ')}`)
+if (pluginNames.length) console.log(`✓ ${pluginNames.length} plugin skill(s) valid: ${pluginNames.join(', ')}`)
