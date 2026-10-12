@@ -49,12 +49,12 @@
     },
     {
       "id": 3,
-      "name": "explicit-project-override-preserves-personal-defaults",
-      "prompt": "Use /tmp/project-orchestration/config.json as my explicit project override. That saved JSON and my personal default JSON both exist with valid confirmed settings. The project's run_root is /tmp/project-orchestration/runs. Its capability descriptions match this environment. Keep my personal settings unchanged.",
-      "expected_output": "Reads and uses the selected project JSON, reuses its confirmed paths without another storage question, and leaves personal settings unchanged.",
+      "name": "older-project-setup-migrates-and-preserves-personal-defaults",
+      "prompt": "An earlier version of these skills saved my project setup at /tmp/project-orchestration/config.json, and my personal default JSON also exists. Both hold valid confirmed settings. The project's run_root is /tmp/project-orchestration/runs. Its capability descriptions match this environment. Bring that project setup into this repository and keep my personal settings unchanged.",
+      "expected_output": "Runs state.py migrate --from on the named project JSON, which copies it into .nthplusio-skills/ and leaves the original unchanged; reuses its confirmed paths without another storage question, and leaves personal settings unchanged.",
       "assertions": [
-        "override_precedes_personal: selects the explicit project configuration rather than the personal default",
-        "preserves_personal: does not merge project choices back into personal settings",
+        "migrates_the_named_configuration: imports the named project configuration with migrate --from rather than the personal default",
+        "preserves_originals: leaves the original project JSON and the personal settings unchanged",
         "reuses_confirmed_paths: does not ask the same storage question or redo capability discovery",
         "local_scope: does not add a distribution or recovery service"
       ],

@@ -16,8 +16,18 @@ once and keep each harness's choices under its discovered name.
 ## 1. Read setup and ensure discovery exists
 
 Saved state lives in `<repository root>/.nthplusio-skills/`: `orchestration.json`
-holds setup and `discovery.json` holds discovery. Read both when they exist.
-Identify the current harness from runtime context.
+holds setup and `discovery.json` holds discovery. These skills change between
+versions, so first run:
+
+```bash
+python3 <this skill's folder>/scripts/state.py migrate
+```
+
+It moves and upgrades state saved by earlier versions, refuses to overwrite a
+conflicting file, and prints what it changed. Tell the user what it moved. When
+the user names an older configuration elsewhere, pass it with `--from <path>`;
+migrate copies it and leaves the original unchanged. Then read both files when
+they exist. Identify the current harness from runtime context.
 
 If discovery is absent, malformed, missing this harness, or contradicted by
 the current context, load `harness-discovery` first for the same repository.
@@ -29,8 +39,8 @@ harness merges a new entry into the same files. Preserve other profiles and
 confirmed project choices. To configure a harness not running here, reuse its
 saved discovery or obtain a discovery report from that environment first.
 
-An explicitly supplied old single-harness version 1 configuration is migration
-input, not the runner's contract. Preserve it, carry confirmed choices into the
+An old single-harness version 1 configuration, supplied by the user or reported
+by migrate, is migration input, not the runner's contract. Preserve it, carry confirmed choices into the
 new profile, and confirm only missing project/default choices. Discovery verifies
 imported capability facts. Save the new repository files rather than overwriting
 personal defaults or inventing compatibility behavior in the runner.

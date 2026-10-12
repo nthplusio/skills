@@ -30,7 +30,8 @@ directory selects another harness's settings. Install `harness-discovery`,
 outdated setup to them.
 
 If setup or saved discovery is missing, malformed, lacks this harness, or has a
-material context mismatch, load `orchestration-setup`. That skill owns discovery
+material context mismatch, load `orchestration-setup`. Do the same when `resolve`
+reports legacy state: setup migrates it, and this skill never does. That skill owns discovery
 and the durable interview. Hold affected assignments until its output validates.
 Keep unrelated saved profiles intact. A new run with valid setup needs neither
 tool rediscovery nor a project/harness interview. Configuration describes tools

@@ -14,8 +14,10 @@ Setup interviews the user about what to use. `orchestration-run` coordinates wor
 
 ## 1. Identify the harness and read saved discovery
 
-Saved state lives in `<repository root>/.nthplusio-skills/`. Read its
-`discovery.json` before updating it. A caller working in another repository,
+Saved state lives in `<repository root>/.nthplusio-skills/`. First run
+`python3 <this skill's folder>/scripts/state.py migrate`, which moves state saved
+by earlier versions of these skills there, so a new entry never lands beside an
+old file. Then read its `discovery.json` before updating it. A caller working in another repository,
 such as pstack-sync in its skills repository, names that repository, and every
 command below then takes `--root <that repository>`.
 Identify the current harness's canonical product name from system context,

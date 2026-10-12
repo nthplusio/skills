@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Check and resolve the saved state in <repository>/.nthplusio-skills/.
+"""Check, resolve, and migrate the saved state in <repository>/.nthplusio-skills/.
 
   state.py check [discovery|orchestration] [--root DIR]
   state.py resolve --harness NAME [--orchestration] [--root DIR]
+  state.py migrate [--from PATH] [--dry-run] [--root DIR]
 
 check    Validates discovery.json and orchestration.json, or only the one named.
 resolve  Prints one harness's discovery entry. NAME is its saved key or that
          key's slug. --orchestration adds the harness's orchestration.json
          profile, which orchestration-run consumes.
+migrate  Moves state saved by earlier versions of these skills into
+         .nthplusio-skills/, upgrades it to the current schema, checks it, and
+         prints a JSON summary. --from names an earlier configuration outside
+         the repository's legacy folders; it is copied, not moved.
 
 No command invokes harness tools. --root defaults to the Git repository that
 holds the working directory.
@@ -17,6 +22,7 @@ import argparse
 from copy import deepcopy
 from datetime import datetime
 import json
+import os
 from pathlib import Path, PureWindowsPath
 import re
 import subprocess
@@ -26,6 +32,9 @@ STATE_DIR = ".nthplusio-skills"
 FILES = {"discovery": "discovery.json", "orchestration": "orchestration.json"}
 CURRENT = {"discovery": 1, "orchestration": 3}
 OWNERS = {"discovery": "harness-discovery", "orchestration": "orchestration-setup"}
+# Earlier homes of the saved state, oldest first. Each held config.json and the
+# discovery file its discovery_file named, by default discovery.json.
+LEGACY_DIRS = (".orchestration",)
 COORDINATOR_SKILLS = {"harness-discovery", "orchestration-setup", "orchestration-run"}
 # Business stage keys from orchestration-run's dashboard data contract.
 STAGES = ("defined", "researched", "pr_readiness", "code_publication", "review", "verification",
@@ -54,7 +63,7 @@ def check_version(document, kind):
     if found == CURRENT[kind]:
         return
     if type(found) is int and found < CURRENT[kind]:
-        raise ValueError(f"{kind} schema_version {found} is older than {CURRENT[kind]}; run {OWNERS[kind]}")
+        raise ValueError(f"{kind} schema_version {found} is older than {CURRENT[kind]}; run state.py migrate")
     raise ValueError(f"unsupported {kind} schema_version {found!r}; update these skills")
 
 
@@ -169,12 +178,20 @@ def state_path(root, kind):
     return root / STATE_DIR / FILES[kind]
 
 
+def legacy_files(root):
+    return [path for name in LEGACY_DIRS for path in (root / name / "config.json", root / name / "discovery.json")
+            if path.is_file()]
+
+
 def saved(root, kind):
     """The current file and its document, or an error naming what to run."""
     path = state_path(root, kind)
-    if not path.is_file():
-        raise ValueError(f"no {FILES[kind]} in {path.parent}; run {OWNERS[kind]}")
-    return path, json.loads(path.read_text())
+    if path.is_file():
+        return path, json.loads(path.read_text())
+    legacy = legacy_files(root)
+    if legacy:
+        raise ValueError(f"legacy state at {legacy[0]}; run state.py migrate")
+    raise ValueError(f"no {FILES[kind]} in {path.parent}; run {OWNERS[kind]}")
 
 
 def check(root, scope=None):
@@ -222,6 +239,149 @@ def resolve(root, name, orchestration=False):
     return facts
 
 
+class Relocation:
+    """Keeps a relative path inside a moved file pointing at the same place."""
+
+    def __init__(self, root, source_dir, target_dir):
+        self.root, self.source_dir, self.target_dir = root, source_dir, target_dir
+        self.rebased = []
+
+    def path(self, value):
+        if Path(value).expanduser().is_absolute() or PureWindowsPath(value).is_absolute():
+            return value
+        target = (self.source_dir / value).resolve()
+        if target == self.root or self.root in target.parents:
+            return os.path.relpath(target, self.target_dir)
+        return str(target)
+
+
+def orchestration_2_to_3(config, relocation):
+    """discovery_file goes: discovery.json now always sits beside orchestration.json."""
+    config = deepcopy(config)
+    config.pop("discovery_file", None)
+    for name, profile in config.get("harnesses", {}).items():
+        before = profile.get("run_root")
+        if isinstance(before, str) and before.strip():
+            after = relocation.path(before)
+            if after != before:
+                profile["run_root"] = after
+                relocation.rebased.append({"harness": name, "from": before, "to": after})
+    config["schema_version"] = 3
+    return config
+
+
+# Each step upgrades a document from the version that keys it to the next one.
+# A change to a saved file's shape adds a step here and a fixture of the old
+# shape under harness-discovery/evals/fixtures/.
+UPGRADES = {"discovery": {}, "orchestration": {2: orchestration_2_to_3}}
+
+
+def upgrade(kind, document, relocation, path):
+    steps = []
+    while document.get("schema_version") != CURRENT[kind]:
+        found = document.get("schema_version")
+        if found not in UPGRADES[kind]:
+            raise ValueError(f"{path}: no upgrade from {kind} schema_version {found!r}; update these skills")
+        document = UPGRADES[kind][found](document, relocation)
+        steps.append({"file": str(path), "from": found, "to": document["schema_version"]})
+    return document, steps
+
+
+def tracked(root, path):
+    listed = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", "--", str(path)], capture_output=True)
+    return listed.returncode == 0
+
+
+def migrate(root, source=None, dry_run=False):
+    state = root / STATE_DIR
+    summary = {"state": str(state), "dry_run": dry_run, "moved": [], "copied": [], "removed_duplicates": [],
+               "upgraded": [], "rebased_run_roots": [], "interview": []}
+    found = {}
+    config_source = Path(source).expanduser().resolve() if source else next(
+        (path for path in legacy_files(root) if path.name == "config.json"), None)
+    if config_source is not None:
+        config = json.loads(config_source.read_text())
+        if config.get("schema_version") == 1:
+            summary["interview"].append(f"{config_source} is a version 1 configuration; "
+                                        "convert it through the orchestration-setup interview")
+        else:
+            found["orchestration"] = (config_source, config)
+            discovery_source = (config_source.parent / config.get("discovery_file", FILES["discovery"])).resolve()
+            if not discovery_source.is_file():
+                raise ValueError(f"{config_source} names {discovery_source}, which does not exist")
+            found["discovery"] = (discovery_source, json.loads(discovery_source.read_text()))
+    if "discovery" not in found:
+        legacy = next((path for path in legacy_files(root) if path.name == "discovery.json"), None)
+        if legacy is not None:
+            found["discovery"] = (legacy, json.loads(legacy.read_text()))
+    for kind in FILES:
+        current = state_path(root, kind)
+        if kind not in found and current.is_file():
+            document = json.loads(current.read_text())
+            if document.get("schema_version") != CURRENT[kind]:
+                found[kind] = (current, document)
+
+    plans, final = {}, {}
+    for kind, (path, document) in found.items():
+        relocation = Relocation(root, path.parent, state)
+        upgraded, steps = upgrade(kind, document, relocation, path)
+        current = state_path(root, kind)
+        if path != current and current.is_file():
+            if json.loads(current.read_text()) != upgraded:
+                raise ValueError(f"{path} and {current} both exist and differ; reconcile them, then run state.py migrate again")
+            upgraded = None
+        plans[kind] = (path, document, upgraded, steps, relocation.rebased)
+    for kind in FILES:
+        if kind in plans and plans[kind][2] is not None:
+            final[kind] = plans[kind][2]
+        elif state_path(root, kind).is_file():
+            final[kind] = json.loads(state_path(root, kind).read_text())
+    if "discovery" in final:
+        check_discovery(final["discovery"])
+    if "orchestration" in final:
+        if "discovery" not in final:
+            raise ValueError("an orchestration configuration needs discovery beside it; run harness-discovery first")
+        check_orchestration(final["orchestration"], final["discovery"])
+
+    for kind, (path, original, upgraded, steps, rebased) in plans.items():
+        current = state_path(root, kind)
+        inside = root in path.parents
+        if upgraded is not None:
+            summary["upgraded"] += steps
+            summary["rebased_run_roots"] += rebased
+        if upgraded is None:
+            if inside:
+                summary["removed_duplicates"].append(str(path))
+                if not dry_run and tracked(root, path):
+                    subprocess.run(["git", "-C", str(root), "rm", "-q", "--", str(path)], check=True, capture_output=True)
+                elif not dry_run:
+                    path.unlink()
+            continue
+        content = path.read_bytes() if upgraded == original else (json.dumps(upgraded, indent=2) + "\n").encode()
+        if path == current:
+            if not dry_run:
+                current.write_bytes(content)
+            continue
+        summary["moved" if inside else "copied"].append([str(path), str(current)])
+        if dry_run:
+            continue
+        state.mkdir(exist_ok=True)
+        if inside and tracked(root, path):
+            subprocess.run(["git", "-C", str(root), "mv", "--", str(path), str(current)], check=True, capture_output=True)
+        elif inside:
+            path.rename(current)
+        current.write_bytes(content)
+    if not dry_run:
+        for name in LEGACY_DIRS:
+            folder = root / name
+            if folder.is_dir() and not any(folder.iterdir()):
+                folder.rmdir()
+        if any(state_path(root, kind).is_file() for kind in FILES):
+            check(root)
+    summary["changed"] = any(summary[key] for key in ("moved", "copied", "removed_duplicates", "upgraded"))
+    return summary
+
+
 def main():
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--root", help="repository holding .nthplusio-skills/; defaults to the working directory's Git repository")
@@ -232,16 +392,21 @@ def main():
     resolving = commands.add_parser("resolve", parents=[common], help="print one harness's saved facts")
     resolving.add_argument("--harness", required=True, help="saved harness key, or its slug")
     resolving.add_argument("--orchestration", action="store_true", help="add the harness's orchestration profile")
+    migrating = commands.add_parser("migrate", parents=[common], help="move and upgrade state saved by earlier versions")
+    migrating.add_argument("--from", dest="source", help="an earlier configuration outside the legacy folders")
+    migrating.add_argument("--dry-run", action="store_true", help="report the changes without writing them")
     args = parser.parse_args()
     try:
         root = repository_root(args.root)
         if args.command == "check":
             print("\n".join(check(root, args.scope)))
-        else:
+        elif args.command == "resolve":
             print(json.dumps(resolve(root, args.harness, args.orchestration), indent=2))
+        else:
+            print(json.dumps(migrate(root, args.source, args.dry_run), indent=2))
     except KeyError as error:
         parser.exit(1, f"FAIL: missing field {error}\n")
-    except (OSError, ValueError, TypeError, AttributeError) as error:
+    except (OSError, ValueError, TypeError, AttributeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"FAIL: {error}\n")
 
 

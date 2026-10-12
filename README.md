@@ -140,6 +140,18 @@ python3 <skill>/scripts/state.py resolve --harness amp --orchestration
 A harness is named by its discovered key, such as `Claude Code`, or by that
 key's slug, `claude-code`.
 
+Earlier versions kept this state in `.orchestration/`. `orchestration-setup` and
+`harness-discovery` run `state.py migrate` before they read anything. It moves
+and upgrades earlier state, keeps relative run folders reachable, refuses to
+overwrite a conflicting file, and copies a configuration from outside the
+repository without changing it. `orchestration-run` never migrates; it hands
+legacy state to setup.
+
+To change a saved file's shape, bump its `schema_version`, add one upgrade step
+to `UPGRADES` in `state.py`, and add a fixture of the old shape under
+`harness-discovery/evals/fixtures/`. To move the files, add the old folder to
+`LEGACY_DIRS`. The migration test upgrades every fixture and checks the result.
+
 ## Adding a skill
 
 ```bash
