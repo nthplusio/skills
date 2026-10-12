@@ -4,6 +4,7 @@ from copy import deepcopy
 from html.parser import HTMLParser
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -616,6 +617,17 @@ class LifecycleTests(unittest.TestCase):
                 server.shutdown()
 
 
+class InstallTests(unittest.TestCase):
+    """The skills CLI and Workspace Skills install each skill folder alone."""
+
+    def test_shared_files_match_their_owning_skill(self):
+        for owner, copy, path in ((SETUP, RUNNER, "references/ticket-template.md"),
+                                  (DISCOVERY, SETUP, "scripts/check_discovery.py")):
+            with self.subTest(path=path):
+                self.assertEqual((copy / path).read_bytes(), (owner / path).read_bytes(),
+                                 f"copy {copy.name}/{path} from {owner.name}/{path}")
+
+
 class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -689,6 +701,13 @@ class ConfigTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, f"PASS: {label} for {path}\n")
         self.assertFalse(self.marker.exists())
+
+    def test_setup_validates_when_installed_without_its_sibling_skills(self):
+        alone = self.root / "installed" / "orchestration-setup"
+        shutil.copytree(SETUP, alone, ignore=shutil.ignore_patterns("__pycache__"))
+        result = self.cli(alone, self.config_path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"PASS: configuration for {self.config_path}\n")
 
     def test_exact_names_select_asymmetric_capabilities_defaults_and_shared_skills(self):
         amp = self.selected("Amp")
