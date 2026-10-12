@@ -5,9 +5,9 @@ description: >-
   sessions, subagents, monitoring and wake-ups, skill loading, instruction files,
   structured questions, model choice, and HTML publishing destinations — plus the
   repository's ticket conventions, and saves sourced observations keyed by
-  harness name. Use for /harness-discovery, missing discovery during
-  orchestration setup or pstack-sync, or refreshing facts after the harness or
-  execution context changes.
+  harness name. Load this when orchestration-setup or pstack-sync needs
+  discovery, or when the user names /harness-discovery to refresh facts. Do not
+  run it as the first step of an orchestration.
 ---
 
 # Harness discovery
