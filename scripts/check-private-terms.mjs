@@ -26,11 +26,11 @@ if (lines.length === 0) {
   process.exit(0)
 }
 
-const patterns = lines.map((source) => {
+const patterns = lines.map((source, p) => {
   try {
     return new RegExp(source, 'i')
-  } catch (e) {
-    console.error(`✗ invalid pattern on a configured line: ${e.message}`)
+  } catch {
+    console.error(`✗ private term #${p + 1} is not a valid regular expression`)
     process.exit(1)
   }
 })

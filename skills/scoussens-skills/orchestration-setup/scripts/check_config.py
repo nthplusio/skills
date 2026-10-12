@@ -5,7 +5,9 @@ import argparse
 from copy import deepcopy
 import json
 from pathlib import Path, PureWindowsPath
+import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_discovery import check as check_discovery, text, texts
 
 
