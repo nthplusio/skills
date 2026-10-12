@@ -35,12 +35,13 @@ this-week narrative, and vice versa.
 
 ## Step 0 — Ask before running
 
-Confirm branch, scope, and period with one
-`AskUserQuestion` call (up to 4 questions fit in one prompt, so this is a
-single round-trip, not three). Skip asking anything the user already
-stated explicitly in their own words; if they said "digest the last two
-weeks on `release/foo` including in-review PRs," you already have all
-three answers and should just confirm briefly rather than re-ask.
+Confirm branch, scope, and period in a single round-trip, not three: ask them
+together with the harness's structured question tool when it has one (`ask_user`
+in its entry of the repository's `.nthplusio-skills/discovery.json`), otherwise
+in your reply. Skip asking anything the user already stated explicitly in their
+own words; if they said "digest the last two weeks on `release/foo` including
+in-review PRs," you already have all three answers and should just confirm
+briefly rather than re-ask.
 
 - **Branch** — offer the repo's resolved default (see Step 1) as the
   recommended option, plus any other branch the user has mentioned this
@@ -78,8 +79,8 @@ have open," "what can we close." None of those describe a time window.
 ## Step 1 — Resolve the branch and the time window
 
 **Branch**: default to whatever the current repo treats as the PR-merge target —
-check `CLAUDE.md`'s SDLC/branching notes or the git-status header shown at
-session start ("Main branch (you will usually use this for PRs)") first;
+check the agent instructions (`AGENTS.md` or `CLAUDE.md`) for SDLC/branching
+notes, or the session's git status if the harness shows one, first;
 fall back to `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
 if neither is available. This is the *recommended* option in Step 0's
 question, not a silent decision — only skip asking if the user already
@@ -94,7 +95,7 @@ days" — a trailing window drifts across weekday boundaries and produces a
 different-shaped digest depending on what day someone happens to run it,
 which makes two runs a week apart hard to compare. For "this sprint" or
 "this cycle," use the active cycle's real start and end dates from the
-tracker — if the tracker is Linear, `mcp__linear__list_cycles`; otherwise its
+tracker — if the tracker is Linear, its MCP server's `list_cycles` tool; otherwise its
 equivalent, or ask the user for the dates. A guessed week boundary lands on
 the wrong sprint.
 
@@ -228,7 +229,7 @@ actually explains it:
   that something went wrong. Give it a compact one-line entry instead of
   forcing a full card with invented context.
 - For every PR with a surviving ticket ID, look the ticket up — if the
-  tracker is Linear, use `mcp__linear__get_issue`; otherwise use its
+  tracker is Linear, use its MCP server's `get_issue` tool; otherwise use its
   equivalent, or skip ticket enrichment and say so. Batch all of these
   lookups in parallel in one turn rather than one at a time. This is where
   the *why* actually lives: a PR body says what files changed, but the
@@ -244,7 +245,7 @@ actually explains it:
   the change, and say in the artifact which subset you verified rather than
   implying you checked all of them.
 - **When you need ticket *state* across many PRs, sweep, don't poll.**
-  If the tracker is Linear, `mcp__linear__list_issues` takes a `fields`
+  If the tracker is Linear, its MCP server's `list_issues` tool takes a `fields`
   allowlist (`["id","status","completedAt"]`) and a `state` filter, so a
   handful of per-team calls returns every closed ticket compactly — versus
   one multi-KB `get_issue` per candidate; other trackers usually have an
@@ -382,7 +383,13 @@ a light pass verified some but not all.
 If this skill gets run repeatedly, keeping a consistent favicon across
 runs (a single emoji, e.g. 📰) helps the reader recognize the series in
 their browser tabs — but if an artifact-design skill is loaded, defer to it
-for the rest of the visual treatment. Publish with the `Artifact` tool.
+for the rest of the visual treatment.
+
+Publish to a hosted page: one of the `artifacts` that the repository's
+`.nthplusio-skills/discovery.json` records for the harness you are running in,
+when its tool is in your tool list; otherwise a page-publishing tool from your
+tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
+open it when there is a desktop, and give its path.
 
 ## Step 7 — Give every PR a "teach me this one" button
 
@@ -442,7 +449,7 @@ at call time and a feature-detection guard routes around the working fallback.
 Chain the fallback on rejection, and render the prompt into a selectable
 element as the third resort.
 
-A one-line hint next to the button ("Paste into Claude Code for an
+A one-line hint next to the button ("Paste into your coding agent for an
 interactive deep-dive") is worth the space the first time someone sees a
 digest; the button label alone doesn't explain where the prompt is meant to
 go.

@@ -21,12 +21,12 @@ dropped, and nobody closed the branch. On the first run this was **a
 meaningful share of the drafts**, every one closable on the spot.
 
 Do not spend one per-ticket lookup per PR to find them. Sweep the tracker
-for closed tickets in bulk instead. If the tracker is Linear,
-`mcp__linear__list_issues` accepts a `fields` allowlist:
+for closed tickets in bulk instead. If the tracker is Linear, its MCP server's
+`list_issues` tool accepts a `fields` allowlist:
 
 ```
-mcp__linear__list_issues  state:"completed"  team:"<team>"
-                          fields:["id","status","completedAt"]  limit:250
+list_issues  state:"completed"  team:"<team>"
+             fields:["id","status","completedAt"]  limit:250
 ```
 
 Repeat with `state:"canceled"`, once per team the extracted IDs actually
@@ -74,7 +74,7 @@ Two distinct populations, and conflating them produces bad advice:
   its staging ground, so closing it destroys infrastructure in use.
 
 Distinguishing them takes one look at the ticket body, not a guess from the
-diffstat. Check `CLAUDE.md` for a PR-provisioner / ephemeral-environment
+diffstat. Check `AGENTS.md` or `CLAUDE.md` for a PR-provisioner / ephemeral-environment
 pattern before labelling any small draft abandoned.
 
 The number worth stating plainly once you've separated these: **the draft

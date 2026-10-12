@@ -64,7 +64,7 @@ questions will all come from that second category.
 If the repo is checked out locally, read the files directly. If not, use
 `gh api repos/<owner>/<repo>/contents/<path>?ref=<sha>` or clone shallowly.
 
-**Absorb the house rules too.** Look for `CLAUDE.md`, `CONTRIBUTING.md`,
+**Absorb the house rules too.** Look for `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`,
 `docs/conventions.md`, an ADR or `docs/decisions/` directory, and any
 architecture notes the PR references. A change that looks arbitrary usually
 becomes obvious once you know the convention it is satisfying — and "which
@@ -168,9 +168,13 @@ asked, and they are the ones a diff summary cannot produce.
 
 ## Step 5 — Publish
 
-Publish with the `Artifact` tool. Give it a stable favicon (`🔬` works well
-for this series) and a title naming the PR, so a reader who generates several
-can tell their tabs apart.
+Publish to a hosted page: one of the `artifacts` that the repository's
+`.nthplusio-skills/discovery.json` records for the harness you are running in,
+when its tool is in your tool list; otherwise a page-publishing tool from your
+tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
+open it when there is a desktop, and give its path. Give the page a stable
+favicon (`🔬` works well for this series) and a title naming the PR, so a reader
+who generates several can tell their tabs apart.
 
 ## Honesty rules
 

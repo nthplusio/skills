@@ -33,9 +33,14 @@ without clicking.
 
 ## Artifact
 
-The default for anything with a cost table. If an `artifact-design` skill is
-available, load it before writing the page; it carries the design fundamentals
-and the theming rules the platform requires.
+The default for anything with a cost table. Publish it to a hosted page: one of
+the `artifacts` that the repository's `.nthplusio-skills/discovery.json` records
+for the harness you are running in, when its tool is in your tool list;
+otherwise a page-publishing tool from your tool list, such as an `Artifact`
+tool. With neither, save the HTML file locally, open it when there is a desktop,
+and give its path. If an `artifact-design` skill is available, load it before
+writing the page; it carries the design fundamentals and the theming rules the
+platform requires.
 
 Two things matter more for a proposal than for most pages:
 
