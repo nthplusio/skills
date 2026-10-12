@@ -7,16 +7,16 @@
 # below each have a quirk that is easy to get wrong, and getting one wrong
 # changes the evaluation rather than just losing detail.
 #
-#   .reviews      MUST include DISMISSED entries. This repo's AI reviewer
-#                 dismisses its own prior review every time new commits land,
+#   .reviews      MUST include DISMISSED entries. Some AI reviewers dismiss
+#                 their own prior review every time new commits land,
 #                 so the dismissed rows ARE the record of how many review
 #                 rounds a PR took. (pr-digest deliberately filters these out
 #                 because it reports CURRENT status; a retrospective needs the
-#                 opposite.) Verified on PR #2094: 5 dismissals = 5 rounds.
+#                 opposite.) Verified on one PR: 5 dismissals = 5 rounds.
 #
 #   .threads      Only GraphQL exposes isResolved / isOutdated. Thread
 #                 resolution is how you tell "reviewer raised it and it was
-#                 settled" from "merged with it still open" — on #2094, all 7
+#                 settled" from "merged with it still open" — on one PR, all 7
 #                 threads were unresolved at merge.
 #
 #   .timeline     The REST timeline is the only source for head_ref_force_pushed,
@@ -38,7 +38,7 @@ set -euo pipefail
 
 # Sources are staged in files, never passed as `jq --argjson` arguments: the
 # PR payload for a large PR exceeds ARG_MAX and jq dies with "Argument list
-# too long". PR #1215 (+13k lines) hit this on the first real run.
+# too long". A +13k-line PR hit this on the first real run.
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 

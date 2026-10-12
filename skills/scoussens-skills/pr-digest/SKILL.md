@@ -28,7 +28,7 @@ what shipped but what's about to.
 merged PRs, full-detail cards. The other is an **open-PR inventory**: no
 time window at all, *everything* currently open including drafts, at a
 deliberately lighter level of detail, answering "what is actually sitting
-here, and what of it is still alive." Steps 1–7 cover both; where they
+open, and what of it is still alive." Steps 1–7 cover both; where they
 diverge it's marked. Pick the shape in Step 0 and don't mix them — a
 reader who asked what the backlog looks like is not served by a
 this-week narrative, and vice versa.
@@ -56,7 +56,7 @@ three answers and should just confirm briefly rather than re-ask.
   range. Ask for the period every run *when the scope involves merged
   PRs*: one extra turn buys back a whole rerun whenever a hardcoded
   default would have guessed wrong.
-- **Depth** — *full detail* (recommended) vs. *light pass* (title + Linear
+- **Depth** — *full detail* (recommended) vs. *light pass* (title + ticket
   ID + one line each, no per-PR "for the user / under the hood" split).
   Ask this only when you already have reason to expect a big result — a
   month-plus window, or an inventory on a long-lived branch. Otherwise let
@@ -77,7 +77,7 @@ have open," "what can we close." None of those describe a time window.
 
 ## Step 1 — Resolve the branch and the time window
 
-**Branch**: default to whatever this repo treats as the PR-merge target —
+**Branch**: default to whatever the current repo treats as the PR-merge target —
 check `CLAUDE.md`'s SDLC/branching notes or the git-status header shown at
 session start ("Main branch (you will usually use this for PRs)") first;
 fall back to `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
@@ -93,8 +93,10 @@ the concrete shape of "this week so far" rather than a trailing "last 7
 days" — a trailing window drifts across weekday boundaries and produces a
 different-shaped digest depending on what day someone happens to run it,
 which makes two runs a week apart hard to compare. For "this sprint" or
-"this cycle," call `mcp__linear__list_cycles` and use the active cycle's real
-start and end dates — a guessed week boundary lands on the wrong sprint.
+"this cycle," use the active cycle's real start and end dates from the
+tracker — if the tracker is Linear, `mcp__linear__list_cycles`; otherwise its
+equivalent, or ask the user for the dates. A guessed week boundary lands on
+the wrong sprint.
 
 This isn't pedantry: GitHub's `mergedAt` timestamps are always UTC, and
 the detection script in Step 2 matches directly against them — passing a
@@ -131,9 +133,9 @@ Handle the two edge cases up front:
   were requested — an empty merged list doesn't mean an empty digest.
 - **A very large result** (rule of thumb: 50+ PRs — a month-long or
   whole-sprint window on an active repo can get there fast). Full-detail
-  treatment means one `gh pr view` and often one Linear lookup per PR;
+  treatment means one `gh pr view` and often one tracker lookup per PR;
   before burning that, tell the user the count and ask whether they want
-  the full treatment or a lighter pass (title + Linear ID + one line,
+  the full treatment or a lighter pass (title + ticket ID + one line,
   no per-PR "for the user / under the hood" split).
 
 ## Step 2b — Find PRs ready for review (only if requested)
@@ -159,8 +161,8 @@ long-lived branch can easily have 20+ PRs sitting open.
 
 Run `scripts/find_open_prs.sh --include-drafts <branch>`. Without that flag
 the script filters drafts out, which for this scope would discard most of
-the answer: on the first run of this mode **46 of 58 open PRs were drafts**,
-and they were the entire point.
+the answer: on a long-lived branch **drafts are often most of what is open**,
+and they are the entire point.
 
 This replaces Steps 2 and 2b — there is no merged set and no time window.
 Everything open counts, however old, because age is the finding rather than
@@ -171,7 +173,7 @@ backlog is not a long digest, and the reason is specific: drafts are not one
 population. They are dead work, deliberate environment-provisioning
 placeholders, and genuine work-in-progress, mixed together and
 indistinguishable from a flat list. That reference carries the checks that
-separate them — the cheap bulk Linear status sweep that finds PRs whose
+separate them — the cheap bulk tracker status sweep that finds PRs whose
 ticket is already closed, how to spot a zero-file PR versus a
 one-file-but-load-bearing one, the duplicate-PRs-per-ticket count, and why
 an empty `statusCheckRollup` is not "CI passing."
@@ -180,9 +182,9 @@ Two guardrails specific to this scope:
 
 - **Report the count before you spend on it.** 50+ open PRs is normal on a
   long-lived branch, and full-detail treatment is one `gh pr view` plus a
-  Linear lookup each. State the count and confirm depth (Step 0's fourth
+  tracker lookup each. State the count and confirm depth (Step 0's fourth
   question, if you didn't already ask it) before enriching. Light pass is
-  usually right here: the value of an inventory is the shape of the whole,
+  usually right for an inventory: the value of an inventory is the shape of the whole,
   not the detail of any one row.
 - **Reconcile the rendered set against the fetched set before publishing.**
   Write both PR-number lists to files and `comm` them — every open PR
@@ -199,54 +201,56 @@ actually explains it:
   the PR's own account of what changed and how it was tested. **Skip this
   call entirely on a light pass**: Step 2/2c already returned title, author,
   branch, dates and diffstat in bulk, and that is everything a one-line
-  entry needs. One `gh pr view` per PR across 58 PRs buys nothing a light
-  pass will print.
-- **Extract the Linear ticket ID(s) from the title and `headRefName`
+  entry needs. One `gh pr view` per PR across dozens of PRs buys nothing a
+  light pass will print.
+- **Extract the ticket ID(s) from the title and `headRefName`
   first, case-insensitively** (`[A-Za-z]{2,10}-[0-9]{1,6}`, normalized to
-  uppercase — e.g. `ABC-1234`, `UI-267`, `API-171`, `OPS-168`; keep the
-  prefix open, this workspace uses several). Case-
-  insensitivity matters: branch names here are lowercase by convention
+  uppercase — e.g. `ABC-123`, `WEB-42`, `OPS-7`; keep the
+  prefix open, trackers often use several team prefixes). Case-
+  insensitivity matters: branch names are often lowercase
   (`jdoe/abc-123-fix-...`), so a pattern that only matches
   uppercase silently misses every ticket that only shows up in the branch
   name and not the title. Title/branch matches are reliable signals of
   *this PR's own* ticket — treat a match found only in the PR body as a
   cross-reference to some other, related PR/ticket, not necessarily this
-  one's (bodies routinely say things like "builds on ABC-1766" or "fixes
-  a CI failure from #1762").
-- **Don't trust the regex blindly — two known ways it lies:** (1) this
-  repo's own PR template has an unfilled placeholder
-  (`<!-- ... write "Fixes ABC-123" here -->`) that survives verbatim in
+  one's (bodies routinely say things like "builds on ABC-124" or "fixes
+  a CI failure from #101").
+- **Don't trust the regex blindly — two known ways it lies:** (1) a PR
+  template's unfilled placeholder (`Fixes ABC-123`) survives verbatim in
   PRs where nobody replaced it, and will match the pattern as a fake
   ticket; (2) a loose prefix match also catches incidental code-shaped
   tokens in prose (`cache-5`, `tier-1`, `actions-3`). The cheap, reliable
-  fix for both: the Linear lookup in the next bullet **is** the real
+  fix for both: the tracker lookup in the next bullet **is** the real
   filter — a candidate ID that 404s or errors just isn't a ticket, drop it
   silently rather than trying to out-guess it with a better regex.
 - **Not every PR has a ticket** — dependency bumps and some infra chores
   won't, and that's fine; it means the PR is routine housekeeping, not
   that something went wrong. Give it a compact one-line entry instead of
   forcing a full card with invented context.
-- For every PR with a surviving ticket ID, call `mcp__linear__get_issue` —
-  batch all of these lookups in parallel in one turn rather than one at a
-  time. This is where the *why* actually lives: a PR body says what files
-  changed, but the Linear issue says what problem it was solving and what
-  was deliberately left out of scope. Explain from the issue; a paraphrased
-  diff stat is not an explanation.
-- **On a light pass, spend `get_issue` selectively rather than uniformly.**
+- For every PR with a surviving ticket ID, look the ticket up — if the
+  tracker is Linear, use `mcp__linear__get_issue`; otherwise use its
+  equivalent, or skip ticket enrichment and say so. Batch all of these
+  lookups in parallel in one turn rather than one at a time. This is where
+  the *why* actually lives: a PR body says what files changed, but the
+  ticket says what problem it was solving and what was deliberately left
+  out of scope. Explain from the ticket; a paraphrased diff stat is not an
+  explanation.
+- **On a light pass, spend ticket lookups selectively rather than uniformly.**
   Two things make a lookup earn its cost: the title is opaque, or the ticket
   *state* is the finding. Opaque titles are common and obvious once you look
-  — a branch-name dump like "jdoe/api sd endpoints validation"
+  — a branch-name dump like "jdoe/api endpoint validation"
   tells the reader nothing, whereas "fix(api): compress responses" is
   already a one-line entry. Skip the lookup where the title already explains
   the change, and say in the artifact which subset you verified rather than
   implying you checked all of them.
 - **When you need ticket *state* across many PRs, sweep, don't poll.**
-  `mcp__linear__list_issues` takes a `fields` allowlist
-  (`["id","status","completedAt"]`) and a `state` filter, so a handful of
-  per-team calls returns every closed ticket compactly — versus one
-  multi-KB `get_issue` per candidate. On the first inventory run this was 6
-  calls instead of ~50. `references/backlog-health.md` has the exact query
-  and, importantly, the three ways the intersection goes wrong.
+  If the tracker is Linear, `mcp__linear__list_issues` takes a `fields`
+  allowlist (`["id","status","completedAt"]`) and a `state` filter, so a
+  handful of per-team calls returns every closed ticket compactly — versus
+  one multi-KB `get_issue` per candidate; other trackers usually have an
+  equivalent bulk search. A handful of calls replaces dozens.
+  `references/backlog-health.md` has the exact query and, importantly, the
+  three ways the intersection goes wrong.
 
 ## Step 4 — Group into themes, not merge order
 
@@ -269,8 +273,8 @@ group them if two or more are visibly part of the same stack.
 **In inventory scope, group by workstream and flag health separately.** The
 grouping answers "what is this team actually building"; a badge on each row
 answers "is this one alive." Don't collapse the two by sorting into
-dead/stale/active buckets — on the first run, 46 drafts fell into nine
-workstreams with the largest holding six, which reads as *five real
+dead/stale/active buckets — if, say, forty drafts fall into nine
+workstreams and five of them hold most of the work, that reads as *five real
 programmes plus residue*, and that shape **is** the finding. Bucketing by
 health would have destroyed it.
 
@@ -290,7 +294,7 @@ actually changed:
   it with vague "improves reliability" language. For a ready-for-review
   PR, this is necessarily anticipated ("once this merges...") rather than
   observed — say so.
-- **Under the hood** — the technical why, grounded in the Linear issue's
+- **Under the hood** — the technical why, grounded in the ticket's
   stated goal/background and the PR's own testing notes, not a rephrasing
   of which files changed.
 
@@ -307,7 +311,7 @@ change is and, where it matters, why it's stuck. Don't write a thinner
 version of the two-audience split; write the one sentence a reader needs to
 decide whether to open it. Reserve two or three sentences for the handful
 of rows that genuinely carry a finding (the mergeable one, the accidental
-11,000-file diff, the duplicate), and keep every other row to one.
+thousands-of-files diff, the duplicate), and keep every other row to one.
 
 Write one synthesis paragraph covering the merged set: what the whole
 window adds up to. Earn this from the actual grouping you did in Step 4 (a
@@ -316,10 +320,10 @@ migration?). The test: a synthesis that would fit any other week has not
 earned its conclusion.
 
 **In inventory scope the synthesis answers a different question** — not
-"what did this window add up to" but "what is this backlog, really." The
-first run's answer was that a 58-PR backlog was *not* a review-throughput
-problem: 10 of the 12 ready PRs already had written findings, so nothing
-was unlooked-at, and a third of the drafts were dead or were provisioning
+"what did this window add up to" but "what is this backlog, really." A
+typical answer: a large backlog is *not* a review-throughput problem,
+because most of the ready PRs already have written findings, so nothing is
+unlooked-at, and a sizeable share of the drafts are dead or are provisioning
 placeholders rather than work-in-progress. Reach for that kind of
 conclusion — a count reframed into what it means — and state plainly which
 numbers are misleading and why (**the draft count is not a
@@ -329,15 +333,15 @@ numbers back.
 
 ## Step 6 — Build and publish
 
-Before writing any HTML, invoke the `artifact-design` skill to calibrate
-treatment. This is a utilitarian report, not a landing page — real
-typographic hierarchy, a considered palette, grouped sections, PR cards
-linking out to GitHub and Linear — not an oversized hero or heavy
+Before writing any HTML, if an artifact-design skill is available, load it
+to calibrate treatment. This is a utilitarian report, not a landing page —
+real typographic hierarchy, a considered palette, grouped sections, PR cards
+linking out to GitHub and the tracker — not an oversized hero or heavy
 animation.
 
 **Layout, top to bottom:**
 
-1. Masthead with the stat tiles (PR count, unique Linear issues touched,
+1. Masthead with the stat tiles (PR count, unique tickets touched,
    contributor count, lines changed — computed from the data you actually
    gathered, not an estimate).
 2. The synthesis paragraph(s), placed here at the top — but **collapsed by
@@ -359,25 +363,25 @@ animation.
    ready, authors, tickets touched, how many are stale past 30 days, and
    **how many are closable now**. That last tile is the one that turns a
    survey into something actionable.
-2. Synthesis stays here, still collapsed, still first.
+2. Synthesis stays at the top, still collapsed, still first.
 3. Tabs become "Ready for review" and "Drafts" — put ready first, it's the
    actionable half even though it's the smaller one.
 4. Inside the drafts panel, lead with **one callout listing the PRs that
-   can close today**, each with its one-phrase reason (`ticket Done 08-19`,
+   can close today**, each with its one-phrase reason (`ticket already Done`,
    `0 files changed`), then the workstream groups. Rows stay in their
    groups as well, so nothing lives in only one place — the callout is a
    shortcut for the reader who wants only the to-do list, not a separate
    grouping.
 
-Two things to state rather than quietly print, both from the first run:
-the diff totals when one PR dominates them (11,659 of 13,655 files came
-from a single accidental commit, which makes every unqualified repo-wide
-number misleading), and which subset of tickets you actually verified when
+Two things to state rather than quietly print: the diff totals when one PR
+dominates them (if most of the inventory's files come from a single
+accidental commit, every unqualified repo-wide number is misleading), and
+which subset of tickets you actually verified when
 a light pass verified some but not all.
 
 If this skill gets run repeatedly, keeping a consistent favicon across
 runs (a single emoji, e.g. 📰) helps the reader recognize the series in
-their browser tabs — but defer to whatever `artifact-design` recommends
+their browser tabs — but if an artifact-design skill is loaded, defer to it
 for the rest of the visual treatment. Publish with the `Artifact` tool.
 
 ## Step 7 — Give every PR a "teach me this one" button
@@ -429,7 +433,7 @@ list is the one prompt field that costs a `gh pr view` per PR, and
 `/pr-teacher` discovers the files itself from `gh pr diff`. Have
 `buildPrompt()` skip the `Files:` line when the attribute is absent, keep
 the button on every row, and say in your summary that you made this
-trade — a button that works on all 58 rows beats a fuller prompt on none.
+trade — a button that works on every row beats a fuller prompt on none.
 
 **Copying reliably — read `references/teacher-button.md` before writing the
 handler.** The artifact iframe withholds `clipboard-write` while still

@@ -33,9 +33,9 @@ without clicking.
 
 ## Artifact
 
-The default for anything with a cost table. Load the `artifact-design` skill
-before writing the page; it carries the design fundamentals and the theming
-rules the platform requires.
+The default for anything with a cost table. If an `artifact-design` skill is
+available, load it before writing the page; it carries the design fundamentals
+and the theming rules the platform requires.
 
 Two things matter more for a proposal than for most pages:
 

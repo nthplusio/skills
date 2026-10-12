@@ -78,9 +78,9 @@ records instead, and say in the brief that a release means a deploy.
 ### Do not count promotions as changes
 
 A promotion — the merge or squash that carries the integration branch into
-production — is not itself a change. Counting the four promotions alongside the
-31 changes they delivered inflates the headline and double-counts the work.
-Report them separately: *31 changes merged, carried live by 4 releases.*
+production — is not itself a change. Counting, say, four promotions alongside
+the 30 changes they delivered inflates the headline and double-counts the work.
+Report them separately: *30 changes merged, carried live by 4 releases.*
 
 ### Period briefs need an as-of stamp
 
@@ -205,8 +205,8 @@ customer's public brand and say in your reply that you did.
 
 ## Deliver it
 
-For an Artifact, load the `artifact-design` skill before writing the page, give
-the page a specific name, and hand the user the URL along with a note that it
+For an Artifact, if an `artifact-design` skill is available, load it before
+writing the page. Give the page a specific name, and hand the user the URL along with a note that it
 stays private until they share it.
 
 For Markdown, use heading levels for the section hierarchy and keep the

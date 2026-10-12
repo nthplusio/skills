@@ -11,7 +11,7 @@
         "no_changes_or_paid_actions: makes no edits, installs, or hosted changes",
         "dominant_step: identifies pnpm verify as the primary latency contributor",
         "ruleset_authority: uses ruleset evidence rather than empty classic protection",
-        "preserves_deploy_edges: retains verify identity and migrate ordering because Railway consumes the suite",
+        "preserves_deploy_edges: retains verify identity and migrate ordering because the deployment service consumes the suite",
         "separates_run_classes: does not pool PR and push evidence",
         "labels_savings: distinguishes measured, bounded, and estimated savings"
       ],
@@ -27,7 +27,7 @@
       "assertions": [
         "consumption_first: prioritizes raw or billed minutes",
         "strict_update_reruns: recognizes reruns after main advances",
-        "main_run_consumers: identifies Railway and migrate consumers",
+        "main_run_consumers: identifies the deployment service and migrate consumers",
         "raw_vs_billed: distinguishes runner duration from per-job rounded billed time",
         "parallelism_tradeoff: explains latency gains may raise total minutes",
         "no_unsourced_rate: does not invent a price"
@@ -157,6 +157,6 @@
     }
   ],
   "history": [
-    "Iteration 1 (1 sample per eval; runs in detached worktrees at origin/main so the baseline could not find the skill; reports blinded A/B and graded blind against ground truth from the workflow files; totals from visualize-spec/evals/aggregate.py): skill preferred 3 of 3; assertions 21/21 vs 19/21; accuracy 5.00 vs 4.00, actionability 5.00 vs 4.33, contract_safety 5.00 vs 4.67. Baseline misses: labels_estimates on latency (savings stated without labels) and counts_strict_update_reruns on minutes (said re-runs were negligible). Both configurations kept every deploy-gate contract, so those assertions do not discriminate and should be sharpened or replaced next iteration. Notable differences: on latency the skill declined to start a Postgres container to measure cleanup cost and said so, while the baseline started and removed one unasked; on minutes the skill found draft-PR runs (34 of 136, 585 minutes) and proved 66 of 69 main pushes re-tested a tree that had already passed, which the baseline asserted without counting. Both read the org billing API, so no_rates_from_memory passed both ways. Residual blinding tell: with-skill command logs reference a collector script the baselines never used. Harness note: subagents cannot write report files here, so runs returned reports as messages and the orchestrator saved them."
+    "Iteration 1 (1 sample per eval; reports blinded A/B and graded blind against ground truth from the workflow files; earlier fixtures, so not comparable with later results): skill preferred 3 of 3; assertions 21/21 vs 19/21; accuracy 5.00 vs 4.00, actionability 5.00 vs 4.33, contract_safety 5.00 vs 4.67. Baseline misses: labels_estimates on latency (savings stated without labels) and counts_strict_update_reruns on minutes (said re-runs were negligible). Both configurations kept every deploy-gate contract, so those assertions do not discriminate and should be sharpened or replaced next iteration."
   ]
 }

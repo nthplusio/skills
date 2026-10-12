@@ -47,8 +47,8 @@ record. Count those surfaces before writing a number.
 Useful opening moves:
 
 ```bash
-rg -n 'model <Entity>' --type prisma          # or the ORM's schema equivalent
-rg -l '<entity>\.(findMany|findUnique|create|update)' --glob '!**/*test*'
+rg -n '<Entity>' <schema-files>               # the schema files of whatever ORM the project uses
+rg -l '<entity>\.(find|create|update|delete)' --glob '!**/*test*'
 rg -c 'export (default )?function|export const' <ui-directory>
 ```
 

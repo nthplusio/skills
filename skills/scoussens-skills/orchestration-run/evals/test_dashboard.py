@@ -389,19 +389,19 @@ class DashboardTests(unittest.TestCase):
         self.data["decisions"] += [
             {"id": "Q-local", "text": "Choose the description format?", "recommendation": "Use full labels.",
              "task_ids": ["API-104"], "unblocks": "Description formatting",
-             "discussion": {"owner_id": "hierarchy-owner", "label": "Hierarchy owner",
-                            "href": "https://example.org/discuss-hierarchy"}},
-            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime thread.",
+             "discussion": {"owner_id": "list-owner", "label": "List owner",
+                            "href": "https://example.org/discuss-list"}},
+            {"id": "Q-gate", "text": "Complete the existing sign-in dialog.", "recommendation": "Answer in the runtime owner conversation.",
              "task_ids": ["ENV-106"], "unblocks": "Runtime sign-in", "requires_human": True,
              "discussion": {"owner_id": "runtime-owner", "label": "Runtime owner",
                             "href": "https://example.org/runtime-input"}},
         ]
         html = render(self.data, hosted=True)
-        self.assertIn('href="https://example.org/discuss-hierarchy">Open discussion</a>', html)
-        self.assertIn('href="https://example.org/runtime-input">Answer in thread</a>', html)
+        self.assertIn('href="https://example.org/discuss-list">Open discussion</a>', html)
+        self.assertIn('href="https://example.org/runtime-input">Answer in conversation</a>', html)
         self.assertIn('href="#task-API-104">API-104</a>', html)
         self.assertIn("Answering unlocks: Description formatting", html)
-        self.assertIn('data-discussion-owner="hierarchy-owner"', html)
+        self.assertIn('data-discussion-owner="list-owner"', html)
         self.assertIn('data-requires-human="true"', html)
         self.assertIn("You need to answer this yourself in the linked conversation.", html)
         self.assertIn('data-copy-id="Q-gate"', html)

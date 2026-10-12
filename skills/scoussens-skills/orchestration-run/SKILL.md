@@ -101,7 +101,7 @@ not two competing owners. A new phase alone needs neither a new ticket nor owner
 Record each task's owner handle/link, work location, files and runtime resources,
 dependencies, completion criterion, and next action. List every runtime instance
 the owner creates or holds, such as a sandbox, local service, browser session,
-database copy, fixture, warehouse reservation, paused job or schedule, in its
+database copy, fixture, reserved compute capacity, paused job or schedule, in its
 `runtime` entries as the owner reports or inspection reveals them. Different workspaces do
 not contain each other's unpushed code. Transfer exact files or accessible
 commits and needed setup before assigning work that depends on them.
@@ -259,7 +259,7 @@ instead of serial blocking coordinator dialogs. When two or more tasks wait on
 the same kind of shared action, such as publishing or merging, raise one
 decision that lists each task with its proof, current checks and side effects,
 and accept an answer that approves any subset by ticket ID. The user can discuss a local
-choice in its owner thread or give quick answers by ID to the coordinator.
+choice in its owner's conversation or give quick answers by ID to the coordinator.
 Relay exact user answers to the discussion owner when the harness permits it.
 An owner can apply a local answer within existing authorization and record the
 answer, source and outcome in its conversation for inspection; the user need
@@ -395,12 +395,13 @@ Refresh at step 3's cycle boundaries, including dependency/approval changes,
 corrected verdicts and owner closure. Record each task's `work` status and reason
 under the [work status contract](references/dashboard-data.md#work-status-and-resolution).
 Recover missing outcomes from retained results and decisions; closure alone
-leaves the outcome unclassified. The dashboard serves non-technical testers and
-executives first: give every row a plain-language `work.summary`, and write the
-goal and decision text the same way. Keep technical wording in `reason`,
-`blocker`, `next_action` and stage notes, which appear when a reader opens
-an item. Record all three status views for every row: stage, work status and
-agent status. Stamp `updated_at` with the real update time.
+leaves the outcome unclassified. The dashboard serves non-technical stakeholders,
+such as testers or executives, first: give every row a plain-language
+`work.summary`, and write the goal and decision text the same way. Keep
+technical wording in `reason`, `blocker`, `next_action` and stage notes, which
+appear when a reader opens an item. Record all three status views for every
+row: stage, work status and agent status. Stamp `updated_at` with the real
+update time.
 
 Keep task, proof, decision, and run IDs stable; the page uses them for links,
 copied questions and copied context. Record the coordinator link and any
