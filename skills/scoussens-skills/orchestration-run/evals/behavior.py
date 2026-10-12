@@ -124,8 +124,10 @@ def prepare(root, names):
         status = load(RUNNER / "evals" / "dashboard-preview.json")
         status["tasks"] = [task for task in status["tasks"] if task["id"] in
                            ("UI-101", "API-102", "REVIEW-103", "API-104", "OPS-105", "ENV-106", "SHIP-107")]
+        # These scenarios exercise recovery of legacy schema 1 records without explicit work outcomes.
+        status["schema_version"] = 1
+        status.pop("approvals")
         for task in status["tasks"]:
-            # These scenarios exercise recovery of legacy records without explicit work outcomes.
             task.pop("work", None)
         status["config_path"] = paths["config"]
         status["presentation"]["local_path"] = paths["dashboard"]

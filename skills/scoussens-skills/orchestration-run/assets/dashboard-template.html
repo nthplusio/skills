@@ -214,6 +214,7 @@ textarea { display:block; inline-size:100%; field-sizing:content; min-block-size
 .receipt summary span { color:var(--muted); display:inline-block; margin-inline-start:10px; font-size:11px; }
 pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12px; background:var(--bg); border-radius:5px; font:11px/1.6 ui-monospace,monospace; }
 .history { font-size:12px; color:var(--muted); padding-inline-start:20px; }
+.history small { display:block; margin-block-end:6px; }
 [hidden] { display:none !important; }
 @container (inline-size < 60rem) {
   thead { position:absolute; inline-size:1px; block-size:1px; overflow:clip; clip-path:inset(50%); }
@@ -239,7 +240,7 @@ pre { margin-block:8px; white-space:pre-wrap; overflow-wrap:anywhere; padding:12
 </div>
 <h2 class="section-label">Technical reference</h2>
 <details class="panel archive" id="retained-proof"><summary>Evidence and test results</summary>{{PROOFS}}</details>
-<details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
+<details class="panel archive" id="runtime"><summary>Running and kept resources</summary><ul class="history">{{RUNTIME}}</ul></details><details class="panel archive" id="approvals"><summary>Approvals</summary><ul class="history">{{APPROVALS}}</ul></details><details class="panel archive" id="change-history"><summary>History and corrections</summary><ul class="history">{{HISTORY}}</ul></details>
 <footer class="technical-footer">Run <code>{{RUN_ID}}</code> · Snapshot <code>{{UPDATED}}</code></footer>
 </main>
 <dialog id="decision-dialog" aria-labelledby="decision-title" aria-describedby="decision-help"><div class="dialog-heading"><h2 id="decision-title">Decision</h2><button id="close-decision" autofocus>Close</button></div><p id="decision-help">Answer in the linked conversation. Copy controls prepare text; they do not send it.</p><div id="decision-content"></div></dialog>

@@ -51,17 +51,24 @@ choices, and proof assessments are restored before assigning work.
 ## 2. Establish the finish line and ownership
 
 For a new run, propose one compact confirmation using the user's request and
-profile defaults. Include selected tickets, finish line, dashboard destination
-and audience, and scan interval. Ask only for unresolved run choices. A complete
+profile defaults. Include selected tickets, target stage, publication scope,
+dashboard destination and audience, scan interval and idle-scan limit. Ask only
+for unresolved run choices. A complete
 explicit request already confirms them. A request for only a consequential
 decision can defer presentation as step 5 describes. Save confirmed values in
 this run with the supplied answer receipt or actual message link, leaving setup
 defaults unchanged. On resume, reuse saved choices and
 ask only about a requested change or missing run choice.
 
-The default review-ready finish line means implementation and needed proof/review
-material are prepared. It does not mean published, reviewed, merged, deployed, or
-business-accepted. Record what proves the confirmed finish line for each task.
+State the finish line as a target stage and show its plain label. The legacy
+review-ready default is `pr_readiness`, shown as "Implemented: no pull request
+will be opened". When the repository's own workflow opens draft pull requests,
+recommend `code_publication` with a `draft` publication scope instead. Publication
+scope is this run's authorization for pushes and pull requests, so confirm it
+with its side effects, such as a preview environment per draft pull request or
+the deployment a merge triggers. Setup defaults never grant it. Default the
+idle-scan limit to three. Record what proves the target stage for each task.
+The [run lifecycle](references/dashboard-data.md#run-lifecycle) defines these choices.
 
 Use setup's confirmed ticket policy. Inspect selected tickets against it, not
 the repository's general configuration again. For an unclear ticket, resolve
@@ -84,7 +91,10 @@ for the same ticket and retain the original binding. There is one current owner,
 not two competing owners. A new phase alone needs neither a new ticket nor owner.
 
 Record each task's owner handle/link, work location, files and runtime resources,
-dependencies, completion criterion, and next action. Different workspaces do
+dependencies, completion criterion, and next action. List every runtime instance
+the owner creates or holds, such as a sandbox, local service, browser session,
+database copy, fixture, warehouse reservation, paused job or schedule, in its
+`runtime` entries as the owner reports or inspection reveals them. Different workspaces do
 not contain each other's unpushed code. Transfer exact files or accessible
 commits and needed setup before assigning work that depends on them.
 
@@ -172,6 +182,12 @@ Repeat this cycle while assigned work or known obligations remain:
    record a missed check honestly and scan when control returns. The dashboard
    stays a snapshot while the coordinator cannot write it.
 
+Count consecutive scans that change no task, decision or proof verdict in
+`monitoring.unchanged_scans`, and reset it on any change. When the count reaches
+the run's idle-scan limit and only people can unblock the remaining work, stop:
+clear any scheduled wake, set `next_check_at` to `null`, record the hold and its
+resume route, and post one summary of what each person needs to answer.
+
 Exit when all assignments and known obligations are settled, the user pauses
 the run, only human answers can unblock remaining work, or the harness cannot
 continue monitoring. Before yielding, save the actual hold and answer/resume
@@ -226,8 +242,11 @@ blocks its caller, neither helpers nor pending reports establish background
 responsiveness. Prefer the decision queue while unrelated owners continue;
 retain the real dashboard update time when refresh is unavailable during a wait.
 
-Record approval scope, destination, and side effects and carry that permission
-to the relevant owners. A target stage is not approval for a shared database
+Record each approval in `approvals` with its scope, affected tasks, side effects,
+source and any expiry, and carry that permission to the relevant owners. An
+approval for a time window expires with it. Once `expires_at` passes, mark it
+expired, keep its record, and ask again before acting. An answer that arrives
+after the window closes does not reopen it. A target stage is not approval for a shared database
 write, access/secrets change, push, merge, or deployment. Include indirect
 effects such as auto-merge or an automatic deployment before seeking approval.
 Ask again only when the action exceeds the granted scope.
@@ -304,6 +323,18 @@ or identify privately retained proof. Follow the selected host's instructions.
 In a remote sandbox, local HTML needs a supported preview or portal for the user;
 a sandbox-local URL is not a delivery link.
 
+A routine scan writes `status.json`, renders, updates the destination, and
+compares the served page with the rendered file:
+
+```bash
+python3 <this skill's folder>/scripts/check_served.py <dashboard.html> <served URL>
+```
+
+PASS ends the dashboard check for that scan. LIMITED means the page cannot be
+fetched from here, such as behind a sign-in; record that limitation once and
+reuse it. Take screenshots, inspect the DOM, or open a browser only when the
+template or renderer changed.
+
 Set `presentation.auto_refresh` from the selected destination's discovered
 `auto_refresh` capability. Inspect missing capability facts through discovery.
 Enable verified embedded refresh automatically at the confirmed run interval.
@@ -368,6 +399,11 @@ Decide completion before checking whether the harness can close an owner:
 - Once the assigned finish line is proven and known obligations are settled,
   retain the result, usable proof, exact work location, limitations and
   continuation instructions outside context that closure makes inaccessible.
+  Unpublished code must also survive outside the owner's workspace, because
+  closing or archiving can pause or remove that workspace. Push the branch
+  within the publication scope, or retain a Git bundle or patch with its
+  checksum, and record it in `owner.retained_code`. Release each `runtime`
+  entry, or retain it with a reason and a date.
   Mark the owner **complete**, update status and any selected dashboard, then
   close it when supported and record the actual result. Only this completed
   branch may record **complete, closure unavailable/pending** instead of **closed**.
