@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Sync pstack skills from github.com/cursor/plugins (pstack/skills) into a skills directory.
 
-  sync.py sync   --harness NAME [--repo DIR] [--ref BRANCH] [--dry-run]
-  sync.py record --harness NAME [--repo DIR] (SKILL | SKILL/FILE ... | --all)
-  sync.py status --harness NAME [--repo DIR] [--since REV]
+  sync.py sync   --harness NAME [--repo DIR] [--root DIR] [--ref BRANCH] [--dry-run]
+  sync.py record --harness NAME [--repo DIR] [--root DIR] (SKILL | SKILL/FILE ... | --all)
+  sync.py status --harness NAME [--repo DIR] [--root DIR] [--since REV]
 
 sync    Adds new upstream skills, updates changed ones, removes retired or excluded
         ones. Each file renders as: upstream -> rename rewrites -> global transforms
@@ -18,15 +18,24 @@ status  Prints a human-readable summary of what changed since REV (default HEAD)
         skills, then outstanding adaptation and drift.
 
 State (in pstack-sync/):
-  needs.json            features pstack relies on; markers per need (harness-independent).
-  harness/<harness>.md  harness profile: destination, and one row per need with support
-                        native | keep | substitute | partial | none. Markers of needs
-                        marked native or keep are accepted automatically.
+  needs.json            features pstack relies on; markers per need (harness-independent),
+                        and the harness-discovery fields that answer a need.
+  harness/<harness>.md  pstack's adaptation profile: destination, and one row for each
+                        need without discovery fields, with support native | keep |
+                        substitute | partial | none. A row for a need with discovery
+                        fields overrides them. Markers of needs marked native or keep
+                        are accepted automatically.
   manifest.json         upstream commit, harness, exclude list; per skill: dir, upstream
                         tree, transforms hash, per file upstream blob, installed blob,
                         pending adaptation.
   transform.json        per harness: "accept" marker regexes, "global" regex transforms,
                         "files" keyed by upstream path "<skill>/<rel>".
+
+Harness facts (owned by harness-discovery, not pstack-sync):
+  .nthplusio-skills/discovery.json at the root of the Git repository holding --repo, or
+                        at --root. NAME matches a saved key or its slug. A need is
+                        profiled once every field it names is discovered; null means
+                        the harness has no such operation.
 """
 import argparse, difflib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys
 
@@ -37,6 +46,8 @@ DEFAULT_REPO = os.path.dirname(os.path.dirname(HERE))
 SELF = "pstack-sync"
 CACHE = os.path.expanduser("~/.cache/pstack-sync/%s.git" % hashlib.sha1(UPSTREAM.encode()).hexdigest()[:12])
 SUPPORT = ("native", "keep", "substitute", "partial", "none")
+STATE_DIR = ".nthplusio-skills"
+MISSING = object()
 
 
 # ---------- git / upstream ----------
@@ -104,6 +115,44 @@ def parse_profile(text):
     for m in re.finditer(r"(?m)^\|\s*`?([\w-]+)`?\s*\|\s*(%s)\b" % "|".join(SUPPORT), text or ""):
         rows[m.group(1)] = m.group(2)
     return rows
+
+
+def slug(name):
+    """A harness key's file-safe name, as harness-discovery derives it: Claude Code -> claude-code."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def discovery_root(repo, root):
+    if root:
+        return os.path.abspath(root)
+    r = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else repo
+
+
+def harness_facts(path, harness, needs):
+    """(saved harness key, {need id: {field: value}}) for each need whose discovery fields are all
+    recorded. A missing field, or the template's "unknown", is not yet discovered."""
+    if not os.path.exists(path):
+        return None, {}
+    try:
+        with open(path) as f:
+            harnesses = json.load(f)["harnesses"]
+        keys = [k for k in harnesses if k == harness] or [k for k in harnesses if slug(k) == slug(harness)]
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        sys.exit(f"error: {path} is not valid discovery ({error}); repair it with harness-discovery")
+    if len(keys) != 1:
+        return None, {}
+    entry, facts = harnesses[keys[0]], {}
+    for n in needs:
+        values = {}
+        for field in n.get("discovery", []):
+            node = entry
+            for part in field.split("."):
+                node = node.get(part, MISSING) if isinstance(node, dict) else MISSING
+            values[field] = node
+        if values and all(v is not MISSING and v != "unknown" for v in values.values()):
+            facts[n["id"]] = values
+    return keys[0], facts
 
 
 def needs_in(text, needs):
@@ -225,7 +274,7 @@ def norm_skills(skills):
 
 
 class State:
-    def __init__(self, repo, harness):
+    def __init__(self, repo, harness, root=None):
         self.repo = repo
         self.harness = harness
         self.manifest_path = os.path.join(repo, SELF, "manifest.json")
@@ -241,6 +290,16 @@ class State:
         self.profile_exists = os.path.exists(self.profile_path)
         self.profile = parse_profile(open(self.profile_path).read() if self.profile_exists else "")
         self.auto_accept = {i for i, s in self.profile.items() if s in ("native", "keep")}
+        self.discovery_path = os.path.join(discovery_root(repo, root), STATE_DIR, "discovery.json")
+        self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
+
+    def gaps(self, flagged):
+        """Flagged needs with neither a profile row nor discovered facts."""
+        return sorted(set(flagged) - set(self.profile) - set(self.facts))
+
+    def flagged_facts(self, flagged):
+        """Discovered facts for the flagged needs no profile row overrides."""
+        return {nid: self.facts[nid] for nid in sorted(flagged) if nid in self.facts and nid not in self.profile}
 
     def skill_tf_hash(self, name, renames):
         files = {k: v for k, v in self.tf.get("files", {}).items() if k.startswith(name + "/")}
@@ -296,6 +355,7 @@ def cmd_sync(a, st):
     report = {"upstream_commit": sha, "previous_commit": st.manifest.get("commit"),
               "harness": a.harness, "harness_changed": harness_changed,
               "profile_missing": not st.profile_exists, "profile_gaps": [], "dry_run": a.dry_run,
+              "discovery": {"path": st.discovery_path, "harness": st.discovery_key}, "harness_facts": {},
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
               "needs_security_review": [], "needs_adaptation": {}}
@@ -406,7 +466,8 @@ def cmd_sync(a, st):
 
     flagged = {nid for files in report["needs_adaptation"].values() for p in files.values()
                for nid in p.get("needs", {})}
-    report["profile_gaps"] = sorted(flagged - set(st.profile))
+    report["profile_gaps"] = st.gaps(flagged)
+    report["harness_facts"] = st.flagged_facts(flagged)
 
     if not a.dry_run:
         lic = read_blobs([git("rev-parse", f"{sha}:pstack/LICENSE").decode().strip()])
@@ -563,6 +624,7 @@ def cmd_status(a, st):
     out = [f"# pstack sync status ({a.harness})", ""]
     oc, nc = (old_m.get("commit") or "none")[:7], (st.manifest.get("commit") or "none")[:7]
     out.append(f"Upstream cursor/plugins: {oc} -> {nc}" if oc != nc else f"Upstream cursor/plugins: {nc} (unchanged)")
+    out.append(f"Harness facts: {st.discovery_key or 'none'} in {st.discovery_path}")
     out.append("")
     total = sum(len(v) for v in groups.values())
     counts = ", ".join(f"{len(groups[g])} {g}" for g in ("new", "changed", "replayed", "dropped") if groups[g])
@@ -601,13 +663,14 @@ def main():
         p = sub.add_parser(c)
         p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
         p.add_argument("--repo", default=DEFAULT_REPO)
+        p.add_argument("--root", help="repository holding .nthplusio-skills/; defaults to --repo's Git repository")
     sub.choices["sync"].add_argument("--ref", default="main")
     sub.choices["sync"].add_argument("--dry-run", action="store_true")
     sub.choices["record"].add_argument("skills", nargs="*")
     sub.choices["record"].add_argument("--all", action="store_true")
     sub.choices["status"].add_argument("--since", default="HEAD")
     a = ap.parse_args()
-    st = State(os.path.abspath(a.repo), a.harness)
+    st = State(os.path.abspath(a.repo), a.harness, a.root)
     {"sync": cmd_sync, "record": cmd_record, "status": cmd_status}[a.cmd](a, st)
 
 

@@ -1,8 +1,9 @@
 {
-  "_doc": "Features pstack relies on. Single source of truth for sync.py markers and for harness profiles (harness/<harness>.md rows are keyed by id).",
+  "_doc": "Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields.",
   "needs": [
     {
       "id": "skill-locations",
+      "discovery": ["skills.locations", "skills.reload"],
       "uses": "Install, find, and create skills (project-local, personal, plugin-provided); verification skills are generated into the project.",
       "cursor": [
         ".cursor/skills/",
@@ -17,6 +18,7 @@
     },
     {
       "id": "persistent-rules",
+      "discovery": ["instructions.user", "instructions.project"],
       "uses": "Always-applied instructions (user-wide and project) that every session reads.",
       "cursor": [
         "~/.cursor/rules/*.mdc",
@@ -45,6 +47,7 @@
     },
     {
       "id": "model-selection",
+      "discovery": ["models.select", "models.list"],
       "uses": "Pick a specific model (often a different family) for a subagent, runner, or judge.",
       "cursor": [
         "Task tool model: parameter",
@@ -59,6 +62,7 @@
     },
     {
       "id": "subagents",
+      "discovery": ["helpers.invoke", "helpers.collect", "helpers.blocks_caller"],
       "uses": "Fan out parallel workers, reviewers, explorers, and judges, each with its own prompt.",
       "cursor": [
         "Task tool",
@@ -73,6 +77,7 @@
     },
     {
       "id": "readonly-subagents",
+      "discovery": ["helpers.readonly"],
       "uses": "Reviewers and explorers that must not edit files.",
       "cursor": [
         "readonly: true on a Task call"
@@ -85,6 +90,7 @@
     },
     {
       "id": "ask-user",
+      "discovery": ["ask_user"],
       "uses": "Ask the user a structured multiple-choice question mid-run.",
       "cursor": [
         "AskQuestion"
@@ -97,6 +103,7 @@
     },
     {
       "id": "transcripts",
+      "discovery": ["owners.inspect"],
       "uses": "Read past or current chat transcripts (recall, reflect, eval, session pickup, decision-log audits, worktree audit).",
       "cursor": [
         "~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl"
@@ -110,6 +117,7 @@
     },
     {
       "id": "loop",
+      "discovery": ["monitoring.wake"],
       "uses": "Repeat a task until a check passes, including overnight runs.",
       "cursor": [
         "/loop"
@@ -122,6 +130,7 @@
     },
     {
       "id": "background-agents",
+      "discovery": ["owners.launch", "owners.resume"],
       "uses": "Hand work to an agent that runs remotely or after the session ends.",
       "cursor": [
         "cloud agents"
@@ -134,6 +143,7 @@
     },
     {
       "id": "worktrees",
+      "discovery": ["owners.workspace_model"],
       "uses": "Find and audit git worktrees the harness created.",
       "cursor": [
         ".cursor/worktrees/<repo>/<name>"
