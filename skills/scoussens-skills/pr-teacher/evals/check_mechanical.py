@@ -97,8 +97,31 @@ def load_run_json(run_dirs, name):
     for d in run_dirs:
         f = d / name
         if f.exists():
-            return json.loads(f.read_text())
+            try:
+                return json.loads(f.read_text())
+            except ValueError as e:
+                sys.exit(f"{f}: invalid JSON: {e}")
     return None
+
+
+def strings(value):
+    return isinstance(value, list) and bool(value) and all(isinstance(v, str) and v for v in value)
+
+
+def load_pr_files(run_dirs):
+    files = load_run_json(run_dirs, PR_FILES_NAME)
+    if isinstance(files, dict):  # saved straight from `gh pr view --json files`
+        files = [f.get("path") for f in files.get("files", []) if isinstance(f, dict)]
+    if files is not None and not strings(files):
+        sys.exit(f"{PR_FILES_NAME} must be a non-empty list of paths")
+    return files
+
+
+def load_ground_truth(run_dirs):
+    truth = load_run_json(run_dirs, GROUND_TRUTH_NAME) or {}
+    if not isinstance(truth, dict) or not all(strings(v) for v in truth.values()):
+        sys.exit(f"{GROUND_TRUTH_NAME} must map each assertion ID to a non-empty list of strings")
+    return truth
 
 
 def check(html, eval_name, run_dirs):
@@ -115,7 +138,7 @@ def check(html, eval_name, run_dirs):
         else f"missing={[k for k,v in parts.items() if not v] or 'none'}; external_refs={len(ext)}",
     }
 
-    files = load_run_json(run_dirs, PR_FILES_NAME)
+    files = load_pr_files(run_dirs)
     if files is None:
         out["file_map_complete"] = {
             "passed": None,
@@ -176,7 +199,7 @@ def check(html, eval_name, run_dirs):
     }
 
     truth = dict(GROUND_TRUTH.get(eval_name, {}))
-    truth.update(load_run_json(run_dirs, GROUND_TRUTH_NAME) or {})
+    truth.update(load_ground_truth(run_dirs))
     for aid, needles in truth.items():
         if not needles:
             out[aid] = {"passed": None,

@@ -114,7 +114,7 @@ before any tracker call.
 Derive it from `updatedAt`, not `createdAt` — those answer different
 questions, and only the second one is interesting. A two-month-old PR pushed
 this morning is active; a three-week-old PR untouched since the hour it
-opened is abandoned. Report both ("open 40d · idle 40d") when they diverge,
+opened is abandoned. Report both ("open 60d · idle 2d") when they diverge,
 and let the idle figure drive the flag.
 
 ## Ordering and grouping
