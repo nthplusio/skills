@@ -1,6 +1,8 @@
 {
   "amp": {
-    "accept": [],
+    "accept": [
+      "^(?:building-schedules|building-skills|using-agent-browser)$"
+    ],
     "global": [],
     "files": {
       "architect/SKILL.md": {
