@@ -14,7 +14,7 @@ Zero hits on a symbol is not automatically a defect -- a private helper covered
 through its caller is fine. It is a question worth asking, and the answer takes
 seconds:
 
-    "_sanitize_result_for_source_columns: 0 test references"
+    "_normalize_rows: 0 test references"
 
 Read the flagged symbol's caller and decide whether the behaviour is genuinely
 exercised. What you must not do is infer coverage from a changed test file.

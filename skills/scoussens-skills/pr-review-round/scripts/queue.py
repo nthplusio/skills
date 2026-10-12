@@ -27,7 +27,7 @@ DETAIL_FIELDS = "files,statusCheckRollup"
 # share, not one repo's layout. Add your repo's own names (a migration prefix,
 # an ORM class, a package dir) in `.pr-review-tiers.json` at the repo root:
 #
-#     {"DATA": ["V001", "db/specs"], "API": ["BaseCrud"]}
+#     {"DATA": ["V001__", "db/specs/"], "API": ["BaseCrud"]}
 #
 # The point is the OTHER count printed at the end. Tier-driven depth is this
 # script's whole purpose, so a queue where most PRs land in OTHER means the
@@ -42,11 +42,11 @@ DETAIL_FIELDS = "files,statusCheckRollup"
 # appears incidentally across a large diff, while a migration path does not.
 TIERS = [
     ("DATA",  ("migration", "/seed/", "schema.sql", "/store/", "store.py",
-               "_specs.py", "/mongo/", "/models/", "/entities/", "/repositories/")),
-    ("AUTH",  ("auth", "jwt", "principal", "licens", "secret", "middleware",
+               "/mongo/", "/models/", "/entities/", "/repositories/")),
+    ("AUTH",  ("auth", "jwt", "principal", "secret", "middleware",
                "token", "permission", "session", "credential")),
     ("API",   ("routers/", "/services/", "/handlers/", "/controllers/",
-               "sql_quer", "/api/", "packages/", "/dags/")),
+               "/api/", "packages/")),
     ("INFRA", ("/terraform/", ".github/workflows/", "Dockerfile",
                "docker-compose", "/infra/", "/deploy", "/helm/", ".tf")),
     ("WEB",   ("/web/", "/frontend/", "/ui/", ".tsx", ".jsx", ".vue",

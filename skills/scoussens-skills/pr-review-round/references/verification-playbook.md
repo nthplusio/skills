@@ -81,8 +81,8 @@ one finding costs you credibility on the next nine.
 Ask what the tests actually enforce, not whether they pass.
 
 A PR added `NOT NULL` to a column while a writer still bound `None` for it.
-Every test passed, because the test double was "a minimal, state-driven cursor
-stand-in" with no constraint enforcement — and one test asserted the broken
+Every test passed, because the test double was a minimal stand-in for the
+database cursor with no constraint enforcement — and one test asserted the broken
 value, pinning the bug in place. On a real database the write fails outright.
 
 The general check: when a PR changes a **constraint, type, schema, or contract**,
@@ -123,9 +123,8 @@ Two real cases:
   176-line local reimplementation of logic that now lived in a shared package.
   **The tell: the PR touched zero files in that package.** A genuine migration
   away from a package edits the package. Only an accidental undo does not.
-- A styling PR restored a class string verbatim that a named commit
-  ("adopt the design system's token layer and retire one-off chrome") had
-  deliberately removed. **The tell: `git log` on that file surfaced a commit
+- A styling PR restored a class string verbatim that an earlier commit, moving
+  the screen onto the design system's tokens, had deliberately removed. **The tell: `git log` on that file surfaced a commit
   whose message described removing exactly what the PR was adding back.**
 
 Both were long-lived branches. Suspect this whenever a branch predates work that
@@ -137,13 +136,13 @@ has nothing to do with the file it is rewriting.
 Read the PR description as a claim to be tested. The gap between what it says
 and what the diff does is reliably interesting.
 
-- One PR described a bug ("toggling Public does not reliably refetch") and then
-  fixed it by **deleting the toggle entirely** — a user-facing capability
+- One PR described a bug in a visibility toggle that failed to refresh the list
+  and then fixed it by **deleting the toggle entirely** — a user-facing capability
   removed, never mentioned. That is not necessarily wrong, but it has to be a
   stated decision rather than a side effect of a PR about something else.
-- Another stated plainly that a phase was "the regression gate — don't move on
-  until X still works", and that phase was the one place behaviour actually
-  changed for existing users.
+- Another named one of its phases as the regression gate, the step that must
+  prove existing behaviour still works before anything moves on, and that phase
+  was the one place behaviour actually changed for existing users.
 
 Where a linked ticket has acceptance criteria, walk them against the code. The
 criterion a PR quietly fails is usually the one it was filed for.
@@ -205,10 +204,10 @@ existing rows kept the old key.
 This is technique 7 applied to your own finding, and skipping it is the mistake
 I have actually made rather than a hypothetical. On that same PR I wrote that
 historical events would become unreachable. That was wrong, and a five-line
-check would have caught it: the main read path narrows by conversation id and
-**deliberately never filters on the renamed anchor at all**, so renaming the
-anchor could not strand it. What genuinely broke was the much narrower set of
-reads that *do* filter on it — one adoption helper and the session scope.
+check would have caught it: the main read path narrows by the parent record's
+id and **deliberately never filters on the renamed field at all**, so renaming
+the field could not strand it. What genuinely broke was the much narrower set of
+reads that *do* filter on it — one lookup helper and the session-scoped reads.
 
 So the finding was real and the severity was inflated, which is the worse of the
 two errors: the author has to argue you down instead of fixing something.
@@ -223,7 +222,7 @@ git grep -n '<new-field-name>' <head-sha> -- <src-dirs> | grep -v test
 Read each hit and ask: does this query *filter* on the field, or merely carry it?
 A field that is written and returned but never used as a predicate can be
 renamed with no read-path consequence at all. Scope the blast radius to the
-predicates, then state that scope explicitly — "the adoption helper and
+predicates, then state that scope explicitly — "the lookup helper and
 session-scoped reads" lands; "all historical events" gets you corrected.
 
 The checks for the migration itself:
@@ -262,8 +261,8 @@ blocking have been, had it not held.
 For a deletion, the whole review is "is this actually unreferenced?" — and the
 mistake is grepping only the language you are looking at.
 
-String-keyed dispatchers (`elif function == "update_mapping"`) can be called
-from a frontend, a DAG, a webhook, or an external integration. Search the entire
+String-keyed dispatchers (`elif function == "update_record"`) can be called
+from a frontend, a scheduled job, a webhook, or an external integration. Search the entire
 repository, not `--include=*.py`:
 
 ```bash
@@ -285,9 +284,10 @@ of it.
 
 Take the PR body's self-assessment seriously as a gate.
 
-One PR read "Live verification pending — the views need a manual check with the
-flag on" and "On-by-default is ahead of the 'parity before default' guardrail",
-while flipping the default renderer for three screens. CI was green and both
+One PR's body said that live verification of the affected views was still
+pending, and that turning the flag on by default ran ahead of the team's own
+rule of reaching parity first, while flipping the default renderer for three
+screens. CI was green and both
 prior findings were properly fixed. The author had already identified the
 blocker; the review's job was to hold the line they had drawn, not to discover
 something new.
@@ -312,7 +312,7 @@ git log --oneline <merge-base>..origin/<base> -- <path>   # who landed the other
 Then ask the question a conflict marker cannot: **do these two changes compose?**
 
 **The tell:** both sides added an independent controller for the same piece of
-state. The base branch added a manual toggle writing `childrenCollapsed`; the PR
+state. The base branch added a manual toggle writing `isExpanded`; the PR
 added an effect that *also* wrote it, with the same field in its dependency
 array. Each was correct alone. Merged, the effect re-fires on the toggle's write
 and reverts it, so the button silently stops working. Two writers for one piece

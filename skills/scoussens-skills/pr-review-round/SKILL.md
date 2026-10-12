@@ -46,7 +46,7 @@ Three rules hold regardless:
 
 **Base branch.** Use whatever was passed as an argument. With no argument,
 detect the default, name the branch you picked in your first message, and carry
-on — many teams review onto `development`/`staging`/`trunk` rather than the
+on — many teams review onto `develop`/`staging`/`trunk` rather than the
 repo default, and saying which you chose lets the user redirect you in one word
 instead of discovering it in the summary.
 
@@ -56,7 +56,7 @@ Run these from the repo root. Each exists because the equivalent ad-hoc command
 is either long enough to retype wrong or hides a trap worth encoding.
 
 ```bash
-S=~/.claude/skills/pr-review-round/scripts
+S=<this skill's directory>/scripts
 
 $S/detect_setup.sh [base]           # once per repo: review bot, merge queue, conventions
 python3 $S/queue.py <base>          # triage: every PR, risk tier, who is blocking, AUTO
@@ -102,9 +102,9 @@ wasted move: requesting changes because a branch needs a rebase.
 
 | Tier | What it touches | Depth |
 |---|---|---|
-| `DATA` | migrations, seeds, schema specs, stores, persisted fields | Full independent trace. Migration and revert checks are mandatory. |
-| `AUTH` | auth, JWT, principals, secrets, licensing, tickets | Full independent trace. Confirm what actually enforces the boundary before describing a gap. |
-| `API` | routers, services, SQL builders, DAGs, shared packages | Verify open findings, then trace the changed logic yourself. |
+| `DATA` | migrations, seeds, schema files, stores, persisted fields | Full independent trace. Migration and revert checks are mandatory. |
+| `AUTH` | auth, JWT, principals, secrets, billing and entitlements | Full independent trace. Confirm what actually enforces the boundary before describing a gap. |
+| `API` | routers, services, query builders, scheduled jobs, shared packages | Verify open findings, then trace the changed logic yourself. |
 | `INFRA` | Terraform, workflows, Dockerfiles | Verify findings; check what breaks on rollout, not just at steady state. |
 | `WEB` | components, hooks, styles | Verify findings; check the key logic in both directions. |
 | `DOCS` | markdown, docs-only | Confirm the claims match the diff. |
@@ -178,8 +178,8 @@ leave the approval in place.
 Dismissal overrides another reviewer's judgment, so the message is the whole
 justification. Name the SHA you checked and what you confirmed:
 
-> Both findings fixed at `a1b2c3d`: `store.py:122-197` now reads `OrderPresets`
-> with a legacy fallback, matching the router.
+> Both findings fixed at `a1b2c3d`: `orders/store.py:88-120` now reads
+> `OrderPresets` with a legacy fallback, matching the router.
 
 If you cannot state what you verified, you have not verified it yet. Never
 dismiss conditionally ("if CI comes back clean") — it reads as housekeeping, so

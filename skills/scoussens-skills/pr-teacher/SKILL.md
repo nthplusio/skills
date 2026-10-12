@@ -34,7 +34,7 @@ you, in this order of preference:
 - An explicit URL (`github.com/owner/repo/pull/N`) — unambiguous, use it.
 - A bare number plus the current directory — resolve the repo with
   `gh repo view --json nameWithOwner -q .nameWithOwner`.
-- A description with no number ("that CA bundle fix") — search rather than
+- A description with no number ("that TLS fix") — search rather than
   guess: `gh pr list --search "<terms>" --state all --limit 10` and confirm
   the match with the user if more than one is plausible.
 
@@ -106,15 +106,16 @@ say so plainly and keep the artifact short rather than inflating it.
 
 ## Step 4 — Build the artifact
 
-Load the `artifact-design` skill first to calibrate the visual treatment. This
-is a teaching instrument, not a landing page: information design, real
-hierarchy, restraint with motion. Aim for something the reader will scroll
-through twice, not something that performs at them once.
+If an `artifact-design` skill is available, load it first to calibrate the
+visual treatment. This is a teaching instrument, not a landing page:
+information design, real hierarchy, restraint with motion. Aim for something
+the reader will scroll through twice, not something that performs at them
+once.
 
-**Keep the page mostly teaching.** `artifact-design` says to inline a typeface
-as a `@font-face` data URI rather than link one, because the artifact CSP
-blocks font CDNs and a linked font fails silently. That advice is about *not
-linking*; it is not a licence to embed a family. One run of this skill shipped
+**Keep the page mostly teaching.** Artifact guidance often says to inline a
+typeface as a `@font-face` data URI rather than link one, because the artifact
+CSP blocks font CDNs and a linked font fails silently. That advice is about
+*not linking*; it is not a licence to embed a family. One run of this skill shipped
 a 437KB page that was 87% base64 font — eight weights — which is mostly
 payload the reader waits on before reaching a word of explanation. Budget
 roughly **120KB for fonts and no more than two weights**, and prefer a

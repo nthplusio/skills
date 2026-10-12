@@ -13,8 +13,8 @@ merges.
 ## Terminal summary
 
 Group by outcome, because that is the question being asked. Lead with what
-landed. One line per PR naming the *finding* — "silently reverts the Phase F
-consolidation" is information; "12 files changed" is not.
+landed. One line per PR naming the *finding* — "silently reverts the
+shared-config consolidation" is information; "12 files changed" is not.
 
 ```markdown
 ## Merged — N
@@ -43,8 +43,8 @@ you approve and still take half an hour to land.
 
 ## HTML artifact
 
-Load the `artifact-design` skill first — required for any artifact, and it
-calibrates how much design the page warrants.
+If an `artifact-design` skill is available, load it first — it calibrates how
+much design the page warrants.
 
 The page answers, for a teammate who was not there: what came in, what landed,
 what is blocked and on whose desk, what the notable findings were.
@@ -80,7 +80,7 @@ the argument. Two rules:
   the viewer's browser where you will not see it:
 
   ```python
-  sys.path.insert(0, "~/.claude/skills/pr-review-round/scripts")
+  sys.path.insert(0, str(Path("<this skill's directory>").expanduser() / "scripts"))
   from md_to_html import render as md
   f'<div class="md">{md(review["body"])}</div>'
   ```
