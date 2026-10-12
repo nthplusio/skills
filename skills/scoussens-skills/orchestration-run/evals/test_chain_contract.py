@@ -55,7 +55,7 @@ class ChainContractTests(unittest.TestCase):
         run = descriptions["orchestration-run"]
         self.assertIn("orchestration-setup", run)
         self.assertIn("setting orchestration up", run)
-        self.assertIn("Do not run harness-discovery first", run)
+        self.assertIn("do not run harness-discovery first", run)
         setup = descriptions["orchestration-setup"]
         self.assertIn("orchestration-run", setup)
         self.assertIn("/orchestration-setup", setup)
