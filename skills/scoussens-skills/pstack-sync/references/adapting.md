@@ -25,7 +25,25 @@ A Cursor construct you find that no need covers gets a new need in the catalog (
 
 **Profile the capability, not the construct.** A need names what pstack wants done (choose a model per role, ask the user, read past chats), not the Cursor feature that did it. Look for any way this harness achieves the same outcome, including a combination of features: a persisted per-role model config can be an always-loaded instructions file (to store it) plus a dispatch tool that takes a model or mode (to honor it). Each harness has its own variant; the profile row records that variant precisely enough that every skill applies it the same way. `none` means no combination works.
 
-**Profile from evidence**, in this order: the tools and instructions in your own context (what you can call right now), the harness's skill and configuration docs, its CLI `--help`, and its config directories. Fill the Source column for every row. A support level you cannot source is a guess; mark it `none` until you can. Answer every need the catalog lists, including ones no current file flags; the script reports `profile_gaps` for flagged needs without a row.
+**Fill shared needs from discovery.** Discovery records these needs as harness facts any skill can read. Fill their rows from the entry discovery printed in step 1, and cite `discovery.json` and the field as the Source. When all of a need's fields are `null`, the need is `none`. When the entry lacks a fact a row needs, have `orchestration-discovery` inspect and save it, then fill the row.
+
+| Need | Discovery field |
+| --- | --- |
+| `subagents` | `helpers.invoke`, `helpers.collect`, `helpers.blocks_caller` |
+| `readonly-subagents` | `helpers.readonly` |
+| `custom-subagents` | `helper_term`, `helpers.invoke` |
+| `model-selection` | `models` |
+| `ask-user` | `ask_user` |
+| `background-agents` | `owners.launch`, `owners.resume` |
+| `transcripts` | `owners.inspect` |
+| `worktrees` | `owners.workspace_model`, `owners.launch` |
+| `loop` | `monitoring.wake` |
+| `skill-locations` | `skills.locations`, `skills.reload` |
+| `persistent-rules` | `instructions` |
+
+**Profile pstack's own needs from evidence.** The other needs (`role-model-config`, `modes`, `invocation-control`, `bugbot`, `cursor-product`, and `companion-skills`) are specific to pstack. Check the tools and instructions in your own context first (what you can call right now), then the harness's skill and configuration docs, its CLI `--help`, and its config directories.
+
+Fill the Source column for every row. A support level you cannot source is a guess; mark it `none` until you can. Answer every need the catalog lists, including ones no current file flags; the script reports `profile_gaps` for flagged needs without a row.
 
 ## Adapting a file
 

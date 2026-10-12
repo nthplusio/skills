@@ -13,4 +13,4 @@ How pstack's needs map onto <harness>. Built and maintained per [`../references/
 
 | Need | Support | <harness> equivalent | Source |
 | --- | --- | --- | --- |
-| `<need id>` | native / keep / substitute / partial / none | | |
+| `<need id>` | native / keep / substitute / partial / none | | `discovery.json` and the field, or the evidence |

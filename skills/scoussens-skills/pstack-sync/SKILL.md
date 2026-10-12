@@ -21,6 +21,7 @@ Brings the **managed** pstack skills in line with upstream `cursor/plugins` `pst
 All state lives in `pstack-sync/` beside the skills, so `git` history is the record of every sync.
 
 - `needs.json`: the features pstack relies on and the markers that flag them. Harness-independent.
+- `discovery.json`: what each harness can do, saved by `orchestration-discovery` under the harness's canonical name. Step 1 reads it.
 - `harness/<harness>.md`: the **harness profile**: where skills go and how they reload, and per need whether the harness supports it and how. You write it; [`references/adapting.md`](references/adapting.md) says how.
 - `manifest.json`: what is installed: upstream commit, harness, `exclude`, and per skill and file the upstream and installed hashes and any `pending` adaptation. A skill whose upstream and transforms are unchanged is skipped without reading a file.
 - `transform.json`: how upstream becomes installed, per harness: exact find/replace edits per file, replayed onto new upstream text until upstream rewrites the adapted passage.
@@ -29,10 +30,10 @@ The script owns `manifest.json` and `transform.json`; the only hand edits are `e
 
 ## Steps
 
-Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <command> --repo <skills-dir> --harness <harness>`.
+Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <command> --repo <skills-dir> --harness <harness>`, where `<harness>` comes from step 1.
 
-1. **Identify the harness** as a lowercase slug (`amp`, `claude-code`, `codex`, `cursor`) from your own context. Done when you can name it and the evidence.
-2. **Profile.** Open `harness/<harness>.md`, or start it from `harness/TEMPLATE.md`. Fill or refresh the Destination section and a row for every need in `needs.json`, per `references/adapting.md`. Done when every need has a sourced row and the Destination says where skills go, how to publish, and how to reload.
+1. **Read the harness entry.** Load `orchestration-discovery` with `<skills-dir>/pstack-sync/discovery.json` as its discovery path. pstack needs only the harness entry, so skip repository conventions. Take the harness name from the key discovery saved, and use that key's slug as `<harness>`. Done when discovery has printed the entry and you can name its key and slug.
+2. **Profile.** Open `harness/<harness>.md`, or start it from `harness/TEMPLATE.md`. Fill or refresh the Destination section and a row for every need in `needs.json`, per `references/adapting.md`. Fill the needs discovery records from the entry, and profile only pstack's own needs by hand. Done when every need has a sourced row and the Destination says where skills go, how to publish, and how to reload.
 3. **Prepare the skills directory** as the profile's Destination says (for a git-backed directory: up to date with its remote, clean, writable). Done when `git status` is clean.
 4. **Sync** (`sync`). Done when you hold the JSON report. If `added`, `updated`, `removed`, `needs_adaptation`, `local_drift`, and `profile_gaps` are all empty, skip to step 8.
 5. **Adapt** every file in `needs_adaptation` by editing it in place, per `references/adapting.md`. Fill any `profile_gaps` first. This is the step most likely to be rushed: read each flagged file in full. Then **record** the files you adapted or judged fine as they are (`record <skill>/<file> ...`); recording accepts every marker left in them. For `local_drift`, record the file if the edit is an adaptation, otherwise restore it with `git checkout`. Rerun `sync`. Done when the rerun reports no `needs_adaptation`, `local_drift`, or `profile_gaps`, apart from skills you propose to exclude.
