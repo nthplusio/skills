@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
+    "check:private": "node scripts/check-private-terms.mjs",
     "check:builder": "node scripts/check-builder-agrees.mjs",
     "test:orchestration": "python3 -B -m unittest discover -s skills/scoussens-skills/orchestration-run/evals -v",
     "test:skills": "node scripts/test-skills.mjs",

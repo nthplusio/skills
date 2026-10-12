@@ -181,6 +181,20 @@ It warns when `SKILL.md` passes 500 lines or a reference file passes 300 lines
 without a `Contents` heading. Skills bundled in `plugins/*/skills/` get the same
 checks.
 
+### The private-terms check
+
+```bash
+npm run check:private
+```
+
+Skills here are installed into other repositories, so no tracked file may name
+an employer, client, person, private repository, or private tracker prefix. The
+patterns themselves are private, so they never live in this repository. The
+check reads one case-insensitive regular expression per line from the
+untracked `.private-terms` file, or from the `PRIVATE_TERMS` repository secret
+in CI. It reports matches by file, line, and pattern number, never the pattern.
+With no patterns configured, it warns and passes.
+
 ### The builder-agreement check
 
 ```bash
