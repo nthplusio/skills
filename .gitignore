@@ -12,3 +12,6 @@ __pycache__/
 # Claude Code writes a plugin's API types here when it loads the plugin;
 # they are build-specific, so each contributor's engine regenerates them.
 plugins/*/.claude-plugin/types/
+
+# Private patterns for scripts/check-private-terms.mjs; never commit.
+.private-terms
