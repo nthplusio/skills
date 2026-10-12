@@ -254,9 +254,9 @@ class DashboardTests(unittest.TestCase):
         self.data["presentation"]["auto_refresh"] = True
         for interval, hold in ((1, None), (17, "Paused for user input"), (137, "Run complete")):
             with self.subTest(interval=interval, hold=hold):
-                self.data["monitoring"] = {"interval_seconds": interval, "hold": hold, "next_check_at": None}
+                self.data["monitoring"].update(interval_seconds=interval, hold=hold, next_check_at=None)
                 if hold == "Run complete":
-                    self.data.update(tasks=[], decisions=[], evidence=[], history=[])
+                    self.data.update(tasks=[], decisions=[], evidence=[], history=[], approvals=[])
                 html = render(self.data, hosted=True)
                 self.assertEqual(Page(html).refresh, str(interval))
                 unit = "second" if interval == 1 else "seconds"
@@ -265,7 +265,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.data["updated_at"], "2026-10-08T14:30:00-05:00")
 
     def test_absent_or_unavailable_auto_refresh_keeps_static_snapshot(self):
-        self.data["monitoring"] = {"interval_seconds": 17}
+        self.data["monitoring"].update(interval_seconds=17)
         for explicit in (False, True):
             with self.subTest(explicit=explicit):
                 if explicit:
@@ -281,11 +281,12 @@ class DashboardTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "presentation.auto_refresh must be boolean"):
                     render(self.data)
         self.data["presentation"]["auto_refresh"] = True
+        del self.data["monitoring"]["interval_seconds"]
         with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
             render(self.data)
         for interval in (None, 0, -1, True, "17", 1.5):
             with self.subTest(interval=interval):
-                self.data["monitoring"] = {"interval_seconds": interval}
+                self.data["monitoring"].update(interval_seconds=interval)
                 with self.assertRaisesRegex(ValueError, "positive integer monitoring.interval_seconds"):
                     render(self.data)
 
@@ -429,17 +430,132 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(html.count('<script>'), 1)
 
     def test_empty_run_and_cli_failure_preserve_previous_dashboard(self):
-        self.data.update(tasks=[], decisions=[], evidence=[], history=[])
+        self.data.update(tasks=[], decisions=[], evidence=[], history=[], approvals=[])
         self.assertIn("No items are assigned yet.", render(self.data))
         with tempfile.TemporaryDirectory() as directory:
             status, output = Path(directory) / "status.json", Path(directory) / "dashboard.html"
             output.write_text("previous useful dashboard")
-            self.data["schema_version"] = 2
+            self.data["schema_version"] = 99
             status.write_text(json.dumps(self.data))
             result = subprocess.run([sys.executable, str(RUNNER / "scripts" / "render_dashboard.py"), str(status), str(output)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("unsupported dashboard schema_version", result.stderr)
             self.assertEqual(output.read_text(), "previous useful dashboard")
+
+
+class LifecycleTests(unittest.TestCase):
+    """Schema 2 rules: publication scope, durable code, runtime, approvals and idle scans."""
+
+    def setUp(self):
+        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.tasks = {task["id"]: task for task in self.data["tasks"]}
+
+    def test_schema_1_records_keep_rendering_without_lifecycle_fields(self):
+        self.data["schema_version"] = 1
+        self.data.pop("approvals")
+        self.data["extra_notes"] = "legacy field"
+        for task in self.data["tasks"]:
+            task.pop("runtime")
+        self.assertIn("Orchestration preview", render(self.data))
+
+    def test_unknown_top_level_fields_are_rejected(self):
+        self.data["feedback_coordination"] = {}
+        with self.assertRaisesRegex(ValueError, "unknown top-level field feedback_coordination"):
+            render(self.data)
+
+    def test_run_choices_name_target_stage_publication_scope_and_idle_limit(self):
+        for field, value, message in (("target_stage", "review-ready PRs", "target_stage must name a business stage"),
+                                      ("publication_scope", "push", "publication_scope must be one of"),
+                                      ("idle_scan_limit", 0, "idle_scan_limit must be a positive integer")):
+            with self.subTest(field=field):
+                data = deepcopy(self.data)
+                data["run_choices"][field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    render(data)
+
+    def test_publication_request_needs_a_publication_scope(self):
+        self.data["run_choices"]["publication_scope"] = "none"
+        with self.assertRaisesRegex(ValueError, "OPS-105: code publication is requested but this run's publication scope is none"):
+            render(self.data)
+
+    def test_closed_owner_with_unpublished_code_needs_durable_copy(self):
+        owner = self.tasks["UI-101"]["owner"]
+        owner.pop("retained_code")
+        with self.assertRaisesRegex(ValueError, "UI-101: unpublished code must be kept outside the owner's workspace"):
+            render(self.data)
+        owner["retained_code"] = {"kind": "bundle", "ref": "proof/ui-101/pinning.bundle"}
+        with self.assertRaisesRegex(ValueError, "retained_code.checksum"):
+            render(self.data)
+        owner["retained_code"] = {"kind": "pushed_branch", "ref": "origin/ui-101-pinning"}
+        self.assertIn("Pushed branch <code>origin/ui-101-pinning</code>", render(self.data))
+
+    def test_finishing_needs_runtime_released_or_retained_with_reason_and_date(self):
+        runtime = self.tasks["SHIP-107"]["runtime"]
+        runtime.append({"id": "orb", "kind": "sandbox", "ref": "orb-107", "state": "held"})
+        with self.assertRaisesRegex(ValueError, "SHIP-107: release or retain runtime orb"):
+            render(self.data)
+        runtime[-1].update(state="retained")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.reason"):
+            render(self.data)
+        runtime[-1].update(reason="Browser session for the expiry check")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.until needs an ISO 8601 timestamp"):
+            render(self.data)
+
+    def test_retention_past_its_date_is_called_out_for_cleanup(self):
+        html = render(self.data)
+        self.assertNotIn("past its cleanup date", html)
+        self.assertIn("Kept until 2026-10-15T12:00:00-05:00", html)
+        self.tasks["SHIP-107"]["runtime"][0]["until"] = "2026-10-08T12:00:00-05:00"
+        html = render(self.data)
+        self.assertIn('href="#runtime">1 kept resource is past its cleanup date', html)
+        self.assertIn("Cleanup overdue since 2026-10-08T12:00:00-05:00", html)
+
+    def test_expired_approval_cannot_stay_active(self):
+        approval = self.data["approvals"][1]
+        approval["state"] = "active"
+        with self.assertRaisesRegex(ValueError, "A2: approval expired; mark it expired and ask again"):
+            render(self.data)
+        approval["state"] = "expired"
+        self.assertIn("<b>A2</b> Expired", render(self.data))
+        approval["task_ids"] = ["NOPE-1"]
+        with self.assertRaisesRegex(ValueError, "A2: approval names an unknown task"):
+            render(self.data)
+
+    def test_idle_scans_with_only_people_gated_work_must_stop_scheduling(self):
+        for task in self.data["tasks"]:
+            if task["work"]["state"] not in ("delivered", "no_change_needed", "cancelled", "deferred", "needs_decision"):
+                task["work"]["state"] = "waiting"
+                task["blocker"] = task["blocker"] or "Waiting on a person"
+        self.data["monitoring"]["unchanged_scans"] = 3
+        with self.assertRaisesRegex(ValueError, "3 unchanged scans with only people-gated work left"):
+            render(self.data)
+        self.data["monitoring"].update(next_check_at=None, hold="Waiting on Q1; resume when answered")
+        render(self.data)
+        self.data["monitoring"].update(next_check_at="2026-10-08T14:40:00-05:00", unchanged_scans=2)
+        render(self.data)
+
+    def test_served_page_check_compares_bytes_without_a_browser(self):
+        import http.server, threading, functools
+        with tempfile.TemporaryDirectory() as directory:
+            page = Path(directory) / "index.html"
+            page.write_text(render(self.data))
+            handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=directory)
+            handler.log_message = lambda *args: None
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                url = f"http://127.0.0.1:{server.server_port}/index.html"
+                command = [sys.executable, str(RUNNER / "scripts" / "check_served.py"), str(page)]
+                self.assertIn("PASS", subprocess.run(command + [url], capture_output=True, text=True).stdout)
+                local = Path(directory) / "local.html"
+                local.write_text("newer render")
+                result = subprocess.run([command[0], command[1], str(local), url], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 1)
+                result = subprocess.run(command + [url.replace("index", "missing")], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("LIMITED", result.stderr)
+            finally:
+                server.shutdown()
 
 
 class ConfigTests(unittest.TestCase):

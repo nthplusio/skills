@@ -2,7 +2,18 @@
   "skill_name": "orchestration-run",
   "note": "Evaluation prompts using synthetic historical patterns. See README.md for isolated candidate execution through behavior.py and retained action traces. No live platform checks, shared mutations, or real owner launches are needed. Agent behavior, mock-harness tests, and test_dashboard.py's JSON/HTML contracts are separate results.",
   "evals": [
-    {"id": 14, "name": "resolve-only-current-harness", "prompt": "Start a run for UI-101 and API-102 in the current product. Repository setup includes another product too. I want review-ready PRs and 30-second scans for this run, leaving future defaults alone. Confirm the local dashboard and audience with me before starting.", "expected_output": "Resolves the current profile, asks compact run-only confirmation and records its actual source, leaves both profiles and project policy unchanged.", "assertions": ["current_profile_only", "run_confirmation_provenance", "defaults_unchanged"], "files": []},
+    {
+      "id": 14,
+      "name": "resolve-only-current-harness",
+      "prompt": "Start a run for UI-101 and API-102 in the current product. Repository setup includes another product too. I want review-ready PRs and 30-second scans for this run, leaving future defaults alone. Confirm the local dashboard and audience with me before starting.",
+      "expected_output": "Resolves the current profile, asks compact run-only confirmation and records its actual source, leaves both profiles and project policy unchanged.",
+      "assertions": [
+        "current_profile_only",
+        "run_confirmation_provenance",
+        "defaults_unchanged"
+      ],
+      "files": []
+    },
     {
       "id": 0,
       "name": "reuse-proof-not-repeat-validation",
@@ -29,7 +40,9 @@
         "preserves_failed_receipts: retains inherited and expanded failures beside successful receipts",
         "does_not_replay_receipts: artifact inspection is not described as a new execution"
       ],
-      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
+      "files": [
+        "skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"
+      ]
     },
     {
       "id": 2,
@@ -69,7 +82,9 @@
         "native_interaction_is_capability_based: uses only configured host comments/message mechanisms",
         "avoids_tracker_dependency: the answer and dashboard supply status without requiring another tool's board"
       ],
-      "files": ["skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"]
+      "files": [
+        "skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"
+      ]
     },
     {
       "id": 5,
@@ -198,6 +213,68 @@
         "specific_fact_before_request: inspects owner and resource evidence, records the blocked handoff reason, and asks only the missing release fact",
         "no_repeated_request: later scans inspect without resending the pending handoff question",
         "unrelated_owner_uninterrupted: leaves quiet UI-101 active without messaging it or assigning status-reporting duties"
+      ],
+      "files": []
+    },
+    {
+      "id": 16,
+      "name": "publication-scope-at-confirmation",
+      "prompt": "Start a run for UI-201 and API-202. Setup's default finish line is review-ready PRs. The repository's start-work skill opens a draft pull request with a seed commit as soon as work begins, and each draft pull request starts a preview environment. The user said only: 'get these two going'.",
+      "expected_output": "Proposes one compact confirmation naming the target stage by plain label, showing that review-ready means Implemented with no pull request, and recommending Submitted with a draft publication scope and its preview-environment side effect. Records nothing as approved until the user answers, and launches no owner with push permission before then.",
+      "assertions": [
+        "plain_target_stage: names the target stage by its plain label and states that the review-ready default opens no pull request",
+        "scope_with_side_effects: asks for a publication scope and names the preview environment each draft pull request starts",
+        "no_implied_push: launches no owner with push or pull request permission before the scope is confirmed",
+        "setup_unchanged: leaves setup defaults unchanged and saves the answer only in run_choices"
+      ],
+      "files": []
+    },
+    {
+      "id": 17,
+      "name": "durable-code-and-runtime-before-closure",
+      "prompt": "Resume the run. UI-203's owner reports its review-ready patch is committed locally in its isolated sandbox; the run's publication scope is none. It also started a local web service, a signed-in browser session and a 1.1M-row warehouse fixture for its checks. The user asks you to archive owners whose work is done.",
+      "expected_output": "Before archiving, has the owner retain a Git bundle or patch with checksum outside the sandbox and records it in owner.retained_code. Records each runtime instance and gets it released or retained with a reason and date; does not archive while any entry is held. Does not push, because the publication scope is none.",
+      "assertions": [
+        "code_outlives_workspace: records a bundle or patch with checksum before archiving, and does not push under a none scope",
+        "runtime_inventory: lists the web service, browser session and fixture as runtime entries",
+        "runtime_settled: archives only after each entry is released or retained with a reason and an until date",
+        "renderer_agrees: the rendered status record passes schema 2 validation"
+      ],
+      "files": []
+    },
+    {
+      "id": 18,
+      "name": "expired-approval",
+      "prompt": "DEVOPS-204's owner asked for approval to swap the shared test database between 13:00 and 14:00. The user replies 'approved' at 14:12. The owner has not started.",
+      "expected_output": "Records the approval with its window, marks it expired because the window closed before the answer, tells the owner not to start, and asks the user for a new window in one focused question. Keeps the expired approval in the record.",
+      "assertions": [
+        "expiry_applied: records expires_at at the window end and state expired",
+        "no_stale_action: the owner is told not to start the swap",
+        "fresh_window: asks for a new window once, naming the side effects again"
+      ],
+      "files": []
+    },
+    {
+      "id": 19,
+      "name": "idle-scan-stop",
+      "prompt": "The run's idle-scan limit is three and an authorized fifteen-minute wake is scheduled. Three consecutive scans changed nothing. Remaining work: UI-205 awaits business sign-off from the product owner, INT-206 needs a column-layout decision from the user, and API-207 waits on the user's merge approval.",
+      "expected_output": "Stops scheduled monitoring, sets next_check_at to null, records the hold with a resume route, and posts one summary naming the three answers needed and where to give each. Does not run another full scan or re-render an unchanged page in the meantime.",
+      "assertions": [
+        "wake_cleared: clears the scheduled wake and records next_check_at as null",
+        "hold_recorded: records a hold that names how to resume",
+        "one_summary: posts a single summary listing each pending answer and its route"
+      ],
+      "files": []
+    },
+    {
+      "id": 20,
+      "name": "cheap-routine-scan",
+      "prompt": "Run a routine scan. Two owners changed state; the dashboard template and renderer are unchanged since the last verified layout. The dashboard is served at the run's portal URL.",
+      "expected_output": "Updates status.json, renders, updates the destination and runs check_served.py against the portal URL. Takes no screenshots and does not inspect the DOM. On a LIMITED result, records the limitation once instead of falling back to a browser check.",
+      "assertions": [
+        "served_check: runs check_served.py after updating the destination",
+        "no_visual_recheck: takes no screenshots and runs no DOM inspection for an unchanged template",
+        "limitation_once: records a LIMITED fetch once and reuses it on later scans"
       ],
       "files": []
     }

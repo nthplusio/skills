@@ -1,11 +1,32 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "run_id": "template-preview",
   "title": "Orchestration preview",
   "goal": "Get each fix ready for review, and release only the changes we've been asked to ship.",
   "updated_at": "2026-10-08T14:30:00-05:00",
   "config_path": "/example/local/harness/config.json",
   "notice": "Synthetic examples based on historical patterns. Not live ticket status or real proof.",
+  "run_choices": {
+    "ticket_ids": ["UI-101", "API-102", "REVIEW-103", "API-104", "OPS-105", "ENV-106", "SHIP-107", "TRIAGE-108", "UI-109", "UI-110", "UI-111"],
+    "target_stage": "pr_readiness",
+    "publication_scope": "draft",
+    "idle_scan_limit": 3,
+    "destination": "local",
+    "interval_seconds": 600,
+    "confirmed_from": "Synthetic run confirmation: Implemented target, draft pull requests allowed, ten-minute scans, stop after three unchanged scans."
+  },
+  "monitoring": {
+    "mode": "Synthetic timed inspection while the coordinator stays active",
+    "interval_seconds": 600,
+    "last_checked_at": "2026-10-08T14:30:00-05:00",
+    "next_check_at": "2026-10-08T14:40:00-05:00",
+    "hold": null,
+    "unchanged_scans": 0
+  },
+  "approvals": [
+    {"id": "A1", "scope": "Push owner branches and open draft pull requests for this run's tickets", "task_ids": [], "side_effects": "Each draft pull request starts its preview environment.", "receipt": "Synthetic run confirmation", "granted_at": "2026-10-08T09:00:00-05:00", "expires_at": null, "state": "active"},
+    {"id": "A2", "scope": "Swap the shared test database during one maintenance window", "task_ids": ["SHIP-107"], "side_effects": "Readers see the replacement database; the original is kept for rollback.", "receipt": "Synthetic answer to Q-window", "granted_at": "2026-10-08T12:00:00-05:00", "expires_at": "2026-10-08T13:00:00-05:00", "state": "consumed"}
+  ],
   "presentation": {
     "destination": "local",
     "local_path": "/example/local/template-preview/dashboard.html",
@@ -29,8 +50,8 @@
       "id": "UI-101", "title": "Keep the pinned column visible",
       "done_when": "The isolated pinning fix and required tests are prepared for review.",
       "work": {"state": "delivered", "summary": "Fixed and ready for review. Releasing it wasn't part of this request.", "reason": "The assigned review-ready patch and local proof are retained. Publication was not requested.", "evidence": ["E1"]},
-      "owner": {"id": "ui-owner", "label": "UI owner", "href": "", "state": "closed", "location": "Retained fixture worktree and branch", "handoff": "Pinning patch and E1 retained. Resume this owner for pinning follow-up."},
-      "resources": ["pinning region only"], "blocked_by": [], "blocker": "", "next_action": "Complete. Reuse E1 for this unchanged claim.", "obligations": [],
+      "owner": {"id": "ui-owner", "label": "UI owner", "href": "", "state": "closed", "location": "Retained fixture worktree and branch", "handoff": "Pinning patch and E1 retained. Resume this owner for pinning follow-up.", "retained_code": {"kind": "bundle", "ref": "proof/ui-101/pinning.bundle", "checksum": "sha256:0f3c9a"}},
+      "resources": ["pinning region only"], "runtime": [], "blocked_by": [], "blocker": "", "next_action": "Complete. Reuse E1 for this unchanged claim.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -47,7 +68,7 @@
       "done_when": "The focused fix meets its agreed local review criteria, with inherited failures disclosed.",
       "work": {"state": "working", "summary": "The fix is ready. The team is finishing the hand-over.", "reason": "The patch is ready; runtime release and handoff remain."},
       "owner": {"id": "api-owner", "label": "API owner", "href": "", "state": "active", "location": "Fixture API worktree", "handoff": ""},
-      "resources": ["API persistence files", "runtime lane until handoff"], "blocked_by": [], "blocker": "", "next_action": "Retain the final handoff, release the runtime lane, and close the owner.", "obligations": [],
+      "resources": ["API persistence files", "runtime lane until handoff"], "runtime": [{"id": "lane", "kind": "authenticated runtime lane", "ref": "fixture-lane-1", "state": "held"}], "blocked_by": [], "blocker": "", "next_action": "Retain the final handoff, release the runtime lane, and close the owner.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -64,7 +85,7 @@
       "done_when": "The required review is actually posted and its result retained.",
       "work": {"state": "blocked", "summary": "A required code review didn't come through. The team is chasing it.", "reason": "The workflow passed but posted no review."},
       "owner": {"id": "review-owner", "label": "Review owner", "href": "", "state": "waiting", "location": "Fixture review workflow", "handoff": ""},
-      "resources": ["review workflow"], "blocked_by": ["EXT reviewer result"], "blocker": "The workflow passed but posted no review.", "next_action": "Ask the review owner to recover the missing result. Do not replay the green job by default.", "obligations": ["Required posted review"],
+      "resources": ["review workflow"], "runtime": [], "blocked_by": ["EXT reviewer result"], "blocker": "The workflow passed but posted no review.", "next_action": "Ask the review owner to recover the missing result. Do not replay the green job by default.", "obligations": ["Required posted review"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -81,7 +102,7 @@
       "done_when": "The three reproduced regressions are corrected and proven by the existing owner.",
       "work": {"state": "working", "summary": "Testing found three problems. The team is fixing them.", "reason": "The owner is correcting three reproduced regressions."},
       "owner": {"id": "hierarchy-owner", "label": "Hierarchy owner", "href": "", "state": "active", "activity": "Two subagents are fixing the regressions; a third reruns the expanded checks.", "location": "Fixture hierarchy worktree", "handoff": ""},
-      "resources": ["hierarchy transformation"], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
+      "resources": ["hierarchy transformation"], "runtime": [], "blocked_by": [], "blocker": "Expanded checks disproved the earlier ready verdict.", "next_action": "Keep the same owner on the three corrections; preserve E5 as superseded.", "obligations": ["Three behavioral corrections"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -98,7 +119,7 @@
       "done_when": "Configuration publication fits explicitly approved side effects.",
       "work": {"state": "needs_decision", "summary": "Ready to go, but releasing it would affect more than planned. It needs your approval.", "reason": "Publication would trigger a broader deployment; approval is missing."},
       "owner": {"id": "reviewer-owner", "label": "Reviewer owner", "href": "", "state": "waiting", "location": "Fixture reviewer worktree", "handoff": ""},
-      "resources": ["reviewer configuration"], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
+      "resources": ["reviewer configuration"], "runtime": [], "blocked_by": ["EXT user approval Q1"], "blocker": "Publishing to the integration branch triggers an unapproved broader deploy.", "next_action": "Resolve Q1. The old hash is not a separate behavioral hold.", "obligations": ["Publication approval includes indirect deployment effects"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -115,7 +136,7 @@
       "done_when": "The requested runtime check finishes in an exclusive lane.",
       "work": {"state": "blocked", "summary": "Waiting for a shared test environment that another item is using.", "reason": "API-102 holds the lane; the earlier attempt was interrupted."},
       "owner": {"id": "runtime-owner", "label": "Runtime owner", "href": "", "state": "blocked", "activity": "Paused until API-102 releases the shared runtime environment.", "location": "Fixture authenticated environment", "handoff": ""},
-      "resources": ["one authenticated runtime lane"], "blocked_by": ["API-102"], "blocker": "API-102 holds the lane; the earlier attempt was interrupted.", "next_action": "Reserve the lane after API-102 releases it. Other tickets continue.", "obligations": ["Finish the assigned runtime check"],
+      "resources": ["one authenticated runtime lane"], "runtime": [], "blocked_by": ["API-102"], "blocker": "API-102 holds the lane; the earlier attempt was interrupted.", "next_action": "Reserve the lane after API-102 releases it. Other tickets continue.", "obligations": ["Finish the assigned runtime check"],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -132,7 +153,7 @@
       "done_when": "Publication, intended runtime revision, and requested business checks each have proof.",
       "work": {"state": "delivered", "summary": "Released, and signed off by the business.", "reason": "The requested publication, deployment and business checks are accepted.", "evidence": ["E9"]},
       "owner": {"id": "delivery-owner", "label": "Delivery owner", "href": "", "state": "closed", "location": "Retained fixture delivery worktree", "handoff": "Independent delivery observations retained as E9. Resume or transfer explicitly for follow-up."},
-      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Complete. Evidence remains available after owner closure.", "obligations": [],
+      "resources": [], "runtime": [{"id": "rollback-db", "kind": "database copy", "ref": "FIXTURE_ORIGINAL_20261008", "state": "retained", "reason": "Rollback copy of the replaced test database", "until": "2026-10-15T12:00:00-05:00"}, {"id": "preview", "kind": "preview environment", "ref": "pr-107 preview", "state": "released"}], "blocked_by": [], "blocker": "", "next_action": "Complete. Evidence remains available after owner closure.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "verified", "note": "Approach chosen from two options", "evidence": ["E12"]},
@@ -149,7 +170,7 @@
       "done_when": "Determine whether a current defect requires a change.",
       "work": {"state": "no_change_needed", "summary": "Investigated. Nothing is broken, so no change is needed.", "reason": "Investigation found no current defect; no implementation is needed.", "evidence": ["E10"]},
       "owner": {"id": "triage-owner", "label": "Triage owner", "href": "", "state": "closed", "location": "Retained fixture investigation", "handoff": "E10 retains the investigation and its scope."},
-      "resources": [], "blocked_by": [], "blocker": "", "next_action": "No follow-up in this run.", "obligations": [],
+      "resources": [], "runtime": [], "blocked_by": [], "blocker": "", "next_action": "No follow-up in this run.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "verified", "note": "Investigation closed the question", "evidence": ["E10"]},
@@ -166,7 +187,7 @@
       "done_when": "Reduce the agreed exchange latency.",
       "work": {"state": "cancelled", "summary": "Dropped from this round at your request.", "reason": "The user removed this optimization from the run.", "receipt": "Synthetic Q-cancel answer: cancel UI-109 and withdraw its implementation request."},
       "owner": {"id": "latency-owner", "label": "Latency owner", "href": "", "state": "complete", "location": "Retained fixture notes", "handoff": "Cancellation scope retained; no runtime reservation remains. Closure is unavailable."},
-      "resources": [], "blocked_by": [], "blocker": "", "next_action": "No implementation follow-up; close the owner when supported.", "obligations": [],
+      "resources": [], "runtime": [], "blocked_by": [], "blocker": "", "next_action": "No implementation follow-up; close the owner when supported.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -183,7 +204,7 @@
       "done_when": "Restore the agreed draft after logout.",
       "work": {"state": "deferred", "summary": "Postponed until the sign-in fix is accepted.", "reason": "The user moved draft recovery out of this run.", "receipt": "Synthetic Q-auth answer: defer UI-110 until the authentication fix is accepted.", "revisit": "After the authentication fix is accepted."},
       "owner": {"id": "recovery-owner", "label": "Recovery owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Deferral decision and trigger retained. Reuse this owner for this ticket."},
-      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Reassess the trigger on resume.", "obligations": [],
+      "resources": [], "runtime": [], "blocked_by": [], "blocker": "", "next_action": "Reassess the trigger on resume.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
@@ -200,7 +221,7 @@
       "done_when": "Restore the requested selection behavior.",
       "work": {"state": "deferred", "summary": "Postponed to the next planning cycle.", "reason": "The user postponed this change to planning.", "receipt": "Synthetic Q-plan answer: defer UI-111 to the next planning cycle.", "revisit": "At the next planning cycle."},
       "owner": {"id": "selection-owner", "label": "Selection owner", "href": "", "state": "closed", "location": "Retained fixture brief", "handoff": "Planning trigger retained; resume this owner only within authorized scope."},
-      "resources": [], "blocked_by": [], "blocker": "", "next_action": "Bring the ticket back to planning.", "obligations": [],
+      "resources": [], "runtime": [], "blocked_by": [], "blocker": "", "next_action": "Bring the ticket back to planning.", "obligations": [],
       "milestones": {
         "defined": {"state": "verified", "note": "Ticket states the outcome and acceptance criteria", "evidence": ["E11"]},
         "researched": {"state": "not_requested", "note": "", "evidence": []},
