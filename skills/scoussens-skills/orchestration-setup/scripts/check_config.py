@@ -13,6 +13,9 @@ from check_discovery import check as check_discovery, text, texts
 
 
 ORCHESTRATION_SKILLS = {"orchestration-discovery", "orchestration-setup", "orchestration-run"}
+# Business stage keys from orchestration-run's dashboard data contract.
+STAGES = ("defined", "researched", "pr_readiness", "code_publication", "review", "verification",
+          "deployment", "business_acceptance")
 
 
 def check(config, discovery):
@@ -32,6 +35,11 @@ def check(config, discovery):
             raise ValueError("orchestration skills belong to the coordinator, not shared workers")
 
     shared(config["project"]["shared_skills"])
+    stage_skills = config["project"].get("stage_skills", {})
+    if not isinstance(stage_skills, dict) or set(stage_skills) - set(STAGES):
+        raise ValueError(f"project.stage_skills keys must be business stages: {', '.join(STAGES)}")
+    for values in stage_skills.values():
+        shared(values)
     if not isinstance(config["harnesses"], dict) or not config["harnesses"]:
         raise ValueError("harnesses must contain a confirmed setup profile")
     for name, profile in config["harnesses"].items():
@@ -70,6 +78,7 @@ def resolve(config_path, harness_name=None):
                  config_path=str(config_path), run_root=str((config_path.parent / root).resolve()),
                  ticket_policy=deepcopy(config["project"]["ticket_policy"]), defaults=deepcopy(profile["defaults"]))
     facts["skills"]["shared"] = list(dict.fromkeys(config["project"]["shared_skills"] + profile["shared_skills"]))
+    facts["skills"]["stages"] = deepcopy(config["project"].get("stage_skills", {}))
     return facts
 
 
