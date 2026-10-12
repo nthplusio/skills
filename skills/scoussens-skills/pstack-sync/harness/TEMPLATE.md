@@ -11,6 +11,8 @@ How pstack's needs map onto <harness>. Built and maintained per [`../references/
 
 ## Needs
 
+For a need that harness discovery answers, cite the field in Source, for example `discovery.json helpers.invoke`; see [`../references/adapting.md`](../references/adapting.md).
+
 | Need | Support | <harness> equivalent | Source |
 | --- | --- | --- | --- |
 | `<need id>` | native / keep / substitute / partial / none | | |

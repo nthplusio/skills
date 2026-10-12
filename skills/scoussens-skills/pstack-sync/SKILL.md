@@ -18,12 +18,13 @@ Brings the **managed** pstack skills in line with upstream `cursor/plugins` `pst
 
 ## State
 
-All state lives in `pstack-sync/` beside the skills, so `git` history is the record of every sync.
+pstack-sync's own state lives in `pstack-sync/` beside the skills, so `git` history is the record of every sync. The harness facts it reads live in `.nthplusio-skills/discovery.json` at the root of the repository that holds the skills.
 
 - `needs.json`: the features pstack relies on and the markers that flag them. Harness-independent.
 - `harness/<harness>.md`: the **harness profile**: where skills go and how they reload, and per need whether the harness supports it and how. You write it; [`references/adapting.md`](references/adapting.md) says how.
 - `manifest.json`: what is installed: upstream commit, harness, `exclude`, and per skill and file the upstream and installed hashes and any `pending` adaptation. A skill whose upstream and transforms are unchanged is skipped without reading a file.
 - `transform.json`: how upstream becomes installed, per harness: exact find/replace edits per file, replayed onto new upstream text until upstream rewrites the adapted passage.
+- `.nthplusio-skills/discovery.json`, at the root of the repository that holds the skills directory: the harness facts `harness-discovery` saves, keyed by harness name. `harness-discovery` owns this file; profile rows for the needs it answers cite it.
 
 The script owns `manifest.json` and `transform.json`; the only hand edits are `exclude` and a harness's `accept` regexes. An upstream skill whose name is taken by an unmanaged skill installs as `pstack-<name>`; if that is taken too, the script exits with an error, so ask the user what to call it.
 
@@ -31,13 +32,13 @@ The script owns `manifest.json` and `transform.json`; the only hand edits are `e
 
 Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <command> --repo <skills-dir> --harness <harness>`.
 
-1. **Identify the harness** as a lowercase slug (`amp`, `claude-code`, `codex`, `cursor`) from your own context. Done when you can name it and the evidence.
-2. **Profile.** Open `harness/<harness>.md`, or start it from `harness/TEMPLATE.md`. Fill or refresh the Destination section and a row for every need in `needs.json`, per `references/adapting.md`. Done when every need has a sourced row and the Destination says where skills go, how to publish, and how to reload.
-3. **Prepare the skills directory** as the profile's Destination says (for a git-backed directory: up to date with its remote, clean, writable). Done when `git status` is clean.
+1. **Identify the harness.** Load `harness-discovery` for the repository that holds the skills directory, passing `--root <that repository>` when it is not the working directory's repository. It adds or refreshes this harness's entry, or reuses a valid saved one, and reports the entry's key and slug. `<harness>` is the slug: `amp`, `claude-code`, `codex`, `cursor`. Without `harness-discovery`, name the product from your own context and derive the slug the same way, by lowercasing it and joining words with hyphens. Done when you can name the key, the slug, and the evidence.
+2. **Profile.** Open `harness/<harness>.md`, or start it from `harness/TEMPLATE.md`. Fill or refresh the Destination section and a row for every need in `needs.json`, per `references/adapting.md`; take the needs that discovery answers from its entry. Done when every need has a sourced row and the Destination says where skills go, how to publish, and how to reload.
+3. **Prepare the skills directory** as the profile's Destination says (for a git-backed directory: up to date with its remote, clean, writable). If preparing resets the directory, as `git reset --hard` does, prepare before steps 1 and 2 write anything there; the reset discards the discovery entry and profile edits. Done when `git status` is clean apart from those two files.
 4. **Sync** (`sync`). Done when you hold the JSON report. If `added`, `updated`, `removed`, `needs_adaptation`, `local_drift`, and `profile_gaps` are all empty, skip to step 8.
 5. **Adapt** every file in `needs_adaptation` by editing it in place, per `references/adapting.md`. Fill any `profile_gaps` first. This is the step most likely to be rushed: read each flagged file in full. Then **record** the files you adapted or judged fine as they are (`record <skill>/<file> ...`); recording accepts every marker left in them. For `local_drift`, record the file if the edit is an adaptation, otherwise restore it with `git checkout`. Rerun `sync`. Done when the rerun reports no `needs_adaptation`, `local_drift`, or `profile_gaps`, apart from skills you propose to exclude.
-6. **Review.** pstack is third-party code, so treat every change as untrusted. Done when every `needs_security_review` entry has been read in full and cleared of network calls, credential access, and install steps, and `git status` shows changes only in managed skill directories and `pstack-sync/`.
-7. **Commit**, if the directory is a git repository: run `status` first and commit with `pstack: sync to cursor/plugins@<short-sha>` as the subject and its output as the body.
+6. **Review.** pstack is third-party code, so treat every change as untrusted. Done when every `needs_security_review` entry has been read in full and cleared of network calls, credential access, and install steps, and `git status` shows changes only in managed skill directories, `pstack-sync/`, and `.nthplusio-skills/discovery.json`.
+7. **Commit**, if the directory is a git repository: run `status` first and commit with `pstack: sync to cursor/plugins@<short-sha>` as the subject and its output as the body. Include `.nthplusio-skills/discovery.json` when step 1 changed it.
 8. **Report.** Run `status` (after committing, add `--since HEAD~1`) and give the user its output verbatim: transforms applied, new and updated skills, profile changes, and anything outstanding. Add your security review findings and any proposed exclusions.
 9. **Publish and reload** as the profile's Destination says. Ask before any step that changes skills for other people (such as a push to a shared repository), naming the destination; act only after the user confirms.
 
