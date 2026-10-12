@@ -1,8 +1,8 @@
 # Making the teacher button copy reliably
 
-Reached from Step 7 while writing the button's click handler. The measured
-facts here cost a shipped bug once, so they are worth reading before writing
-the copy path rather than after.
+Read this before writing the click handler of a copy button on a hosted page.
+The measured facts here cost a shipped bug once, so they are worth reading
+before writing the copy path rather than after.
 
 **Copying reliably.** Artifacts render in an iframe that does **not** delegate
 `clipboard-write`, and this is the one part of the button that has actually
