@@ -12,7 +12,7 @@ import subprocess
 
 RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
-DISCOVERY = RUNNER.parent / "orchestration-discovery"
+DISCOVERY = RUNNER.parent / "harness-discovery"
 CASES = {
     "discovery-no-interview": (DISCOVERY, 0),
     "setup-discovery-first": (SETUP, 5),
@@ -318,7 +318,7 @@ def call(case, operation, args):
     result = None
     if operation == "inventory":
         result = {"harness_name": world["harness_name"], "paths": paths, "resources": world.get("resources", {}), "operations": {
-            "read-skill": "{name: orchestration-discovery, orchestration-setup or orchestration-run, resource: optional relative file path}; returns SKILL.md or a bundled reference/template",
+            "read-skill": f"{{name: {DISCOVERY.name}, {SETUP.name} or {RUNNER.name}, resource: optional relative file path}}; returns SKILL.md or a bundled reference/template",
             "discover-facts": "{}; read-only inventory and repository conventions with sources and observation timestamp",
             "check-discovery": "{}; runs the real discovery CLI on repository discovery.json",
             "resolve-config": "{harness: current product name}; runs the real configuration CLI with --harness",

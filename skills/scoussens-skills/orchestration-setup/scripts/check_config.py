@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_discovery import check as check_discovery, text, texts
 
 
-ORCHESTRATION_SKILLS = {"orchestration-discovery", "orchestration-setup", "orchestration-run"}
+COORDINATOR_SKILLS = {"harness-discovery", "orchestration-setup", "orchestration-run"}
 # Business stage keys from orchestration-run's dashboard data contract.
 STAGES = ("defined", "researched", "pr_readiness", "code_publication", "review", "verification",
           "deployment", "business_acceptance")
@@ -30,8 +30,8 @@ def check(config, discovery):
 
     def shared(values):
         texts(values, "shared_skills")
-        if ORCHESTRATION_SKILLS & set(values):
-            raise ValueError("orchestration skills belong to the coordinator, not shared workers")
+        if COORDINATOR_SKILLS & set(values):
+            raise ValueError("harness-discovery, orchestration-setup and orchestration-run belong to the coordinator, not shared workers")
 
     shared(config["project"]["shared_skills"])
     stage_skills = config["project"].get("stage_skills", {})
@@ -43,7 +43,7 @@ def check(config, discovery):
         raise ValueError("harnesses must contain a confirmed setup profile")
     for name, profile in config["harnesses"].items():
         if name not in discovery["harnesses"]:
-            raise ValueError(f"{name}: no saved discovery; run orchestration-discovery")
+            raise ValueError(f"{name}: no saved discovery; run harness-discovery")
         text(profile["run_root"], "run_root")
         shared(profile["shared_skills"])
         text(profile["confirmed_from"], "confirmed_from")

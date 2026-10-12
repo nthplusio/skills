@@ -26,8 +26,8 @@ python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --har
 
 Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
 `run_root`. The name selects the profile. Neither the model nor the working
-directory selects another harness's settings. Install all three orchestration
-skills together so their referenced resources are available.
+directory selects another harness's settings. Install `harness-discovery`,
+`orchestration-setup` and this skill together so their referenced resources are available.
 
 If setup or saved discovery is missing, malformed, lacks this harness, or has a
 material context mismatch, load `orchestration-setup`. That skill owns discovery
@@ -115,7 +115,7 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding all three orchestration skills. Owners
+from setup and this run explicitly, excluding `harness-discovery` and both orchestration skills. Owners
 may load additional role-specific skills and should launch bounded helpers
 (subagents) for research, review preparation, verification and other separable
 tasks within the ticket. Pass relevant
