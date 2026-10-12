@@ -34,6 +34,10 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/orchestration-discovery`](skills/scoussens-skills/orchestration-discovery/SKILL.md) | Discover harness capabilities and repository ticket conventions. Save sourced observations by harness name. |
 | [`scoussens-skills/orchestration-setup`](skills/scoussens-skills/orchestration-setup/SKILL.md) | Interview for project policy and per-harness preferences using saved discovery. Configure multiple harnesses in one repository. |
 | [`scoussens-skills/orchestration-run`](skills/scoussens-skills/orchestration-run/SKILL.md) | Resolve the current harness's setup, confirm run-only choices, and coordinate ticket owners with retained proof and one dashboard. |
+| [`scoussens-skills/pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request: a timeline of how it went, a ledger of what each reviewer said and whether it was acted on, and a scored evaluation, published as an HTML artifact. Invoked explicitly. |
+| [`scoussens-skills/pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact, grouped by theme and tied to its tickets, with what the period adds up to. Invoked explicitly. |
+| [`scoussens-skills/pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests oldest first: review each at a depth scaled to its risk, verify every finding at the current head, then approve, unblock, or land it. Invoked explicitly. |
+| [`scoussens-skills/pr-teacher`](skills/scoussens-skills/pr-teacher/SKILL.md) | Teach one pull request as an interactive artifact: the problem, how the mechanism works, a map of every changed file, something to operate, and a grounded self-check. Invoked explicitly. |
 | [`scoussens-skills/pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync the pstack skills from `cursor/plugins` into the directory that holds this skill — adding, updating, and removing skills — and adapt Cursor-only features to the running harness, replaying recorded adaptations so a fresh install does not re-adapt. Ships an Amp harness profile and a template for others. Invoked explicitly. |
 | [`scoussens-skills/release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder, verified against what actually reached production. Invoked explicitly. |
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
@@ -107,6 +111,8 @@ Run the contracts for all three stages:
 npm run test:orchestration
 ```
 
+`npm run test:skills` runs these with every other skill's `evals/test_*.py`.
+
 See [behavioral evaluation instructions](skills/scoussens-skills/orchestration-run/evals/README.md)
 for fresh agent runs and their separate evidence requirements.
 
@@ -119,7 +125,7 @@ npm run validate
 npm run check:builder
 ```
 
-`SKILL.md` requires exactly two frontmatter fields:
+`SKILL.md` requires two frontmatter fields:
 
 ```yaml
 ---
@@ -130,7 +136,21 @@ description: What it does. Use when <trigger>, <trigger>, or <trigger>.
 
 - `name` — lowercase-with-hyphens, and **must match the directory name**.
 - `description` — the only text an agent sees before deciding to load the
-  skill. See [writing good descriptions](docs/writing-good-descriptions.md).
+  skill, at most 1024 characters. See
+  [writing good descriptions](docs/writing-good-descriptions.md).
+
+Other fields follow the [Agent Skills specification](https://agentskills.io/specification):
+`license`, `compatibility`, `metadata` with string values, and `allowed-tools`.
+The pack uses two extensions that strict validators reject:
+
+- `disable-model-invocation: true` keeps a skill out of Claude Code's automatic
+  loading, so it runs only when invoked by name.
+- `metadata.internal: true` hides a plugin-bundled skill from pack discovery. The
+  skills CLI checks for the boolean, so do not quote it.
+
+A skill installs as one directory. Link only to files inside it; copy a file
+another skill owns rather than linking across, and add a test that the copies
+match.
 
 ## Validation
 
@@ -148,8 +168,18 @@ It checks:
 
 - frontmatter parses as YAML, using the same parser the builder uses
 - `name` and `description` exist, are strings, and `name` matches its directory
+- the Agent Skills limits: `name` up to 64 characters, `description` up to 1024,
+  `compatibility` up to 500, and no fields beyond the specification and the
+  two extensions above
+- relative Markdown links resolve and stay inside the skill directory
+- `evals/evals.json` matches its skill and gives every eval a prompt, an
+  expected output, assertions, and input files that exist
 - no file exceeds 2 MB
 - no binary files are committed inside a skill
+
+It warns when `SKILL.md` passes 500 lines or a reference file passes 300 lines
+without a `Contents` heading. Skills bundled in `plugins/*/skills/` get the same
+checks.
 
 ### The builder-agreement check
 

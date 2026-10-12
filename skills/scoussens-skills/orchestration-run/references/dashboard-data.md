@@ -21,6 +21,13 @@ Each task row records three independent views of status:
 
 Stages advance only on accepted proof, whatever the agent's state.
 
+## Contents
+
+- [Run fields](#run-fields)
+- [Task fields](#task-fields), with [work status and resolution](#work-status-and-resolution) and [business stages](#business-stages)
+- [Run lifecycle](#run-lifecycle)
+- [Evidence fields](#evidence-fields)
+
 ## Run fields
 
 - `schema_version`: `2` for new runs. Schema 1 records still render without the

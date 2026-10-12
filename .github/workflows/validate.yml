@@ -25,8 +25,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Check orchestration contracts
-        run: npm run test:orchestration
+      - name: Run skill tests
+        run: npm run test:skills
 
   plugins:
     runs-on: ubuntu-latest
