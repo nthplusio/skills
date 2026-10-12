@@ -254,6 +254,15 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("alpha", report["needs_adaptation"])
         self.assertIn("Dependencies (3)", self.run_sync("status"))
 
+    def test_status_reads_the_last_commit_from_a_skills_directory_inside_a_repository(self):
+        self.upstream()
+        report = self.run_sync()
+        git = ["git", "-C", str(self.tmp), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "init", "-q", str(self.tmp)], check=True)
+        subprocess.run([*git, "add", "skills"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "sync"], check=True)
+        self.assertIn(f"Upstream cursor/plugins: {report['upstream_commit'][:7]} (unchanged)", self.run_sync("status"))
+
 
 class HandoffNameTests(unittest.TestCase):
     def test_forms(self):

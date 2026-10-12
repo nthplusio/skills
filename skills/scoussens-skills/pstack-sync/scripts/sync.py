@@ -812,7 +812,7 @@ def cmd_record(a, st):
 
 def cmd_status(a, st):
     def at_rev(rel, default):
-        r = subprocess.run(["git", "-C", st.repo, "show", f"{a.since}:{SELF}/{rel}"], capture_output=True, text=True)
+        r = subprocess.run(["git", "-C", st.repo, "show", f"{a.since}:./{SELF}/{rel}"], capture_output=True, text=True)
         return r.stdout if r.returncode == 0 else default
 
     old_m = json.loads(at_rev("manifest.json", '{"skills": {}}'))
