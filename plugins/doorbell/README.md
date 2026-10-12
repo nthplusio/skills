@@ -17,6 +17,11 @@ Requires Claude Code **2.1.289 or later** with mods enabled. Tested on 2.1.289.
 /plugin install doorbell@nthplusio
 ```
 
+Installing doorbell also installs its dependency,
+[`doorbell-grant`](../doorbell-grant/README.md), which lets the inbox view
+refresh in the background. Claude Code disables doorbell while doorbell-grant is
+disabled or missing.
+
 Set `mcpUrl` through the plugin's user configuration if you use another service.
 It defaults to `https://agentdoorbell.com/mcp`; `.mcp.json` uses
 `${user_config.mcpUrl}`. Authenticate the plugin server through Claude Code's
@@ -26,11 +31,24 @@ need `configuration:write`, publication needs `messages:publish`, and receiving
 needs `notifiers:read`.
 
 The mod's own calls need no permission rules. `$.mcp.call` runs as a tool call
-and meets the permission check, so the mod answers `PreToolUse` with `allow`
-for the eleven tools it calls itself, and only when the host reports the call
-as this plugin's own (`next.origin`). Claude's own calls to the same tools, such
-as `ack_mcp_wakeup` or `publish_mcp_message`, keep their normal prompt unless
-you allow them.
+and meets the permission check. Two hooks answer that check, depending on where
+the call starts:
+
+- **Inside one of the mod's hooks** (a command you type, a prompt, Stop), the
+  mod answers `PreToolUse` with `allow` for the twelve tools it calls itself,
+  and only when the host reports the call as this plugin's own (`next.origin`).
+- **Outside its hooks** (the inbox view's background refresh, and the Handle
+  button), Claude Code skips every hook of the plugin that raised the call, so
+  the mod cannot approve it. doorbell-grant, a separate plugin, answers
+  `tool.check` with `allow` for the four read-only tools the refresh uses:
+  `list_agent_roles`, `peek_mcp_pending`, `list_mcp_message_sources`, and
+  `get_mcp_message_history`. It approves them only when the host reports
+  doorbell as the caller. Any other call from outside a hook, such as Handle's
+  `lease_mcp_wakeup`, meets the normal permission check; in auto mode the
+  classifier decides it.
+
+Claude's own calls to the same tools, such as `ack_mcp_wakeup` or
+`publish_mcp_message`, keep their normal prompt unless you allow them.
 
 If you already added the same MCP URL yourself, for example from Doorbell's
 install page, Claude Code hides the plugin's copy of the server. The mod finds
@@ -101,7 +119,8 @@ stops while it is unbound. After a failure, the interval doubles up to five
 minutes, and the mod logs one warning for each kind of failure per session.
 Until the server first answers, a failed connection shows `connecting` with no
 warning and no backoff, because a new connection can take about 25 seconds.
-Print runs (`claude -p`) do not poll.
+Print runs (`claude -p`) do not poll. In auto mode, polling works because
+doorbell-grant approves its calls; see [Install and authenticate](#install-and-authenticate).
 
 **Handle** does what `/doorbell:inbox handle` does: it explicitly leases one
 message. It neither checks nor spends the automatic admission budget, and

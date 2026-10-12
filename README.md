@@ -57,6 +57,7 @@ discovery while keeping it available inside Claude Code.
 | --- | --- |
 | [`context-statusline`](plugins/context-statusline/README.md) | A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch, collapsing to fit any terminal width. |
 | [`doorbell`](plugins/doorbell/README.md) | Directory-bound messaging through Doorbell's public MCP connection, with local execution authority, explicit leases, and bounded optional Stop continuation. |
+| [`doorbell-grant`](plugins/doorbell-grant/README.md) | Approves doorbell's own read-only inbox calls at the permission check, so its background refresh works in auto mode. Installed with doorbell. |
 
 To add a plugin, put it in `plugins/<name>/` with its
 `.claude-plugin/plugin.json`, add an entry to `.claude-plugin/marketplace.json`,
