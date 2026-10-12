@@ -24,35 +24,13 @@ from pathlib import Path
 
 ITER = Path(sys.argv[1])
 
-PR_FILES = {
-    "ca-bundle-incident": [
-        "apps/web/app/api/auth/[...all]/__tests__/route.test.ts",
-        "apps/web/app/api/auth/[...all]/route.ts",
-        "apps/web/app/lib/auth/__tests__/serverAuth.test.ts",
-        "apps/web/app/lib/auth/serverAuth.ts",
-        "apps/web/app/lib/caBundle.ts",
-        "apps/web/app/lib/diagnostics/probes/proxyConfig.ts",
-        "apps/web/instrumentation-node.ts",
-        "apps/web/tests/lib/caBundle.test.ts",
-        "apps/web/tests/lib/diagnostics/probes/proxyConfig.test.ts",
-        "docs/operations/proxy-scenarios.md",
-    ],
-    "redos-regex": [
-        "apps/api/CmnLib.py",
-        "apps/api/tests/test_cmnlib_validate_s3_uri.py",
-    ],
-    "asyncio-lock-race": [
-        "apps/api/services/grid/hierarchy_view_manager.py",
-        "apps/api/tests/services/grid/test_hierarchy_view_manager.py",
-        "apps/web/app/expressionbuilder/components/AggDiffDialog.tsx",
-        "apps/web/app/home/components/AggDiffController.tsx",
-    ],
-}
+PR_FILES_NAME = "pr_files.json"
+GROUND_TRUTH_NAME = "ground_truth.json"
 
 GROUND_TRUTH = {
     "ca-bundle-incident": {"real_error_string": ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY"]},
-    "redos-regex": {"both_patterns_verbatim": [r")*$", r")?$"]},
-    "asyncio-lock-race": {"poisoning_explained": ["_waiters", "_locks"]},
+    "redos-regex": {"both_patterns_verbatim": None},
+    "asyncio-lock-race": {"poisoning_explained": ["_waiters", "_loop"]},
 }
 
 # Evidence that the page models the PR's OWN mechanism, per eval.
@@ -70,7 +48,7 @@ MECHANISM_SIGNALS = {
     ],
     "ca-bundle-incident": [
         (r"\.concat\s*\(|\.\.\.\w+|\.filter\s*\(|\.length", "composes cert collections"),
-        (r"\b144\b", "uses the real Mozilla root count as a quantity"),
+        (r"rootCertificates", "reads Node's bundled root store"),
         (r"replace|extend", "contrasts replace vs extend behavior"),
     ],
 }
@@ -115,7 +93,15 @@ def count_qa(html):
     return best, how
 
 
-def check(html, eval_name):
+def load_run_json(run_dirs, name):
+    for d in run_dirs:
+        f = d / name
+        if f.exists():
+            return json.loads(f.read_text())
+    return None
+
+
+def check(html, eval_name, run_dirs):
     out = {}
     low = html.lower()
 
@@ -129,15 +115,21 @@ def check(html, eval_name):
         else f"missing={[k for k,v in parts.items() if not v] or 'none'}; external_refs={len(ext)}",
     }
 
-    files = PR_FILES[eval_name]
-    found, absent = [], []
-    for f in files:
-        (found if any(v in html for v in basename_variants(f)) else absent).append(f)
-    out["file_map_complete"] = {
-        "passed": not absent,
-        "evidence": f"{len(found)}/{len(files)} changed files referenced"
-        + (f"; missing: {', '.join(absent)}" if absent else ""),
-    }
+    files = load_run_json(run_dirs, PR_FILES_NAME)
+    if files is None:
+        out["file_map_complete"] = {
+            "passed": None,
+            "evidence": f"not applicable: no {PR_FILES_NAME} in the run directory",
+        }
+    else:
+        found, absent = [], []
+        for f in files:
+            (found if any(v in html for v in basename_variants(f)) else absent).append(f)
+        out["file_map_complete"] = {
+            "passed": not absent,
+            "evidence": f"{len(found)}/{len(files)} changed files referenced"
+            + (f"; missing: {', '.join(absent)}" if absent else ""),
+        }
 
     n_qa, how = count_qa(html)
     out["selfcheck_present"] = {
@@ -149,7 +141,7 @@ def check(html, eval_name):
     # Scope this to SCRIPT BODIES ONLY. Searching the whole document was wrong
     # in both directions, for real, in iteration-1:
     #   false positive - a page whose entire JS was quiz scoring "passed"
-    #     because `.filter(`, `.length` and "144" appeared in its PROSE and CSS.
+    #     because `.filter(`, `.length` and a root count appeared in its PROSE and CSS.
     #   false negative - a page with a genuine stepper "failed" because the
     #     patterns demanded `.push(`/`waiters = [` when it used other idioms.
     # Behavior lives in the JS. Measure it there, and keep the signals loose
@@ -183,7 +175,13 @@ def check(html, eval_name):
                     f"{content_bytes:,} content bytes ({100*font_bytes/max(len(html),1):.0f}% fonts)",
     }
 
-    for aid, needles in GROUND_TRUTH.get(eval_name, {}).items():
+    truth = dict(GROUND_TRUTH.get(eval_name, {}))
+    truth.update(load_run_json(run_dirs, GROUND_TRUTH_NAME) or {})
+    for aid, needles in truth.items():
+        if not needles:
+            out[aid] = {"passed": None,
+                        "evidence": f"not applicable: no needles for {aid} in {GROUND_TRUTH_NAME}"}
+            continue
         hit = [n for n in needles if n in html]
         out[aid] = {"passed": len(hit) == len(needles),
                     "evidence": f"found {len(hit)}/{len(needles)}: {hit}"}
@@ -199,7 +197,7 @@ for eval_dir in sorted(p for p in ITER.iterdir() if p.is_dir()):
             results[key] = {"_missing": {"passed": False, "evidence": "no teacher.html produced"}}
             continue
         html = f.read_text(errors="replace")
-        r = check(html, eval_dir.name)
+        r = check(html, eval_dir.name, (eval_dir / cfg, eval_dir))
         r["_size"] = {"passed": True, "evidence": f"{len(html):,} bytes"}
         results[key] = r
 

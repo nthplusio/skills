@@ -26,8 +26,8 @@ narrow and it drops a long round's earliest merges. With no ledger history yet
 it falls back to 12h and says so on stderr.
 
 Usage:
-    python3 round_report.py development > /tmp/round.json
-    python3 round_report.py development --since 2026-08-21T15:00:00Z
+    python3 round_report.py <base> > /tmp/round.json
+    python3 round_report.py <base> --since 2026-08-21T15:00:00Z
 
 Piping the result into the artifact build is the point; read it with jq to spot
 check, e.g. `jq -r '.[] | "\\(.number) \\(.verdict) \\(.reviewed_at)"' /tmp/round.json`

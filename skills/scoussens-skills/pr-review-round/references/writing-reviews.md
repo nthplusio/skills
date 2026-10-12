@@ -29,10 +29,10 @@ hunting for is a finding they will defer.
 
 against:
 
-> Restore "FundView1" on Map→Fund, switch the dimension to Account, hit Save
-> without touching the input: it POSTs `FundView1` to the shared `/map` path
-> with Account's grid state, and since the upsert is keyed on `(name, path)` it
-> silently overwrites the Fund preset.
+> Restore "View1" on Orders→Region, switch the grouping to Customer, hit Save
+> without touching the input: it POSTs `View1` to the shared `/orders` path
+> with Customer's table state, and since the upsert is keyed on `(name, path)`
+> it silently overwrites the Region preset.
 
 The second is actionable and, importantly, falsifiable — the author can check
 whether you are right.
@@ -56,8 +56,8 @@ Three things make an Unblock line honest:
 
 - **It makes the finding false.** If the change you name would leave the defect
   in place, it is not an unblock.
-- **It names the owner.** A conflict, a rebase, and a `snowsql` run are the
-  author's; a mis-severed finding is yours to correct.
+- **It names the owner.** A conflict, a rebase, and a database migration run
+  are the author's; a mis-severed finding is yours to correct.
 - **Work outside the PR is offered, not performed.** When the unblock is an
   environment change — apply this DDL, reseed that database — say so and stop.
   Running it is outward-facing and needs its own authorisation, even mid-round.
@@ -65,9 +65,9 @@ Three things make an Unblock line honest:
 Record it in the ledger too (`unblock` on the finding), so the PR's next round
 opens with the path off the block instead of re-deriving it.
 
-**Credit specifically or not at all.** "The `hasNonInserts` guard keys on what
-the bootstrap flow can actually handle rather than on the entity name" tells the
-author which instinct to repeat. "Nice work!" does not.
+**Credit specifically or not at all.** "The `isReadOnly` guard keys on what the
+import flow can actually handle rather than on the entity name" tells the author
+which instinct to repeat. "Nice work!" does not.
 
 **Correct the record when a prior finding was wrong.** If the automated review
 overstated something, say so plainly in the review — the author is reading both.
@@ -95,9 +95,9 @@ collides with #NNNN which is editing the same file right now" is a real reason;
 Dismissal is not a formality — it is a claim that you checked. Say what you
 checked:
 
-> Dismissing my 2026-07-14 review — both blocking bugs are resolved at
-> `3ca4d509a`. (1) Split-brain collection: fixed, `store.py:122-197` now reads
-> `GridPresets` with a legacy fallback, matching the router. (2) Cross-dimension
+> Dismissing my earlier review — both blocking bugs are resolved at `a1b2c3d`.
+> (1) Split-brain collection: fixed, `orders/store.py:88-120` now reads
+> `OrderPresets` with a legacy fallback, matching the router. (2) Cross-region
 > leakage: no longer a bug — the shared bucket plus opt-in sub-path is now the
 > documented intent. The PR remains blocked on the bot's current review.
 
