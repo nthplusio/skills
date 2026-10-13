@@ -131,6 +131,98 @@ class StateTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertIn(message, result.stderr)
 
+    def test_a_failure_names_exactly_one_skill(self):
+        phrases = ("run harness-discovery", "run orchestration-setup", "run state.py migrate")
+
+        def expect(arguments, phrase):
+            result = self.state(*arguments)
+            self.assertEqual(result.returncode, 1, result.stdout)
+            present = [hint for hint in phrases if hint in result.stderr]
+            self.assertEqual(present, [phrase], result.stderr)
+            self.assertEqual(result.stderr.count(phrase), 1, result.stderr)
+
+        discovery = discovery_document()
+        del discovery["repository"]
+        self.save(discovery)
+        expect(("check", "discovery"), "run harness-discovery")
+
+        self.discovery_path.write_text("{not JSON")
+        expect(("resolve", "--harness", "Amp"), "run harness-discovery")
+
+        discovery = discovery_document()
+        discovery["schema_version"] = 0
+        self.save(discovery)
+        expect(("check", "discovery"), "run state.py migrate")
+
+        discovery = discovery_document()
+        discovery["schema_version"] = 2
+        self.save(discovery)
+        expect(("check", "discovery"), "run harness-discovery")
+
+        discovery = discovery_document()
+        discovery["harnesses"] = []
+        self.save(discovery)
+        expect(("check", "discovery"), "run harness-discovery")
+
+        self.save(discovery_document())
+        expect(("resolve", "--harness", "Claude"), "run harness-discovery")
+
+        config_path = self.discovery_path.parent / "orchestration.json"
+        config = {
+            "schema_version": 3,
+            "project": {"ticket_policy": {
+                "source": "Linear", "location": "ENG", "definition": "One outcome",
+                "template": "docs/tickets.md", "id_convention": "ENG-N", "criteria_limit": 3,
+                "confirmed_from": "User confirmed",
+            }, "shared_skills": []},
+            "harnesses": {"Amp": {
+                "run_root": "runs/amp", "shared_skills": [], "confirmed_from": "User confirmed",
+                "defaults": {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60},
+            }},
+        }
+        config["harnesses"] = []
+        config_path.write_text(json.dumps(config))
+        expect(("resolve", "--harness", "Amp", "--orchestration"), "run orchestration-setup")
+
+        config = {
+            "schema_version": 3,
+            "project": {"ticket_policy": {
+                "source": "Linear", "location": "ENG", "definition": "One outcome",
+                "template": "docs/tickets.md", "id_convention": "ENG-N", "criteria_limit": 0,
+                "confirmed_from": "User confirmed",
+            }, "shared_skills": []},
+            "harnesses": {"Amp": {
+                "run_root": "runs/amp", "shared_skills": [], "confirmed_from": "User confirmed",
+                "defaults": {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60},
+            }},
+        }
+        config_path.write_text(json.dumps(config))
+        expect(("check", "orchestration"), "run orchestration-setup")
+
+        config["schema_version"] = 1
+        config["project"]["ticket_policy"]["criteria_limit"] = 3
+        config_path.write_text(json.dumps(config))
+        expect(("check", "orchestration"), "run state.py migrate")
+
+        config_path.write_text("{not JSON")
+        expect(("resolve", "--harness", "Amp", "--orchestration"), "run orchestration-setup")
+
+        config["harnesses"]["Amp"]["run_root"] = "C:/runs/amp"
+        config["schema_version"] = 3
+        config_path.write_text(json.dumps(config))
+        repair = self.state("resolve", "--harness", "Amp", "--orchestration")
+        self.assertEqual(repair.returncode, 1)
+        self.assertIn("repair this harness profile with orchestration-setup", repair.stderr)
+        self.assertNotIn("run orchestration-setup", repair.stderr)
+        self.assertNotIn("run harness-discovery", repair.stderr)
+
+        config["harnesses"]["Amp"]["run_root"] = "runs/amp"
+        config_path.write_text(json.dumps(config))
+        result = self.state("resolve", "--harness", "Amp", "--orchestration")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("run_root", json.loads(result.stdout))
+
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 LEGACY = FIXTURES / "orchestration-v2"
