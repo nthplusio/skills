@@ -1,25 +1,37 @@
 ---
-name: orchestration-discovery
+name: harness-discovery
 description: >-
-  Discovers the current agent harness's orchestration capabilities and repository
-  ticket conventions, and saves observations by harness name. Use for
-  /orchestration-discovery, missing discovery during orchestration setup, or
-  refreshing capability facts after the harness or execution context changes.
+  Discovers what the current agent harness can do — independent threads or
+  sessions, subagents, monitoring and wake-ups, skill loading, instruction files,
+  structured questions, model choice, and HTML publishing destinations — plus the
+  repository's ticket conventions, and saves sourced observations keyed by
+  harness name. Load this when orchestration-setup or pstack-sync needs
+  discovery, or when the user names /harness-discovery to refresh facts. Do not
+  run it as the first step of an orchestration.
 ---
 
-# Orchestration discovery
+# Harness discovery
 
-Save observed facts for `orchestration-setup`. Discovery describes what works.
-Setup interviews the user about what to use. `orchestration-run` coordinates work.
+Save observed facts for any skill that needs them: `orchestration-setup` and
+`orchestration-run`, `pstack-sync`, and skills that publish HTML. A caller loaded
+this skill, or the user named `/harness-discovery`. Discovery describes what
+works; each caller decides what to use. Do not start an orchestration from here.
 
 ## 1. Identify the harness and read saved discovery
 
-Use `<repository-root>/.orchestration/discovery.json` unless the user supplies
-another repository discovery path. Read the existing file before updating it.
+Saved state lives in `<repository root>/.nthplusio-skills/`. First run
+`python3 <this skill's folder>/scripts/state.py migrate`, which moves state saved
+by earlier versions of these skills there, so a new entry never lands beside an
+old file. Then read its `discovery.json` before updating it. A caller working in another repository,
+such as pstack-sync in its skills repository, names that repository, and every
+command below then takes `--root <that repository>`.
 Identify the current harness's canonical product name from system context,
 tool inventory, CLI version/help, or authoritative documentation. Use that exact
 name as the `harnesses` key, for example `Amp` or `Claude Code`. A model name,
-owner label, or execution host is not the harness name.
+owner label, or execution host is not the harness name. The key's slug is the
+key lowercased with each run of other characters turned into one hyphen
+(`Claude Code` becomes `claude-code`). Callers may name a harness by either, so
+two keys must not share a slug.
 
 Reuse the saved key when it names this product. Record execution context separately.
 If identity remains ambiguous after inspection, report the missing identity fact
@@ -49,8 +61,9 @@ Each harness entry records the observation time, inspected sources, and:
   and conversation reads from operations that wake owners or request reports.
   Describe pending user-input visibility, human-only gates, whether messages
   answer or queue, and direct conversation links or navigation by handle.
-- Helpers. Describe invocation, collection, caller blocking, and follow-up.
-  Record the verified concurrent-invocation mechanism and its limits. A blocking
+- Helpers. Describe invocation, collection, caller blocking, and follow-up, and
+  whether a helper can be held to read-only (`readonly`). Record the verified
+  concurrent-invocation mechanism and its limits. A blocking
   batch may overlap helper calls while still holding the coordinator. Blocking
   alone establishes neither concurrency nor independent ownership.
 - Monitoring. Describe notification coverage and lifetime, bounded waits with
@@ -58,8 +71,17 @@ Each harness entry records the observation time, inspected sources, and:
   Distinguish native notifications from owner-authored status messages. Keep
   inspection separate from completion collection. Record any authorization
   requirement and whether monitoring requires an active turn or manual resume.
-- Skills. Describe loading and instruction propagation. Shared skill choices
-  belong to setup, including any baseline required by repository/user guidance.
+- Skills. Describe loading and instruction propagation, where project and
+  personal skills live (`locations`), and how a running session picks up a
+  changed skill (`reload`). Shared skill choices belong to setup, including any
+  baseline required by repository/user guidance.
+- Instructions. Name the files the harness loads into every session, user-wide
+  (`instructions.user`) and per project (`instructions.project`).
+- Questions. Describe the structured question tool, its limits, and when it may
+  be used (`ask_user`), or `null` when questions go in the reply.
+- Models. Describe how to run a helper or owner on a named model
+  (`models.select`) and how to list the names this session accepts
+  (`models.list`).
 - Evidence. Describe file transfer and retention before owner closure. A message
   or commit ID does not transfer files between isolated environments.
 - Artifacts. List usable destinations, update operations, audiences, and optional
@@ -67,8 +89,9 @@ Each harness entry records the observation time, inspected sources, and:
   environment, describe its supported user preview or portal. Use `null` for
   unavailable interaction. Record `auto_refresh` as a sourced description of
   supported embedded full-page reloads that retrieve updates from the same URL,
-  or `null` when unavailable. Note embedding and caching limits. Copyable questions
-  need no messaging bridge.
+  or `null` when unavailable. Note embedding and caching limits, and record
+  frame limits a page must work around, such as blocked clipboard writes or
+  external fonts. Copyable questions need no messaging bridge.
 
 Store operation descriptions with important arguments, not executable commands
 to run from JSON. An inspected unavailable operation is `null` with a limitation.
@@ -93,11 +116,13 @@ so later setup can reuse it. Sanitize private context and paths before saving.
 Run:
 
 ```bash
-python3 <this skill's folder>/scripts/check_discovery.py <discovery.json>
+python3 <this skill's folder>/scripts/state.py check discovery
+python3 <this skill's folder>/scripts/state.py resolve --harness '<discovered name>'
 ```
 
-The checker validates the observation format, not live tool execution.
+The checker validates the observation format, not live tool execution. The second
+command prints the entry a caller reads, with its key and slug.
 Report the discovered name, saved path, and material limitations. When called
-by setup, return those facts to setup without starting its interview yourself.
+by another skill, return those facts to it without starting its work yourself.
 
 **Done when** saved discovery passes the checker and matches the inspected sources.

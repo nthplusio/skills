@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "guidance": ["AGENTS.md"],
+    "ticket_sources": ["Local Markdown tickets in docs/tickets"],
+    "ticket_template": "docs/tickets/TEMPLATE.md",
+    "notes": []
+  },
+  "harnesses": {
+    "Amp": {
+      "context": "Orb",
+      "observed_at": "2026-10-09T12:00:00Z",
+      "sources": ["Inspected tool inventory"],
+      "owner_term": "thread",
+      "helper_term": "subagent",
+      "owners": {
+        "launch": "Start a thread with a prompt",
+        "inspect": "Read a thread by its ID",
+        "message": "Send a message to a thread",
+        "collect": "Read the thread's last reply",
+        "close": null,
+        "resume": "Send a message to the same thread",
+        "workspace_model": "isolated"
+      },
+      "helpers": {
+        "invoke": "Task tool",
+        "collect": "Task result",
+        "blocks_caller": true,
+        "follow_up": false
+      },
+      "monitoring": {
+        "notifications": null,
+        "wait": "Wait for threads with a timeout; blocks the caller",
+        "wake": null
+      },
+      "skills": {
+        "load": "Load by skill name",
+        "brief": "Pass applicable instructions explicitly; do not assume inheritance."
+      },
+      "evidence": {
+        "transfer": "Push a branch",
+        "retain_before_close": "Push a branch"
+      },
+      "artifacts": [
+        {"id": "portal", "label": "Portal", "present": "Publish HTML", "update": "Replace HTML",
+         "audience": "Workspace members", "interaction": null}
+      ],
+      "limitations": ["Threads cannot be archived from the coordinator"]
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "discovery_file": "discovery.json",
+  "project": {
+    "ticket_policy": {
+      "source": "Local Markdown",
+      "location": "docs/tickets",
+      "definition": "One independently verifiable outcome",
+      "template": "docs/tickets/TEMPLATE.md",
+      "id_convention": "TICKET-N",
+      "criteria_limit": 5,
+      "confirmed_from": "User confirmed project policy"
+    },
+    "shared_skills": ["speak-clearly"],
+    "stage_skills": {}
+  },
+  "harnesses": {
+    "Amp": {
+      "run_root": "runs/amp",
+      "shared_skills": [],
+      "defaults": {
+        "finish_line": "review-ready PRs",
+        "destination": "portal",
+        "interval_seconds": 60
+      },
+      "confirmed_from": "User confirmed Amp choices"
+    }
+  }
+}

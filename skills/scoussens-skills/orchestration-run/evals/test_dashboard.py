@@ -13,7 +13,7 @@ import unittest
 
 RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
-DISCOVERY = RUNNER.parent / "orchestration-discovery"
+DISCOVERY = RUNNER.parent / "harness-discovery"
 sys.path.insert(0, str(RUNNER / "scripts"))
 from render_dashboard import render, skill_version
 
@@ -622,7 +622,8 @@ class InstallTests(unittest.TestCase):
 
     def test_shared_files_match_their_owning_skill(self):
         for owner, copy, path in ((SETUP, RUNNER, "references/ticket-template.md"),
-                                  (DISCOVERY, SETUP, "scripts/check_discovery.py")):
+                                  (DISCOVERY, SETUP, "scripts/state.py"),
+                                  (DISCOVERY, RUNNER, "scripts/state.py")):
             with self.subTest(path=path):
                 self.assertEqual((copy / path).read_bytes(), (owner / path).read_bytes(),
                                  f"copy {copy.name}/{path} from {owner.name}/{path}")
@@ -633,13 +634,13 @@ class ConfigTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.saved = self.root / "repository" / ".orchestration"
+        self.repository = self.root / "repository"
+        self.saved = self.repository / ".nthplusio-skills"
         self.saved.mkdir(parents=True)
         self.cwd = self.root / "elsewhere"
         self.cwd.mkdir()
-        self.config_path = self.saved / "config.json"
-        self.discovery_path = self.saved / "facts" / "discovery.json"
-        self.discovery_path.parent.mkdir()
+        self.config_path = self.saved / "orchestration.json"
+        self.discovery_path = self.saved / "discovery.json"
         self.marker = self.root / "tool-invoked"
         self.discovery = json.loads((DISCOVERY / "assets" / "discovery.template.json").read_text())
         facts = self.discovery["harnesses"].pop("REPLACE_WITH_DISCOVERED_HARNESS_NAME")
@@ -660,7 +661,7 @@ class ConfigTests(unittest.TestCase):
         other["artifacts"] = []
         other["limitations"] = ["No independent owners"]
         self.discovery["harnesses"] = {"Amp": facts, "Claude Code": other}
-        self.config = json.loads((SETUP / "assets" / "config.template.json").read_text())
+        self.config = json.loads((SETUP / "assets" / "orchestration.template.json").read_text())
         profile = self.config["harnesses"].pop("REPLACE_WITH_DISCOVERED_HARNESS_NAME")
         profile.update(run_root="runs/amp", shared_skills=["speak-clearly", "amp-proof"],
                        confirmed_from="User confirmed Amp choices")
@@ -670,7 +671,6 @@ class ConfigTests(unittest.TestCase):
                              confirmed_from="User confirmed terminal choices")
         other_profile["defaults"] = {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 90}
         self.config["harnesses"] = {"Amp": profile, "Claude Code": other_profile}
-        self.config["discovery_file"] = "facts/discovery.json"
         self.config["project"] = {
             "ticket_policy": {"source": "Linear", "location": "ENG team", "definition": "One shipped outcome",
                               "template": "docs/tickets.md", "id_convention": "ENG-N", "criteria_limit": 3,
@@ -683,43 +683,46 @@ class ConfigTests(unittest.TestCase):
         self.discovery_path.write_text(json.dumps(self.discovery))
         self.config_path.write_text(json.dumps(self.config))
 
-    def cli(self, skill, path, *arguments):
-        script = "check_discovery.py" if skill == DISCOVERY else "check_config.py"
-        return subprocess.run([sys.executable, "-B", str(skill / "scripts" / script), str(path), *arguments],
-                              cwd=self.cwd, capture_output=True, text=True)
+    def cli(self, skill, *arguments):
+        return subprocess.run([sys.executable, "-B", str(skill / "scripts" / "state.py"), *arguments,
+                               "--root", str(self.repository)], cwd=self.cwd, capture_output=True, text=True)
 
     def selected(self, name):
-        result = self.cli(SETUP, self.config_path, "--harness", name)
+        result = self.cli(SETUP, "resolve", "--harness", name, "--orchestration")
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
     def test_saved_discovery_and_setup_validate_without_selecting_a_profile(self):
-        for skill, path, label in ((DISCOVERY, self.discovery_path, "discovery"),
-                                   (SETUP, self.config_path, "configuration")):
-            with self.subTest(label=label):
-                result = self.cli(skill, path)
+        for skill, scope, path in ((DISCOVERY, "discovery", self.discovery_path),
+                                   (SETUP, "orchestration", self.config_path)):
+            with self.subTest(scope=scope):
+                result = self.cli(skill, "check", scope)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, f"PASS: {label} for {path}\n")
+                self.assertEqual(result.stdout, f"PASS: {scope} {path}\n")
+        result = self.cli(RUNNER, "check")
+        self.assertEqual(result.stdout, f"PASS: discovery {self.discovery_path}\nPASS: orchestration {self.config_path}\n")
         self.assertFalse(self.marker.exists())
 
     def test_setup_validates_when_installed_without_its_sibling_skills(self):
-        alone = self.root / "installed" / "orchestration-setup"
+        alone = self.root / "installed" / SETUP.name
         shutil.copytree(SETUP, alone, ignore=shutil.ignore_patterns("__pycache__"))
-        result = self.cli(alone, self.config_path)
+        result = self.cli(alone, "check", "orchestration")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, f"PASS: configuration for {self.config_path}\n")
+        self.assertEqual(result.stdout, f"PASS: orchestration {self.config_path}\n")
 
     def test_exact_names_select_asymmetric_capabilities_defaults_and_shared_skills(self):
         amp = self.selected("Amp")
         terminal = self.selected("Claude Code")
-        self.assertEqual(amp["harness"], {"name": "Amp", "context": "Orb", "owner_term": "thread", "helper_term": "subagent"})
-        self.assertEqual(terminal["harness"], {"name": "Claude Code", "context": "Local terminal", "owner_term": "session", "helper_term": "bounded helper"})
+        self.assertEqual(amp["harness"], {"name": "Amp", "slug": "amp", "context": "Orb", "owner_term": "thread", "helper_term": "subagent"})
+        self.assertEqual(terminal["harness"], {"name": "Claude Code", "slug": "claude-code", "context": "Local terminal",
+                                               "owner_term": "session", "helper_term": "bounded helper"})
         self.assertEqual(amp["owners"]["inspect"], "Inspect by thread ID")
         self.assertEqual(amp["owners"]["workspace_model"], "isolated")
         self.assertEqual(terminal["owners"]["workspace_model"], "shared")
         self.assertEqual(amp["defaults"], {"finish_line": "merged PRs", "destination": "portal", "interval_seconds": 15})
         self.assertEqual(terminal["defaults"], {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 90})
         self.assertEqual(amp["skills"], {"load": "Load by skill name", "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
+                                        "locations": None, "reload": None,
                                         "shared": ["speak-clearly", "test-behavior", "amp-proof"], "stages": {}})
         self.assertEqual(terminal["skills"]["shared"], ["speak-clearly", "test-behavior", "terminal-proof"])
         self.assertFalse(self.marker.exists())
@@ -728,12 +731,11 @@ class ConfigTests(unittest.TestCase):
         self.config["project"]["stage_skills"] = {"code_publication": ["start-work"], "review": ["pr-ready"]}
         self.config_path.write_text(json.dumps(self.config))
         self.assertEqual(self.selected("Amp")["skills"]["stages"], {"code_publication": ["start-work"], "review": ["pr-ready"]})
-        for bad in ({"shipping": ["start-work"]}, {"review": ["orchestration-run"]}):
+        for bad in ({"shipping": ["start-work"]}, {"review": [RUNNER.name]}):
             with self.subTest(stage_skills=bad):
                 self.config["project"]["stage_skills"] = bad
                 self.config_path.write_text(json.dumps(self.config))
-                result = subprocess.run([sys.executable, "-B", str(SETUP / "scripts" / "check_config.py"), str(self.config_path)],
-                                        capture_output=True, text=True)
+                result = self.cli(SETUP, "check", "orchestration")
                 self.assertEqual(result.returncode, 1)
         del self.config["project"]["stage_skills"]
         self.config_path.write_text(json.dumps(self.config))
@@ -757,24 +759,47 @@ class ConfigTests(unittest.TestCase):
                 self.assertFalse((self.saved / "runs").exists())
         self.assertEqual(list(self.cwd.iterdir()), [])
 
-    def test_missing_harness_refuses_fallback(self):
-        for name in ("amp", "Claude", "Unknown"):
+    def test_a_slug_selects_its_key_and_other_names_refuse_fallback(self):
+        self.assertEqual(self.selected("amp"), self.selected("Amp"))
+        self.assertEqual(self.selected("claude-code"), self.selected("Claude Code"))
+        for name in ("Claude", "Unknown", "amp code"):
             with self.subTest(name=name):
-                result = self.cli(SETUP, self.config_path, "--harness", name)
+                result = self.cli(SETUP, "resolve", "--harness", name, "--orchestration")
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
-                self.assertIn("no setup profile", result.stderr)
+                self.assertIn("no saved discovery for this harness", result.stderr)
+        del self.config["harnesses"]["Claude Code"]
+        self.save()
+        result = self.cli(SETUP, "resolve", "--harness", "Claude Code", "--orchestration")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no setup profile", result.stderr)
+        self.assertEqual(json.loads(self.cli(DISCOVERY, "resolve", "--harness", "claude-code").stdout)["harness"]["name"],
+                         "Claude Code")
+        self.config["harnesses"]["Claude Code"] = {"run_root": "runs/claude", "shared_skills": [], "confirmed_from": "Test",
+                                                   "defaults": {"finish_line": "review-ready PRs", "destination": None,
+                                                                "interval_seconds": 90}}
         del self.discovery["harnesses"]["Claude Code"]
         self.save()
-        result = self.cli(SETUP, self.config_path, "--harness", "Claude Code")
+        result = self.cli(SETUP, "resolve", "--harness", "Amp", "--orchestration")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("no saved discovery", result.stderr)
+        self.assertIn("Claude Code: no saved discovery", result.stderr)
+
+    def test_missing_state_names_the_skill_to_run(self):
+        self.config_path.unlink()
+        result = self.cli(RUNNER, "resolve", "--harness", "Amp", "--orchestration")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("run orchestration-setup", result.stderr)
+        self.discovery_path.unlink()
+        result = self.cli(DISCOVERY, "check")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("run harness-discovery", result.stderr)
 
     def test_unavailable_operations_remain_null(self):
         selected = self.selected("Claude Code")
         self.assertEqual(selected["owners"], {"launch": None, "inspect": None, "message": None,
                                              "collect": None, "close": None, "resume": None, "workspace_model": "shared"})
-        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None})
+        self.assertEqual(selected["helpers"], {"invoke": None, "collect": None, "blocks_caller": None, "follow_up": None,
+                                              "readonly": None})
         self.assertEqual(selected["monitoring"], {"notifications": None, "wait": None, "wake": None})
         self.assertEqual(selected["evidence"], {"transfer": None, "retain_before_close": None})
         self.assertEqual(selected["artifacts"], [])
@@ -793,20 +818,20 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(invalid=value):
                 artifact["auto_refresh"] = value
                 self.save()
-                result = self.cli(DISCOVERY, self.discovery_path)
+                result = self.cli(DISCOVERY, "check", "discovery")
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("artifact.auto_refresh must be nonempty text", result.stderr)
 
     def test_all_orchestration_names_are_excluded_from_shared_worker_skills(self):
         original = deepcopy(self.config)
-        for name in ("orchestration-discovery", "orchestration-setup", "orchestration-run"):
+        for name in (DISCOVERY.name, SETUP.name, RUNNER.name):
             for scope in ("project", "Amp", "Claude Code"):
                 with self.subTest(name=name, scope=scope):
                     self.config = deepcopy(original)
                     target = self.config["project"] if scope == "project" else self.config["harnesses"][scope]
                     target["shared_skills"].append(name)
                     self.save()
-                    result = self.cli(SETUP, self.config_path, "--harness", "Amp")
+                    result = self.cli(SETUP, "resolve", "--harness", "Amp", "--orchestration")
                     self.assertEqual(result.returncode, 1)
                     self.assertEqual(result.stdout, "")
                     self.assertIn("coordinator", result.stderr)
@@ -818,32 +843,32 @@ class ConfigTests(unittest.TestCase):
                 self.discovery = deepcopy(original)
                 self.discovery[field] = value
                 self.save()
-                for skill, path, args in ((DISCOVERY, self.discovery_path, ()),
-                                          (SETUP, self.config_path, ("--harness", "Amp"))):
-                    result = self.cli(skill, path, *args)
+                for skill, args in ((DISCOVERY, ("check", "discovery")),
+                                    (SETUP, ("resolve", "--harness", "Amp", "--orchestration"))):
+                    result = self.cli(skill, *args)
                     self.assertEqual(result.returncode, 1)
                     self.assertEqual(result.stdout, "")
                     self.assertIn("FAIL:", result.stderr)
                 self.assertFalse(self.marker.exists())
         self.discovery_path.write_text("{not JSON")
-        result = self.cli(SETUP, self.config_path, "--harness", "Amp")
+        result = self.cli(SETUP, "resolve", "--harness", "Amp", "--orchestration")
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.marker.exists())
 
     def test_malformed_setup_fails_before_tools(self):
         original = deepcopy(self.config)
-        for field, value in (("schema_version", 1), ("project", None), ("harnesses", []), ("discovery_file", "missing.json")):
-            with self.subTest(field=field):
+        for field, value in (("schema_version", 2), ("schema_version", 1), ("project", None), ("harnesses", [])):
+            with self.subTest(field=field, value=value):
                 self.config = deepcopy(original)
                 self.config[field] = value
                 self.save()
-                result = self.cli(SETUP, self.config_path, "--harness", "Amp")
+                result = self.cli(SETUP, "resolve", "--harness", "Amp", "--orchestration")
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("FAIL:", result.stderr)
                 self.assertFalse(self.marker.exists())
         self.config_path.write_text("{not JSON")
-        result = self.cli(SETUP, self.config_path, "--harness", "Amp")
+        result = self.cli(SETUP, "resolve", "--harness", "Amp", "--orchestration")
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.marker.exists())
 

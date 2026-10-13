@@ -1,5 +1,5 @@
 {
-  "skill_name": "orchestration-discovery",
+  "skill_name": "harness-discovery",
   "evals": [{
     "id": 0,
     "name": "discovery-without-preferences",
