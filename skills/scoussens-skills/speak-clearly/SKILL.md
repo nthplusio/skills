@@ -93,6 +93,21 @@ Short sentences, one idea each.
 - Idioms, sports, seasons, holidays, and jokes do not survive translation:
   *ballpark figure*, *back burner*, *out of the box*, *home run*.
 
+## Anchor an analogy, then twist it
+
+An idiom hides a comparison; an analogy states one. When a reader does not yet
+hold a concept, compare it to something they handle in their own work, then
+say in the next sentence how the software differs. The second sentence is the
+part that stops the reader from learning the wrong model.
+
+- Write: `A seam is like the socket between a lamp and the wall. In code,
+  the socket is built on purpose so that a test can plug in a fake lamp.`
+- Not: `A seam is like a lamp socket.`
+
+One analogy per concept, carried through the text. A reader who already owns
+the vocabulary gets a one-line definition instead. To choose the reader and
+their vocabulary, see the `explain-to` skill when it is available.
+
 ## Keep the tone level
 
 Sound like a knowledgeable colleague.

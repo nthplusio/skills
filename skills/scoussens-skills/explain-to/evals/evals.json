@@ -1,0 +1,112 @@
+{
+  "skill_name": "explain-to",
+  "note": "Paths are relative to the repository root. The baseline receives the user's request verbatim without the skill. A win shows in reader fit, not in length: the output opens with the takeaway in the reader's words, states who it is written for, stays on one altitude per picture, anchors each new concept with a stated twist where the profile asks for one, and keeps every project-local name defined or absent. Graders should read as the named audience and mark any term they would have to look up. The Snowflake fixture is synthetic; graders check that the output states only facts the fixture gives and labels the rest as assumptions.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "doorbell-end-user",
+      "prompt": "Explain what the doorbell plugin does to someone on our support team who will install it but has never written code. plugins/doorbell/README.md has the details.",
+      "expected_output": "A chat reply of about 250 words that opens with what the person gets (their inbox work shows up in their coding assistant and can be acted on within limits they approve), says what they must do to install and sign in, states when they will see it, and names nobody-technical terms like MCP, Stop hook, or lease without translating them. It closes with who to contact if it looks wrong, and a one-line 'written for' statement.",
+      "files": [
+        "plugins/doorbell/README.md"
+      ],
+      "assertions": [
+        "takeaway_first: the first sentence says what the reader gets, in their words, with no technical noun",
+        "reader_stated: a one-line statement names the end-user profile so the user can correct it",
+        "no_untranslated_jargon: MCP, hook, Stop, lease, authority, budget, mod, and marketplace either do not appear or are each defined in plain words at first use",
+        "install_steps_present: the two slash commands the README gives are present as the steps to run, and the sign-in step is described",
+        "within_budget: prose outside tables and pictures is under about 300 words",
+        "anchor_with_twist: at least one everyday anchor explains the inbox-to-assistant idea, and the sentence after it states how the software differs"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "doorbell-new-developer",
+      "prompt": "I'm new to this repo. Explain how the doorbell plugin works so I can start on an issue in it next week. The README is at plugins/doorbell/README.md and the code is under plugins/doorbell/.",
+      "expected_output": "A reply at the System then Part altitude: which pieces exist (the MCP client, the hooks, the commands, the skill, the tests), what crosses between them, and a shallow file map of plugins/doorbell/ with one line per folder. Every project-local term is defined at first use. It names where to look first for an issue and what not to break, in about 700 words.",
+      "files": [
+        "plugins/doorbell/README.md"
+      ],
+      "assertions": [
+        "file_map_present: a shallow tree of plugins/doorbell/ with one line per folder, using only paths that exist",
+        "system_picture_with_caption: one diagram shows the pieces and what crosses between them, has twelve or fewer boxes, labels on the arrows, and a one-sentence caption stating its point",
+        "local_terms_defined: each project-local term (for example lease, authority, budget, routing role, grant) is defined in generic software words where it first appears",
+        "first_question_answered: the reply says where the reader should look first and what they must not break, in the first screen",
+        "altitude_held: no paragraph mixes a System description with function-level code detail; code appears only as a short excerpt showing a convention",
+        "reader_stated: a one-line statement names the new-developer profile"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "seam-for-data-engineer",
+      "prompt": "Our data engineers keep asking what we mean by a 'seam' in the visualize-spec skill. Write something for them. The definition we use is in skills/scoussens-skills/visualize-spec/SKILL.md.",
+      "expected_output": "A short Markdown or chat explanation that anchors a seam to something a data engineer already handles, such as the contract between a producer table and its consumers or a staging layer, states the twist (a seam is built on purpose so a test can swap one side for a fake), gives one example in data terms (a loader that can be pointed at a fixture file instead of the warehouse), and keeps application words like component or dependency injection out or defined.",
+      "files": [
+        "skills/scoussens-skills/visualize-spec/SKILL.md"
+      ],
+      "assertions": [
+        "anchor_in_data_terms: the anchor comes from the data engineer's own work, such as a table contract, a staging layer, or an interface between pipeline stages",
+        "twist_stated: immediately after the anchor, one sentence says how a seam differs, including that a test can replace one side",
+        "example_in_data_terms: at least one concrete example uses tables, loaders, pipelines, or warehouses rather than UI or web-request terms",
+        "app_jargon_handled: component, dependency injection, mock, handler, and middleware either do not appear or are each defined",
+        "matches_source_definition: the explanation agrees with the skill's definition (a place where two pieces meet, where a test can swap one side for a fake) and does not invent properties",
+        "reader_stated: a one-line statement names the data-engineer profile"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "ci-split-for-pm",
+      "prompt": "Explain the CI change in skills/scoussens-skills/explain-to/evals/files/ci-split-pr.md to our product manager, who asked why engineers want to spend time on it this sprint.",
+      "expected_output": "A chat reply of about 400 words that opens with the ask and the recommendation, states the impact in the PM's terms (contributors learn within a minute whether a change is mergeable instead of ten, and no private name can slip through), shows the before and after as one picture with a caption, puts the minutes in a small table beside the comparison that gives them meaning, and translates every technical term into a consequence.",
+      "files": [
+        "skills/scoussens-skills/explain-to/evals/files/ci-split-pr.md"
+      ],
+      "assertions": [
+        "ask_and_recommendation_first: the first two lines say what is being asked of the PM and what the writer recommends",
+        "numbers_in_table: the ten-minute and one-minute figures and the extra runner minute appear in a table, not scattered in prose",
+        "before_after_picture: one picture shows the single job becoming two, with a caption that states the point, and twelve or fewer boxes",
+        "jargon_translated: workflow, job, runner, required check, and advisory either do not appear or are each stated as a consequence the PM cares about",
+        "risk_named: the reply says what could go wrong (the full suite failing after a merge) and what happens then",
+        "within_budget: prose outside tables and pictures is under about 450 words"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "schema-change-three-readers",
+      "prompt": "Explain the Snowflake schema change in skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md three times: once for the data engineer who runs the migration, once for the account manager who will tell customers, and once for a customer who uses the grid. Keep them separate.",
+      "expected_output": "Three separate explanations. The data engineer's is a Markdown document shape with a before-and-after of the schema, the list of consumers by name, the answer for existing rows (backfilled by ordinal, three tenants stop with an error), and the rollback. The account manager's leads with what customers notice (grid headers show their own level names, four extra export columns) and what to tell them, with no table or column names. The customer's is under 250 words, says the headers now show the names they typed in the hierarchy editor, that exports gain four columns at the end and existing columns are unchanged, and whom to contact.",
+      "files": [
+        "skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md"
+      ],
+      "assertions": [
+        "three_separate_outputs: three clearly separated sections, each with its own reader line",
+        "data_engineer_schema_before_after: the data engineer section contains a before-and-after of the tables and views with the same layout on both sides, and a caption",
+        "data_engineer_existing_rows: the data engineer section states how existing placement rows get LEVEL_ID, that three tenants with duplicate ordinals stop with an error, and what the rollback is",
+        "data_engineer_consumers_named: the data engineer section lists the grid readers, exports, reporting marts, and nightly job by name as consumers",
+        "account_manager_no_schema_words: the account manager section contains no table, column, view, or schema names and no SQL",
+        "account_manager_customer_facing_change: the account manager section says headers now show authored names and exports gain four trailing columns, and gives a sentence they can say to a customer",
+        "customer_budget_and_contact: the customer section is under about 250 words, uses only grid and export vocabulary, and names whom to contact",
+        "no_invented_facts: every number and every named object in all three sections appears in the fixture; anything else is labelled as an assumption"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "schema-change-data-engineer",
+      "prompt": "Write up the Snowflake schema change in skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md for the data engineer who will run the migration across our tenants. I want the schema picture to carry it.",
+      "expected_output": "A Markdown document at System then Part altitude. It opens with what changes and what happens to stored rows. Its main picture is a before-and-after schema drawing: one card per table or view with the columns that matter, PK and FK marked, the join column written on each connector, consumers hanging off the objects they read, and only the changed key, the new LEVEL table, and the moved connector accented. Text diagrams stay under 72 columns, with the after picture under the before picture. The document then gives the backfill, the three ambiguous tenants, the consumers by name, the run order, and the rollback.",
+      "files": [
+        "skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md"
+      ],
+      "assertions": [
+        "schema_cards: the schema picture draws one card per object for the placement tables, the old per-dimension level tables, the new LEVEL.HIERARCHY_LEVEL table, and the V_*_MAP views, each with the columns that matter and PK or FK marked",
+        "join_on_connector: every connector between cards carries the join column (ORDINAL before, LEVEL_ID after)",
+        "consumers_on_objects: the grid readers, exports, reporting marts, and nightly job appear beside the object they read, joined by a connector labelled reads, or in a table that names the object each reads",
+        "before_after_same_layout: the before and after pictures use the same cards in the same positions; only the changed key, the new table, and the moved connector are accented, and the old level tables stay in place marked as views until N+2",
+        "width_limit: no line in any text diagram exceeds 72 columns, and the after picture sits below the before picture",
+        "existing_rows_answered: the document states the backfill join, the batch size, the NOT NULL step, and that three tenants stop with an error and need a one-row fix",
+        "rollback_present: the rollback script, what it does, and its time per tenant appear",
+        "no_invented_facts: every number and object name appears in the fixture; anything else is labelled as an assumption"
+      ]
+    }
+  ]
+}

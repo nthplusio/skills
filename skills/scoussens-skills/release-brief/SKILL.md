@@ -173,6 +173,10 @@ sections are decoration, because a ranked list is not a sequence.
 
 ## Write from the reader's side of the screen
 
+The reader is the **business stakeholder** profile in the `explain-to` skill's
+`references/audiences.md`, when that skill is installed beside this one. Its
+vocabulary list and reading budget apply to every item below.
+
 Each item leads with what a person would notice, in their vocabulary. Detail
 follows in a sentence or two, then the tracker and pull request references sit
 quietly underneath.
