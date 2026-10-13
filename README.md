@@ -187,6 +187,11 @@ The pack uses two extensions that strict validators reject:
 
 - `disable-model-invocation: true` keeps a skill out of Claude Code's automatic
   loading, so it runs only when invoked by name.
+- `metadata.needs` lists, comma-separated, the harness capabilities a skill
+  reads from `discovery.json`, as dotted paths into one harness entry of
+  `harness-discovery/assets/discovery.template.json` (for example
+  `artifacts, skills.load`). The validator rejects a path the template does
+  not have, so the capability vocabulary has one home.
 - `metadata.internal: true` hides a plugin-bundled skill from pack discovery. The
   skills CLI checks for the boolean, so do not quote it.
 

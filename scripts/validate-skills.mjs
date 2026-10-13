@@ -18,6 +18,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import { CONTAINER, discoverPluginSkillDirs, discoverSkillDirs, skillPaths } from './lib/discover-skills.mjs'
 import { dirname, join, relative, basename, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const ROOT = process.cwd()
 const MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -33,6 +34,31 @@ const FRONTMATTER_KEYS = new Set([
   'name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools',
   'disable-model-invocation',
 ])
+// `metadata.needs` names harness capabilities a skill reads from discovery.json.
+// Each item is a dotted path into one harness entry of harness-discovery's
+// template, so the vocabulary has exactly one home.
+const DISCOVERY_TEMPLATE = resolve(dirname(fileURLToPath(import.meta.url)),
+  '../skills/scoussens-skills/harness-discovery/assets/discovery.template.json')
+let needsVocabulary
+function knownNeed(path) {
+  if (needsVocabulary === undefined) {
+    const template = JSON.parse(readFileSync(DISCOVERY_TEMPLATE, 'utf8'))
+    needsVocabulary = Object.values(template.harnesses)[0]
+  }
+  let node = needsVocabulary
+  for (const part of path.split('.')) {
+    if (node === null || typeof node !== 'object' || Array.isArray(node) || !(part in node)) return false
+    node = node[part]
+  }
+  return true
+}
+function checkNeeds(rel, value) {
+  for (const item of value.split(',')) {
+    const need = item.trim()
+    if (!need) err(rel, 'metadata.needs has an empty item; write a comma-separated list of discovery paths')
+    else if (!knownNeed(need)) err(rel, `metadata.needs names \`${need}\`, which is not a path in the discovery template (${relative(ROOT, DISCOVERY_TEMPLATE)})`)
+  }
+}
 
 const errors = []
 const warnings = []
@@ -200,6 +226,7 @@ function checkFrontmatterFields(rel, fm) {
       for (const [key, value] of Object.entries(fm.metadata)) {
         const ok = key === 'internal' ? typeof value === 'boolean' : typeof value === 'string'
         if (!ok) err(rel, `metadata.${key} must be a ${key === 'internal' ? 'boolean' : 'string'}; YAML parsed it as ${typeof value}`)
+        else if (key === 'needs') checkNeeds(rel, value)
       }
     }
   }

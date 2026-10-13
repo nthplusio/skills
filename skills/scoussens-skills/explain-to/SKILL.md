@@ -12,6 +12,8 @@ description: >-
   technical or too vague. Do not load it for a one-line factual answer, a
   commit message, or a change summary for the developer who made it; answer
   those directly instead.
+metadata:
+  needs: artifacts, skills.load, helpers.invoke
 ---
 
 # Explain to

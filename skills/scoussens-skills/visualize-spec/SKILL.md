@@ -2,6 +2,8 @@
 name: visualize-spec
 description: Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — themed to the repository and opened locally or published wherever the agent can, so a developer can check it delivers what they want.
 disable-model-invocation: true
+metadata:
+  needs: artifacts
 ---
 
 # Visualize spec
