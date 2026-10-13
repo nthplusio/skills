@@ -14,7 +14,7 @@ Build it in this order: establish ground truth, agree the story, then write.
 
 ## Ask two questions and show the sheet first
 
-Two of these you cannot derive from the repository, and the third changes what
+The first two you cannot derive from the repository, and the form changes what
 you build. Ask them in one message, before gathering anything, each with a
 bold default so that *go* answers all of them.
 
