@@ -91,11 +91,11 @@ are both supported.
 Install `harness-discovery`, `orchestration-setup` and `orchestration-run`
 together. Each supports manual invocation and agent discovery:
 
-1. `/harness-discovery` saves `.orchestration/discovery.json` with observed
+1. `/harness-discovery` saves `.nthplusio-skills/discovery.json` with observed
    capabilities keyed by the discovered harness name.
 2. `/orchestration-setup` calls discovery if needed, then interviews for project
    ticket policy, shared worker skills, storage, and run defaults. It saves
-   `.orchestration/config.json` with a profile for each harness.
+   `.nthplusio-skills/orchestration.json` with a profile for each harness.
 3. `/orchestration-run` identifies the current harness and resolves its profile.
    A short confirmation covers the selected tickets, finish line, dashboard
    audience, and scan interval. Resume reuses confirmed run choices.
@@ -118,6 +118,39 @@ npm run test:orchestration
 
 See [behavioral evaluation instructions](skills/scoussens-skills/orchestration-run/evals/README.md)
 for fresh agent runs and their separate evidence requirements.
+
+### Saved state
+
+These skills keep their saved state in `.nthplusio-skills/` at the root of the
+repository they work in. One script, `state.py`, checks it and resolves a
+harness from it. `harness-discovery` owns the script; `orchestration-setup` and
+`orchestration-run` carry byte-identical copies that a test keeps in step.
+
+| File | Written by | Read by | In Git |
+| --- | --- | --- | --- |
+| `discovery.json` | `harness-discovery` | Every skill that needs harness facts | Yes, sanitized |
+| `orchestration.json` | `orchestration-setup` | `orchestration-run` | Yes |
+| `runs/<harness slug>/` | `orchestration-run` | `orchestration-run` | No; `.nthplusio-skills/.gitignore` |
+
+```bash
+python3 <skill>/scripts/state.py check
+python3 <skill>/scripts/state.py resolve --harness amp --orchestration
+```
+
+A harness is named by its discovered key, such as `Claude Code`, or by that
+key's slug, `claude-code`.
+
+Earlier versions kept this state in `.orchestration/`. `orchestration-setup` and
+`harness-discovery` run `state.py migrate` before they read anything. It moves
+and upgrades earlier state, keeps relative run folders reachable, refuses to
+overwrite a conflicting file, and copies a configuration from outside the
+repository without changing it. `orchestration-run` never migrates; it hands
+legacy state to setup.
+
+To change a saved file's shape, bump its `schema_version`, add one upgrade step
+to `UPGRADES` in `state.py`, and add a fixture of the old shape under
+`harness-discovery/evals/fixtures/`. To move the files, add the old folder to
+`LEGACY_DIRS`. The migration test upgrades every fixture and checks the result.
 
 ## Adding a skill
 

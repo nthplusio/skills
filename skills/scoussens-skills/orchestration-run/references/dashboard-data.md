@@ -36,7 +36,8 @@ Stages advance only on accepted proof, whatever the agent's state.
 - `run_id`: stable ID included in copied dashboard questions.
 - `title`, `goal`: short plain-language strings.
 - `updated_at`: actual ISO 8601 timestamp, with timezone.
-- `config_path`: absolute path of repository setup this run reads.
+- `config_path`: absolute path of the repository's `.nthplusio-skills/orchestration.json`
+  this run reads.
 - `harness_name`: current harness name, exactly as keyed in setup. Required for
   new runs. Recover older records' name from their original context, not the model.
 - `run_choices`: selected ticket IDs, target stage, publication scope, idle-scan

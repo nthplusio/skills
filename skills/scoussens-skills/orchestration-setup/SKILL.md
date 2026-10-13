@@ -15,14 +15,23 @@ once and keep each harness's choices under its discovered name.
 
 ## 1. Read setup and ensure discovery exists
 
-Read `<repository-root>/.orchestration/config.json`, or the user's explicit path
-or `ORCHESTRATION_CONFIG`. Read its `discovery_file`, resolved relative to the
-configuration directory. Without configuration, use the repository's
-`.orchestration/discovery.json`. Identify the current harness from runtime context.
+Saved state lives in `<repository root>/.nthplusio-skills/`: `orchestration.json`
+holds setup and `discovery.json` holds discovery. These skills change between
+versions, so first run:
+
+```bash
+python3 <this skill's folder>/scripts/state.py migrate
+```
+
+It moves and upgrades state saved by earlier versions, refuses to overwrite a
+conflicting file, and prints what it changed. Tell the user what it moved. When
+the user names an older configuration elsewhere, pass it with `--from <path>`;
+migrate copies it and leaves the original unchanged. Then read both files when
+they exist. Identify the current harness from runtime context.
 
 If discovery is absent, malformed, missing this harness, or contradicted by
-the current context, load `harness-discovery` first. Give it the selected
-repository discovery path. Read its saved output before interviewing the user.
+the current context, load `harness-discovery` first for the same repository.
+Read its saved output before interviewing the user.
 Reuse suitable saved discovery. A new run alone does not require rediscovery.
 
 Use the discovered harness name exactly as the profile key. Adding another
@@ -30,8 +39,8 @@ harness merges a new entry into the same files. Preserve other profiles and
 confirmed project choices. To configure a harness not running here, reuse its
 saved discovery or obtain a discovery report from that environment first.
 
-An explicitly supplied old single-harness version 1 configuration is migration
-input, not the runner's contract. Preserve it, carry confirmed choices into the
+An old single-harness version 1 configuration, supplied by the user or reported
+by migrate, is migration input, not the runner's contract. Preserve it, carry confirmed choices into the
 new profile, and confirm only missing project/default choices. Discovery verifies
 imported capability facts. Save the new repository files rather than overwriting
 personal defaults or inventing compatibility behavior in the runner.
@@ -59,10 +68,9 @@ Resolve project choices first, then the current harness profile:
    Optionally map business stages to the repository skills that perform them in
    `project.stage_skills`, such as a start-work skill for `code_publication` or
    a review skill for `review`. Offer only skills the repository already has.
-3. Storage. Confirm the configuration path and this profile's `run_root` together.
-   Explain that run files hold status, dashboards, retained proof, and handoffs.
-   Propose `.orchestration/config.json` with `runs/<harness-directory>` relative to
-   its directory. An absolute local path or `~/...` is also supported.
+3. Storage. Confirm this profile's `run_root`. Explain that run files hold status,
+   dashboards, retained proof, and handoffs. Propose `runs/<harness slug>`, relative
+   to `.nthplusio-skills/`. An absolute local path or `~/...` is also supported.
 4. Run defaults. Confirm the default finish line, preferred available destination
    or `null` for no preference, and the coordinator's scan interval. Propose
    review-ready PRs and 60 seconds if guidance supplies none. Explain active-turn
@@ -70,8 +78,8 @@ Resolve project choices first, then the current harness profile:
    explain that the dashboard reloads at the run interval, including during dialogs.
    A preference is not run approval or permission to wake the coordinator after yielding.
 
-Group closely related choices when one answer can settle them, such as the storage
-paths or run defaults. If an answer is pending, end this turn with that one question
+Group closely related choices when one answer can settle them, such as the run
+defaults. If an answer is pending, end this turn with that one question
 and resume the interview after the user answers. Keep later choices unresolved.
 When the harness supplies an answer receipt or message link, retain that reference
 with the confirmed choices. Wait before saving a new setup profile. Discovery can
@@ -83,22 +91,23 @@ and defaults have actual confirmation sources, or setup is explicitly awaiting i
 
 ## 3. Save and check setup
 
-Fill [`assets/config.template.json`](assets/config.template.json) with confirmed
-choices. Set `discovery_file` to the saved report path. Prefer a relative path
-beside the configuration for repository portability. `run_root` resolves relative
-to the configuration directory, not the invocation directory. Record the actual
-confirmation source in project ticket policy and each harness profile.
+Fill [`assets/orchestration.template.json`](assets/orchestration.template.json)
+with confirmed choices and save it as `.nthplusio-skills/orchestration.json`.
+`run_root` resolves relative to `.nthplusio-skills/`, not the invocation directory.
+Record the actual confirmation source in project ticket policy and each harness
+profile.
 
 Keep sanitized discovery and setup in the repository. Keep run files outside Git
-and installed skill directories. For a worktree run root, establish a Git ignore
-rule and verify it is neither tracked nor staged before the runner writes there.
+and installed skill directories. For a run root inside the repository, write
+`.nthplusio-skills/.gitignore` with a rule that covers it, such as `runs/`, and
+verify the run files are neither tracked nor staged before the runner writes there.
 Local machine-specific overrides remain untracked. No step commits or pushes files.
 
 Run:
 
 ```bash
-python3 <this skill's folder>/scripts/check_config.py <config.json>
-python3 <this skill's folder>/scripts/check_config.py <config.json> --harness '<discovered name>'
+python3 <this skill's folder>/scripts/state.py check orchestration
+python3 <this skill's folder>/scripts/state.py resolve --harness '<discovered name>' --orchestration
 ```
 
 The second command emits the resolved profile the runner consumes. It joins saved

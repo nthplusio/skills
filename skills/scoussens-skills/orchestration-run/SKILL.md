@@ -16,21 +16,22 @@ coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and recover the run
 
-Identify the current harness name from runtime context. Read
-`<repository-root>/.orchestration/config.json`, or the explicit path or
-`ORCHESTRATION_CONFIG`. Resolve its saved profile with:
+Identify the current harness name from runtime context. Resolve its saved
+profile from `<repository root>/.nthplusio-skills/` with:
 
 ```bash
-python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --harness '<current harness name>'
+python3 <this skill's folder>/scripts/state.py resolve --harness '<current harness name>' --orchestration
 ```
 
 Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
 `run_root`. The name selects the profile. Neither the model nor the working
 directory selects another harness's settings. Install `harness-discovery`,
-`orchestration-setup` and this skill together so their referenced resources are available.
+`orchestration-setup` and this skill together, because this skill hands missing or
+outdated setup to them.
 
 If setup or saved discovery is missing, malformed, lacks this harness, or has a
-material context mismatch, load `orchestration-setup`. That skill owns discovery
+material context mismatch, load `orchestration-setup`. Do the same when `resolve`
+reports legacy state: setup migrates it, and this skill never does. That skill owns discovery
 and the durable interview. Hold affected assignments until its output validates.
 Keep unrelated saved profiles intact. A new run with valid setup needs neither
 tool rediscovery nor a project/harness interview. Configuration describes tools

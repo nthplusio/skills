@@ -6,8 +6,8 @@ candidate must execute the request; generating fixtures or grading untouched
 files is not a behavioral evaluation.
 
 The executable suite covers discovery, durable setup and run coordination.
-Saved state uses repository `.orchestration/discovery.json` and schema-version-2
-`.orchestration/config.json`. Owner operations use selected flat capabilities
+Saved state uses the repository's `.nthplusio-skills/discovery.json` and
+schema-version-3 `.nthplusio-skills/orchestration.json`. Owner operations use selected flat capabilities
 internally; they do not replace the saved-file contract.
 
 The coordination scenarios retain their original ticket set and omit `work`
@@ -24,7 +24,7 @@ are not live project evidence.
 | `setup-discovery-first` | Setup 5 | Load discovery and save/check/read its report before beginning the durable interview. |
 | `setup-reuse-discovery` | Setup 6 | Read suitable saved discovery without repeating capability inspection; await durable confirmation. |
 | `setup-second-harness` | Setup 7 | Add the current product's confirmed profile while preserving the first profile and project policy. |
-| `setup-missing-owners` | Setup 0 | Reuse discovery, confirm durable choices, save/check version 2 setup, keep unavailable owners explicit. |
+| `setup-missing-owners` | Setup 0 | Reuse discovery, confirm durable choices, save/check version 3 setup, keep unavailable owners explicit. |
 | `setup-confirmation` | Setup 2 | Reuse saved facts and ask one focused durable question; save no setup while its answer is pending. |
 | `runner-current-harness` | Runner 14 | Resolve only the current product, confirm run-only choices and record 30-second cadence without changing the saved 60-second default. |
 | `runner-proof-reuse` | Runner 0 | Reuse sufficient receipts and owners, remove the hash-only hold, separate delivery claims, retain an unresolved runtime obligation. |
@@ -72,8 +72,8 @@ Setup 1 and 3 are also specification-only prompts without mock case mappings.
 
 `inventory` exposes current product identity and tool contracts, not all saved
 capability facts. `discover-facts` returns read-only sourced observations.
-`check-discovery`, `check-config` and `resolve-config` invoke the real CLIs;
-`resolve-config` supplies `--harness`. All runner cases must resolve their current
+`check-discovery`, `check-config` and `resolve-config` invoke the real `state.py`
+as `check discovery`, `check orchestration` and `resolve --harness … --orchestration`. All runner cases must resolve their current
 profile and leave discovery, project policy and both profiles untouched, even
 when a rewrite would save identical bytes. Durable-choice questions and repeated
 discovery fail grading. Later confirmation cannot authorize earlier writes.

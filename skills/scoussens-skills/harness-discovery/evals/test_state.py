@@ -1,0 +1,226 @@
+"""Run with python3 -B -m unittest discover -s <this directory> -v."""
+
+from copy import deepcopy
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+SKILL = Path(__file__).resolve().parent.parent
+STATE = SKILL / "scripts" / "state.py"
+
+
+def discovery_document():
+    discovery = json.loads((SKILL / "assets" / "discovery.template.json").read_text())
+    facts = discovery["harnesses"].pop("REPLACE_WITH_DISCOVERED_HARNESS_NAME")
+    facts.update(context="Local terminal", observed_at="2026-10-09T12:00:00Z", sources=["Inspected tool inventory"],
+                 owner_term="session", helper_term="subagent")
+    facts["skills"]["load"] = "Load by skill name"
+    other = deepcopy(facts)
+    other.update(context="Orb", owner_term="thread")
+    discovery["harnesses"] = {"Claude Code": facts, "Amp": other}
+    return discovery
+
+
+class StateTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository = self.root / "repository"
+        self.discovery_path = self.repository / ".nthplusio-skills" / "discovery.json"
+        self.discovery_path.parent.mkdir(parents=True)
+        self.save(discovery_document())
+
+    def save(self, discovery):
+        self.discovery_path.write_text(json.dumps(discovery))
+
+    def state(self, *arguments, cwd=None, root=True):
+        command = [sys.executable, "-B", str(STATE), *arguments] + (["--root", str(self.repository)] if root else [])
+        return subprocess.run(command, cwd=cwd or self.root, capture_output=True, text=True)
+
+    def test_resolve_prints_the_entry_with_its_key_and_slug(self):
+        for name in ("Claude Code", "claude-code", "CLAUDE CODE"):
+            with self.subTest(name=name):
+                result = self.state("resolve", "--harness", name)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                entry = json.loads(result.stdout)
+                self.assertEqual(entry["harness"], {"name": "Claude Code", "slug": "claude-code", "context": "Local terminal",
+                                                    "owner_term": "session", "helper_term": "subagent"})
+                self.assertEqual(entry["skills"]["load"], "Load by skill name")
+                self.assertNotIn("run_root", entry)
+
+    def test_unknown_harness_is_not_guessed(self):
+        result = self.state("resolve", "--harness", "Claude")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("run harness-discovery in it", result.stderr)
+
+    def test_keys_must_have_distinct_slugs(self):
+        discovery = discovery_document()
+        discovery["harnesses"]["claude code"] = deepcopy(discovery["harnesses"]["Claude Code"])
+        self.save(discovery)
+        result = self.state("check", "discovery")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("share the slug claude-code", result.stderr)
+        discovery["harnesses"] = {"--": discovery["harnesses"]["Amp"]}
+        self.save(discovery)
+        self.assertIn("needs letters or digits", self.state("check", "discovery").stderr)
+
+    def test_root_defaults_to_the_working_directorys_git_repository(self):
+        subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
+        inside = self.repository / "nested" / "folder"
+        inside.mkdir(parents=True)
+        result = self.state("check", cwd=inside, root=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, f"PASS: discovery {self.discovery_path.resolve()}\n")
+        outside = self.root / "not-a-repository"
+        outside.mkdir()
+        result = self.state("check", cwd=outside, root=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("pass --root", result.stderr)
+
+    def test_versions_this_tool_cannot_read_are_refused(self):
+        for found, message in ((0, "is older than 1"), (2, "update these skills"), ("1", "update these skills")):
+            with self.subTest(found=found):
+                discovery = discovery_document()
+                discovery["schema_version"] = found
+                self.save(discovery)
+                result = self.state("check", "discovery")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(message, result.stderr)
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+LEGACY = FIXTURES / "orchestration-v2"
+
+
+class MigrationTests(unittest.TestCase):
+    """Each fixture is a legacy folder exactly as an earlier version saved it."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository = self.root / "repository"
+        self.legacy = self.repository / ".orchestration"
+        self.state_dir = self.repository / ".nthplusio-skills"
+        shutil.copytree(LEGACY, self.legacy)
+        self.run_file = self.legacy / "runs" / "amp" / "run-1" / "status.json"
+        self.run_file.parent.mkdir(parents=True)
+        self.run_file.write_text("{}")
+
+    def state(self, *arguments):
+        return subprocess.run([sys.executable, "-B", str(STATE), *arguments, "--root", str(self.repository)],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def migrate(self, *arguments):
+        result = self.state("migrate", *arguments)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_every_fixture_migrates_to_the_current_schema(self):
+        for fixture in sorted(path for path in FIXTURES.iterdir() if path.is_dir()):
+            with self.subTest(fixture=fixture.name):
+                repository = self.root / fixture.name
+                shutil.copytree(fixture, repository / ("." + fixture.name.rsplit("-v", 1)[0]))
+                migrated = subprocess.run([sys.executable, "-B", str(STATE), "migrate", "--root", str(repository)],
+                                          capture_output=True, text=True)
+                self.assertEqual(migrated.returncode, 0, migrated.stderr)
+                checked = subprocess.run([sys.executable, "-B", str(STATE), "check", "--root", str(repository)],
+                                         capture_output=True, text=True)
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+
+    def test_migrate_moves_upgrades_and_keeps_run_files_reachable(self):
+        summary = self.migrate()
+        self.assertTrue(summary["changed"])
+        self.assertEqual(sorted(Path(target).name for _, target in summary["moved"]), ["discovery.json", "orchestration.json"])
+        self.assertEqual(summary["upgraded"], [{"file": str(self.legacy / "config.json"), "from": 2, "to": 3}])
+        self.assertEqual(summary["rebased_run_roots"], [{"harness": "Amp", "from": "runs/amp", "to": "../.orchestration/runs/amp"}])
+        self.assertEqual((self.state_dir / "discovery.json").read_bytes(), (LEGACY / "discovery.json").read_bytes())
+        config = json.loads((self.state_dir / "orchestration.json").read_text())
+        self.assertEqual(config["schema_version"], 3)
+        self.assertNotIn("discovery_file", config)
+        self.assertFalse((self.legacy / "config.json").exists() or (self.legacy / "discovery.json").exists())
+        self.assertTrue(self.run_file.exists())
+        resolved = self.state("resolve", "--harness", "amp", "--orchestration")
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        self.assertEqual(json.loads(resolved.stdout)["run_root"], str((self.legacy / "runs" / "amp").resolve()))
+
+    def test_dry_run_reports_the_changes_without_writing(self):
+        summary = self.migrate("--dry-run")
+        self.assertTrue(summary["dry_run"] and summary["changed"])
+        self.assertEqual(len(summary["moved"]), 2)
+        self.assertFalse(self.state_dir.exists())
+        self.assertEqual((self.legacy / "config.json").read_bytes(), (LEGACY / "config.json").read_bytes())
+
+    def test_a_second_run_changes_nothing(self):
+        self.migrate()
+        before = {path: path.read_bytes() for path in self.state_dir.iterdir()}
+        self.assertFalse(self.migrate()["changed"])
+        self.assertEqual({path: path.read_bytes() for path in self.state_dir.iterdir()}, before)
+
+    def test_conflicting_current_state_is_refused_and_left_alone(self):
+        self.state_dir.mkdir()
+        current = json.loads((LEGACY / "discovery.json").read_text())
+        current["harnesses"]["Amp"]["context"] = "Local terminal"
+        (self.state_dir / "discovery.json").write_text(json.dumps(current))
+        result = self.state("migrate")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("both exist and differ", result.stderr)
+        self.assertTrue((self.legacy / "config.json").exists())
+        self.assertFalse((self.state_dir / "orchestration.json").exists())
+
+    def test_an_identical_legacy_copy_is_removed(self):
+        self.state_dir.mkdir()
+        shutil.copy(LEGACY / "discovery.json", self.state_dir / "discovery.json")
+        summary = self.migrate()
+        self.assertEqual(summary["removed_duplicates"], [str(self.legacy / "discovery.json")])
+        self.assertFalse((self.legacy / "discovery.json").exists())
+        self.assertTrue((self.state_dir / "orchestration.json").exists())
+
+    def test_an_outside_configuration_is_copied_and_left_untouched(self):
+        shutil.rmtree(self.legacy)
+        outside = self.root / "project-orchestration"
+        shutil.copytree(LEGACY, outside)
+        summary = self.migrate("--from", str(outside / "config.json"))
+        self.assertEqual(len(summary["copied"]), 2)
+        self.assertEqual((outside / "config.json").read_bytes(), (LEGACY / "config.json").read_bytes())
+        config = json.loads((self.state_dir / "orchestration.json").read_text())
+        self.assertEqual(config["harnesses"]["Amp"]["run_root"], str((outside / "runs" / "amp").resolve()))
+
+    def test_a_version_1_configuration_is_left_for_the_setup_interview(self):
+        (self.legacy / "config.json").write_text(json.dumps({"schema_version": 1, "harness": "Amp"}))
+        summary = self.migrate()
+        self.assertIn("orchestration-setup interview", summary["interview"][0])
+        self.assertEqual(json.loads((self.legacy / "config.json").read_text())["schema_version"], 1)
+        self.assertTrue((self.state_dir / "discovery.json").exists())
+
+    def test_check_and_resolve_name_the_migrate_command_for_legacy_state(self):
+        for arguments in (("check",), ("resolve", "--harness", "Amp", "--orchestration")):
+            with self.subTest(command=arguments[0]):
+                result = self.state(*arguments)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("legacy state at", result.stderr)
+                self.assertIn("run state.py migrate", result.stderr)
+
+    def test_tracked_legacy_files_move_with_git(self):
+        def git(*arguments):
+            return subprocess.run(["git", "-C", str(self.repository), "-c", "user.name=Test",
+                                   "-c", "user.email=test@example.com", *arguments],
+                                  check=True, capture_output=True, text=True).stdout
+        git("init", "-q")
+        git("add", ".orchestration/config.json", ".orchestration/discovery.json")
+        git("commit", "-q", "-m", "Save orchestration state")
+        self.migrate()
+        status = git("status", "--porcelain").splitlines()
+        self.assertIn("R  .orchestration/discovery.json -> .nthplusio-skills/discovery.json", status)
+        self.assertIn("RM .orchestration/config.json -> .nthplusio-skills/orchestration.json", status)
+
+
+if __name__ == "__main__":
+    unittest.main()

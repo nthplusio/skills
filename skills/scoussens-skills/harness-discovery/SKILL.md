@@ -14,12 +14,19 @@ Setup interviews the user about what to use. `orchestration-run` coordinates wor
 
 ## 1. Identify the harness and read saved discovery
 
-Use `<repository-root>/.orchestration/discovery.json` unless the user supplies
-another repository discovery path. Read the existing file before updating it.
+Saved state lives in `<repository root>/.nthplusio-skills/`. First run
+`python3 <this skill's folder>/scripts/state.py migrate`, which moves state saved
+by earlier versions of these skills there, so a new entry never lands beside an
+old file. Then read its `discovery.json` before updating it. A caller working in another repository,
+such as pstack-sync in its skills repository, names that repository, and every
+command below then takes `--root <that repository>`.
 Identify the current harness's canonical product name from system context,
 tool inventory, CLI version/help, or authoritative documentation. Use that exact
 name as the `harnesses` key, for example `Amp` or `Claude Code`. A model name,
-owner label, or execution host is not the harness name.
+owner label, or execution host is not the harness name. The key's slug is the
+key lowercased with each run of other characters turned into one hyphen
+(`Claude Code` becomes `claude-code`). Callers may name a harness by either, so
+two keys must not share a slug.
 
 Reuse the saved key when it names this product. Record execution context separately.
 If identity remains ambiguous after inspection, report the missing identity fact
@@ -93,10 +100,12 @@ so later setup can reuse it. Sanitize private context and paths before saving.
 Run:
 
 ```bash
-python3 <this skill's folder>/scripts/check_discovery.py <discovery.json>
+python3 <this skill's folder>/scripts/state.py check discovery
+python3 <this skill's folder>/scripts/state.py resolve --harness '<discovered name>'
 ```
 
-The checker validates the observation format, not live tool execution.
+The checker validates the observation format, not live tool execution. The second
+command prints the entry a caller reads, with its key and slug.
 Report the discovered name, saved path, and material limitations. When called
 by setup, return those facts to setup without starting its interview yourself.
 
