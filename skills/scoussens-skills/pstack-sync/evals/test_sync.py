@@ -150,7 +150,10 @@ class DependencyTests(unittest.TestCase):
         self.profile(PROFILE)
 
     def profile(self, text):
-        (self.skills / sync.SELF / "harness" / "test.md").write_text(text)
+        durable = self.skills / ".nthplusio-skills" / "pstack-sync" / "harness" / "test.md"
+        path = durable if durable.exists() else self.skills / sync.SELF / "harness" / "test.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
 
     def upstream(self, files=UPSTREAM):
         repo = self.tmp / "plugins"
@@ -171,8 +174,11 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout) if command != "status" else result.stdout
 
+    def durable(self):
+        return self.skills / ".nthplusio-skills" / "pstack-sync"
+
     def manifest(self, **changes):
-        path = self.skills / sync.SELF / "manifest.json"
+        path = self.durable() / "manifest.json"
         data = json.loads(path.read_text())
         data.update(changes)
         path.write_text(json.dumps(data))
@@ -187,8 +193,10 @@ class DependencyTests(unittest.TestCase):
             "deslop": "cursor-team-kit/skills/deslop", "verify": "cursor-team-kit/skills/verify",
             f"{sync.AGENTS}/helper.md": f"{sync.ROOT_PLUGIN}/agents/helper.md"})
         self.assertEqual(sorted(p.name for p in (self.skills / sync.AGENTS).iterdir()), ["helper.md"])
-        self.assertEqual(sorted(p.name for p in (self.skills / sync.SELF).glob("LICENSE-*")),
+        self.assertEqual(sorted(p.name for p in self.durable().glob("LICENSE-*")),
                          ["LICENSE-cursor-team-kit", f"LICENSE-{sync.ROOT_PLUGIN}"])
+        self.assertEqual(list((self.skills / sync.SELF).glob("LICENSE-*")), [])
+        self.assertFalse((self.skills / sync.SELF / "manifest.json").exists())
         self.assertNotIn(sync.AGENTS, report["needs_adaptation"], "a definition naming itself dispatches nothing")
         self.assertEqual(report["needs_adaptation"]["alpha"]["SKILL.md"]["needs"]["custom-subagents"], ["helper"])
 
@@ -255,13 +263,38 @@ class DependencyTests(unittest.TestCase):
         self.assertIn("Dependencies (3)", self.run_sync("status"))
 
     def test_status_reads_the_last_commit_from_a_skills_directory_inside_a_repository(self):
-        self.upstream()
-        report = self.run_sync()
         git = ["git", "-C", str(self.tmp), "-c", "user.name=t", "-c", "user.email=t@example.com"]
         subprocess.run(["git", "init", "-q", str(self.tmp)], check=True)
-        subprocess.run([*git, "add", "skills"], check=True)
+        self.upstream()
+        report = self.run_sync()
+        subprocess.run([*git, "add", "skills", ".nthplusio-skills"], check=True)
         subprocess.run([*git, "commit", "-q", "-m", "sync"], check=True)
         self.assertIn(f"Upstream cursor/plugins: {report['upstream_commit'][:7]} (unchanged)", self.run_sync("status"))
+
+    def test_an_older_manifest_in_the_skill_directory_moves(self):
+        self.upstream()
+        skill = self.skills / sync.SELF
+        (skill / "manifest.json").write_text(json.dumps({"skills": {}, "exclude": ["beta"]}))
+        report = self.run_sync()
+        self.assertFalse((skill / "manifest.json").exists())
+        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["exclude"], ["beta"])
+        self.assertNotIn("beta", report["added"])
+
+    def test_a_plain_copy_of_the_skill_keeps_the_install_state(self):
+        self.upstream()
+        first = self.run_sync()
+        self.assertTrue((self.durable() / "manifest.json").is_file())
+        self.assertTrue((self.durable() / "transform.json").is_file())
+        skill = self.skills / sync.SELF
+        shutil.rmtree(skill)
+        (skill / "harness").mkdir(parents=True)
+        shutil.copy(SKILL / "needs.json", skill / "needs.json")
+        shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
+        (skill / "transform.json").write_text("{}\n")
+        second = self.run_sync()
+        self.assertEqual((second["added"], second["removed"]), ([], []))
+        self.assertEqual(second["unchanged_count"], len(first["added"]))
+        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["commit"], first["upstream_commit"])
 
 
 class HandoffNameTests(unittest.TestCase):
