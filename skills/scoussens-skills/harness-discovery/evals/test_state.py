@@ -149,6 +149,19 @@ class StateTests(unittest.TestCase):
         self.assertIn("registry/claude-code.json", result.stderr)
         self.assertIn("owner_term", result.stderr)
 
+    def test_check_accepts_frontmatter_and_definitions_fields(self):
+        discovery = discovery_document()
+        amp = discovery["harnesses"]["Amp"]
+        amp["skills"]["frontmatter"] = "name and description; mode is an agent-mode override"
+        amp["helpers"]["definitions"] = None
+        self.save(discovery)
+        self.assertEqual(self.state("check", "discovery").returncode, 0)
+        amp["helpers"]["definitions"] = 3
+        self.save(discovery)
+        result = self.state("check", "discovery")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("helpers.definitions", result.stderr)
+
     def test_root_defaults_to_the_working_directorys_git_repository(self):
         subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
         inside = self.repository / "nested" / "folder"

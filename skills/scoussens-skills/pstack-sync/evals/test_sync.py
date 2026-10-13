@@ -27,9 +27,11 @@ def amp_entry():
         "context": "Orb",
         "owners": {"launch": "Start a thread", "inspect": "Read a thread", "resume": "Message the thread",
                    "workspace_model": "selectable"},
-        "helpers": {"invoke": "Task tool", "collect": "Task result", "blocks_caller": True, "readonly": None},
+        "helpers": {"invoke": "Task tool", "collect": "Task result", "blocks_caller": True, "readonly": None,
+                    "definitions": None},
         "monitoring": {"wake": "A thread schedule"},
-        "skills": {"locations": ".agents/skills/ in the project", "reload": "The reload-skills tool"},
+        "skills": {"locations": ".agents/skills/ in the project", "reload": "The reload-skills tool",
+                   "frontmatter": "name and description; mode is an agent-mode override"},
         "instructions": {"user": "~/.config/amp/AGENTS.md", "project": "AGENTS.md in each directory"},
         "ask_user": "A choice tool with two to five options",
         "models": {"select": "Start a thread with an agent mode", "list": "List the agent modes"},
@@ -56,12 +58,24 @@ class DiscoveryTests(unittest.TestCase):
     def state(self, harness="amp"):
         return sync.State(str(self.root), harness)
 
+    def test_modes_and_custom_subagents_are_answered_by_discovery(self):
+        state = self.state()
+        self.assertEqual(state.facts["modes"], {"skills.frontmatter": "name and description; mode is an agent-mode override"})
+        self.assertEqual(state.facts["custom-subagents"], {"helpers.definitions": None})
+        self.assertNotIn("modes", state.profile)
+        self.assertNotIn("custom-subagents", state.profile)
+        self.assertEqual(state.gaps(["modes", "custom-subagents"]), [])
+        entry = amp_entry()
+        del entry["skills"]["frontmatter"]
+        self.save({"Amp": entry})
+        self.assertEqual(self.state().gaps(["modes", "custom-subagents"]), ["modes"])
+
     def test_discovered_needs_need_no_profile_row(self):
         state = self.state()
         self.assertEqual(state.discovery_key, "Amp")
         self.assertEqual(set(state.facts), MAPPED)
-        self.assertEqual(state.gaps(MAPPED | {"modes", "companion-skills"}), [])
-        self.assertEqual(state.flagged_facts({"subagents", "modes"}),
+        self.assertEqual(state.gaps(MAPPED | {"cursor-product", "companion-skills"}), [])
+        self.assertEqual(state.flagged_facts({"subagents", "cursor-product"}),
                          {"subagents": {"helpers.invoke": "Task tool", "helpers.collect": "Task result",
                                         "helpers.blocks_caller": True}})
 
@@ -78,7 +92,7 @@ class DiscoveryTests(unittest.TestCase):
         self.discovery.unlink()
         state = self.state()
         self.assertIsNone(state.discovery_key)
-        self.assertEqual(state.gaps({"subagents", "modes"}), ["subagents"])
+        self.assertEqual(state.gaps({"subagents", "cursor-product"}), ["subagents"])
         self.save({"Codex": amp_entry()})
         self.assertEqual(self.state().gaps({"subagents"}), ["subagents"])
 

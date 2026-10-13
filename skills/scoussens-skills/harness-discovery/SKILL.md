@@ -81,7 +81,10 @@ Each harness entry records the observation time, inspected sources, and:
   Describe pending user-input visibility, human-only gates, whether messages
   answer or queue, and direct conversation links or navigation by handle.
 - Helpers. Describe invocation, collection, caller blocking, and follow-up, and
-  whether a helper can be held to read-only (`readonly`). Record the verified
+  whether a helper can be held to read-only (`readonly`). Record whether the
+  harness has named subagent definitions with their own instructions and how
+  one is dispatched (`definitions`), or `null` with how a generic helper is
+  pointed at a definition file instead. Record the verified
   concurrent-invocation mechanism and its limits. A blocking
   batch may overlap helper calls while still holding the coordinator. Blocking
   alone establishes neither concurrency nor independent ownership.
@@ -91,8 +94,9 @@ Each harness entry records the observation time, inspected sources, and:
   inspection separate from completion collection. Record any authorization
   requirement and whether monitoring requires an active turn or manual resume.
 - Skills. Describe loading and instruction propagation, where project and
-  personal skills live (`locations`), and how a running session picks up a
-  changed skill (`reload`). Shared skill choices belong to setup, including any
+  personal skills live (`locations`), how a running session picks up a
+  changed skill (`reload`), and which frontmatter keys the harness reads and
+  what any extra key such as `mode` means to it (`frontmatter`). Shared skill choices belong to setup, including any
   baseline required by repository/user guidance.
 - Instructions. Name the files the harness loads into every session, user-wide
   (`instructions.user`) and per project (`instructions.project`).

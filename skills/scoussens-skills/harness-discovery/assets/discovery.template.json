@@ -27,7 +27,8 @@
         "collect": null,
         "blocks_caller": null,
         "follow_up": null,
-        "readonly": null
+        "readonly": null,
+        "definitions": null
       },
       "monitoring": {
         "notifications": null,
@@ -38,7 +39,8 @@
         "load": null,
         "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
         "locations": null,
-        "reload": null
+        "reload": null,
+        "frontmatter": null
       },
       "instructions": {
         "user": null,
