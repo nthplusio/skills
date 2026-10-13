@@ -46,8 +46,9 @@ rather than fill them.
 
 - **Read the destinations, do not remember them.** Resolve the running
   harness's facts with `python3 <harness-discovery>/scripts/state.py resolve
-  --harness '<harness>'` (the `harness-discovery` skill seeds the file when the
-  repository has none). The entry's `artifacts` list names each destination
+  --harness '<harness>'`, where the harness is the product running you by the
+  name `harness-discovery` saves, such as `Amp`, or its slug (the
+  `harness-discovery` skill seeds the file when the repository has none). The entry's `artifacts` list names each destination
   with how to present it, how to update it, who can see it, and whether readers
   can comment. Pick the one whose `present` operation you can carry out with
   a tool or skill you have, and whose audience matches the reader, and hand off with that destination's `present` and
