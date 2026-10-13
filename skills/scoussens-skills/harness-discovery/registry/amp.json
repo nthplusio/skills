@@ -39,7 +39,8 @@
       "collect": "The subagent's final summary arrives as the tool result; the caller never sees its step-by-step work. A Task run in the background reports through a completion notification in the caller's thread. A Task started in the background instead returns immediately and reports through a completion notification in the caller's thread.",
       "blocks_caller": true,
       "follow_up": false,
-      "readonly": "No readonly parameter is documented for Task. Hold a helper to read-only by instruction in its prompt; the Librarian subagent is read-only by design."
+      "readonly": "No readonly parameter is documented for Task. Hold a helper to read-only by instruction in its prompt; the Librarian subagent is read-only by design.",
+      "definitions": "None. Amp has no named subagent definitions; a Task subagent takes its instructions from its prompt. To dispatch a definition file such as pstack-agents/<name>.md, give Task a prompt that states the file's absolute path and tells the subagent to read and follow it before the task."
     },
     "monitoring": {
       "notifications": "A background Task notifies the caller's thread when it completes. GitHub events reach a thread through `create_github_subscription` (CI results, PR and issue comments, new PRs or issues). A thread the coordinator launched does not notify on its own; it must be asked to message back.",
@@ -50,7 +51,8 @@
       "load": "Amp lists every discovered skill's name and description to the model and loads the rest of SKILL.md with the `skill` tool when the model invokes it or the user types `/<name>`. A skill's instructions apply to the thread that loaded it, not to subagents it spawns.",
       "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
       "locations": "In precedence order, first name wins: ~/.config/agents/skills/, ~/.agents/skills/, ~/.config/amp/skills/, .agents/skills/ in the project and parent directories, .claude/skills/ in those directories, ~/.claude/skills/, ~/.claude/plugins/cache/, directories in amp.skills.path, the personal skills repository, the workspace skills repository, then official Amp skills. Local directories are searched five levels deep; repository skills must sit in an immediate child directory of the repository root. `amp skills repositories` lists the personal and workspace repositories with their clone commands.",
-      "reload": "`reload_skills` tool rescans local directories and fetches the latest personal and workspace skills into the running session; new threads fetch them automatically. `amp skills list` in a shell does not reload a session."
+      "reload": "`reload_skills` tool rescans local directories and fetches the latest personal and workspace skills into the running session; new threads fetch them automatically. `amp skills list` in a shell does not reload a session.",
+      "frontmatter": "Amp reads `name` and `description`. It reads `mode` as an agent-mode override, so a Cursor custom-mode `mode: true` is wrong rather than ignored; `icon`, `color`, and `reminder` are ignored. `disable-model-invocation` is not documented; the key is harmless and the skill stays model-visible. `mcpServers` declares a bundled MCP server."
     },
     "instructions": {
       "user": "~/.config/amp/AGENTS.md and ~/.config/AGENTS.md; system-wide /etc/ampcode/AGENTS.md (or the macOS and Windows equivalents); the web app's Global AGENTS.md under personal Settings > Advanced and under Workspace Settings > Advanced. Workspace guidance is included before personal and repository guidance.",
