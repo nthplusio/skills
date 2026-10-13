@@ -4,6 +4,8 @@
   state.py check [discovery|orchestration] [--root DIR]
   state.py resolve --harness NAME [--orchestration] [--root DIR]
   state.py migrate [--from PATH] [--dry-run] [--root DIR]
+  state.py seed --harness NAME [--force] [--root DIR]
+  state.py export --harness NAME [--root DIR]
 
 check    Validates discovery.json and orchestration.json, or only the one named.
 resolve  Prints one harness's discovery entry. NAME is its saved key or that
@@ -13,6 +15,13 @@ migrate  Moves state saved by earlier versions of these skills into
          .nthplusio-skills/, upgrades it to the current schema, checks it, and
          prints a JSON summary. --from names an earlier configuration outside
          the repository's legacy folders; it is copied, not moved.
+seed     Copies the registry entry for NAME (registry/<slug>.json beside this
+         skill) into discovery.json when the repository has none, and runs the
+         entry's fingerprint command: fresh means the running harness still
+         matches the entry, stale means it changed, unverifiable means the
+         command did not run. --force replaces an existing entry.
+export   Writes the repository's entry for NAME back to the registry with the
+         repository's own path scrubbed and the fingerprint value refreshed.
 
 No command invokes harness tools. --root defaults to the Git repository that
 holds the working directory.
@@ -29,6 +38,8 @@ import subprocess
 
 
 STATE_DIR = ".nthplusio-skills"
+SKILL_DIR = Path(__file__).resolve().parent.parent
+TEMPLATE = SKILL_DIR / "assets" / "discovery.template.json"
 FILES = {"discovery": "discovery.json", "orchestration": "orchestration.json"}
 CURRENT = {"discovery": 1, "orchestration": 3}
 OWNERS = {"discovery": "harness-discovery", "orchestration": "orchestration-setup"}
@@ -241,11 +252,121 @@ def saved(root, kind):
     raise ValueError(f"no {FILES[kind]} in {path.parent}; run {OWNERS[kind]}")
 
 
+def registry_dir():
+    """Shared harness facts shipped with this skill, one file per harness slug. Tests point
+    NTHPLUSIO_REGISTRY at their own directory."""
+    return Path(os.environ.get("NTHPLUSIO_REGISTRY") or SKILL_DIR / "registry")
+
+
+def registry_entry(name):
+    path = registry_dir() / f"{slug(name)}.json"
+    if not path.is_file():
+        raise ValueError(f"no registry entry for {name} at {path}; run harness-discovery in it, then export")
+    document = json.loads(path.read_text())
+    for key in ("name", "fingerprint", "entry"):
+        document[key]
+    return path, document
+
+
+def check_registry():
+    """Every registry file is one valid harness entry. The repository section comes from the template."""
+    template = json.loads(TEMPLATE.read_text())
+    paths = sorted(registry_dir().glob("*.json"))
+    for path in paths:
+        try:
+            _, document = registry_entry(path.stem)
+            check_discovery({"schema_version": CURRENT["discovery"], "repository": template["repository"],
+                             "harnesses": {document["name"]: document["entry"]}})
+            if slug(document["name"]) != path.stem:
+                raise ValueError(f"name {document['name']!r} does not match the file")
+        except (KeyError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError(f"registry/{path.name}: {error}")
+    return len(paths)
+
+
+def fingerprint(spec):
+    """Run the entry's fingerprint command. fresh when its first token equals the recorded value,
+    stale when it differs, unverifiable when the command is missing or fails."""
+    command, value = spec.get("command"), spec.get("value")
+    if not command:
+        return "unverifiable", None
+    try:
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return "unverifiable", None
+    observed = (result.stdout.split() or [""])[0]
+    if result.returncode or not observed:
+        return "unverifiable", None
+    return ("fresh" if observed == value else "stale"), observed
+
+
+def seed(root, name, force=False):
+    """Copy a registry entry into discovery.json unless the harness already has one, and say
+    whether the running harness still matches the entry's fingerprint."""
+    path, document = registry_entry(name)
+    state = state_path(root, "discovery")
+    if state.is_file():
+        discovery = load_saved(state, "discovery")
+    else:
+        template = json.loads(TEMPLATE.read_text())
+        discovery = {"schema_version": CURRENT["discovery"], "repository": template["repository"], "harnesses": {}}
+    key = document["name"]
+    existing = next((k for k in discovery["harnesses"] if slug(k) == slug(key)), None)
+    status, observed = fingerprint(document["fingerprint"])
+    lines = [f"{status} {slug(key)} registry={document['fingerprint'].get('value')} observed={observed or 'none'}"]
+    if existing and not force:
+        lines.append(f"kept {existing} in {state}")
+        return lines
+    entry = deepcopy(document["entry"])
+    entry["observed_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    source = f"registry/{path.name}"
+    if source not in entry["sources"]:
+        entry["sources"].append(source)
+    if existing:
+        discovery["harnesses"].pop(existing)
+    discovery["harnesses"][key] = entry
+    check_discovery(discovery)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps(discovery, indent=2) + "\n")
+    lines.append(f"{'replaced' if existing else 'seeded'} {key} in {state}")
+    return lines
+
+
+def scrub(value, secret):
+    """Drop the repository's own path from an entry before it leaves the repository."""
+    if isinstance(value, str):
+        return value.replace(secret, "<repository>")
+    if isinstance(value, list):
+        return [scrub(item, secret) for item in value]
+    if isinstance(value, dict):
+        return {k: scrub(v, secret) for k, v in value.items()}
+    return value
+
+
+def export(root, name):
+    """Write the local harness entry back to the registry, without repository facts, and with
+    the fingerprint value this harness reports now."""
+    _, discovery = saved(root, "discovery")
+    check_discovery(discovery)
+    key = match(discovery["harnesses"], name)
+    entry = scrub(deepcopy(discovery["harnesses"][key]), str(root))
+    path = registry_dir() / f"{slug(key)}.json"
+    spec = json.loads(path.read_text())["fingerprint"] if path.is_file() else {"command": None, "value": None}
+    status, observed = fingerprint(spec)
+    if observed:
+        spec["value"] = observed
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"name": key, "fingerprint": spec, "entry": entry}, indent=2) + "\n")
+    return [f"exported {key} to {path} ({status}; fingerprint {spec.get('value')})"]
+
+
 def check(root, scope=None):
     kinds = [scope] if scope else [kind for kind in FILES if state_path(root, kind).is_file()] or ["discovery"]
     discovery_path, discovery = saved(root, "discovery")
     check_discovery(discovery)
     lines = [f"PASS: discovery {discovery_path}"] if "discovery" in kinds else []
+    if "discovery" in kinds:
+        lines.append(f"PASS: registry {check_registry()} entries in {registry_dir()}")
     if "orchestration" in kinds:
         config_path, config = saved(root, "orchestration")
         check_orchestration(config, discovery)
@@ -444,6 +565,11 @@ def main():
     migrating = commands.add_parser("migrate", parents=[common], help="move and upgrade state saved by earlier versions")
     migrating.add_argument("--from", dest="source", help="an earlier configuration outside the legacy folders")
     migrating.add_argument("--dry-run", action="store_true", help="report the changes without writing them")
+    seeding = commands.add_parser("seed", parents=[common], help="copy a registry entry into discovery.json and check its fingerprint")
+    seeding.add_argument("--harness", required=True, help="registry harness name, or its slug")
+    seeding.add_argument("--force", action="store_true", help="replace an entry the repository already has")
+    exporting = commands.add_parser("export", parents=[common], help="write the local entry back to the registry")
+    exporting.add_argument("--harness", required=True, help="saved harness key, or its slug")
     args = parser.parse_args()
     try:
         root = repository_root(args.root)
@@ -451,6 +577,10 @@ def main():
             print("\n".join(check(root, args.scope)))
         elif args.command == "resolve":
             print(json.dumps(resolve(root, args.harness, args.orchestration), indent=2))
+        elif args.command == "seed":
+            print("\n".join(seed(root, args.harness, args.force)))
+        elif args.command == "export":
+            print("\n".join(export(root, args.harness)))
         else:
             print(json.dumps(migrate(root, args.source, args.dry_run), indent=2))
     except KeyError as error:
