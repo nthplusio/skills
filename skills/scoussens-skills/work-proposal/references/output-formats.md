@@ -14,8 +14,10 @@ of the project's theme each one can carry.
 
 ## Choosing the format
 
-Ask. The right answer depends on what the reader does next, not on which is
-nicest to build.
+The form is agreed on `explain-to`'s settings sheet, which the skill runs
+before drafting. The right answer depends on what the reader does next, not on
+which is nicest to build, and these signals are the evidence for the sheet's
+*Why* cell.
 
 | Signal from the user | Format |
 | --- | --- |
@@ -31,12 +33,9 @@ without clicking.
 
 ## Artifact
 
-The default for anything with a cost table. Publish it to a hosted page: one of
-the `artifacts` that the repository's `.nthplusio-skills/discovery.json` records
-for the harness you are running in, when its tool is in your tool list;
-otherwise a page-publishing tool from your tool list, such as an `Artifact`
-tool. With neither, save the HTML file locally, open it when there is a desktop,
-and give its path. If an `artifact-design` skill is available, load it before
+The default for anything with a cost table. Read the destination from the
+harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
+harness") describes. If an `artifact-design` skill is available, load it before
 writing the page; it carries the design fundamentals and the theming rules the
 platform requires.
 

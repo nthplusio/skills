@@ -50,6 +50,16 @@ on — many teams review onto `develop`/`staging`/`trunk` rather than the
 repo default, and saying which you chose lets the user redirect you in one word
 instead of discovering it in the summary.
 
+**Destination.** The round report's page is a setting, and `explain-to` owns
+settings. In that same first message, load `explain-to` and run its step 1, the
+settings sheet (`references/settings-sheet.md` there), passing the artifact (a
+round report: what came in, what landed, what is blocked and on whose desk),
+the settings this skill fixes (reader: a teammate who was not there; output:
+one HTML page built as [`references/report.md`](references/report.md) says;
+interaction, length, and anchor as that spec sets them), and the one open
+setting, the page's destination. The request is standing, so silence is
+acceptance and the round does not wait for a reply.
+
 ## Scripts
 
 Run these from the repo root. Each exists because the equivalent ad-hoc command

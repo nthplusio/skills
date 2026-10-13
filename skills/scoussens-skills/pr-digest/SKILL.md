@@ -35,13 +35,14 @@ this-week narrative, and vice versa.
 
 ## Step 0 — Ask before running
 
-Confirm branch, scope, and period in a single round-trip, not three: ask them
-together with the harness's structured question tool when it has one (`ask_user`
-in its entry of the repository's `.nthplusio-skills/discovery.json`), otherwise
-in your reply. Skip asking anything the user already stated explicitly in their
-own words; if they said "digest the last two weeks on `release/foo` including
-in-review PRs," you already have all three answers and should just confirm
-briefly rather than re-ask.
+Confirm branch, scope, period, and the page's destination in a single
+round-trip, not four: ask them together with the harness's structured question
+tool when it has one (`ask_user` in its entry of the repository's
+`.nthplusio-skills/discovery.json`), otherwise in your reply. Skip asking
+anything the user already stated explicitly in their own words; if they said
+"digest the last two weeks on `release/foo` including in-review PRs," you
+already have the first three answers and should just confirm briefly rather
+than re-ask.
 
 - **Branch** — offer the repo's resolved default (see Step 1) as the
   recommended option, plus any other branch the user has mentioned this
@@ -62,6 +63,15 @@ briefly rather than re-ask.
   Ask this only when you already have reason to expect a big result — a
   month-plus window, or an inventory on a long-lived branch. Otherwise let
   Step 2's count-based check ask it later, once you know the real number.
+- **Destination** — a setting, and `explain-to` owns settings. Load
+  `explain-to` and run its step 1, the settings sheet
+  (`references/settings-sheet.md` there), in this same message, passing the
+  artifact (a digest of what merged to a branch over a window, or an inventory
+  of what is open), the settings this skill fixes (reader: whoever is catching
+  up on the branch, with each card written for the user and for the codebase;
+  output: one HTML page laid out as Step 6 says; interaction, length, and
+  anchor as that layout sets them), and the one open setting, the page's
+  destination.
 
 **The period question is moot in inventory scope, so don't ask it there.**
 An inventory is a live snapshot with no window. Offering a period anyway
@@ -385,11 +395,8 @@ runs (a single emoji, e.g. 📰) helps the reader recognize the series in
 their browser tabs — but if an artifact-design skill is loaded, defer to it
 for the rest of the visual treatment.
 
-Publish to a hosted page: one of the `artifacts` that the repository's
-`.nthplusio-skills/discovery.json` records for the harness you are running in,
-when its tool is in your tool list; otherwise a page-publishing tool from your
-tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
-open it when there is a desktop, and give its path.
+Publish to the destination agreed in Step 0, read from the harness entry as
+`explain-to`'s `references/formats.md` ("Hand-offs by harness") describes.
 
 ## Step 7 — Give every PR a "teach me this one" button
 

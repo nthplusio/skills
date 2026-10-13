@@ -168,13 +168,19 @@ asked, and they are the ones a diff summary cannot produce.
 
 ## Step 5 — Publish
 
-Publish to a hosted page: one of the `artifacts` that the repository's
-`.nthplusio-skills/discovery.json` records for the harness you are running in,
-when its tool is in your tool list; otherwise a page-publishing tool from your
-tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
-open it when there is a desktop, and give its path. Give the page a stable
-favicon (`🔬` works well for this series) and a title naming the PR, so a reader
-who generates several can tell their tabs apart.
+The destination is a setting, and `explain-to` owns settings. Load `explain-to`
+and run its step 1, the settings sheet (`references/settings-sheet.md` there),
+passing the artifact (a teaching page for one PR), the settings this skill
+fixes (reader: an engineer fluent in the language and new to this codebase;
+output: one HTML page built as Step 4 says; interaction: the thing the reader
+operates; length and anchor as Step 4 sets them), and the one open setting, the
+page's destination. Show the sheet before building, in the same message as any
+Step 1 confirmation, so one reply settles both.
+
+Publish to the agreed destination, read from the harness entry as
+`explain-to`'s `references/formats.md` ("Hand-offs by harness") describes. Give
+the page a stable favicon (`🔬` works well for this series) and a title naming
+the PR, so a reader who generates several can tell their tabs apart.
 
 ## Honesty rules
 

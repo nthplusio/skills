@@ -39,12 +39,20 @@ You need `owner/repo` and a number:
 Stop and ask if you cannot pin it down. Assessing the wrong person's PR in
 convincing detail is the worst outcome this skill has available to it.
 
-## Step 2 — Ask how deep to go
+## Step 2 — Ask how deep to go, and where it goes
 
-Ask one question — whether to judge the PR standalone or against a baseline —
-with the harness's structured question tool when it has one (`ask_user` in its
-entry of the repository's `.nthplusio-skills/discovery.json`), otherwise in your
-reply. Ask exactly one question; the skill has already decided the rest.
+Ask one question of your own — whether to judge the PR standalone or against a
+baseline — with the harness's structured question tool when it has one
+(`ask_user` in its entry of the repository's `.nthplusio-skills/discovery.json`),
+otherwise in your reply. The destination is a setting, and `explain-to` owns
+settings: load `explain-to` and run its step 1, the settings sheet
+(`references/settings-sheet.md` there), in the same message, passing the
+artifact (a retrospective on one PR that scores a named developer's execution),
+the settings this skill fixes (reader: the lead, in third person; output: one
+HTML page laid out as Step 8 says; interaction, length, and anchor as that
+layout sets them), and the one open setting, the page's destination. The rule
+for the Why cell: the page evaluates a named person, so who can see each
+destination decides it. The skill has already decided the rest.
 
 - **Standalone (recommended default)** — this PR on its own evidence. One PR's
   worth of API calls, and the rubric is fixed, so scores are still comparable
@@ -258,13 +266,10 @@ Layout, top to bottom:
 6. **Limits of this assessment** — the Step 7 honesty items, stated plainly and
    not collapsed. This section exists to be read.
 
-Publish to a hosted page: one of the `artifacts` that the repository's
-`.nthplusio-skills/discovery.json` records for the harness you are running in,
-when its tool is in your tool list; otherwise a page-publishing tool from your
-tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
-open it when there is a desktop, and give its path. Use favicon `🔍` and a title
-with the PR number and a short name, so several runs stay distinguishable in a
-tab strip.
+Publish to the destination agreed in Step 2, read from the harness entry as
+`explain-to`'s `references/formats.md` ("Hand-offs by harness") describes. Use
+favicon `🔍` and a title with the PR number and a short name, so several runs
+stay distinguishable in a tab strip.
 
 ## Staying in your lane
 

@@ -17,9 +17,10 @@ signed or contradicts it. Close both before drafting.
 
 Build it in this order: find the commercial ground, read the code, then write.
 
-## Ask four questions first
+## Ask two questions and show the sheet first
 
-Three of these you cannot derive, and the fourth changes the whole page.
+Two of these you cannot derive, and the third changes the whole page. Ask all
+three in one message.
 
 1. **Which work, and is anything already agreed?** Get the specific list — a
    tracker project, an email, a set of issue IDs. Ask whether the client has
@@ -28,13 +29,25 @@ Three of these you cannot derive, and the fourth changes the whole page.
 2. **What does the delivery team actually cost and how fast does it work?**
    Both are house facts you cannot infer. See
    [Find the commercial ground first](#find-the-commercial-ground-first).
-3. **Artifact, PDF, or email?** Each carries different constraints, and the
-   choice changes how you write, not just how you export. See
-   [references/output-formats.md](references/output-formats.md).
-4. **Who reads it, and what decision are they making?** A founder funding it
-   personally, a board voting on it, and a procurement team comparing bids need
-   the same facts ordered differently. A nonprofit board wants to know what it
-   can decline; a procurement team wants line items it can compare.
+3. **Who reads it, and in which form.** Both are settings, and `explain-to`
+   owns settings. Load `explain-to` and run its step 1, the settings sheet
+   (`references/settings-sheet.md` there), passing these facts:
+   - **The artifact.** A proposal: scoped work, priced against the existing
+     agreement, for a client deciding whether to fund it.
+   - **The open settings.** Reader, with the decision they are making as the
+     evidence: a founder funding it personally, a board voting on it, and a
+     procurement team comparing bids need the same facts ordered differently;
+     a nonprofit board wants to know what it can decline, a procurement team
+     wants line items it can compare. Output, with two extra outputs this
+     skill can produce beyond chat, Markdown, and an HTML page: a **PDF**
+     rendered by `scripts/html-to-pdf.sh`, seen by whoever receives the
+     attachment, and an **email**, Markdown in the body, seen by the thread's
+     recipients.
+   - **The rule for the Why cell.** A proposal under roughly 300 words goes as
+     email whatever else was asked, and anything with a cost table needs a
+     page or a PDF, because email clients mangle tables.
+     [references/output-formats.md](references/output-formats.md) has the
+     constraint each form puts on the writing.
 
 ## Find the commercial ground first
 
@@ -180,7 +193,7 @@ rate on every row. Run it after every edit pass, not once at the end.
 
 ## Deliver it
 
-Ask which format; do not assume. Each one changes the writing.
+Build the form agreed on the sheet. Each one changes the writing.
 
 | | Best for | Constraint that shapes the writing |
 | --- | --- | --- |

@@ -26,20 +26,18 @@ If you cannot tell which spec is meant, ask.
 
 **Done when** you hold the full text of one spec and can name where it came from.
 
-## Step 2 — Choose where the page goes
+## Step 2 — Settle the destination with the user
 
-List the destinations you can deliver to in this session:
+The page's form and reader are settings, and `explain-to` owns settings. Load `explain-to` and run its step 1, the settings sheet (`references/settings-sheet.md` there), passing these facts:
 
-- **Local file.** Always available. You can open it in a browser only when there is a desktop: macOS, or Linux with `$DISPLAY` or `$WAYLAND_DISPLAY` set. Over SSH or in a container, the user gets the path instead.
-- **Hosted page.** When the repository's `.nthplusio-skills/discovery.json` has an entry for the harness you are running in, keyed by its product name, that entry's `artifacts` list the page destinations the harness supports, with their audiences and limits; offer the ones whose tool is in your tool list. Without such an entry, use each tool in your tool list that publishes an HTML page and returns a link, such as an `Artifact` tool or an MCP server's page-creation tool. Read each tool's description for who can see what it publishes. A tool that stores documents as text, such as a docs or wiki connector, does not count, because it drops the styles and the diagrams.
+- **The artifact.** A throwaway spec-mirror page built from this skill's template; its sections and checker are fixed by this skill, not by the sheet.
+- **Fixed settings.** Reader: the developer who asked, the *developer new to the code* profile, because the page defines every project-local name. Interaction: still. Anchor: definitions only. Length: this skill's own limits (about 900 words, twelve-box diagrams).
+- **The open setting.** Output, from the destinations this session can deliver to the user. A **local file** counts when the user can open it: on their own machine, in a browser on a desktop (macOS, or Linux with `$DISPLAY` or `$WAYLAND_DISPLAY`) or by path otherwise. In a remote environment where the harness entry says the user cannot open local files, it is not offered. **Hosted pages** come from the running harness's discovery entry (`artifacts`), each with who can see it; an inline view that is not a full page is not one. Without an entry, any tool that publishes an HTML page and returns a link. A docs or wiki connector that stores text does not count, because it drops the styles and the diagrams.
+- **The rule for the Why cell.** Publishing shows the repository's paths and gaps to everyone who can see the page, so the local file is the recommendation whenever it is deliverable and the user did not say where; otherwise the narrowest hosted audience is. The user decides.
 
-Then settle one destination:
+When the user already said where ("just open it", "publish it"), or only one destination is deliverable, the sheet is skipped and the first assumption line of the reply names the destination and the fixed settings. If step 1 also needs a question, ask both together.
 
-- The user already said where, for example "just open it" or "publish it": use that.
-- Only the local file is available: use it, without asking.
-- Otherwise, ask once, and offer only the destinations you found. Put the local file first as the default. Give each option one line that says who will be able to see the page. Publishing shows the repository's paths and gaps to everyone who can see the page, so the user decides this, not you. If step 1 also needs a question, ask both together.
-
-**Done when** you hold one destination, chosen by the user or left as the only one available.
+**Done when** you hold one destination, agreed through the sheet or left as the only one available.
 
 ## Step 3 — Find the code the spec touches
 
@@ -100,7 +98,7 @@ Last, collect every gap into the **Decide before building** list at the top of t
 
 **Voice.** If `speak-clearly` is in your available skills, load it now and apply it to every sentence on the page. If it is not, write as you would explain the spec to a junior developer in their first week: short sentences, one idea each, and name who or what acts.
 
-The reader is the **developer new to the code** profile in the `explain-to` skill's `references/audiences.md`, when that skill is installed beside this one: System then Part altitude, every project-local name defined at first use, about five minutes of reading.
+The reader is the one fixed in step 2, the **developer new to the code** profile in the `explain-to` skill's `references/audiences.md`: System then Part altitude, every project-local name defined at first use, about five minutes of reading.
 
 Either way, use plain words. That applies to everything on the page a person reads, including diagram labels, tree notes, and table cells. The repository's own vocabulary counts too: a word that is everyday inside the project, such as "frontmatter" or "model-invoked", is still jargon to the reader. Keep a technical term only when the developer needs it to match the page back to the spec. Define it in a few plain words before its first diagram, or in the same sentence where it first appears. For example: "jitter, a small random wait so retries do not all fire at once." Spell out every abbreviation: "p99" becomes "the slowest 1 in 100 requests". Replace every other term with the plain words it stands for.
 
