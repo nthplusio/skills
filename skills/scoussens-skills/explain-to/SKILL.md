@@ -12,6 +12,8 @@ description: >-
   technical or too vague. Do not load it for a one-line factual answer, a
   commit message, or a change summary for the developer who made it; answer
   those directly instead.
+metadata:
+  needs: artifacts, skills.load, helpers.invoke
 ---
 
 # Explain to
@@ -34,8 +36,9 @@ Ask only when two readings would produce materially different outputs, such
 as a page a customer reads versus one an engineer debugs from. When the user
 names two readers, write for the less technical one and add a short block for
 the other at the end, rather than one text that serves neither. When the user
-asks for separate texts, or names three or more readers, write one output per
-reader, each with its own reader line and its own assumptions.
+asks for separate texts, or names readers from three or more profiles, write
+one output per profile, each with its own reader line and its own assumptions.
+Several people of one profile share one output.
 
 **Done when** one profile is chosen, its line is written, and you can say what
 the reader already knows, what they decide, and which of your words are jargon

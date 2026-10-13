@@ -107,6 +107,22 @@
         "rollback_present: the rollback script, what it does, and its time per tenant appear",
         "no_invented_facts: every number and object name appears in the fixture; anything else is labelled as an assumption"
       ]
+    },
+    {
+      "id": 6,
+      "name": "schema-change-stakeholder-page",
+      "prompt": "Our head of customer success and two account managers need to review and comment on the Snowflake schema change in skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md before it ships next week. They are not technical. Make them a page.",
+      "expected_output": "A business-stakeholder page whose hand-off destination comes from the harness entry in .nthplusio-skills/discovery.json (its artifacts list), not from a remembered harness skill name. The reply links the page first, names what the readers must decide, and carries the reader line and assumptions.",
+      "files": [
+        "skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md"
+      ],
+      "assertions": [
+        "handoff_from_discovery: the run resolves the harness entry (state.py resolve, or reads discovery.json) before choosing the page destination, and the destination it uses is one listed under that entry's artifacts",
+        "no_remembered_skill_names: the reply and the page do not justify the destination by naming a harness skill from memory; a skill is named only when the resolved artifacts entry names it",
+        "link_first: the reply opens with the page link, then at most five lines, then the reader line and up to three assumptions",
+        "profile_budget_holds: the page's prose, template rows included, stays within about 480 words",
+        "no_schema_words: the page contains no table, column, view, or schema names and no SQL"
+      ]
     }
   ]
 }

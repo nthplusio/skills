@@ -44,18 +44,22 @@ binds the page's prose, and the page template's summary rows, decisions, and
 risks count toward it, so delete template sections the budget cannot afford
 rather than fill them.
 
-- **Amp.** Inline interactive view in the reply: `creating-views`. Standalone
-  page with comments: `creating-artifacts`. Teaching one pull request as an
-  artifact: `pr-teacher`. A code change for the developer who owns it:
-  `explaining-code`. Text diagrams in any other chat reply are yours to draw
-  under visuals.md, with no hand-off.
-- **Another harness.** When the repository has `.nthplusio-skills/discovery.json`
-  with an entry for the running harness, that entry's `artifacts` list names
-  the page destinations and who can see each; use the one whose tool is in
-  your tool list. Without such an entry, use any tool in your tool list that
-  publishes an HTML page and returns a link.
-- **No page tool at all.** Write the Markdown document instead, say in one
-  line what the page would have added, and give the file path.
+- **Read the destinations, do not remember them.** Resolve the running
+  harness's facts with `python3 <harness-discovery>/scripts/state.py resolve
+  --harness '<harness>'`, where the harness is the product running you by the
+  name `harness-discovery` saves, such as `Amp`, or its slug (the
+  `harness-discovery` skill seeds the file when the repository has none). The entry's `artifacts` list names each destination
+  with how to present it, how to update it, who can see it, and whether readers
+  can comment. Pick the one whose `present` operation you can carry out with
+  a tool or skill you have, and whose audience matches the reader, and hand off with that destination's `present` and
+  `update` operations named. Its `skills.load` says how the harness loads a
+  skill, and `helpers.invoke` says how to run a helper when the page needs one.
+- **Text diagrams** in a chat reply are yours to draw under visuals.md, with no
+  hand-off.
+- **No page destination in the entry, or no entry.** Use any tool in your tool
+  list that publishes an HTML page and returns a link. Without one, write the
+  Markdown document instead, say in one line what the page would have added,
+  and give the file path.
 
 ## Markdown document placement
 
