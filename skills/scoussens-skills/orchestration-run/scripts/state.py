@@ -153,7 +153,7 @@ def check_discovery(discovery):
             if facts["helpers"][field] is not None and type(facts["helpers"][field]) is not bool:
                 raise ValueError(f"helpers.{field} must be boolean or null")
         text(facts["skills"]["brief"], "skills.brief")
-        for section, fields in {"helpers": ("readonly",), "skills": ("locations", "reload"),
+        for section, fields in {"helpers": ("readonly", "definitions"), "skills": ("locations", "reload", "frontmatter"),
                                 "instructions": ("user", "project"), "models": ("select", "list")}.items():
             if section not in facts:
                 continue
