@@ -367,8 +367,9 @@ def check(root, scope=None):
     discovery_path, discovery = saved(root, "discovery")
     check_discovery(discovery)
     lines = [f"PASS: discovery {discovery_path}"] if "discovery" in kinds else []
-    if "discovery" in kinds:
-        lines.append(f"PASS: registry {check_registry()} entries in {registry_dir()}")
+    entries = check_registry() if "discovery" in kinds else 0
+    if entries:
+        lines.append(f"PASS: registry {entries} entries in {registry_dir()}")
     if "orchestration" in kinds:
         config_path, config = saved(root, "orchestration")
         check_orchestration(config, discovery)
