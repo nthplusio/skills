@@ -1,11 +1,30 @@
 {
   "skill_name": "harness-discovery",
-  "evals": [{
-    "id": 0,
-    "name": "discovery-without-preferences",
-    "prompt": "Discover the current product's orchestration capabilities and repository conventions. Save repository discovery.json with inspected sources and the actual observation time. Do not interview me about preferences, save setup, launch owners or publish anything.",
-    "expected_output": "Saves validated observations only, with no preference questions or setup writes.",
-    "assertions": ["sources_and_time_retained", "no_durable_interview", "discovery_checker_passes"],
-    "files": []
-  }]
+  "evals": [
+    {
+      "id": 0,
+      "name": "discovery-without-preferences",
+      "prompt": "Discover the current product's orchestration capabilities and repository conventions. Save repository discovery.json with inspected sources and the actual observation time. Do not interview me about preferences, save setup, launch owners or publish anything.",
+      "expected_output": "Saves validated observations only, with no preference questions or setup writes.",
+      "assertions": [
+        "sources_and_time_retained",
+        "no_durable_interview",
+        "discovery_checker_passes"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "seed-from-registry",
+      "prompt": "Run harness discovery for this repository. We are in Amp.",
+      "expected_output": "Runs state.py seed --harness Amp first. On fresh it reuses the registry's facts, writes discovery.json, and inspects only what the entry's limitations say was not exercised; it does not re-derive every field from the docs. On stale it re-inspects and exports.",
+      "assertions": [
+        "seed_runs_first: the first state.py call is seed, before any inspection",
+        "fresh_reuses_registry: on a fresh fingerprint the saved entry's sources include registry/amp.json and the observation does not re-read every doc page",
+        "stale_exports: on a stale fingerprint the run ends with state.py export so the registry gains the change",
+        "discovery_checker_passes"
+      ],
+      "files": []
+    }
+  ]
 }

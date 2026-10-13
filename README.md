@@ -133,6 +133,7 @@ harness from it. `harness-discovery` owns the script; `orchestration-setup` and
 | File | Written by | Read by | In Git |
 | --- | --- | --- | --- |
 | `discovery.json` | `harness-discovery` | Every skill that needs harness facts | Yes, sanitized |
+| `harness-discovery/registry/<slug>.json` (in the pack, not in `.nthplusio-skills/`) | `harness-discovery` `export` | `harness-discovery` `seed`, which copies it into `discovery.json` and checks its fingerprint | Yes; one shared entry per harness |
 | `orchestration.json` | `orchestration-setup` | `orchestration-run` | Yes |
 | `pstack-sync/manifest.json`, `transform.json`, `LICENSE-*`, `harness/<slug>.md` | `pstack-sync` | `pstack-sync` | Yes |
 | `runs/<harness slug>/` | `orchestration-run` | `orchestration-run` | No; `.nthplusio-skills/.gitignore` |

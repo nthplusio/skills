@@ -22,7 +22,7 @@ works; each caller decides what to use. Do not start an orchestration from here.
 Saved state lives in `<repository root>/.nthplusio-skills/`. First run
 `python3 <this skill's folder>/scripts/state.py migrate`, which moves state saved
 by earlier versions of these skills there, so a new entry never lands beside an
-old file. Then read its `discovery.json` before updating it. A caller working in another repository,
+old file. A caller working in another repository,
 such as pstack-sync in its skills repository, names that repository, and every
 command below then takes `--root <that repository>`.
 Identify the current harness's canonical product name from system context,
@@ -33,13 +33,32 @@ key lowercased with each run of other characters turned into one hyphen
 (`Claude Code` becomes `claude-code`). Callers may name a harness by either, so
 two keys must not share a slug.
 
+Then seed from the **registry**, the shared facts this skill ships in
+`registry/<slug>.json`, one file per harness:
+
+```bash
+python3 <this skill's folder>/scripts/state.py seed --harness '<discovered name>'
+```
+
+The first line it prints decides how much of step 2 you do.
+
+- `fresh`: the running harness still matches the entry's fingerprint. The entry
+  is now in `discovery.json` (or an existing entry was kept). Inspect only the
+  fields the entry's `limitations` say were not exercised, and the repository
+  conventions, which are never in the registry.
+- `stale`: the harness changed since the entry was written. Inspect every field
+  in step 2, and after saving, run `state.py export --harness '<name>'` so the
+  registry gains the change. Open a pull request with the exported file.
+- `unverifiable`, or no registry entry: inspect as step 2 says, and `export`
+  the result when the harness is one other installs will meet.
+
 Reuse the saved key when it names this product. Record execution context separately.
 If identity remains ambiguous after inspection, report the missing identity fact
 and hold the entry rather than guessing from the model. Inspect other harnesses
 only in their actual environments. Preserve their saved entries.
 
 **Done when** the repository path, discovered harness name, execution context,
-and existing observations are known.
+the seed result, and existing observations are known.
 
 ## 2. Inspect capabilities and repository conventions
 
@@ -112,6 +131,9 @@ and repository ticket conventions or their absence are recorded.
 Merge only the current harness entry and changed repository facts into the saved
 report. Preserve unrelated entries and user edits. Keep the report in the repository
 so later setup can reuse it. Sanitize private context and paths before saving.
+A registry entry holds only what is true of the harness itself: no repository
+URL, no local path, no choice a team made. `export` scrubs the repository path;
+you remove the rest before the pull request.
 
 Run:
 

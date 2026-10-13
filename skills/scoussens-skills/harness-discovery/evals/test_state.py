@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -71,13 +72,90 @@ class StateTests(unittest.TestCase):
         self.save(discovery)
         self.assertIn("needs letters or digits", self.state("check", "discovery").stderr)
 
+    def registry(self, fingerprint=None, name="Claude Code", **changes):
+        """A registry directory holding one entry built from the test document, pointed at by the env var."""
+        registry = self.root / "registry"
+        registry.mkdir(exist_ok=True)
+        entry = deepcopy(discovery_document()["harnesses"]["Claude Code"])
+        entry.update(changes)
+        document = {"name": name, "fingerprint": fingerprint or {"command": "printf 'v1 extra words'", "value": "v1"},
+                    "entry": entry}
+        (registry / f"{name.lower().replace(' ', '-')}.json").write_text(json.dumps(document))
+        return registry
+
+    def state_with_registry(self, registry, *arguments):
+        command = [sys.executable, "-B", str(STATE), *arguments, "--root", str(self.repository)]
+        env = {**os.environ, "NTHPLUSIO_REGISTRY": str(registry)}
+        return subprocess.run(command, cwd=self.root, capture_output=True, text=True, env=env)
+
+    def test_seed_creates_the_entry_from_the_registry(self):
+        registry = self.registry(context="Seeded context")
+        self.discovery_path.unlink()
+        result = self.state_with_registry(registry, "seed", "--harness", "claude-code")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[0], "fresh claude-code registry=v1 observed=v1")
+        self.assertTrue(result.stdout.splitlines()[1].startswith("seeded Claude Code in "))
+        resolved = json.loads(self.state_with_registry(registry, "resolve", "--harness", "claude-code").stdout)
+        self.assertEqual(resolved["context"], "Seeded context")
+        self.assertIn("registry/claude-code.json", resolved["sources"])
+        self.assertEqual(self.state_with_registry(registry, "check", "discovery").returncode, 0)
+
+    def test_seed_does_not_replace_an_existing_entry_without_force(self):
+        registry = self.registry(context="Seeded context")
+        before = self.discovery_path.read_bytes()
+        result = self.state_with_registry(registry, "seed", "--harness", "Claude Code")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.splitlines()[1].startswith("kept Claude Code in "))
+        self.assertEqual(self.discovery_path.read_bytes(), before)
+        forced = self.state_with_registry(registry, "seed", "--harness", "Claude Code", "--force")
+        self.assertTrue(forced.stdout.splitlines()[1].startswith("replaced Claude Code in "))
+        resolved = json.loads(self.state_with_registry(registry, "resolve", "--harness", "claude-code").stdout)
+        self.assertEqual(resolved["context"], "Seeded context")
+        self.assertEqual(resolved["harness"]["slug"], "claude-code")
+
+    def test_seed_reports_a_stale_or_unverifiable_fingerprint(self):
+        stale = self.registry(fingerprint={"command": "printf 'v2'", "value": "v1"})
+        result = self.state_with_registry(stale, "seed", "--harness", "claude-code")
+        self.assertEqual(result.stdout.splitlines()[0], "stale claude-code registry=v1 observed=v2")
+        for command in ("no-such-command-here --version", "true", "printf ''"):
+            with self.subTest(command=command):
+                missing = self.registry(fingerprint={"command": command, "value": "v1"})
+                result = self.state_with_registry(missing, "seed", "--harness", "claude-code")
+                self.assertEqual(result.stdout.splitlines()[0], "unverifiable claude-code registry=v1 observed=none")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_export_strips_repository_facts_and_root_paths(self):
+        registry = self.registry()
+        discovery = discovery_document()
+        discovery["repository"]["guidance"] = ["AGENTS.md"]
+        discovery["harnesses"]["Claude Code"]["skills"]["locations"] = f"{self.repository}/.agents/skills and ~/.claude/skills"
+        self.save(discovery)
+        result = self.state_with_registry(registry, "export", "--harness", "claude-code")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        exported = json.loads((registry / "claude-code.json").read_text())
+        self.assertEqual(exported["name"], "Claude Code")
+        self.assertEqual(exported["entry"]["skills"]["locations"], "<repository>/.agents/skills and ~/.claude/skills")
+        self.assertNotIn("repository", exported)
+        self.assertEqual(exported["fingerprint"]["value"], "v1")
+        self.assertEqual(self.state_with_registry(registry, "check", "discovery").returncode, 0)
+
+    def test_check_fails_on_a_broken_registry_file(self):
+        registry = self.registry()
+        broken = json.loads((registry / "claude-code.json").read_text())
+        del broken["entry"]["owner_term"]
+        (registry / "claude-code.json").write_text(json.dumps(broken))
+        result = self.state_with_registry(registry, "check", "discovery")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("registry/claude-code.json", result.stderr)
+        self.assertIn("owner_term", result.stderr)
+
     def test_root_defaults_to_the_working_directorys_git_repository(self):
         subprocess.run(["git", "init", "-q", str(self.repository)], check=True)
         inside = self.repository / "nested" / "folder"
         inside.mkdir(parents=True)
         result = self.state("check", cwd=inside, root=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, f"PASS: discovery {self.discovery_path.resolve()}\n")
+        self.assertEqual(result.stdout.splitlines()[0], f"PASS: discovery {self.discovery_path.resolve()}")
         outside = self.root / "not-a-repository"
         outside.mkdir()
         result = self.state("check", cwd=outside, root=False)
