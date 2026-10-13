@@ -12,23 +12,32 @@ live when it sits on a branch — costs more than a whole page of polish buys.
 
 Build it in this order: establish ground truth, agree the story, then write.
 
-## Ask three questions first
+## Ask two questions and show the sheet first
 
 Two of these you cannot derive from the repository, and the third changes what
-you build. Ask them before gathering anything.
+you build. Ask all three in one message, before gathering anything.
 
 1. **Which window, and is the unit a period or a release?** These are two
    different documents and the distinction decides what goes in. See
    [Period or release](#period-or-release) below; ask before gathering, because
    the two modes select different sets of work.
-2. **Who reads it, and what should they conclude?** A board, a customer
-   contact, an exec team, and an investor care about different things, and the
-   same set of changes usually supports several honest stories. Offer two or
-   three framings you can actually defend from the work, and let the user pick.
-   This is a business judgement, not an engineering one.
-3. **Artifact page, Markdown, or both?** A published Artifact carries the
-   customer's own visual identity and a link they can forward. Markdown pastes
-   into an email, a doc, or a tracker comment. Ask; do not assume.
+2. **What should the reader conclude?** A board, a customer contact, an exec
+   team, and an investor care about different things, and the same set of
+   changes usually supports several honest stories. Offer two or three framings
+   you can actually defend from the work, and let the user pick. This is a
+   business judgement, not an engineering one.
+3. **Which form.** The form is a setting, and `explain-to` owns settings. Load
+   `explain-to` and run its step 1, the settings sheet
+   (`references/settings-sheet.md` there), passing these facts:
+   - **The artifact.** A release brief: one window of shipped work, verified
+     against production and grouped by consequence.
+   - **Fixed settings.** Reader: the *business stakeholder* profile, because
+     the brief exists for someone who does not read code (see
+     [Write from the reader's side of the screen](#write-from-the-readers-side-of-the-screen)).
+   - **The open setting.** Output. An HTML page carries the customer's own
+     visual identity and a link they can forward; Markdown survives pasting
+     into an email, a doc, or a tracker comment. Both at once is a legitimate
+     answer.
 
 ## Period or release
 
@@ -213,14 +222,11 @@ customer's public brand and say in your reply that you did.
 
 ## Deliver it
 
-For an Artifact, publish to a hosted page: one of the `artifacts` that the
-repository's `.nthplusio-skills/discovery.json` records for the harness you are
-running in, when its tool is in your tool list; otherwise a page-publishing tool
-from your tool list, such as an `Artifact` tool. With neither, save the HTML
-file locally, open it when there is a desktop, and give its path. If an
-`artifact-design` skill is available, load it before writing the page. Give the
-page a specific name, and hand the user the URL along with who can see it; an
-Artifact stays private until they share it.
+Build the form agreed on the sheet. For an HTML page, read the destination from
+the harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
+harness") describes. If an `artifact-design` skill is available, load it before
+writing the page. Give the page a specific name, and hand the user the URL along
+with who can see it; a page stays private until they share it.
 
 For Markdown, use heading levels for the section hierarchy and keep the
 reference line on its own line beneath each item so it survives pasting into

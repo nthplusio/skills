@@ -31,9 +31,16 @@ their own words.
 - **Period** — offer the last working week as the default, plus a few days and a
   month, and let an explicit range cover the rest. Do not bake a period into the
   skill; the right window depends entirely on why they are asking.
-- **Output** — a published page (searchable, shareable, good for something they
-  will return to) or a Markdown file (greppable, pasteable into a tracker or an
-  email). Ask rather than assuming; the destination changes the shape.
+- **Output** — a setting, and `explain-to` owns settings. Load `explain-to`
+  and run its step 1, the settings sheet (`references/settings-sheet.md`
+  there), in this same message, passing: the artifact, an index of one
+  period's recordings with threads first and a per-meeting ledger underneath;
+  the setting this skill fixes, interaction, which follows the form as
+  [Build the output](#build-the-output) says; the open setting, output, a
+  published page (searchable, shareable, good for something they will return
+  to) or a Markdown file (greppable, pasteable into a tracker or an email);
+  and the rule for the Why cell, that an email or a tracker comment as the
+  destination shapes the length rather than taking the full apparatus.
 - **Depth**, only when the window looks large — past roughly forty recordings,
   offer "every meeting" against "the substantive ones, skipping standups and
   short syncs". Marginal recordings dilute the threads and cost real time.
@@ -200,15 +207,13 @@ scanned and operated, not read top to bottom. That means live search across
 every entry, filters for tracks or categories, collapsed ledger rows, and
 category colour that encodes real classification rather than decoration. For
 **Markdown**, keep the same four layers and lead with the threads; drop the
-interaction, keep the structure. If the user named a destination — an email, a
-tracker comment — let that shape the length rather than forcing the full
-apparatus into it.
+interaction, keep the structure. If the sheet settled on an email or a tracker
+comment as the destination, let that shape the length rather than forcing the
+full apparatus into it.
 
-Publish a page to one of the `artifacts` that the repository's
-`.nthplusio-skills/discovery.json` records for the harness you are running in,
-when its tool is in your tool list; otherwise a page-publishing tool from your
-tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
-open it when there is a desktop, and give its path.
+Publish a page to the destination agreed on the sheet, read from the harness
+entry as `explain-to`'s `references/formats.md` ("Hand-offs by harness")
+describes.
 
 ## Report what only the aggregate shows
 

@@ -3,8 +3,10 @@ name: explain-to
 description: >-
   Fit an explanation of a concept, problem, or change to one named reader —
   choose the audience, the altitude, an anchor analogy with its twist, the
-  output type, and whether the reader must operate it, then hand sentences to
-  speak-clearly and the medium to the harness's page or view skill. Use when
+  output type, and whether the reader must operate it, confirm them with the
+  user as a settings sheet, then hand sentences to speak-clearly and the
+  medium to the harness's page or view skill. Other skills with a reader or
+  output choice call this step instead of asking their own way. Use when
   asked to explain something to a named audience ("explain this to the PM",
   "write it up for the data engineers", "make this understandable to a
   customer"), to teach a concept, to write an overview or walkthrough for
@@ -22,27 +24,39 @@ One explanation, for one reader, that they can act on after reading it once.
 The reader is not you and not the developer who wrote the code. Every choice
 below follows from who they are.
 
-## Step 1 — Name the reader
+## Step 1 — Settle the settings with the user
 
-Pick one profile from [references/audiences.md](references/audiences.md): end
-user, business stakeholder, developer new to the code, developer who owns it,
-data engineer, or operator. Infer it from the request: who is named, where the
-output goes, and what they will do with it. Write the choice as the **reader
-line**, one line in italics that follows the output, for example *Written for a
-product manager deciding whether to ship this week*, so the user can correct
-it in one word.
+Every explanation has five settings. Infer each one from the request, then
+show all five as a **settings sheet** and ask before building, per
+[references/settings-sheet.md](references/settings-sheet.md). The inference is
+the recommendation, never the decision.
 
-Ask only when two readings would produce materially different outputs, such
-as a page a customer reads versus one an engineer debugs from. When the user
-names two readers, write for the less technical one and add a short block for
-the other at the end, rather than one text that serves neither. When the user
-asks for separate texts, or names readers from three or more profiles, write
-one output per profile, each with its own reader line and its own assumptions.
-Several people of one profile share one output.
+| Setting | Chosen from | Default when the user says nothing |
+| --- | --- | --- |
+| Reader | one profile in [references/audiences.md](references/audiences.md) | the profile the request implies |
+| Output | chat reply, Markdown document, or HTML page, per [references/formats.md](references/formats.md), plus any output the calling skill can produce | the profile's default output |
+| Interaction | still, or interactive with a one-paragraph spec | still |
+| Length | the profile's reading budget | the profile's budget |
+| Anchor | an anchor with a twist, or one-line definitions | what the profile says |
 
-**Done when** one profile is chosen, its line is written, and you can say what
-the reader already knows, what they decide, and which of your words are jargon
-to them.
+Infer the reader from who is named, where the output goes, and what they will
+do with it. When the user names two readers, recommend the less technical one
+with a short block for the other at the end. When the user asks for separate
+texts, or names readers from three or more profiles, recommend one output per
+profile. Several people of one profile share one output.
+
+Skip the sheet only when the request already fixes every setting, or when the
+user said not to ask; then build, and name the settings you used in the
+first assumption line of the reply (step 7). A reply of *go* accepts every
+recommendation.
+
+Write the agreed reader as the **reader line**, one line in italics that
+follows the output, for example *Written for a product manager deciding
+whether to ship this week*.
+
+**Done when** the user has accepted or changed the sheet, or the request fixed
+every setting, and you can say what the reader already knows, what they
+decide, and which of your words are jargon to them.
 
 ## Step 2 — Write the takeaway
 
@@ -105,22 +119,21 @@ states and explains the comparison.
 **Done when** every concept new to the reader has an anchor with a twist, or a
 one-line definition in the reader's words.
 
-## Step 5 — Choose the output
+## Step 5 — Hand off the output
 
-Read [references/formats.md](references/formats.md) and choose one of chat
-reply, Markdown document, or HTML page, by lifetime, by who else reads it, and
-by whether a picture carries the argument.
+The output and interaction settings were agreed in step 1. Read
+[references/formats.md](references/formats.md) for what each output needs and
+how to hand the medium to the skill that owns it in this harness.
 
-A still output is the default, and its text diagrams are yours to draw under
-visuals.md. Make it interactive only when the reader must do something a still
-picture cannot let them do: step through an ordered sequence, choose a path
-and see its consequence, or predict and then check. When interaction earns its
-cost, hand off to the harness skill that formats.md names, with a
+A still output's text diagrams are yours to draw under visuals.md. An
+interactive output earns its cost only when the reader must do something a
+still picture cannot let them do: step through an ordered sequence, choose a
+path and see its consequence, or predict and then check. Hand it off with a
 one-paragraph spec: the reader's action, the first state shown, what each
 interaction reveals, and the one thing that must stand out.
 
-**Done when** one output type is chosen, and an interactive output has its
-spec and its hand-off named.
+**Done when** the hand-off is made with the agreed output, and an interactive
+output has its spec.
 
 ## Step 6 — Build within the load budget
 
@@ -168,7 +181,8 @@ the four places.
 
 Reply with the output, then the reader line from step 1, then up to three
 assumption lines, as bullets or sentences. With several readers, each output
-gets its own reader line and assumptions.
+gets its own reader line and assumptions. When the sheet was skipped, the
+first assumption line names the settings you used.
 
 ## When not to apply
 

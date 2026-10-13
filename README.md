@@ -187,6 +187,12 @@ The pack uses two extensions that strict validators reject:
 
 - `disable-model-invocation: true` keeps a skill out of Claude Code's automatic
   loading, so it runs only when invoked by name.
+- A skill whose output can take more than one form, or serve more than one
+  reader, does not ask its own question about it. It loads `explain-to` and
+  runs its settings sheet (`explain-to/references/settings-sheet.md`), passing
+  the settings it fixes and any extra outputs it can produce, and builds from
+  what the user agreed. The sheet shows every inferred choice as a
+  recommendation with its evidence; *go* accepts them all.
 - `metadata.needs` lists, comma-separated, the harness capabilities a skill
   reads from `discovery.json`, as dotted paths into one harness entry of
   `harness-discovery/assets/discovery.template.json` (for example
