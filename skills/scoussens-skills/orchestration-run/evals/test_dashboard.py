@@ -13,7 +13,7 @@ import unittest
 
 RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
-DISCOVERY = RUNNER.parent / "orchestration-discovery"
+DISCOVERY = RUNNER.parent / "harness-discovery"
 sys.path.insert(0, str(RUNNER / "scripts"))
 from render_dashboard import render, skill_version
 
@@ -703,7 +703,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(self.marker.exists())
 
     def test_setup_validates_when_installed_without_its_sibling_skills(self):
-        alone = self.root / "installed" / "orchestration-setup"
+        alone = self.root / "installed" / SETUP.name
         shutil.copytree(SETUP, alone, ignore=shutil.ignore_patterns("__pycache__"))
         result = self.cli(alone, self.config_path)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -728,7 +728,7 @@ class ConfigTests(unittest.TestCase):
         self.config["project"]["stage_skills"] = {"code_publication": ["start-work"], "review": ["pr-ready"]}
         self.config_path.write_text(json.dumps(self.config))
         self.assertEqual(self.selected("Amp")["skills"]["stages"], {"code_publication": ["start-work"], "review": ["pr-ready"]})
-        for bad in ({"shipping": ["start-work"]}, {"review": ["orchestration-run"]}):
+        for bad in ({"shipping": ["start-work"]}, {"review": [RUNNER.name]}):
             with self.subTest(stage_skills=bad):
                 self.config["project"]["stage_skills"] = bad
                 self.config_path.write_text(json.dumps(self.config))
@@ -799,7 +799,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_all_orchestration_names_are_excluded_from_shared_worker_skills(self):
         original = deepcopy(self.config)
-        for name in ("orchestration-discovery", "orchestration-setup", "orchestration-run"):
+        for name in (DISCOVERY.name, SETUP.name, RUNNER.name):
             for scope in ("project", "Amp", "Claude Code"):
                 with self.subTest(name=name, scope=scope):
                     self.config = deepcopy(original)

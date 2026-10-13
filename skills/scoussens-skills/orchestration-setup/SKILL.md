@@ -4,7 +4,7 @@ description: >-
   Interviews the user to configure repository orchestration using saved discovery,
   with shared project policy and separate profiles keyed by harness name. Use for
   /orchestration-setup, first-time configuration, adding another harness, or
-  repairing setup. Calls orchestration-discovery when needed. Use orchestration-run
+  repairing setup. Calls harness-discovery when needed. Use orchestration-run
   to coordinate work after setup.
 ---
 
@@ -21,7 +21,7 @@ configuration directory. Without configuration, use the repository's
 `.orchestration/discovery.json`. Identify the current harness from runtime context.
 
 If discovery is absent, malformed, missing this harness, or contradicted by
-the current context, load `orchestration-discovery` first. Give it the selected
+the current context, load `harness-discovery` first. Give it the selected
 repository discovery path. Read its saved output before interviewing the user.
 Reuse suitable saved discovery. A new run alone does not require rediscovery.
 
@@ -55,7 +55,7 @@ Resolve project choices first, then the current harness profile:
    against discovered repository conventions. This policy belongs to `project.ticket_policy`.
 2. Worker instructions. Confirm project-wide `shared_skills` and any harness-specific
    additions. Use required baseline guidance as evidence rather than asking again.
-   All three orchestration skills belong to the coordinator, not worker briefs.
+   `harness-discovery` and both orchestration skills belong to the coordinator, not worker briefs.
    Optionally map business stages to the repository skills that perform them in
    `project.stage_skills`, such as a start-work skill for `code_publication` or
    a review skill for `review`. Offer only skills the repository already has.

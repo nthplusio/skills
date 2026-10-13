@@ -9,6 +9,8 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("behavior.py")
+sys.path.insert(0, str(SCRIPT.parent))
+from behavior import DISCOVERY, RUNNER, SETUP
 
 
 class BehaviorHarnessTests(unittest.TestCase):
@@ -63,7 +65,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         status_path = case / "state/runs/template-preview/status.json"
         status = json.loads(status_path.read_text())
         for operation, arguments in (
-            ("read-skill", {"name": "orchestration-run"}),
+            ("read-skill", {"name": RUNNER.name}),
             ("read", {"path": status["config_path"]}),
             ("resolve-config", {"harness": "Stub harness"}),
             ("ask", {"text": "Approve the broader automatic deployment, or keep publication held?"}),
@@ -180,7 +182,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         root = Path(self.directory.name) / "native-lifecycle"
         self.run_cli("prepare", str(root), "--cases", "runner-native-resume")
         case = root / "runner-native-resume"
-        self.run_cli("call", str(case), "read-skill", '{"name":"orchestration-run"}')
+        self.run_cli("call", str(case), "read-skill", json.dumps({"name": RUNNER.name}))
         status = json.loads(self.run_cli("call", str(case), "restore").stdout)
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
         self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
@@ -228,7 +230,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         root = Path(self.directory.name) / "decision-grade"
         self.run_cli("prepare", str(root), "--cases", "runner-decision-routing")
         case = root / "runner-decision-routing"
-        self.run_cli("call", str(case), "read-skill", '{"name":"orchestration-run"}')
+        self.run_cli("call", str(case), "read-skill", json.dumps({"name": RUNNER.name}))
         status = json.loads(self.run_cli("call", str(case), "restore").stdout)
         self.run_cli("call", str(case), "read", json.dumps({"path": status["config_path"]}))
         self.run_cli("call", str(case), "resolve-config", '{"harness":"Stub harness"}')
@@ -319,8 +321,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
         case = root / name
         world = json.loads((case / "world.json").read_text())
-        stage = "orchestration-discovery" if name.startswith("discovery-") else (
-            "orchestration-run" if name.startswith("runner-") else "orchestration-setup")
+        stage = (DISCOVERY if name.startswith("discovery-") else RUNNER if name.startswith("runner-") else SETUP).name
         self.action(case, "read-skill", name=stage)
         inventory = self.action(case, "inventory")
         self.assertEqual(inventory["harness_name"], "Stub harness")
@@ -362,7 +363,7 @@ class BehaviorHarnessTests(unittest.TestCase):
                 root, case, world = self.boundary_case("setup-discovery-first", str(early))
                 if early:
                     self.action(case, "ask", text="Use local Markdown tickets with stable IDs?")
-                self.action(case, "read-skill", name="orchestration-discovery")
+                self.action(case, "read-skill", name=DISCOVERY.name)
                 facts = self.action(case, "discover-facts")
                 self.action(case, "write", path=world["paths"]["discovery"], content=facts)
                 self.action(case, "check-discovery")
@@ -410,7 +411,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         root, case, world = self.boundary_case("setup-ticket-source")
         for key in ("discovery", "repository_guidance", "repository_tickets"):
             self.action(case, "read", path=world["paths"][key])
-        self.action(case, "read-skill", name="orchestration-setup", resource="references/ticket-template.md")
+        self.action(case, "read-skill", name=SETUP.name, resource="references/ticket-template.md")
         self.action(case, "ask", text="Use local Markdown tickets with stable IDs as the ticket source?")
         self.action(case, "reply", text="Ticket source remains unconfirmed; no setup or assignments saved.")
         self.assertTrue(self.outcome(root)["passed"])
@@ -472,7 +473,7 @@ class BehaviorHarnessTests(unittest.TestCase):
         root = Path(self.directory.name) / "all-stages"
         self.assertEqual(self.run_cli("prepare", str(root)).returncode, 0)
         suite = json.loads((root / "suite.json").read_text())
-        self.assertEqual(set(suite["skill_sha256"]), {"orchestration-discovery", "orchestration-setup", "orchestration-run"})
+        self.assertEqual(set(suite["skill_sha256"]), {DISCOVERY.name, SETUP.name, RUNNER.name})
         self.assertEqual(self.run_cli("grade", str(root)).returncode, 1)
         self.assertTrue(all(not outcome["passed"] for outcome in json.loads((root / "mechanical-results.json").read_text())))
 

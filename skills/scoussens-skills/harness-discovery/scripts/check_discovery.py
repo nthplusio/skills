@@ -21,7 +21,7 @@ def texts(value, label):
 
 def check(discovery):
     if discovery["schema_version"] != 1:
-        raise ValueError("unsupported discovery schema_version; run orchestration-discovery")
+        raise ValueError("unsupported discovery schema_version; run harness-discovery")
     repository = discovery["repository"]
     for field in ("guidance", "ticket_sources", "notes"):
         texts(repository[field], f"repository.{field}")

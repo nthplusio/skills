@@ -1,13 +1,13 @@
 ---
-name: orchestration-discovery
+name: harness-discovery
 description: >-
   Discovers the current agent harness's orchestration capabilities and repository
   ticket conventions, and saves observations by harness name. Use for
-  /orchestration-discovery, missing discovery during orchestration setup, or
+  /harness-discovery, missing discovery during orchestration setup, or
   refreshing capability facts after the harness or execution context changes.
 ---
 
-# Orchestration discovery
+# Harness discovery
 
 Save observed facts for `orchestration-setup`. Discovery describes what works.
 Setup interviews the user about what to use. `orchestration-run` coordinates work.
