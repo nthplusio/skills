@@ -10,7 +10,7 @@ A Cursor construct you find that no need covers gets a new need in the catalog (
 
 ## The harness profile
 
-`pstack-sync/harness/<harness>.md` answers the catalog for one harness. Start a new one from `harness/TEMPLATE.md`. It has two parts:
+`.nthplusio-skills/pstack-sync/harness/<harness>.md` answers the catalog for one harness. That directory sits with `discovery.json`, so a plain copy of the skill pack does not replace it. The first run copies the shipped `pstack-sync/harness/<harness>.md` there when the pack has one. Start a harness the pack does not ship from `pstack-sync/harness/TEMPLATE.md`, and save the profile at the durable path. It has two parts:
 
 - **Destination**: where this harness loads shared skills from, how a change takes effect, how a running session reloads, and which other skill sources shadow it.
 - **Needs**: one row for each need without discovery fields, with a **support** level, the harness equivalent, and the source that proves it.

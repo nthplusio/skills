@@ -26,25 +26,34 @@ scope provides the name: the referencing skill's own plugin, plus each plugin it
 `plugin` or "plugin plugin". Subagent definitions install as pstack-agents/<name>.md. A skill
 name an unmanaged skill already has is served by that skill instead.
 
-State (in pstack-sync/):
+Shipped with the skill, replaced by a plain copy of the pack:
   needs.json            features pstack relies on; markers per need (harness-independent),
                         and the harness-discovery fields that answer a need. A need with
                         "detect" also gets markers sync.py finds: "unavailable" for each
                         skill, command, or subagent a file hands off to that the skills
                         directory will not have; "agents" for each subagent definition named.
-  harness/<harness>.md  pstack's adaptation profile: destination, and one row for each
+  harness/TEMPLATE.md   starting profile for a harness the pack does not ship.
+  harness/<harness>.md  seed profile, copied into durable state on first use.
+  transform.json        seed adaptations, copied into durable state on first use.
+
+Durable state, beside discovery.json, kept across a pack refresh:
+  .nthplusio-skills/pstack-sync/manifest.json
+                        upstream commit, harness, exclude list (names of pstack skills,
+                        dependencies, or subagent definitions); per installed skill: dir,
+                        upstream source, tree, transforms hash, per file upstream blob,
+                        installed blob, pending adaptation.
+  .nthplusio-skills/pstack-sync/transform.json
+                        per harness: "accept" marker regexes, "global" regex transforms,
+                        "files" keyed by "<skill>/<rel>" (upstream skill name, or
+                        pstack-agents).
+  .nthplusio-skills/pstack-sync/LICENSE-<plugin>
+                        the license of each plugin the installed skills come from.
+  .nthplusio-skills/pstack-sync/harness/<harness>.md
+                        the harness profile in use: destination, and one row for each
                         need without discovery fields, with support native | keep |
                         substitute | partial | none. A row for a need with discovery
                         fields overrides them. Markers of needs marked native or keep
                         are accepted automatically.
-  manifest.json         upstream commit, harness, exclude list (names of pstack skills,
-                        dependencies, or subagent definitions); per installed skill: dir,
-                        upstream source, tree, transforms hash, per file upstream blob,
-                        installed blob, pending adaptation.
-  transform.json        per harness: "accept" marker regexes, "global" regex transforms,
-                        "files" keyed by "<skill>/<rel>" (upstream skill name, or
-                        pstack-agents).
-  LICENSE-<plugin>      the license of each plugin the installed skills come from.
 
 Harness facts (owned by harness-discovery, not pstack-sync):
   .nthplusio-skills/discovery.json at the root of the Git repository holding --repo, or
@@ -283,6 +292,39 @@ def discovery_root(repo, root):
     return r.stdout.strip() if r.returncode == 0 else repo
 
 
+def durable_dir(repo, root):
+    """Install state beside discovery.json, outside the skill directory a pack refresh replaces."""
+    return os.path.join(discovery_root(repo, root), STATE_DIR, SELF)
+
+
+def adopt_durable(repo, root, harness):
+    """Copy a missing durable file from the skill directory.
+
+    manifest.json and LICENSE-* only exist as install state. transform.json and
+    harness/<harness>.md also ship as seeds; the durable copy wins once it exists.
+    """
+    dest = durable_dir(repo, root)
+    os.makedirs(os.path.join(dest, "harness"), exist_ok=True)
+    skill = os.path.join(repo, SELF)
+
+    def take(name, seed, remove_seed=False):
+        target = os.path.join(dest, name)
+        if os.path.exists(target) or not os.path.exists(seed):
+            return
+        shutil.copy2(seed, target)
+        if remove_seed:
+            os.remove(seed)
+
+    take("manifest.json", os.path.join(skill, "manifest.json"), remove_seed=True)
+    take("transform.json", os.path.join(skill, "transform.json"))
+    take(os.path.join("harness", f"{harness}.md"), os.path.join(skill, "harness", f"{harness}.md"))
+    if os.path.isdir(skill):
+        for fn in os.listdir(skill):
+            if fn.startswith("LICENSE-"):
+                take(fn, os.path.join(skill, fn), remove_seed=True)
+    return dest
+
+
 def harness_facts(path, harness, needs):
     """(saved harness key, {need id: {field: value}}) for each need whose discovery fields are all
     recorded. A missing field, or the template's "unknown", is not yet discovered."""
@@ -431,9 +473,11 @@ class State:
     def __init__(self, repo, harness, root=None):
         self.repo = repo
         self.harness = harness
-        self.manifest_path = os.path.join(repo, SELF, "manifest.json")
-        self.transform_path = os.path.join(repo, SELF, "transform.json")
-        self.profile_path = os.path.join(repo, SELF, "harness", f"{harness}.md")
+        self.discovery_root = discovery_root(repo, root)
+        self.durable = adopt_durable(repo, root, harness)
+        self.manifest_path = os.path.join(self.durable, "manifest.json")
+        self.transform_path = os.path.join(self.durable, "transform.json")
+        self.profile_path = os.path.join(self.durable, "harness", f"{harness}.md")
         self.manifest = load_json(self.manifest_path, {"skills": {}})
         self.transforms = load_json(self.transform_path, {})
         self.tf = self.transforms.setdefault(harness, {"accept": [], "global": [], "files": {}})
@@ -448,7 +492,7 @@ class State:
                 self.profile_text = f.read()
         self.profile = parse_profile(self.profile_text)
         self.auto_accept = {i for i, s in self.profile.items() if s in ("native", "keep")}
-        self.discovery_path = os.path.join(discovery_root(repo, root), STATE_DIR, "discovery.json")
+        self.discovery_path = os.path.join(self.discovery_root, STATE_DIR, "discovery.json")
         self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
         managed_dirs = {v["dir"] for v in self.managed.values()}
         skills = {d for d in os.listdir(repo) if os.path.isfile(os.path.join(repo, d, "SKILL.md"))}
@@ -731,7 +775,7 @@ def cmd_sync(a, st):
         plugins = {p for up in ups.values() for p in up["plugins"]} | {ROOT_PLUGIN}
         licenses = {f"LICENSE-{p.replace('/', '-')}": inv["licenses"][p] for p in plugins if p in inv["licenses"]}
         texts = read(licenses.values())
-        state_dir = os.path.join(st.repo, SELF)
+        state_dir = st.durable
         for fn in os.listdir(state_dir):
             if fn.startswith("LICENSE-") and fn not in licenses:
                 os.remove(os.path.join(state_dir, fn))
@@ -811,13 +855,14 @@ def cmd_record(a, st):
 
 
 def cmd_status(a, st):
-    def at_rev(rel, default):
-        r = subprocess.run(["git", "-C", st.repo, "show", f"{a.since}:./{SELF}/{rel}"], capture_output=True, text=True)
+    def at_rev(path, default):
+        rel = os.path.relpath(path, st.discovery_root)
+        r = subprocess.run(["git", "-C", st.discovery_root, "show", f"{a.since}:{rel}"], capture_output=True, text=True)
         return r.stdout if r.returncode == 0 else default
 
-    old_m = json.loads(at_rev("manifest.json", '{"skills": {}}'))
-    old_tf = json.loads(at_rev("transform.json", "{}")).get(a.harness, {}).get("files", {})
-    old_profile = parse_profile(at_rev(f"harness/{a.harness}.md", ""))
+    old_m = json.loads(at_rev(st.manifest_path, '{"skills": {}}'))
+    old_tf = json.loads(at_rev(st.transform_path, "{}")).get(a.harness, {}).get("files", {})
+    old_profile = parse_profile(at_rev(st.profile_path, ""))
     old_s, new_s = norm_skills(old_m.get("skills", {})), st.managed
     new_tf = st.tf.get("files", {})
     dir_of = {**{k: v["dir"] for k, v in old_s.items()}, **{k: v["dir"] for k, v in new_s.items()}}

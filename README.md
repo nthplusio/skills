@@ -134,6 +134,7 @@ harness from it. `harness-discovery` owns the script; `orchestration-setup` and
 | --- | --- | --- | --- |
 | `discovery.json` | `harness-discovery` | Every skill that needs harness facts | Yes, sanitized |
 | `orchestration.json` | `orchestration-setup` | `orchestration-run` | Yes |
+| `pstack-sync/manifest.json`, `transform.json`, `LICENSE-*`, `harness/<slug>.md` | `pstack-sync` | `pstack-sync` | Yes |
 | `runs/<harness slug>/` | `orchestration-run` | `orchestration-run` | No; `.nthplusio-skills/.gitignore` |
 
 ```bash
