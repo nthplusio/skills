@@ -32,6 +32,37 @@ STATE_DIR = ".nthplusio-skills"
 FILES = {"discovery": "discovery.json", "orchestration": "orchestration.json"}
 CURRENT = {"discovery": 1, "orchestration": 3}
 OWNERS = {"discovery": "harness-discovery", "orchestration": "orchestration-setup"}
+# A failure that already says what to run must not gain a second skill name.
+HINTS = (
+    "run harness-discovery",
+    "run orchestration-setup",
+    "run state.py migrate",
+    "repair this harness profile with orchestration-setup",
+)
+active = "discovery"
+
+
+def use(kind):
+    global active
+    active = kind
+
+
+def with_owner(message):
+    """Append the skill that owns the file being checked, unless a hint is already present."""
+    text = str(message)
+    if any(hint in text for hint in HINTS):
+        return text
+    return f"{text}; run {OWNERS[active]}"
+
+
+def load_saved(path, kind):
+    use(kind)
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        raise ValueError(f"{path.name} is not valid JSON")
+
+
 # Earlier homes of the saved state, oldest first. Each held config.json and the
 # discovery file its discovery_file named, by default discovery.json.
 LEGACY_DIRS = (".orchestration",)
@@ -59,6 +90,7 @@ def slug(name):
 
 
 def check_version(document, kind):
+    use(kind)
     found = document["schema_version"]
     if found == CURRENT[kind]:
         return
@@ -68,6 +100,7 @@ def check_version(document, kind):
 
 
 def check_discovery(discovery):
+    use("discovery")
     check_version(discovery, "discovery")
     repository = discovery["repository"]
     for field in ("guidance", "ticket_sources", "notes"):
@@ -138,8 +171,10 @@ def check_discovery(discovery):
 
 
 def check_orchestration(config, discovery):
+    use("orchestration")
     check_version(config, "orchestration")
     check_discovery(discovery)
+    use("orchestration")
     policy = config["project"]["ticket_policy"]
     for field in ("source", "location", "definition", "template", "id_convention", "confirmed_from"):
         text(policy[field], f"ticket_policy.{field}")
@@ -196,9 +231,10 @@ def legacy_files(root):
 
 def saved(root, kind):
     """The current file and its document, or an error naming what to run."""
+    use(kind)
     path = state_path(root, kind)
     if path.is_file():
-        return path, json.loads(path.read_text())
+        return path, load_saved(path, kind)
     legacy = legacy_files(root)
     if legacy:
         raise ValueError(f"legacy state at {legacy[0]}; run state.py migrate")
@@ -288,6 +324,7 @@ UPGRADES = {"discovery": {}, "orchestration": {2: orchestration_2_to_3}}
 
 
 def upgrade(kind, document, relocation, path):
+    use(kind)
     steps = []
     while document.get("schema_version") != CURRENT[kind]:
         found = document.get("schema_version")
@@ -311,7 +348,7 @@ def migrate(root, source=None, dry_run=False):
     config_source = Path(source).expanduser().resolve() if source else next(
         (path for path in legacy_files(root) if path.name == "config.json"), None)
     if config_source is not None:
-        config = json.loads(config_source.read_text())
+        config = load_saved(config_source, "orchestration")
         if config.get("schema_version") == 1:
             summary["interview"].append(f"{config_source} is a version 1 configuration; "
                                         "convert it through the orchestration-setup interview")
@@ -319,16 +356,17 @@ def migrate(root, source=None, dry_run=False):
             found["orchestration"] = (config_source, config)
             discovery_source = (config_source.parent / config.get("discovery_file", FILES["discovery"])).resolve()
             if not discovery_source.is_file():
+                use("discovery")
                 raise ValueError(f"{config_source} names {discovery_source}, which does not exist")
-            found["discovery"] = (discovery_source, json.loads(discovery_source.read_text()))
+            found["discovery"] = (discovery_source, load_saved(discovery_source, "discovery"))
     if "discovery" not in found:
         legacy = next((path for path in legacy_files(root) if path.name == "discovery.json"), None)
         if legacy is not None:
-            found["discovery"] = (legacy, json.loads(legacy.read_text()))
+            found["discovery"] = (legacy, load_saved(legacy, "discovery"))
     for kind in FILES:
         current = state_path(root, kind)
         if kind not in found and current.is_file():
-            document = json.loads(current.read_text())
+            document = load_saved(current, kind)
             if document.get("schema_version") != CURRENT[kind]:
                 found[kind] = (current, document)
 
@@ -338,7 +376,7 @@ def migrate(root, source=None, dry_run=False):
         upgraded, steps = upgrade(kind, document, relocation, path)
         current = state_path(root, kind)
         if path != current and current.is_file():
-            if json.loads(current.read_text()) != upgraded:
+            if load_saved(current, kind) != upgraded:
                 raise ValueError(f"{path} and {current} both exist and differ; reconcile them, then run state.py migrate again")
             upgraded = None
         plans[kind] = (path, document, upgraded, steps, relocation.rebased)
@@ -346,7 +384,7 @@ def migrate(root, source=None, dry_run=False):
         if kind in plans and plans[kind][2] is not None:
             final[kind] = plans[kind][2]
         elif state_path(root, kind).is_file():
-            final[kind] = json.loads(state_path(root, kind).read_text())
+            final[kind] = load_saved(state_path(root, kind), kind)
     if "discovery" in final:
         check_discovery(final["discovery"])
     if "orchestration" in final:
@@ -416,9 +454,9 @@ def main():
         else:
             print(json.dumps(migrate(root, args.source, args.dry_run), indent=2))
     except KeyError as error:
-        parser.exit(1, f"FAIL: missing field {error}\n")
+        parser.exit(1, f"FAIL: {with_owner(f'missing field {error}')}\n")
     except (OSError, ValueError, TypeError, AttributeError, subprocess.CalledProcessError) as error:
-        parser.exit(1, f"FAIL: {error}\n")
+        parser.exit(1, f"FAIL: {with_owner(error)}\n")
 
 
 if __name__ == "__main__":
