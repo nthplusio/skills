@@ -15,7 +15,8 @@ Build it in this order: establish ground truth, agree the story, then write.
 ## Ask two questions and show the sheet first
 
 Two of these you cannot derive from the repository, and the third changes what
-you build. Ask all three in one message, before gathering anything.
+you build. Ask them in one message, before gathering anything, each with a
+bold default so that *go* answers all of them.
 
 1. **Which window, and is the unit a period or a release?** These are two
    different documents and the distinction decides what goes in. See
@@ -34,6 +35,8 @@ you build. Ask all three in one message, before gathering anything.
    - **Fixed settings.** Reader: the *business stakeholder* profile, because
      the brief exists for someone who does not read code (see
      [Write from the reader's side of the screen](#write-from-the-readers-side-of-the-screen)).
+     Interaction, length, and anchor follow that profile; the budget applies
+     per item, so the whole brief runs longer than one explanation.
    - **The open setting.** Output. An HTML page carries the customer's own
      visual identity and a link they can forward; Markdown survives pasting
      into an email, a doc, or a tracker comment. Both at once is a legitimate
@@ -184,7 +187,8 @@ sections are decoration, because a ranked list is not a sequence.
 
 The reader is the **business stakeholder** profile in the `explain-to` skill's
 `references/audiences.md`, when that skill is installed beside this one. Its
-vocabulary list and reading budget apply to every item below.
+vocabulary list applies throughout, and its reading budget applies to each
+item, not to the brief as a whole.
 
 Each item leads with what a person would notice, in their vocabulary. Detail
 follows in a sentence or two, then the tracker and pull request references sit

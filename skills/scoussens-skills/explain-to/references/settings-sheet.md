@@ -46,6 +46,12 @@ or the repository, so the user can see what the recommendation rests on.
   used, so the user still sees every choice in one place.
 - A calling skill fixed some settings. Show only the open ones, and list the
   fixed ones above the table in one line so the user sees the whole picture.
+  A setting the caller neither fixed nor opened follows the reader's profile;
+  say so in that line.
+- A calling skill asks its own questions in the same message. Give each of
+  them a bold default, and widen the closing line to *Reply **go** to accept
+  the defaults and the recommendations, or answer any of them*, so one word
+  still settles everything.
 
 ## The question tool
 
