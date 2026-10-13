@@ -204,6 +204,12 @@ interaction, keep the structure. If the user named a destination — an email, a
 tracker comment — let that shape the length rather than forcing the full
 apparatus into it.
 
+Publish a page to one of the `artifacts` that the repository's
+`.nthplusio-skills/discovery.json` records for the harness you are running in,
+when its tool is in your tool list; otherwise a page-publishing tool from your
+tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
+open it when there is a desktop, and give its path.
+
 ## Report what only the aggregate shows
 
 When handing off, do not recite the sections; the user can see those. Lead with

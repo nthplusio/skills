@@ -41,8 +41,10 @@ convincing detail is the worst outcome this skill has available to it.
 
 ## Step 2 — Ask how deep to go
 
-One `AskUserQuestion` call, one question — whether to judge the PR standalone
-or against a baseline. Ask exactly one question; the skill has already decided the rest.
+Ask one question — whether to judge the PR standalone or against a baseline —
+with the harness's structured question tool when it has one (`ask_user` in its
+entry of the repository's `.nthplusio-skills/discovery.json`), otherwise in your
+reply. Ask exactly one question; the skill has already decided the rest.
 
 - **Standalone (recommended default)** — this PR on its own evidence. One PR's
   worth of API calls, and the rubric is fixed, so scores are still comparable
@@ -82,12 +84,12 @@ Then gather what the scripts deliberately do not:
   `headRefName` case-insensitively (`[A-Za-z]{2,10}-[0-9]{1,6}`, uppercased);
   branch names are often lowercase, so an uppercase-only pattern misses tickets
   that appear only in the branch. Look up each surviving ID in the tracker
-  (Linear: `mcp__linear__get_issue`; otherwise its equivalent) — a 404 just
+  (for Linear, its MCP server's `get_issue` tool; otherwise its equivalent) — a 404 just
   means the regex matched something that wasn't a ticket, so drop it silently. **The issue's acceptance criteria are the scope
   yardstick**: "did this do what was asked, and only what was asked" is not
   answerable from the diff alone.
 - The repo's own standards, so the evaluation grades against the team's rules
-  rather than your preferences: `CLAUDE.md`, any conventions doc, and any ADR
+  rather than your preferences: `AGENTS.md` or `CLAUDE.md`, any conventions doc, and any ADR
   the PR or its review cites. If the repo documents a layering rule or a
   review SLA (for example in an ADR), cite it by name when a finding turns on
   one, and set `PR_DETAIL_SLA_HOURS` to a published SLA so `metrics.py`
@@ -256,8 +258,13 @@ Layout, top to bottom:
 6. **Limits of this assessment** — the Step 7 honesty items, stated plainly and
    not collapsed. This section exists to be read.
 
-Publish with the `Artifact` tool, favicon `🔍`, titled with the PR number and a
-short name so several runs stay distinguishable in a tab strip.
+Publish to a hosted page: one of the `artifacts` that the repository's
+`.nthplusio-skills/discovery.json` records for the harness you are running in,
+when its tool is in your tool list; otherwise a page-publishing tool from your
+tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
+open it when there is a desktop, and give its path. Use favicon `🔍` and a title
+with the PR number and a short name, so several runs stay distinguishable in a
+tab strip.
 
 ## Staying in your lane
 

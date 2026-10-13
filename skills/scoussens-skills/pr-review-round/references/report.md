@@ -43,6 +43,12 @@ you approve and still take half an hour to land.
 
 ## HTML artifact
 
+Publish to a hosted page: one of the `artifacts` that the repository's
+`.nthplusio-skills/discovery.json` records for the harness you are running in,
+when its tool is in your tool list; otherwise a page-publishing tool from your
+tool list, such as an `Artifact` tool. With neither, save the HTML file locally,
+open it when there is a desktop, and give its path.
+
 If an `artifact-design` skill is available, load it first — it calibrates how
 much design the page warrants.
 

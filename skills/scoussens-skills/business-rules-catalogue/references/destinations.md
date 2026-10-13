@@ -14,12 +14,16 @@ A run has three things to place:
 
 ## Usable destinations
 
-List only the destinations you can deliver to from this session. Read each
-publishing tool's description for who can see what it publishes, whether it
-executes JavaScript, upload limits, and whether its preview and final URL have
-different access controls. Verify these facts before offering a host. A wiki
-that stores the HTML as text is not an explorer host. DocStash is one option,
-not a dependency or a default.
+List only the destinations you can deliver to from this session. When the
+repository's `.nthplusio-skills/discovery.json` has an entry for the harness you
+are running in, start from its `artifacts`: they record the destinations that
+harness supports, their audiences, and limits such as blocked clipboard writes.
+Offer only the ones whose tool is in your tool list. Read each publishing tool's
+description for who can see what it publishes, whether it executes JavaScript,
+upload limits, and whether its preview and final URL have different access
+controls. Verify these facts before offering a host. A wiki that stores the HTML
+as text is not an explorer host. DocStash is one option, not a dependency or a
+default.
 
 - **Local**, always available. Open `site/index.html` (or `bundle.html`)
   with `open` or `xdg-open` when there is a desktop. In a remote sandbox,

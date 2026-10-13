@@ -29,7 +29,7 @@ If you cannot tell which spec is meant, ask.
 List the destinations you can deliver to in this session:
 
 - **Local file.** Always available. You can open it in a browser only when there is a desktop: macOS, or Linux with `$DISPLAY` or `$WAYLAND_DISPLAY` set. Over SSH or in a container, the user gets the path instead.
-- **Hosted page.** Each tool in your tool list that publishes an HTML page and returns a link, such as an `Artifact` tool or an MCP server's page-creation tool. Read each tool's description for who can see what it publishes. A tool that stores documents as text, such as a docs or wiki connector, does not count, because it drops the styles and the diagrams.
+- **Hosted page.** When the repository's `.nthplusio-skills/discovery.json` has an entry for the harness you are running in, keyed by its product name, that entry's `artifacts` list the page destinations the harness supports, with their audiences and limits; offer the ones whose tool is in your tool list. Without such an entry, use each tool in your tool list that publishes an HTML page and returns a link, such as an `Artifact` tool or an MCP server's page-creation tool. Read each tool's description for who can see what it publishes. A tool that stores documents as text, such as a docs or wiki connector, does not count, because it drops the styles and the diagrams.
 
 Then settle one destination:
 

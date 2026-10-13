@@ -209,9 +209,14 @@ customer's public brand and say in your reply that you did.
 
 ## Deliver it
 
-For an Artifact, if an `artifact-design` skill is available, load it before
-writing the page. Give the page a specific name, and hand the user the URL along with a note that it
-stays private until they share it.
+For an Artifact, publish to a hosted page: one of the `artifacts` that the
+repository's `.nthplusio-skills/discovery.json` records for the harness you are
+running in, when its tool is in your tool list; otherwise a page-publishing tool
+from your tool list, such as an `Artifact` tool. With neither, save the HTML
+file locally, open it when there is a desktop, and give its path. If an
+`artifact-design` skill is available, load it before writing the page. Give the
+page a specific name, and hand the user the URL along with who can see it; an
+Artifact stays private until they share it.
 
 For Markdown, use heading levels for the section hierarchy and keep the
 reference line on its own line beneath each item so it survives pasting into
