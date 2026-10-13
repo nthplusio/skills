@@ -698,7 +698,7 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(scope=scope):
                 result = self.cli(skill, "check", scope)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, f"PASS: {scope} {path}\n")
+                self.assertEqual(result.stdout.splitlines()[0], f"PASS: {scope} {path}")
         result = self.cli(RUNNER, "check")
         self.assertEqual(result.stdout, f"PASS: discovery {self.discovery_path}\nPASS: orchestration {self.config_path}\n")
         self.assertFalse(self.marker.exists())

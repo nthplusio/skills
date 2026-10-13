@@ -1,0 +1,117 @@
+{
+  "name": "Amp",
+  "fingerprint": {
+    "command": "names=$(amp tools list 2>/dev/null | sed -n 's/^  \\([a-z_]*\\) .*/\\1/p') && [ -n \"$names\" ] && printf '%s\\n' \"$names\" | sort | sha1sum | cut -c1-12",
+    "value": "0f19bf3201be",
+    "note": "sha1 of the built-in tool names from `amp tools list`; it changes when Amp's tool set changes, not on every release. Observed with Amp CLI 0.0.1791907253 on 2026-10-13."
+  },
+  "entry": {
+    "context": "Orb thread. Observed from an Amp orb whose agent ran as Claude Code (the Claude Agent SDK) with Amp's MCP tools; Amp-native tool names below come from `amp tools list`, the Amp docs, and the Amp MCP tool schemas, and were not all exercised in this session.",
+    "observed_at": "2026-10-13T18:30:00Z",
+    "sources": [
+      "amp tools list (CLI 0.0.1791907253, 2026-10-13)",
+      "amp skill --help; amp skills repositories",
+      "Amp MCP tool schemas in session: create_thread, read_thread, get_thread_status, send_thread_message, find_thread, update_thread, ask_user_choice, list_agent_modes, upload_thread_file, download_thread_file, download_thread_changes, thread_file_url, set_schedule/get_schedule/update_schedule/clear_schedule (via tool_search), create_github_subscription",
+      "https://ampcode.com/docs/customize/skills",
+      "https://ampcode.com/docs/customize/agents-md",
+      "https://ampcode.com/docs/models-and-subagents",
+      "https://ampcode.com/docs/threads",
+      "https://ampcode.com/docs/orbs",
+      "https://ampcode.com/docs/orbs/agent-to-agent",
+      "https://ampcode.com/docs/orbs/automations",
+      "https://ampcode.com/docs/orbs/portals",
+      "https://ampcode.com/docs/tools",
+      "Official skills creating-artifacts and creating-views (materialized under ~/.cache/amp/global-skills/ampcode.com/official/)"
+    ],
+    "owner_term": "thread",
+    "helper_term": "subagent",
+    "owners": {
+      "launch": "`create_thread` with a prompt and an intent; optional `agent_mode` (built-in low, medium, high, ultra, or a plugin or custom mode key), `executor` orb (default: a fresh orb and checkout from the project's default branch) or a live runner by `runner_id`, optional `worktree` on a runner. Returns immediately with the thread ID; the new thread does not inherit this conversation or uncommitted files.",
+      "inspect": "`read_thread` answers a question against the thread's full history or its current context window; `get_thread_status` returns the agent state, mode, and any pending user-input dialog; `find_thread` searches threads by keyword, file name, author, label, or date. None of these wake the thread. On the web, the thread URL plus `.md` or `amp threads markdown T-…` exports it.",
+      "message": "`send_thread_message` to a thread the user owns or can contribute to; it wakes the thread and starts a turn. A message answers a pending `ask_user_choice` dialog unless the dialog is marked requiresHuman, in which case the message queues behind it. `amp threads continue T-… -ox '<message>'` does the same from a shell.",
+      "collect": "Ask the owner in its prompt to `send_thread_message` its result back to the coordinator's thread ID, or (Amp native agent) call `wait_for_threads` then `read_thread`. Use one path, not both. Files come back only by explicit transfer (see evidence).",
+      "close": "`update_thread` with `archived: true` on a thread the user owns, or `amp threads archive`. The URL and history stay readable; archiving a thread does not archive the threads it created; an archived orb is not resumed for file downloads.",
+      "resume": "`send_thread_message` to the same thread, or open its URL and prompt. A paused orb wakes with conversation, files, and services in place; it pauses again a few minutes after the agent finishes.",
+      "workspace_model": "selectable"
+    },
+    "helpers": {
+      "invoke": "`Task` (Amp native agent) with a prompt and subagent type; several independent calls issued in one message run in parallel. The subagent works in isolation on the same orb filesystem and cannot talk to other subagents. The Librarian is a built-in read-only subagent for code search; `oracle` is a second-opinion model for reasoning, not a subagent.",
+      "collect": "The subagent's final summary arrives as the tool result; the caller never sees its step-by-step work. A Task run in the background reports through a completion notification in the caller's thread. A Task started in the background instead returns immediately and reports through a completion notification in the caller's thread.",
+      "blocks_caller": true,
+      "follow_up": false,
+      "readonly": "No readonly parameter is documented for Task. Hold a helper to read-only by instruction in its prompt; the Librarian subagent is read-only by design."
+    },
+    "monitoring": {
+      "notifications": "A background Task notifies the caller's thread when it completes. GitHub events reach a thread through `create_github_subscription` (CI results, PR and issue comments, new PRs or issues). A thread the coordinator launched does not notify on its own; it must be asked to message back.",
+      "wait": "`wait_for_threads` (Amp native agent) waits for named threads with a timeout and holds the caller; `get_thread_status` is the non-blocking check.",
+      "wake": "`set_schedule` saves one schedule and prompt on the current thread (one-time or repeating; one schedule per thread); when it fires Amp wakes the agent with a short message and `get_schedule` returns the prompt. Works while the thread is idle; an orb resumes if the task needs it. `update_schedule` and `clear_schedule` change or remove it; a failed run pauses the automation."
+    },
+    "skills": {
+      "load": "Amp lists every discovered skill's name and description to the model and loads the rest of SKILL.md with the `skill` tool when the model invokes it or the user types `/<name>`. A skill's instructions apply to the thread that loaded it, not to subagents it spawns.",
+      "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
+      "locations": "In precedence order, first name wins: ~/.config/agents/skills/, ~/.agents/skills/, ~/.config/amp/skills/, .agents/skills/ in the project and parent directories, .claude/skills/ in those directories, ~/.claude/skills/, ~/.claude/plugins/cache/, directories in amp.skills.path, the personal skills repository, the workspace skills repository, then official Amp skills. Local directories are searched five levels deep; repository skills must sit in an immediate child directory of the repository root. `amp skills repositories` lists the personal and workspace repositories with their clone commands.",
+      "reload": "`reload_skills` tool rescans local directories and fetches the latest personal and workspace skills into the running session; new threads fetch them automatically. `amp skills list` in a shell does not reload a session."
+    },
+    "instructions": {
+      "user": "~/.config/amp/AGENTS.md and ~/.config/AGENTS.md; system-wide /etc/ampcode/AGENTS.md (or the macOS and Windows equivalents); the web app's Global AGENTS.md under personal Settings > Advanced and under Workspace Settings > Advanced. Workspace guidance is included before personal and repository guidance.",
+      "project": "AGENTS.md in the working directory and each parent up to $HOME, always included; AGENTS.md in a subtree when the agent reads a file there; AGENT.md or CLAUDE.md as the fallback name in a directory with no AGENTS.md; @-mentioned files, with `globs` front matter loading only after a matching file is read. AMP_IGNORE_GUIDANCE_FILES skips matching files."
+    },
+    "ask_user": "`ask_user_choice`: one question with 2 to 5 options and an optional free-text 'Other'; the thread blocks (and may sleep) until the user answers in a dialog. Amp's guidance allows it only when the user explicitly asked to be asked questions; otherwise questions go in the reply.",
+    "models": {
+      "select": "For an owner: `create_thread` `agent_mode` with a built-in mode (low, medium, high, ultra) or a plugin or custom mode key; a mode named by the user, a skill, or a guidance file counts as an explicit choice. For a helper: Task takes no model; a subagent's model is routed independently of the main agent, and roles are pinned in Settings > Mode Dial > Tune Modes. `oracle` is the separate reasoning model.",
+      "list": "`list_agent_modes` returns the built-in effort rows, plugin modes, and custom agents this session may use; the /modes page shows current model routing."
+    },
+    "evidence": {
+      "transfer": "`upload_thread_file` (one file up to 4 MiB into another thread's workspace), `download_thread_file` (one file from a running or paused thread), `download_thread_changes` (every changed file from a thread's latest Changes capture, no executor needed), `thread_file_url` (temporary links, 3 hours), or push a branch. A message or commit ID does not transfer files.",
+      "retain_before_close": "Push a branch for commits; for uncommitted work, `download_thread_changes` still works after the thread is archived, but `download_thread_file` does not resume an archived orb."
+    },
+    "artifacts": [
+      {
+        "id": "portal-page",
+        "label": "HTML page served from the orb through a portal",
+        "present": "Write a self-contained HTML file and serve it from the orb (`creating-artifacts` skill: `.amp/in/artifacts/pages/<slug>.html` plus its share script, or `amp orb service start` and `amp orb portal <port>`); the portal URL is the link to share, written as a Markdown link titled \"amp-portal\".",
+        "update": "Rewrite the same file in place; the link stays stable. Restart the service only when the server does not pick up the change.",
+        "audience": "People who can view the thread. `amp orb portal … access` or the Portal tab can open a public link for 1 hour to 7 days that does not grant thread access.",
+        "interaction": "Review widget on every portal HTML page: a signed-in viewer selects an element and sends a comment, which arrives in the thread as a user message starting \"Portal page comment from\".",
+        "auto_refresh": null,
+        "limits": [
+          "Opening a portal wakes a paused orb and resumes billing.",
+          "Browser requests between two portal hosts are not supported.",
+          "A direct sandbox host URL or a file:// path does not work for the user; only the portal URL does."
+        ]
+      },
+      {
+        "id": "amp-view",
+        "label": "Inline interactive view in the reply",
+        "present": "A fenced `amp-view` code block holding one self-contained HTML document, rendered inline in the reply in a sandboxed frame that follows the reader's theme (`creating-views` skill).",
+        "update": "Post a new reply with a new block; a block is not revised in place.",
+        "audience": "Readers of the thread.",
+        "interaction": null,
+        "auto_refresh": null,
+        "limits": [
+          "No network: inline all CSS, JS, images, and data; chart libraries and web fonts cannot load.",
+          "No popups, storage, or form submission; about 720px wide on desktop and 360px on phones; keep source under 100 KB."
+        ]
+      },
+      {
+        "id": "local-file",
+        "label": "Local HTML file in the orb",
+        "present": "Write the file under .amp/in/artifacts/ and link it with a file:// URI in the reply.",
+        "update": "Rewrite the file.",
+        "audience": "The agent only; the user cannot open file:// or localhost links from an orb.",
+        "interaction": null,
+        "auto_refresh": null,
+        "limits": [
+          "Not viewable by the user; use a portal page instead."
+        ]
+      }
+    ],
+    "limitations": [
+      "Workspace model: an orb thread is isolated (own orb, checkout, and context, started from the default branch); a runner thread shares the runner's directory or takes a git worktree via create_thread's worktree option. The coordinator picks at launch with executor and runner_id.",
+      "Task, oracle, wait_for_threads, and reload_skills were not exercised here: this session's agent ran as Claude Code inside the orb, which exposes `Agent` instead of Task and lacks oracle and wait_for_threads. Their descriptions come from `amp tools list`, the docs, and the existing harness profile.",
+      "The docs do not document the frontmatter keys `disable-model-invocation` or `mode`; Amp reads only `name` and `description` per the skills page.",
+      "The docs give no Task API: no model parameter, no readonly parameter, and no documented follow-up to a finished subagent.",
+      "A launched thread sends nothing back on its own; collection depends on the prompt asking it to message the coordinator or on wait_for_threads."
+    ]
+  }
+}
