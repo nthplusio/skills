@@ -2,10 +2,11 @@
 name: orchestration-setup
 description: >-
   Interviews the user to configure repository orchestration using saved discovery,
-  with shared project policy and separate profiles keyed by harness name. Use for
-  /orchestration-setup, first-time configuration, adding another harness, or
-  repairing setup. Calls harness-discovery when needed. Use orchestration-run
-  to coordinate work after setup.
+  with shared project policy and separate profiles keyed by harness name. Load
+  this when orchestration-run reports setup missing or unsuitable. Also use it
+  when the user names /orchestration-setup to repair setup or add a harness.
+  Calls harness-discovery when discovery is missing or unsuitable. Do not start
+  a run here. orchestration-run does that.
 ---
 
 # Orchestration setup

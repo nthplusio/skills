@@ -3,10 +3,11 @@ name: orchestration-run
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
   milestone, repeatedly checks owner status, reuses retained proof, and maintains
-  one HTML dashboard using repository setup for the current harness. Use for
-  /orchestration-run, orchestrating multiple tickets, or resuming a coordinated
-  run. Confirms only run-specific choices. Calls orchestration-setup when setup
-  is missing or unsuitable. Do not use for a single implementation assignment.
+  one HTML dashboard using repository setup for the current harness. Start here
+  for /orchestration-run, a resume, or a first orchestration, including setting
+  orchestration up or adding a harness. Confirms only run-specific choices.
+  Calls orchestration-setup when setup is missing or unsuitable. Do not use for
+  a single implementation assignment, and do not run harness-discovery first.
 ---
 
 # Orchestration run
