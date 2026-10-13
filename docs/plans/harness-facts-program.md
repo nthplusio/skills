@@ -169,7 +169,7 @@ Each live lane runs in its own checkout at the PR head. Drive from the shell.
 - [ ] Metric. Wall time of `state.py check discovery` at trunk and at head on the same repository, and the diff-added work, `seed`, with an absolute budget.
 - [ ] Probe. `time python3 state.py check discovery`, three runs each side interleaved, and `time python3 state.py seed --harness Amp` three runs at head.
 - [ ] Baseline. Record the trunk median for `check` first.
-- [ ] Rule. Head `check` median within 1.2 times trunk. `seed` completes in under 2 seconds including the fingerprint command. Either failing fails.
+- [ ] Rule. Head `check` median within 1.2 times trunk. `seed` completes in under 1 second plus the measured wall time of the fingerprint command run alone, because that command is the harness CLI's startup and not this script's work; record both numbers. Either failing fails.
 
 **Review gate.** None. HF-2 is not review-gated.
 
