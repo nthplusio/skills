@@ -98,6 +98,8 @@ Last, collect every gap into the **Decide before building** list at the top of t
 
 **Voice.** If `speak-clearly` is in your available skills, load it now and apply it to every sentence on the page. If it is not, write as you would explain the spec to a junior developer in their first week: short sentences, one idea each, and name who or what acts.
 
+The reader is the **developer new to the code** profile in the `explain-to` skill's `references/audiences.md`, when that skill is installed beside this one: System then Part altitude, every project-local name defined at first use, about five minutes of reading.
+
 Either way, use plain words. That applies to everything on the page a person reads, including diagram labels, tree notes, and table cells. The repository's own vocabulary counts too: a word that is everyday inside the project, such as "frontmatter" or "model-invoked", is still jargon to the reader. Keep a technical term only when the developer needs it to match the page back to the spec. Define it in a few plain words before its first diagram, or in the same sentence where it first appears. For example: "jitter, a small random wait so retries do not all fire at once." Spell out every abbreviation: "p99" becomes "the slowest 1 in 100 requests". Replace every other term with the plain words it stands for.
 
 **Length.** The developer should be able to read the whole page in five minutes. Each list item is one line. Keep diagrams to about twelve boxes. Keep the words outside diagrams, trees, entity cards, and headings under 900, the "Decide before building" list included. The checker counts them, and every gap stays; cut words, never gaps.
