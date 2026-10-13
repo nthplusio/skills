@@ -1,8 +1,9 @@
 {
-  "_doc": "Features pstack relies on. Single source of truth for sync.py markers and for harness profiles (harness/<harness>.md rows are keyed by id).",
+  "_doc": "Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields. A need with detect also gets markers sync.py finds from cursor/plugins and the skills directory: unavailable (hand-offs the directory will not have) or agents (subagent definitions named).",
   "needs": [
     {
       "id": "skill-locations",
+      "discovery": ["skills.locations", "skills.reload"],
       "uses": "Install, find, and create skills (project-local, personal, plugin-provided); verification skills are generated into the project.",
       "cursor": [
         ".cursor/skills/",
@@ -17,6 +18,7 @@
     },
     {
       "id": "persistent-rules",
+      "discovery": ["instructions.user", "instructions.project"],
       "uses": "Always-applied instructions (user-wide and project) that every session reads.",
       "cursor": [
         "~/.cursor/rules/*.mdc",
@@ -45,6 +47,7 @@
     },
     {
       "id": "model-selection",
+      "discovery": ["models.select", "models.list"],
       "uses": "Pick a specific model (often a different family) for a subagent, runner, or judge.",
       "cursor": [
         "Task tool model: parameter",
@@ -59,6 +62,7 @@
     },
     {
       "id": "subagents",
+      "discovery": ["helpers.invoke", "helpers.collect", "helpers.blocks_caller"],
       "uses": "Fan out parallel workers, reviewers, explorers, and judges, each with its own prompt.",
       "cursor": [
         "Task tool",
@@ -73,6 +77,7 @@
     },
     {
       "id": "readonly-subagents",
+      "discovery": ["helpers.readonly"],
       "uses": "Reviewers and explorers that must not edit files.",
       "cursor": [
         "readonly: true on a Task call"
@@ -85,6 +90,7 @@
     },
     {
       "id": "ask-user",
+      "discovery": ["ask_user"],
       "uses": "Ask the user a structured multiple-choice question mid-run.",
       "cursor": [
         "AskQuestion"
@@ -97,6 +103,7 @@
     },
     {
       "id": "transcripts",
+      "discovery": ["owners.inspect"],
       "uses": "Read past or current chat transcripts (recall, reflect, eval, session pickup, decision-log audits, worktree audit).",
       "cursor": [
         "~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl"
@@ -110,6 +117,7 @@
     },
     {
       "id": "loop",
+      "discovery": ["monitoring.wake"],
       "uses": "Repeat a task until a check passes, including overnight runs.",
       "cursor": [
         "/loop"
@@ -122,6 +130,7 @@
     },
     {
       "id": "background-agents",
+      "discovery": ["owners.launch", "owners.resume"],
       "uses": "Hand work to an agent that runs remotely or after the session ends.",
       "cursor": [
         "cloud agents"
@@ -134,6 +143,7 @@
     },
     {
       "id": "worktrees",
+      "discovery": ["owners.workspace_model"],
       "uses": "Find and audit git worktrees the harness created.",
       "cursor": [
         ".cursor/worktrees/<repo>/<name>"
@@ -197,38 +207,30 @@
     },
     {
       "id": "companion-skills",
-      "uses": "Hand off to skills that ship outside pstack: Cursor built-ins (create-skill, babysit) and other Cursor plugins (cursor-team-kit: deslop, control-cli, control-ui).",
+      "detect": "unavailable",
+      "uses": "Hand off to a skill, command, or subagent the skills directory will not have: a Cursor built-in (create-skill, babysit, /add-plugin), a skill from a plugin the file does not name, or anything in exclude. Skills and subagent definitions pstack hands off to in cursor/plugins install as dependencies, so they are not companions.",
       "cursor": [
         "create-skill",
-        "cursor-team-kit",
-        "/deslop",
-        "control-cli",
-        "control-ui"
+        "Cursor's built-in babysit skill",
+        "/add-plugin"
       ],
       "markers": [
-        "\\bcursor-team-kit\\b",
-        "\\bcreate-skill\\b",
-        "\\bdeslop\\b",
-        "\\bcontrol-(?:cli|ui)\\b"
+        "\\bcreate-skill\\b"
       ],
-      "question": "Does the harness have a skill that does the same job as each companion skill?",
+      "question": "Does the harness have a skill or command that does the same job as each companion? Name each one in this need's profile row, or the sync report lists it as unresolved.",
       "fallback": "Name the harness skill with the same job; otherwise cut the hand-off and say the skill is unavailable."
     },
     {
       "id": "custom-subagents",
-      "uses": "Named subagent definitions pstack ships in pstack/agents/ (poteto-agent, Comment Sicko) that skills dispatch by name.",
+      "detect": "agents",
+      "uses": "Named subagent definitions (pstack's poteto-agent and comment-sicko, or any plugin's agents/*.md) that skills dispatch by name. pstack-sync installs each one a synced file names as pstack-agents/<name>.md.",
       "cursor": [
-        "poteto-agent",
-        "Comment Sicko",
+        "subagent_type: \"poteto-agent\"",
         "pstack/agents/*.md"
       ],
-      "markers": [
-        "\\bpoteto-agent\\b",
-        "\\bComment Sicko\\b",
-        "\\bcomment-sicko\\b"
-      ],
+      "markers": [],
       "question": "Can the harness define named subagents with their own instructions, and where?",
-      "fallback": "Dispatch a generic subagent and put the role's instructions in its prompt."
+      "fallback": "Dispatch a generic subagent with a prompt that tells it to read and follow pstack-agents/<name>.md first."
     }
   ]
 }

@@ -111,17 +111,21 @@ items are live and which are queued.
 Then collect the work and probe production. For a period brief, select what
 reached production inside the window; for a release brief, select each named
 release's contents. This lists candidates by merge date, which is a starting
-point rather than the answer:
+point rather than the answer. Filter on the server, once per branch: `--limit`
+pages by creation date, so filtering the output yourself drops a long-lived
+pull request that merged inside the window.
 
 ```bash
-gh pr list --state merged --limit 100 \
+gh pr list --state merged --base <branch> --search "merged:>=<start>" --limit 300 \
   --json number,title,mergedAt,baseRefName \
-  --jq '.[] | select(.mergedAt >= "<start>") | "\(.number)|\(.mergedAt[0:10])|\(.baseRefName)|\(.title)"'
+  --jq '.[] | "\(.number)|\(.mergedAt[0:10])|\(.baseRefName)|\(.title)"'
 ```
 
 `scripts/shipped-in-window.sh` runs this sequence and prints the ship-state
 verdict, the release boundaries, the merged pull requests split into product
-work and promotions, and every tracker ID it can find. Pass `--release <ref>` to
+work and promotions, and every tracker ID it can find. In a single-branch
+repository every merge is both a change and a release, so there are no
+promotions to subtract. Pass `--release <ref>` to
 read one release's contents instead of a date window. For the
 failure modes it guards against — release branches, cherry-picks, reverts,
 deploys that lag the merge — read

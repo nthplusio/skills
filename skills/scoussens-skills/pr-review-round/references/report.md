@@ -153,37 +153,5 @@ bug.
 
 ### Copying reliably
 
-Artifacts render in an iframe that does **not** delegate `clipboard-write`. In
-that frame `window.isSecureContext` is `true` and `navigator.clipboard` exists,
-so a capability check passes — and then `writeText()` rejects with
-`NotAllowedError`. Meanwhile `document.execCommand('copy')` in the same frame,
-in the same click, returns `true`.
-
-So **chain the fallback on rejection, never on feature detection.** This is the
-failure that shipped once already:
-
-```js
-// WRONG — the guard passes, writeText then rejects, and the execCommand path
-// is unreachable dead code.
-if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(t);
-return execCommandCopy(t);
-
-// RIGHT — outcome decides, not capability.
-function copyText(t) {
-  return Promise.resolve()
-    .then(function () {
-      if (!navigator.clipboard) throw new Error('no clipboard api');
-      return navigator.clipboard.writeText(t);
-    })
-    .catch(function () { return execCommandCopy(t); });  // runs on NotAllowedError too
-}
-```
-
-`execCommand` is itself removed-on-paper and can be disabled, so give the reader
-a real third resort: **render the prompt into a selectable element** — a
-collapsed `<details>` per row that the handler fills and opens. Do not tell
-anyone to "select the text manually" unless the text is on the page; a prompt
-that exists only inside `buildPrompt()` at click time cannot be selected.
-
-Say what actually happened in each of the three cases, and never report
-"Copied" on a write you did not confirm.
+Read [teacher-button.md](teacher-button.md) before writing the copy handler.
+Artifact frames reject `writeText` even when capability checks pass.

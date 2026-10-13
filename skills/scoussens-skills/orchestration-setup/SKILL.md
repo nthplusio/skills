@@ -2,10 +2,11 @@
 name: orchestration-setup
 description: >-
   Interviews the user to configure repository orchestration using saved discovery,
-  with shared project policy and separate profiles keyed by harness name. Use for
-  /orchestration-setup, first-time configuration, adding another harness, or
-  repairing setup. Calls harness-discovery when needed. Use orchestration-run
-  to coordinate work after setup.
+  with shared project policy and separate profiles keyed by harness name. Load
+  this when orchestration-run reports setup missing or unsuitable. Also use it
+  when the user names /orchestration-setup to repair setup or add a harness.
+  Calls harness-discovery when discovery is missing or unsuitable. Do not start
+  a run here. orchestration-run does that.
 ---
 
 # Orchestration setup
@@ -30,10 +31,10 @@ migrate copies it and leaves the original unchanged. Then read both files when
 they exist. Identify the current harness by its canonical product name, as
 `harness-discovery` records it.
 
-If discovery is absent, malformed, missing this harness, or contradicted by
-the current context, load `harness-discovery` first for the same repository.
-Read its saved output before interviewing the user.
-Reuse suitable saved discovery. A new run alone does not require rediscovery.
+Load `harness-discovery` before the interview when `state.py` prints `run harness-discovery`,
+or when discovery is malformed in a way that message does not name. Read its saved
+output before interviewing the user. Reuse suitable saved discovery. A new run
+alone does not require rediscovery.
 
 Use the discovered harness name exactly as the profile key. Adding another
 harness merges a new entry into the same files. Preserve other profiles and

@@ -38,7 +38,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact, grouped by theme and tied to its tickets, with what the period adds up to. Invoked explicitly. |
 | [`scoussens-skills/pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests oldest first: review each at a depth scaled to its risk, verify every finding at the current head, then approve, unblock, or land it. Invoked explicitly. |
 | [`scoussens-skills/pr-teacher`](skills/scoussens-skills/pr-teacher/SKILL.md) | Teach one pull request as an interactive artifact: the problem, how the mechanism works, a map of every changed file, something to operate, and a grounded self-check. Invoked explicitly. |
-| [`scoussens-skills/pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync the pstack skills from `cursor/plugins` into the directory that holds this skill — adding, updating, and removing skills — and adapt Cursor-only features to the running harness, replaying recorded adaptations so a fresh install does not re-adapt. Ships an Amp harness profile and a template for others. Invoked explicitly. |
+| [`scoussens-skills/pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync the pstack skills from `cursor/plugins`, with the skills and subagent definitions they hand off to, into the directory that holds this skill — adding, updating, and removing skills — and adapt Cursor-only features to the running harness, replaying recorded adaptations so a fresh install does not re-adapt. Ships an Amp harness profile and a template for others, and reads harness facts from `harness-discovery`. Invoked explicitly. |
 | [`scoussens-skills/release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder, verified against what actually reached production. Invoked explicitly. |
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
 | [`scoussens-skills/visualize-spec`](skills/scoussens-skills/visualize-spec/SKILL.md) | Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — with every place the spec is silent marked as a gap, themed to the repository, and opened locally or published where the agent can. Invoked explicitly. |
@@ -89,16 +89,19 @@ are both supported.
 ## Orchestration
 
 Install `harness-discovery`, `orchestration-setup` and `orchestration-run`
-together. Each supports manual invocation and agent discovery:
+together. Start with `/orchestration-run`. It calls `orchestration-setup` when
+saved setup is missing or unsuitable, and setup calls `harness-discovery` when
+saved discovery is missing or unsuitable. Name `/orchestration-setup` to repair
+setup or add a harness, and `/harness-discovery` to refresh facts. `pstack-sync`
+loads discovery itself.
 
-1. `/harness-discovery` saves `.nthplusio-skills/discovery.json` with observed
-   capabilities keyed by the discovered harness name.
-2. `/orchestration-setup` calls discovery if needed, then interviews for project
-   ticket policy, shared worker skills, storage, and run defaults. It saves
-   `.nthplusio-skills/orchestration.json` with a profile for each harness.
-3. `/orchestration-run` identifies the current harness and resolves its profile.
-   A short confirmation covers the selected tickets, finish line, dashboard
-   audience, and scan interval. Resume reuses confirmed run choices.
+`/orchestration-run` identifies the current harness and resolves its profile.
+A short confirmation covers the selected tickets, finish line, dashboard
+audience, and scan interval. Resume reuses confirmed run choices. Setup, when
+called, interviews for project ticket policy, shared worker skills, storage,
+and run defaults, and saves `.nthplusio-skills/orchestration.json`. Discovery,
+when called, saves `.nthplusio-skills/discovery.json` with observed capabilities
+keyed by the discovered harness name.
 
 Sanitized discovery and setup live in the repository. Runtime records, dashboards,
 and receipts stay ignored local state. Setup preferences do not authorize shared

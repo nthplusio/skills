@@ -1,42 +1,80 @@
 #!/usr/bin/env python3
-"""Sync pstack skills from github.com/cursor/plugins (pstack/skills) into a skills directory.
+"""Sync pstack skills from github.com/cursor/plugins (pstack/skills), and the skills and subagent
+definitions they hand off to, into a skills directory.
 
-  sync.py sync   --harness NAME [--repo DIR] [--ref BRANCH] [--dry-run]
-  sync.py record --harness NAME [--repo DIR] (SKILL | SKILL/FILE ... | --all)
-  sync.py status --harness NAME [--repo DIR] [--since REV]
+  sync.py sync   --harness NAME [--repo DIR] [--root DIR] [--ref BRANCH] [--dry-run]
+  sync.py record --harness NAME [--repo DIR] [--root DIR] (SKILL | SKILL/FILE ... | --all)
+  sync.py status --harness NAME [--repo DIR] [--root DIR] [--since REV]
 
 sync    Adds new upstream skills, updates changed ones, removes retired or excluded
         ones. Each file renders as: upstream -> rename rewrites -> global transforms
         -> file transforms (transform.json). A skill whose upstream tree and
-        transforms hash are unchanged is skipped without reading any blobs.
+        transforms hash are unchanged is left as installed.
         Prints a JSON report for the agent.
 record  Stores the installed content of the given skills or files as file transforms
         (find/replace hunks against the rendered base), accepts the markers left in
         them, and updates manifest hashes. Run after adapting files by hand.
 status  Prints a human-readable summary of what changed since REV (default HEAD) in
         the skills repository: transforms first, then new, updated, and removed
-        skills, then outstanding adaptation and drift.
+        skills, dependencies, then outstanding adaptation and drift.
+
+Dependencies: a skill or subagent definition elsewhere in cursor/plugins that a synced file hands
+off to installs beside pstack and is adapted the same way, followed transitively. A file hands
+off to a skill by writing `name`, /name, **name**, or ../name/, and to a subagent definition
+(<plugin>/agents/<name>.md) by writing its name. The hand-off counts when exactly one plugin in
+scope provides the name: the referencing skill's own plugin, plus each plugin it names as
+`plugin` or "plugin plugin". Subagent definitions install as pstack-agents/<name>.md. A skill
+name an unmanaged skill already has is served by that skill instead.
 
 State (in pstack-sync/):
-  needs.json            features pstack relies on; markers per need (harness-independent).
-  harness/<harness>.md  harness profile: destination, and one row per need with support
-                        native | keep | substitute | partial | none. Markers of needs
-                        marked native or keep are accepted automatically.
-  manifest.json         upstream commit, harness, exclude list; per skill: dir, upstream
-                        tree, transforms hash, per file upstream blob, installed blob,
-                        pending adaptation.
+  needs.json            features pstack relies on; markers per need (harness-independent),
+                        and the harness-discovery fields that answer a need. A need with
+                        "detect" also gets markers sync.py finds: "unavailable" for each
+                        skill, command, or subagent a file hands off to that the skills
+                        directory will not have; "agents" for each subagent definition named.
+  harness/<harness>.md  pstack's adaptation profile: destination, and one row for each
+                        need without discovery fields, with support native | keep |
+                        substitute | partial | none. A row for a need with discovery
+                        fields overrides them. Markers of needs marked native or keep
+                        are accepted automatically.
+  manifest.json         upstream commit, harness, exclude list (names of pstack skills,
+                        dependencies, or subagent definitions); per installed skill: dir,
+                        upstream source, tree, transforms hash, per file upstream blob,
+                        installed blob, pending adaptation.
   transform.json        per harness: "accept" marker regexes, "global" regex transforms,
-                        "files" keyed by upstream path "<skill>/<rel>".
+                        "files" keyed by "<skill>/<rel>" (upstream skill name, or
+                        pstack-agents).
+  LICENSE-<plugin>      the license of each plugin the installed skills come from.
+
+Harness facts (owned by harness-discovery, not pstack-sync):
+  .nthplusio-skills/discovery.json at the root of the Git repository holding --repo, or
+                        at --root. NAME matches a saved key or its slug. A need is
+                        profiled once every field it names is discovered; null means
+                        the harness has no such operation.
 """
 import argparse, difflib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys
 
 UPSTREAM = os.environ.get("PSTACK_SYNC_UPSTREAM", "https://github.com/cursor/plugins")
-SUBDIR = "pstack/skills"
+ROOT_PLUGIN = "pstack"
+SUBDIR = f"{ROOT_PLUGIN}/skills"
+AGENTS = "pstack-agents"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = os.path.dirname(os.path.dirname(HERE))
 SELF = "pstack-sync"
 CACHE = os.path.expanduser("~/.cache/pstack-sync/%s.git" % hashlib.sha1(UPSTREAM.encode()).hexdigest()[:12])
 SUPPORT = ("native", "keep", "substitute", "partial", "none")
+STATE_DIR = ".nthplusio-skills"
+MISSING = object()
+NAME = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+MENTION = re.compile(rf"`/?({NAME})`|(?<![\w./-])/({NAME})(?![\w/-])|\*\*({NAME})\*\*|\.\./({NAME})/")
+HANDOFF = re.compile("|".join([
+    rf"`(?P<tick>{NAME})` (?:skill|command|subagent)s?\b",
+    rf"\*\*(?P<bold>{NAME})\*\* (?P<principle>principle )?(?:skill|command|subagent)s?\b",
+    rf"`/(?P<slash>{NAME})(?:\s[^`\n]*)?`",
+    rf"\bbuilt-in `/?(?P<builtin>{NAME})`",
+    rf"\bbuilt-in (?P<builtin_word>{NAME}) (?:skill|command)\b",
+    rf"subagent_type: [\"'](?P<subagent>{NAME})[\"']",
+]))
 
 
 # ---------- git / upstream ----------
@@ -61,18 +99,135 @@ def ensure_commit(sha):
         git("fetch", "-q", "--depth", "1", "origin", sha)
 
 
-def upstream_skills(sha):
-    """{name: {"tree": sha, "files": {rel: (mode, blob)}}} from one ls-tree call."""
-    skills = {}
-    for line in git("ls-tree", "-r", "-t", sha, f"{SUBDIR}/").decode().splitlines():
+def inventory(sha):
+    """Every skill and subagent definition in cursor/plugins at sha, from one ls-tree call.
+
+    {"plugins": {plugin dir}, "skills": {name: [item]}, "agents": {name: [item]},
+     "licenses": {plugin dir: blob}}, where an item is {"path", "name", "plugin",
+    "files": {rel: (mode, blob)}}, plus "tree" for a skill. A skill belongs to the deepest
+    plugin dir above it; an agent is <plugin>/agents/<name>.md, its one file <name>.md."""
+    plugins, trees, files, agents, licenses = set(), {}, {}, [], {}
+    for line in git("ls-tree", "-r", "-t", sha).decode().splitlines():
         meta, path = line.split("\t", 1)
         mode, kind, obj = meta.split()
-        parts = path[len(SUBDIR) + 1:].split("/", 1)
-        if kind == "tree" and len(parts) == 1:
-            skills.setdefault(parts[0], {"files": {}})["tree"] = obj
-        elif kind == "blob" and len(parts) == 2:
-            skills.setdefault(parts[0], {"files": {}})["files"][parts[1]] = (mode, obj)
-    return {n: s for n, s in skills.items() if "SKILL.md" in s["files"]}
+        if path.endswith("/.cursor-plugin/plugin.json"):
+            plugins.add(path[:-len("/.cursor-plugin/plugin.json")])
+        elif m := re.fullmatch(r"(.+?/skills/[^/]+)(?:/(.+))?", path):
+            if m.group(2) is None and kind == "tree":
+                trees[m.group(1)] = obj
+            elif m.group(2) and kind == "blob":
+                files.setdefault(m.group(1), {})[m.group(2)] = (mode, obj)
+        elif m := re.fullmatch(r"(.+)/agents/([^/]+)\.md", path):
+            agents.append((m.group(1), m.group(2), path, mode, obj))
+        elif path.endswith("/LICENSE"):
+            licenses[path[:-len("/LICENSE")]] = obj
+    inv = {"plugins": plugins, "skills": {}, "agents": {},
+           "licenses": {p: b for p, b in licenses.items() if p in plugins}}
+    for path, fs in files.items():
+        base, name = path.rsplit("/skills/", 1)
+        plugin = max((p for p in plugins if base == p or base.startswith(p + "/")), key=len, default=None)
+        if plugin and "SKILL.md" in fs and path in trees:
+            inv["skills"].setdefault(name, []).append(
+                {"path": path, "name": name, "plugin": plugin, "tree": trees[path], "files": fs})
+    for plugin, name, path, mode, obj in agents:
+        if plugin in plugins:
+            inv["agents"].setdefault(name, []).append(
+                {"path": path, "name": name, "plugin": plugin, "files": {f"{name}.md": (mode, obj)}})
+    stems = "|".join(map(re.escape, sorted(inv["agents"], key=len, reverse=True)))
+    inv["agent_re"] = re.compile(rf"(?<![\w-])({stems})(?![\w-])") if stems else None
+    return inv
+
+
+def roots_of(inv):
+    """pstack's own skills, the ones under SUBDIR, by name."""
+    return {n: s for n, items in inv["skills"].items() for s in items if s["path"] == f"{SUBDIR}/{n}"}
+
+
+def mentions(text):
+    """Names written the way skills refer to one another: `name`, /name, **name**, or a ../name/ link."""
+    return {next(filter(None, m.groups())) for m in MENTION.finditer(text)}
+
+
+def handoff_names(text):
+    """Names the text hands off to as a skill, command, or subagent, whether or not cursor/plugins has
+    them: `name` skill, **name** skill, `/name ...`, built-in `name`, subagent_type: "name". A
+    **name** principle skill is principle-name."""
+    out = set()
+    for m in HANDOFF.finditer(text):
+        g = m.groupdict()
+        if g["slash"] and os.path.isdir("/" + g["slash"]):
+            continue  # an absolute path such as /tmp, not a command
+        name = next(v for k, v in g.items() if v and k != "principle")
+        out.add(f"principle-{name}" if g["principle"] else name)
+    return out
+
+
+def agent_hits(text, inv):
+    """Subagent definition names the text contains as whole words."""
+    return set(inv["agent_re"].findall(text)) if inv["agent_re"] else set()
+
+
+def closure(inv, roots, root_names, exclude, served, read):
+    """Follow hand-offs from pstack's skills through cursor/plugins, transitively.
+
+    Returns {"skills", "agents"}: the dependencies to install, by name; "ambiguous": names more
+    than one in-scope plugin provides, with their paths; "existing": names served skills
+    answer; "follows": {item key: {rel: dependency names its upstream text hands off to}}.
+    Names in exclude, and in root_names (pstack's own skills), are never dependencies."""
+    bases = {}
+    for p in inv["plugins"]:
+        bases.setdefault(p.rsplit("/", 1)[-1], set()).add(p)
+    alt = "|".join(map(re.escape, sorted(bases, key=len, reverse=True)))
+    named = re.compile(rf"`({alt})`|\b({alt}) plugin\b") if alt else None
+    out = {"skills": {}, "agents": {}, "ambiguous": {}, "existing": set(), "follows": {}}
+    queue = [(s["name"], s) for s in roots]
+    while queue:
+        texts = read(obj for _, s in queue for rel, (_, obj) in s["files"].items() if rel.endswith(".md"))
+        nxt = []
+        for key, s in queue:
+            md = {rel: texts[obj].decode("utf-8", "replace")
+                  for rel, (_, obj) in s["files"].items() if rel.endswith(".md")}
+            scope = {s["plugin"]}
+            if named:
+                scope |= {p for m in named.finditer("\n".join(md.values())) for p in bases[m.group(1) or m.group(2)]}
+            for rel, text in md.items():
+                for kind, names in (("skills", mentions(text) - root_names), ("agents", agent_hits(text, inv))):
+                    for name in sorted(names & set(inv[kind])):
+                        cands = [c for c in inv[kind][name] if c["plugin"] in scope]
+                        if len(cands) > 1:
+                            out["ambiguous"][name] = sorted(c["path"] for c in cands)
+                        elif not cands or name in exclude:
+                            continue
+                        elif kind == "skills" and name in served:
+                            out["existing"].add(name)
+                        else:
+                            out["follows"].setdefault(key, {}).setdefault(rel, set()).add(name)
+                            if name not in out[kind]:
+                                out[kind][name] = cands[0]
+                                nxt.append((name if kind == "skills" else AGENTS, cands[0]))
+        queue = nxt
+    out["ambiguous"] = {n: p for n, p in out["ambiguous"].items() if n not in out["skills"] and n not in out["agents"]}
+    out["existing"] = sorted(out["existing"])
+    return out
+
+
+def own_agent(key, rel):
+    """The subagent a file defines: <name> for pstack-agents/<name>.md, else None."""
+    return rel[:-len(".md")] if key == AGENTS else None
+
+
+def install_items(roots, found):
+    """{key: {"source" or "sources", "plugins", "tree", "files"}} for pstack's skills, their
+    dependency skills, and one pstack-agents item holding every subagent definition."""
+    items = {n: {"source": s["path"], "plugins": [s["plugin"]], "tree": s["tree"], "files": s["files"]}
+             for n, s in {**roots, **found["skills"]}.items()}
+    if found["agents"]:
+        files = {rel: f for a in found["agents"].values() for rel, f in a["files"].items()}
+        items[AGENTS] = {"sources": {f"{n}.md": a["path"] for n, a in found["agents"].items()},
+                         "plugins": sorted({a["plugin"] for a in found["agents"].values()}),
+                         "tree": hashlib.sha1(json.dumps(sorted(files.items())).encode()).hexdigest(),
+                         "files": files}
+    return items
 
 
 def read_blobs(shas):
@@ -86,6 +241,16 @@ def read_blobs(shas):
         out[sha] = data[nl + 1:nl + 1 + size]
         pos = nl + 1 + size + 1
     return out
+
+
+def blob_reader():
+    """read_blobs with a cache shared across calls; returns the cache, which holds every blob asked for."""
+    cache = {}
+
+    def read(shas):
+        cache.update(read_blobs(s for s in shas if s not in cache))
+        return cache
+    return read
 
 
 def blob_sha(data):
@@ -104,6 +269,44 @@ def parse_profile(text):
     for m in re.finditer(r"(?m)^\|\s*`?([\w-]+)`?\s*\|\s*(%s)\b" % "|".join(SUPPORT), text or ""):
         rows[m.group(1)] = m.group(2)
     return rows
+
+
+def slug(name):
+    """A harness key's file-safe name, as harness-discovery derives it: Claude Code -> claude-code."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def discovery_root(repo, root):
+    if root:
+        return os.path.abspath(root)
+    r = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else repo
+
+
+def harness_facts(path, harness, needs):
+    """(saved harness key, {need id: {field: value}}) for each need whose discovery fields are all
+    recorded. A missing field, or the template's "unknown", is not yet discovered."""
+    if not os.path.exists(path):
+        return None, {}
+    try:
+        with open(path) as f:
+            harnesses = json.load(f)["harnesses"]
+        keys = [k for k in harnesses if k == harness] or [k for k in harnesses if slug(k) == slug(harness)]
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        sys.exit(f"error: {path} is not valid discovery ({error}); repair it with harness-discovery")
+    if len(keys) != 1:
+        return None, {}
+    entry, facts = harnesses[keys[0]], {}
+    for n in needs:
+        values = {}
+        for field in n.get("discovery", []):
+            node = entry
+            for part in field.split("."):
+                node = node.get(part, MISSING) if isinstance(node, dict) else MISSING
+            values[field] = node
+        if values and all(v is not MISSING and v != "unknown" for v in values.values()):
+            facts[n["id"]] = values
+    return keys[0], facts
 
 
 def needs_in(text, needs):
@@ -225,7 +428,7 @@ def norm_skills(skills):
 
 
 class State:
-    def __init__(self, repo, harness):
+    def __init__(self, repo, harness, root=None):
         self.repo = repo
         self.harness = harness
         self.manifest_path = os.path.join(repo, SELF, "manifest.json")
@@ -239,19 +442,77 @@ class State:
         self.exclude = set(self.manifest.get("exclude", []))
         self.needs = load_needs(repo)
         self.profile_exists = os.path.exists(self.profile_path)
-        self.profile = parse_profile(open(self.profile_path).read() if self.profile_exists else "")
+        self.profile_text = ""
+        if self.profile_exists:
+            with open(self.profile_path) as f:
+                self.profile_text = f.read()
+        self.profile = parse_profile(self.profile_text)
         self.auto_accept = {i for i, s in self.profile.items() if s in ("native", "keep")}
+        self.discovery_path = os.path.join(discovery_root(repo, root), STATE_DIR, "discovery.json")
+        self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
+        managed_dirs = {v["dir"] for v in self.managed.values()}
+        skills = {d for d in os.listdir(repo) if os.path.isfile(os.path.join(repo, d, "SKILL.md"))}
+        self.foreign = skills - managed_dirs - {SELF}
+        self.handoff_need = next((n["id"] for n in self.needs if n.get("detect") == "unavailable"), None)
+        self.command_markers = [p for n in self.needs if n["id"] != self.handoff_need for p in n["markers"]]
+        self.inv, self.available = None, set()
+
+    def use(self, inv, available):
+        """Detect hand-offs against cursor/plugins at one commit, given the names the skills
+        directory will have: skill dirs, upstream skill names, and subagent definitions."""
+        self.inv, self.available = inv, set(available)
+
+    def installed_names(self):
+        """The names the skills directory has once a sync is done, as cmd_sync passes to use()."""
+        names = self.foreign | {SELF}
+        for key, entry in self.managed.items():
+            names |= {key, entry["dir"]} | {rel[:-len(".md")] for rel in entry.get("sources", {})}
+        return names
+
+    def unavailable(self, text):
+        """Skills, commands, and subagents the text hands off to that the skills directory will not
+        have. A name whose /name another need's markers cover belongs to that need (/loop)."""
+        names = (mentions(text) & set(self.inv["skills"])) | handoff_names(text) | agent_hits(text, self.inv)
+        return {n for n in names - self.available
+                if not any(re.search(p, "/" + n) for p in self.command_markers)}
+
+    def needs_found(self, text, own=None):
+        """needs_in, plus the markers detected for needs with "detect" once use() has run. own is
+        the subagent a pstack-agents file defines, which naming itself does not dispatch."""
+        found = needs_in(text, self.needs)
+        if self.inv is None:
+            return found
+        for n in self.needs:
+            if n.get("detect") == "unavailable":
+                extra = self.unavailable(text)
+            elif n.get("detect") == "agents":
+                extra = agent_hits(text, self.inv) - {own}
+            else:
+                continue
+            if extra:
+                found[n["id"]] = sorted(set(found.get(n["id"], [])) | extra)
+        return found
+
+    def gaps(self, flagged):
+        """Flagged needs with neither a profile row nor discovered facts."""
+        return sorted(set(flagged) - set(self.profile) - set(self.facts))
+
+    def flagged_facts(self, flagged):
+        """Discovered facts for the flagged needs no profile row overrides."""
+        return {nid: self.facts[nid] for nid in sorted(flagged) if nid in self.facts and nid not in self.profile}
 
     def skill_tf_hash(self, name, renames):
         files = {k: v for k, v in self.tf.get("files", {}).items() if k.startswith(name + "/")}
+        upstream = sorted(self.inv["skills"]) + sorted(self.inv["agents"]) if self.inv else []
         blob = json.dumps([self.tf.get("global", []), self.tf.get("accept", []), files, renames,
-                           sorted(self.auto_accept), self.needs], sort_keys=True)
+                           sorted(self.auto_accept), self.needs, sorted(self.available), upstream],
+                          sort_keys=True)
         return hashlib.sha1(blob.encode()).hexdigest()
 
-    def outstanding(self, text, accepted):
+    def outstanding(self, text, accepted, own=None):
         """Needs with markers not accepted by profile, accept regexes, or the file's list."""
         out = {}
-        for nid, ms in needs_in(text, self.needs).items():
+        for nid, ms in self.needs_found(text, own).items():
             if nid in self.auto_accept:
                 continue
             ms = [m for m in ms if m not in accepted and not any(re.search(p, m) for p in self.tf.get("accept", []))]
@@ -259,21 +520,63 @@ class State:
                 out[nid] = ms
         return out
 
-    def targets(self, upstream):
-        managed_dirs = {v["dir"] for v in self.managed.values()}
-        existing = {d for d in os.listdir(self.repo) if os.path.isfile(os.path.join(self.repo, d, "SKILL.md"))}
-        foreign = existing - managed_dirs - {SELF}
+    def targets(self, roots, deps=(), agents=False):
+        """Install dir per item key. A pstack skill whose name an unmanaged skill has becomes
+        pstack-<name>; a dependency keeps its name, because closure() leaves such names to the
+        unmanaged skill."""
         targets = {}
-        for name in upstream:
+        for name in roots:
             if name in self.managed:
                 targets[name] = self.managed[name]["dir"]
-            elif name in foreign or name == SELF:
+            elif name in self.foreign or name == SELF:
                 targets[name] = f"pstack-{name}"
             else:
                 targets[name] = name
-            if targets[name] in foreign:
+            if targets[name] in self.foreign:
                 sys.exit(f"error: {name} -> {targets[name]} collides with a non-pstack skill")
+        targets.update({name: name for name in deps})
+        if agents:
+            if AGENTS not in self.managed and os.path.exists(os.path.join(self.repo, AGENTS)):
+                sys.exit(f"error: {AGENTS}/ exists and pstack-sync does not manage it")
+            targets[AGENTS] = AGENTS
+        dirs = sorted(targets.values())
+        clash = sorted({d for d in dirs if dirs.count(d) > 1})
+        if clash:
+            sys.exit(f"error: more than one skill installs to {', '.join(clash)}")
         return targets
+
+    def installed_upstream(self, inv):
+        """{key: {"files": ...}} for each managed item at the inventory's commit, by recorded source."""
+        by_path = {s["path"]: s for kind in ("skills", "agents") for items in inv[kind].values() for s in items}
+        out = {}
+        for key, entry in self.managed.items():
+            if "sources" in entry:
+                out[key] = {"files": {rel: f for p in entry["sources"].values() if p in by_path
+                                      for rel, f in by_path[p]["files"].items()}}
+            elif entry.get("source", f"{SUBDIR}/{key}") in by_path:
+                out[key] = by_path[entry.get("source", f"{SUBDIR}/{key}")]
+        return out
+
+    def dependency_report(self, found, needs_adaptation):
+        """The sync report's "dependencies": what installed, and the hand-offs still outstanding
+        that name an excluded skill or have no mapping in the harness profile."""
+        marks = {}
+        for target, files in sorted(needs_adaptation.items()):
+            for rel, p in sorted(files.items()):
+                for name in p.get("needs", {}).get(self.handoff_need, []):
+                    marks.setdefault(name, []).append(f"{target}/{rel}")
+
+        def mapped(name):
+            return re.search(rf"`/?{re.escape(name)}[`\s]", self.profile_text)
+        return {
+            "installed": {**{n: s["path"] for n, s in sorted(found["skills"].items())},
+                          **{f"{AGENTS}/{n}.md": s["path"] for n, s in sorted(found["agents"].items())}},
+            "existing": found["existing"],
+            "unresolved": {n: fs for n, fs in sorted(marks.items())
+                           if n not in self.exclude and n not in found["ambiguous"] and not mapped(n)},
+            "excluded": {n: fs for n, fs in sorted(marks.items()) if n in self.exclude},
+            "ambiguous": found["ambiguous"],
+        }
 
 
 def read_installed(path):
@@ -288,17 +591,27 @@ def read_installed(path):
 
 def cmd_sync(a, st):
     sha = fetch(a.ref)
-    ups = {n: s for n, s in upstream_skills(sha).items() if n not in st.exclude}
-    targets = st.targets(ups)
+    inv = inventory(sha)
+    read = blob_reader()
+    roots = roots_of(inv)
+    keep = {n: s for n, s in roots.items() if n not in st.exclude}
+    found = closure(inv, keep.values(), set(roots), st.exclude, st.foreign | {SELF}, read)
+    ups = install_items(keep, found)
+    targets = st.targets(keep, found["skills"], bool(found["agents"]))
     renames = {u: t for u, t in targets.items() if u != t}
+    st.use(inv, st.foreign | {SELF} | set(ups) | set(targets.values()) | set(found["agents"]))
+    had_agents = st.managed.get(AGENTS, {}).get("sources", {})
+    newly = ({n for n in found["skills"] if n not in st.managed}
+             | {n for n in found["agents"] if f"{n}.md" not in had_agents})
     harness_changed = st.manifest.get("harness") != a.harness
 
     report = {"upstream_commit": sha, "previous_commit": st.manifest.get("commit"),
               "harness": a.harness, "harness_changed": harness_changed,
               "profile_missing": not st.profile_exists, "profile_gaps": [], "dry_run": a.dry_run,
+              "discovery": {"path": st.discovery_path, "harness": st.discovery_key}, "harness_facts": {},
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
-              "needs_security_review": [], "needs_adaptation": {}}
+              "needs_security_review": [], "needs_adaptation": {}, "dependencies": {}}
     new_skills = {}
     prev_fetched = []
 
@@ -320,18 +633,19 @@ def cmd_sync(a, st):
 
     for name, up in sorted(ups.items()):
         target, entry = targets[name], st.managed.get(name, {})
+        origin = {k: up[k] for k in ("source", "sources") if k in up}
         dst = os.path.join(st.repo, target)
         tfh = st.skill_tf_hash(name, renames)
         if (not harness_changed and entry.get("tree") == up["tree"]
                 and entry.get("transforms") == tfh and os.path.isdir(dst)):
             report["unchanged_count"] += 1
-            new_skills[name] = entry
+            new_skills[name] = {**entry, **origin}
             for rel, f in entry.get("files", {}).items():
                 if f.get("pending"):
                     flag(target, rel, f["pending"])
             continue
 
-        blobs = read_blobs(obj for _, obj in up["files"].values())
+        blobs = read(obj for _, obj in up["files"].values())
         files, changed = {}, not os.path.isdir(dst)
         recorded = entry.get("files", {})
         for rel, (mode, obj) in sorted(up["files"].items()):
@@ -356,8 +670,11 @@ def cmd_sync(a, st):
                         os.remove(path)
                 continue
             new = text.encode("utf-8")
-            todo = st.outstanding(text, ftf.get("accepted", []))
-            pending = {k: v for k, v in (("stale_transforms", stale), ("needs", todo)) if v}
+            todo = st.outstanding(text, ftf.get("accepted", []), own_agent(name, rel))
+            follows = found["follows"].get(name, {}).get(rel, set())
+            prior = recorded.get(rel, {}).get("pending", {}).get("dependencies", [])
+            fresh = sorted(follows & (newly | set(prior))) if ftf.get("transforms") else []
+            pending = {k: v for k, v in (("stale_transforms", stale), ("needs", todo), ("dependencies", fresh)) if v}
             if pending:
                 flag(target, rel, pending)
                 old_obj = recorded.get(rel, {}).get("upstream")
@@ -396,22 +713,31 @@ def cmd_sync(a, st):
             report["updated"].append(target)
         else:
             report["unchanged_count"] += 1
-        new_skills[name] = {"dir": target, "tree": up["tree"], "transforms": tfh, "files": files}
+        new_skills[name] = {"dir": target, **origin, "tree": up["tree"], "transforms": tfh, "files": files}
 
     for name, entry in sorted(st.managed.items()):
         if name not in targets:
             report["removed"].append(entry["dir"])
-            if not a.dry_run:
+            if not a.dry_run and entry["dir"] not in targets.values():
                 shutil.rmtree(os.path.join(st.repo, entry["dir"]), ignore_errors=True)
 
     flagged = {nid for files in report["needs_adaptation"].values() for p in files.values()
                for nid in p.get("needs", {})}
-    report["profile_gaps"] = sorted(flagged - set(st.profile))
+    report["profile_gaps"] = st.gaps(flagged)
+    report["harness_facts"] = st.flagged_facts(flagged)
+    report["dependencies"] = st.dependency_report(found, report["needs_adaptation"])
 
     if not a.dry_run:
-        lic = read_blobs([git("rev-parse", f"{sha}:pstack/LICENSE").decode().strip()])
-        with open(os.path.join(st.repo, SELF, "LICENSE-pstack"), "wb") as f:
-            f.write(next(iter(lic.values())))
+        plugins = {p for up in ups.values() for p in up["plugins"]} | {ROOT_PLUGIN}
+        licenses = {f"LICENSE-{p.replace('/', '-')}": inv["licenses"][p] for p in plugins if p in inv["licenses"]}
+        texts = read(licenses.values())
+        state_dir = os.path.join(st.repo, SELF)
+        for fn in os.listdir(state_dir):
+            if fn.startswith("LICENSE-") and fn not in licenses:
+                os.remove(os.path.join(state_dir, fn))
+        for fn, obj in licenses.items():
+            with open(os.path.join(state_dir, fn), "wb") as f:
+                f.write(texts[obj])
         st.manifest = {"upstream": f"{UPSTREAM}/tree/{a.ref}/{SUBDIR}", "commit": sha,
                        "harness": a.harness, "exclude": sorted(st.exclude), "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
@@ -424,7 +750,9 @@ def cmd_record(a, st):
     if not sha or st.manifest.get("harness") != a.harness:
         sys.exit("error: run `sync --harness %s` first" % a.harness)
     ensure_commit(sha)
-    ups = upstream_skills(sha)
+    inv = inventory(sha)
+    ups = st.installed_upstream(inv)
+    st.use(inv, st.installed_names())
     by_dir = {v["dir"]: k for k, v in st.managed.items()}
     picks = {}  # upstream name -> set of rels, or None for every file
     for arg in (sorted(st.managed) if a.all else a.skills):
@@ -467,7 +795,7 @@ def cmd_record(a, st):
             rebuilt, stale = apply_file_transforms(base, ts)
             if stale or rebuilt != text:
                 ts = [{"find": base, "replace": text}]  # whole-file fallback
-            accepted = flatten(st.outstanding(text, []))
+            accepted = flatten(st.outstanding(text, [], own_agent(name, rel)))
             if ts or accepted:
                 st.tf["files"][key] = {"transforms": ts, "accepted": accepted}
                 counts[rel] = {"transforms": len(ts), "accepted": accepted}
@@ -484,7 +812,7 @@ def cmd_record(a, st):
 
 def cmd_status(a, st):
     def at_rev(rel, default):
-        r = subprocess.run(["git", "-C", st.repo, "show", f"{a.since}:{SELF}/{rel}"], capture_output=True, text=True)
+        r = subprocess.run(["git", "-C", st.repo, "show", f"{a.since}:./{SELF}/{rel}"], capture_output=True, text=True)
         return r.stdout if r.returncode == 0 else default
 
     old_m = json.loads(at_rev("manifest.json", '{"skills": {}}'))
@@ -552,6 +880,8 @@ def cmd_status(a, st):
                 bits = list(p.get("needs", {}))
                 if p.get("stale_transforms"):
                     bits.append("stale transform")
+                if p.get("dependencies"):
+                    bits.append("hands off to newly installed " + ", ".join(p["dependencies"]))
                 pending.append(f"{e['dir']}/{rel}: {', '.join(bits)}")
             cur = read_installed(os.path.join(st.repo, e["dir"], rel))
             if cur is not None and blob_sha(cur) != f.get("installed"):
@@ -563,6 +893,7 @@ def cmd_status(a, st):
     out = [f"# pstack sync status ({a.harness})", ""]
     oc, nc = (old_m.get("commit") or "none")[:7], (st.manifest.get("commit") or "none")[:7]
     out.append(f"Upstream cursor/plugins: {oc} -> {nc}" if oc != nc else f"Upstream cursor/plugins: {nc} (unchanged)")
+    out.append(f"Harness facts: {st.discovery_key or 'none'} in {st.discovery_path}")
     out.append("")
     total = sum(len(v) for v in groups.values())
     counts = ", ".join(f"{len(groups[g])} {g}" for g in ("new", "changed", "replayed", "dropped") if groups[g])
@@ -580,6 +911,12 @@ def cmd_status(a, st):
     out.append("## Skills")
     for label, items in (("New", added), ("Updated upstream", updated), ("Removed", removed)):
         out.append(f"{label} ({len(items)}): " + (", ".join(items) if items else "none"))
+    deps = [f"{e['dir']} from {e['source']}" for k, e in sorted(new_s.items())
+            if e.get("source", f"{SUBDIR}/{k}") != f"{SUBDIR}/{k}"]
+    deps += [f"{AGENTS}/{rel} from {src}" for rel, src in sorted(new_s.get(AGENTS, {}).get("sources", {}).items())]
+    out.append("")
+    out.append(f"## Dependencies ({len(deps)})")
+    out += [f"- {x}" for x in deps] or ["None installed."]
     if prof_new or prof_changed:
         out.append("")
         out.append("## Harness profile")
@@ -601,13 +938,14 @@ def main():
         p = sub.add_parser(c)
         p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
         p.add_argument("--repo", default=DEFAULT_REPO)
+        p.add_argument("--root", help="repository holding .nthplusio-skills/; defaults to --repo's Git repository")
     sub.choices["sync"].add_argument("--ref", default="main")
     sub.choices["sync"].add_argument("--dry-run", action="store_true")
     sub.choices["record"].add_argument("skills", nargs="*")
     sub.choices["record"].add_argument("--all", action="store_true")
     sub.choices["status"].add_argument("--since", default="HEAD")
     a = ap.parse_args()
-    st = State(os.path.abspath(a.repo), a.harness)
+    st = State(os.path.abspath(a.repo), a.harness, a.root)
     {"sync": cmd_sync, "record": cmd_record, "status": cmd_status}[a.cmd](a, st)
 
 
