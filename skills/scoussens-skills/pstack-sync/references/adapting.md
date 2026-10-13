@@ -15,6 +15,8 @@ A Cursor construct you find that no need covers gets a new need in the catalog (
 - **Destination**: where this harness loads shared skills from, how a change takes effect, how a running session reloads, and which other skill sources shadow it.
 - **Needs**: one row for each need without discovery fields, with a **support** level, the harness equivalent, and the source that proves it.
 
+A row that names this repository, a skill only this repository has, or a choice its owners made does not describe the harness. Put it in `harness/<harness>.local.md` beside the profile, in the same table shape; a local row overrides the shared row for its need, and `seed` never exports it. The same split applies to recorded adaptations: `record --local` keeps a file's edits out of the pack's seed.
+
 | Support | Meaning | Effect on sync |
 | --- | --- | --- |
 | `native` | The harness provides the Cursor construct as written. | Markers accepted automatically. |

@@ -45,7 +45,9 @@ Durable state, beside discovery.json, kept across a pack refresh:
   .nthplusio-skills/pstack-sync/transform.json
                         per harness: "accept" marker regexes, "global" regex transforms,
                         "files" keyed by "<skill>/<rel>" (upstream skill name, or
-                        pstack-agents).
+                        pstack-agents), and a "local" sub-block of the same shape for
+                        entries that belong to this install only (record --local). seed
+                        exports every block without its local sub-block.
   .nthplusio-skills/pstack-sync/LICENSE-<plugin>
                         the license of each plugin the installed skills come from.
   .nthplusio-skills/pstack-sync/harness/<harness>.md
@@ -54,6 +56,9 @@ Durable state, beside discovery.json, kept across a pack refresh:
                         substitute | partial | none. A row for a need with discovery
                         fields overrides them. Markers of needs marked native or keep
                         are accepted automatically.
+  .nthplusio-skills/pstack-sync/harness/<harness>.local.md
+                        rows that hold for this install only; a local row overrides
+                        the shared row. seed never exports it.
 
 Harness facts (owned by harness-discovery, not pstack-sync):
   .nthplusio-skills/discovery.json at the root of the Git repository holding --repo, or
@@ -455,6 +460,13 @@ def hunks(base, new):
 
 # ---------- state ----------
 
+def read_text(path):
+    if not os.path.exists(path):
+        return ""
+    with open(path) as f:
+        return f.read()
+
+
 def load_json(path, default):
     return json.load(open(path)) if os.path.exists(path) else default
 
@@ -480,17 +492,20 @@ class State:
         self.profile_path = os.path.join(self.durable, "harness", f"{harness}.md")
         self.manifest = load_json(self.manifest_path, {"skills": {}})
         self.transforms = load_json(self.transform_path, {})
-        self.tf = self.transforms.setdefault(harness, {"accept": [], "global": [], "files": {}})
-        self.tf.setdefault("files", {})
+        self.shared = self.transforms.setdefault(harness, {"accept": [], "global": [], "files": {}})
+        self.shared.setdefault("files", {})
+        self.local = self.shared.setdefault("local", {"accept": [], "global": [], "files": {}})
+        for k, v in (("accept", []), ("global", []), ("files", {})):
+            self.local.setdefault(k, type(v)())
         self.managed = norm_skills(self.manifest["skills"])
         self.exclude = set(self.manifest.get("exclude", []))
         self.needs = load_needs(repo)
+        self.local_profile_path = os.path.join(self.durable, "harness", f"{harness}.local.md")
         self.profile_exists = os.path.exists(self.profile_path)
-        self.profile_text = ""
-        if self.profile_exists:
-            with open(self.profile_path) as f:
-                self.profile_text = f.read()
-        self.profile = parse_profile(self.profile_text)
+        shared_text = read_text(self.profile_path)
+        local_text = read_text(self.local_profile_path)
+        self.profile_text = shared_text + "\n" + local_text
+        self.profile = {**parse_profile(shared_text), **parse_profile(local_text)}
         self.auto_accept = {i for i, s in self.profile.items() if s in ("native", "keep")}
         self.discovery_path = os.path.join(self.discovery_root, STATE_DIR, "discovery.json")
         self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
@@ -500,6 +515,22 @@ class State:
         self.handoff_need = next((n["id"] for n in self.needs if n.get("detect") == "unavailable"), None)
         self.command_markers = [p for n in self.needs if n["id"] != self.handoff_need for p in n["markers"]]
         self.inv, self.available = None, set()
+
+    @property
+    def tf(self):
+        """One view of the shared and local blocks: local rows come last and win on a file key."""
+        return {"accept": self.shared["accept"] + self.local["accept"],
+                "global": self.shared["global"] + self.local["global"],
+                "files": {**self.shared["files"], **self.local["files"]}}
+
+    def set_file(self, key, entry, local):
+        """Record a file's adaptation in one home, local or shared, and drop it from the other."""
+        (self.shared if local else self.local)["files"].pop(key, None)
+        (self.local if local else self.shared)["files"][key] = entry
+
+    def pop_file(self, key):
+        self.shared["files"].pop(key, None)
+        self.local["files"].pop(key, None)
 
     def use(self, inv, available):
         """Detect hand-offs against cursor/plugins at one commit, given the names the skills
@@ -830,7 +861,7 @@ def cmd_record(a, st):
                 continue
             current = read_installed(os.path.join(dst, rel))
             if current is None:
-                st.tf["files"][key] = {"transforms": [{"delete": True}], "accepted": []}
+                st.set_file(key, {"transforms": [{"delete": True}], "accepted": []}, a.local)
                 files.pop(rel, None)
                 counts[rel] = "deleted"
                 continue
@@ -841,10 +872,10 @@ def cmd_record(a, st):
                 ts = [{"find": base, "replace": text}]  # whole-file fallback
             accepted = flatten(st.outstanding(text, [], own_agent(name, rel)))
             if ts or accepted:
-                st.tf["files"][key] = {"transforms": ts, "accepted": accepted}
-                counts[rel] = {"transforms": len(ts), "accepted": accepted}
+                st.set_file(key, {"transforms": ts, "accepted": accepted}, a.local)
+                counts[rel] = {"transforms": len(ts), "accepted": accepted, "home": "local" if a.local else "shared"}
             else:
-                st.tf["files"].pop(key, None)
+                st.pop_file(key)
             files[rel] = {"upstream": obj, "installed": blob_sha(current)}
         entry.update({"files": files, "transforms": st.skill_tf_hash(name, renames)})
         summary[target] = counts
@@ -852,6 +883,20 @@ def cmd_record(a, st):
     save_json(st.manifest_path, st.manifest)
     save_json(st.transform_path, st.transforms)
     print(json.dumps({"recorded": summary}, indent=2))
+
+
+def cmd_seed(a, st):
+    """Write the pack's seeds: every harness block without its local sub-block, and this harness's
+    shared profile. Local entries and the local profile never leave the install."""
+    os.makedirs(os.path.join(a.out, "harness"), exist_ok=True)
+    seed = {h: {k: v for k, v in block.items() if k != "local"} for h, block in st.transforms.items()}
+    save_json(os.path.join(a.out, "transform.json"), seed)
+    written = ["transform.json"]
+    if st.profile_exists:
+        shutil.copy2(st.profile_path, os.path.join(a.out, "harness", f"{st.harness}.md"))
+        written.append(f"harness/{st.harness}.md")
+    print(json.dumps({"seeded": written, "out": a.out,
+                      "local_entries_kept_back": sorted(st.local["files"])}, indent=2))
 
 
 def cmd_status(a, st):
@@ -979,7 +1024,7 @@ def cmd_status(a, st):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for c in ("sync", "record", "status"):
+    for c in ("sync", "record", "status", "seed"):
         p = sub.add_parser(c)
         p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
         p.add_argument("--repo", default=DEFAULT_REPO)
@@ -988,10 +1033,13 @@ def main():
     sub.choices["sync"].add_argument("--dry-run", action="store_true")
     sub.choices["record"].add_argument("skills", nargs="*")
     sub.choices["record"].add_argument("--all", action="store_true")
+    sub.choices["record"].add_argument("--local", action="store_true",
+                                       help="record under the local block, which seed never exports")
+    sub.choices["seed"].add_argument("--out", required=True, help="directory to write transform.json and harness/ into")
     sub.choices["status"].add_argument("--since", default="HEAD")
     a = ap.parse_args()
     st = State(os.path.abspath(a.repo), a.harness, a.root)
-    {"sync": cmd_sync, "record": cmd_record, "status": cmd_status}[a.cmd](a, st)
+    {"sync": cmd_sync, "record": cmd_record, "status": cmd_status, "seed": cmd_seed}[a.cmd](a, st)
 
 
 if __name__ == "__main__":

@@ -296,6 +296,68 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(second["unchanged_count"], len(first["added"]))
         self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["commit"], first["upstream_commit"])
 
+    def adapt_alpha(self):
+        """Install, then edit alpha the way an adaptation does, so record has something to store."""
+        self.upstream()
+        self.run_sync()
+        installed = self.skills / "alpha" / "SKILL.md"
+        installed.write_text(installed.read_text().replace("Spawn `Task`", "Spawn a `Task` subagent"))
+        return installed
+
+    def transforms(self):
+        return json.loads((self.durable() / "transform.json").read_text())["test"]
+
+    def test_record_local_keeps_the_entry_out_of_the_seed(self):
+        self.adapt_alpha()
+        self.run_sync("record", "--local", "alpha/SKILL.md")
+        block = self.transforms()
+        self.assertIn("alpha/SKILL.md", block["local"]["files"])
+        self.assertNotIn("alpha/SKILL.md", block["files"])
+        out = self.tmp / "seed"
+        report = self.run_sync("seed", "--out", str(out))
+        self.assertEqual(report["seeded"], ["transform.json", "harness/test.md"])
+        self.assertEqual(report["local_entries_kept_back"], ["alpha/SKILL.md"])
+        seed = json.loads((out / "transform.json").read_text())["test"]
+        self.assertNotIn("local", seed)
+        self.assertNotIn("alpha/SKILL.md", seed["files"])
+        self.assertEqual((out / "harness" / "test.md").read_text(), PROFILE)
+        self.assertEqual(sorted(p.name for p in (out / "harness").iterdir()), ["test.md"])
+
+    def test_record_without_local_moves_a_file_back_to_the_shared_block(self):
+        self.adapt_alpha()
+        self.run_sync("record", "--local", "alpha/SKILL.md")
+        self.run_sync("record", "alpha/SKILL.md")
+        block = self.transforms()
+        self.assertIn("alpha/SKILL.md", block["files"])
+        self.assertNotIn("alpha/SKILL.md", block["local"]["files"])
+
+    def test_local_profile_rows_override_shared_rows(self):
+        self.upstream()
+        self.run_sync()
+        flagged = self.run_sync()["needs_adaptation"]["beta"]["SKILL.md"]["needs"]
+        self.assertIn("loop", flagged)
+        local = self.durable() / "harness" / "test.local.md"
+        local.write_text(PROFILE + "| `loop` | keep | the test harness loops as written | local |\n")
+        self.assertNotIn("loop", self.run_sync()["needs_adaptation"]["beta"]["SKILL.md"]["needs"])
+        out = self.tmp / "seed"
+        self.run_sync("seed", "--out", str(out))
+        self.assertEqual(sorted(p.name for p in (out / "harness").iterdir()), ["test.md"])
+        self.assertNotIn("local", (out / "harness" / "test.md").read_text())
+
+    def test_a_plain_copy_keeps_local_entries(self):
+        self.adapt_alpha()
+        self.run_sync("record", "--local", "alpha/SKILL.md")
+        skill = self.skills / sync.SELF
+        shutil.rmtree(skill)
+        (skill / "harness").mkdir(parents=True)
+        shutil.copy(SKILL / "needs.json", skill / "needs.json")
+        shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
+        (skill / "transform.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {}}}))
+        report = self.run_sync()
+        self.assertEqual(report["local_drift"], [])
+        self.assertNotIn("alpha", report["needs_adaptation"])
+        self.assertIn("alpha/SKILL.md", self.transforms()["local"]["files"])
+
 
 class HandoffNameTests(unittest.TestCase):
     def test_forms(self):
