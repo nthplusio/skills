@@ -3,10 +3,11 @@ name: orchestration-run
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
   milestone, repeatedly checks owner status, reuses retained proof, and maintains
-  one HTML dashboard using repository setup for the current harness. Use for
-  /orchestration-run, orchestrating multiple tickets, or resuming a coordinated
-  run. Confirms only run-specific choices. Calls orchestration-setup when setup
-  is missing or unsuitable. Do not use for a single implementation assignment.
+  one HTML dashboard using repository setup for the current harness. Start here
+  for /orchestration-run, a resume, or a first orchestration, including setting
+  orchestration up or adding a harness. Confirms only run-specific choices.
+  Calls orchestration-setup when setup is missing or unsuitable. Do not use for
+  a single implementation assignment, and do not run harness-discovery first.
 ---
 
 # Orchestration run
@@ -16,25 +17,28 @@ coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and recover the run
 
-Identify the current harness name from runtime context. Read
-`<repository-root>/.orchestration/config.json`, or the explicit path or
-`ORCHESTRATION_CONFIG`. Resolve its saved profile with:
+Identify the current harness by its canonical product name, as
+`harness-discovery` records it. Resolve its saved profile from
+`<repository root>/.nthplusio-skills/` with:
 
 ```bash
-python3 <orchestration-setup folder>/scripts/check_config.py <config.json> --harness '<current harness name>'
+python3 <this skill's folder>/scripts/state.py resolve --harness '<current harness name>' --orchestration
 ```
 
 Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
 `run_root`. The name selects the profile. Neither the model nor the working
-directory selects another harness's settings. Install all three orchestration
-skills together so their referenced resources are available.
+directory selects another harness's settings.
 
-If setup or saved discovery is missing, malformed, lacks this harness, or has a
-material context mismatch, load `orchestration-setup`. That skill owns discovery
-and the durable interview. Hold affected assignments until its output validates.
-Keep unrelated saved profiles intact. A new run with valid setup needs neither
-tool rediscovery nor a project/harness interview. Configuration describes tools
-and preferences, not permission for shared actions.
+Load `orchestration-setup` when that command prints `run orchestration-setup`,
+`repair this harness profile with orchestration-setup`, or `run state.py migrate`,
+and when a zero exit still shows a saved context that contradicts the harness you
+are in. Hold affected assignments until its output validates. Setup migrates
+legacy state, and this skill never does. Setup owns discovery and the durable
+interview. When `resolve` exits 0 and the saved context matches, do not read the
+`orchestration-setup` or `harness-discovery` SKILL.md. Keep unrelated saved
+profiles intact. A new run with valid setup needs neither tool rediscovery nor a
+project/harness interview. Configuration describes tools and preferences, not
+permission for shared actions.
 
 On resume, use the harness-restored conversation and accessible run files to
 recover the finish line, owners, decisions, and prior evidence assessments
@@ -115,7 +119,7 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding all three orchestration skills. Owners
+from setup and this run explicitly, excluding `harness-discovery` and both orchestration skills. Owners
 may load additional role-specific skills and should launch bounded helpers
 (subagents) for research, review preparation, verification and other separable
 tasks within the ticket. Pass relevant

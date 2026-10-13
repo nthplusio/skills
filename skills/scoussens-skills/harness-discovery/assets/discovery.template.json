@@ -26,7 +26,8 @@
         "invoke": null,
         "collect": null,
         "blocks_caller": null,
-        "follow_up": null
+        "follow_up": null,
+        "readonly": null
       },
       "monitoring": {
         "notifications": null,
@@ -35,7 +36,18 @@
       },
       "skills": {
         "load": null,
-        "brief": "Pass applicable instructions explicitly; do not assume inheritance."
+        "brief": "Pass applicable instructions explicitly; do not assume inheritance.",
+        "locations": null,
+        "reload": null
+      },
+      "instructions": {
+        "user": null,
+        "project": null
+      },
+      "ask_user": null,
+      "models": {
+        "select": null,
+        "list": null
       },
       "evidence": {
         "transfer": null,

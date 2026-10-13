@@ -12,7 +12,7 @@ import subprocess
 
 RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
-DISCOVERY = RUNNER.parent / "orchestration-discovery"
+DISCOVERY = RUNNER.parent / "harness-discovery"
 CASES = {
     "discovery-no-interview": (DISCOVERY, 0),
     "setup-discovery-first": (SETUP, 5),
@@ -94,7 +94,7 @@ def documents(capabilities, harness="Stub harness"):
     facts.update(context=identity["context"], owner_term=identity["owner_term"], helper_term=identity["helper_term"])
     discovery = {"schema_version": 1, "repository": {"guidance": ["repository guidance"],
         "ticket_sources": ["Linear"], "ticket_template": "compact layout", "notes": []}, "harnesses": {harness: facts}}
-    config = {"schema_version": 2, "discovery_file": "discovery.json", "project": {
+    config = {"schema_version": 3, "project": {
         "ticket_policy": policy, "shared_skills": []}, "harnesses": {harness: {
         "run_root": root, "shared_skills": [], "defaults": defaults,
         "confirmed_from": "Existing user confirmation in restored conversation"}}}
@@ -110,7 +110,7 @@ def prepare(root, names):
         skill, eval_id = CASES[name]
         case = root / name
         case.mkdir()
-        config_path = case / "state/repository/.orchestration/config.json"
+        config_path = case / "state/repository/.nthplusio-skills/orchestration.json"
         status_path = case / "state" / "runs" / "template-preview" / "status.json"
         paths = {"config": str(config_path), "run_root": str(status_path.parent.parent),
                  "discovery": str(config_path.with_name("discovery.json")),
@@ -318,10 +318,10 @@ def call(case, operation, args):
     result = None
     if operation == "inventory":
         result = {"harness_name": world["harness_name"], "paths": paths, "resources": world.get("resources", {}), "operations": {
-            "read-skill": "{name: orchestration-discovery, orchestration-setup or orchestration-run, resource: optional relative file path}; returns SKILL.md or a bundled reference/template",
+            "read-skill": f"{{name: {DISCOVERY.name}, {SETUP.name} or {RUNNER.name}, resource: optional relative file path}}; returns SKILL.md or a bundled reference/template",
             "discover-facts": "{}; read-only inventory and repository conventions with sources and observation timestamp",
-            "check-discovery": "{}; runs the real discovery CLI on repository discovery.json",
-            "resolve-config": "{harness: current product name}; runs the real configuration CLI with --harness",
+            "check-discovery": "{}; runs the real state.py check on the repository's .nthplusio-skills/discovery.json",
+            "resolve-config": "{harness: current product name}; runs the real state.py resolve --orchestration for that harness",
             "read": "{path: absolute or case-relative state file}; returns file text or missing",
             "write": "{path: state file, content: JSON value or text}; persists the actual file",
             "ask": "{text: user question}; returns a mock user answer or awaiting_user",
@@ -331,7 +331,7 @@ def call(case, operation, args):
             "retain": "{owner: ID}; transfers its result, receipts, and work location to a local file",
             "close": "{owner: ID}; closes the stub owner, even if your decision is wrong",
             "restore": "{}; returns conversation context restored by the native harness",
-            "check-config": "{}; runs the real JSON contract checker on the chosen configuration",
+            "check-config": "{}; runs the real state.py check on the repository's .nthplusio-skills/orchestration.json",
             "render": "{}; runs the real renderer on the status file and writes the dashboard",
             "reply": "{text: final user-facing response}; records the actual response",
             "launch": "{assignment: text}; attempts a stub owner launch",
@@ -416,12 +416,14 @@ def call(case, operation, args):
     elif operation == "restore":
         result = world["restored"]
     elif operation in ("check-discovery", "check-config", "resolve-config", "render"):
+        root = ["--root", str(Path(paths["discovery"]).parent.parent)]
         if operation == "check-discovery":
-            command = ["python3", "-B", str(DISCOVERY / "scripts/check_discovery.py"), paths["discovery"]]
-        elif operation in ("check-config", "resolve-config"):
-            command = ["python3", "-B", str(SETUP / "scripts" / "check_config.py"), paths["config"]]
-            if operation == "resolve-config":
-                command += ["--harness", args["harness"]]
+            command = ["python3", "-B", str(DISCOVERY / "scripts" / "state.py"), "check", "discovery", *root]
+        elif operation == "check-config":
+            command = ["python3", "-B", str(SETUP / "scripts" / "state.py"), "check", "orchestration", *root]
+        elif operation == "resolve-config":
+            command = ["python3", "-B", str(RUNNER / "scripts" / "state.py"), "resolve", "--harness", args["harness"],
+                       "--orchestration", *root]
         else:
             command = ["python3", "-B", str(RUNNER / "scripts" / "render_dashboard.py"), paths["status"], paths["dashboard"]]
         completed = subprocess.run(command, capture_output=True, text=True)
@@ -465,12 +467,11 @@ def grade(case):
     require("helper_batches_only_when_configured", "invoke-helpers" not in operations or case.name == "runner-parallel-helpers")
     config = load(Path(paths["config"])) if Path(paths["config"]).exists() else None
     discovery = load(Path(paths["discovery"])) if Path(paths["discovery"]).exists() else None
-    for label, value, script, path in (
-        ("saved_discovery_valid", discovery, DISCOVERY / "scripts/check_discovery.py", paths["discovery"]),
-        ("saved_setup_valid", config, SETUP / "scripts/check_config.py", paths["config"]),
-    ):
+    root = str(Path(paths["discovery"]).parent.parent)
+    for label, value, scope in (("saved_discovery_valid", discovery, "discovery"), ("saved_setup_valid", config, "orchestration")):
         if value is not None:
-            require(label, subprocess.run(["python3", "-B", str(script), path], capture_output=True).returncode == 0)
+            require(label, subprocess.run(["python3", "-B", str(DISCOVERY / "scripts" / "state.py"), "check", scope, "--root", root],
+                                          capture_output=True).returncode == 0)
     asks = [event for event in events if event["operation"] == "ask"]
     writes = [event for event in events if event["operation"] == "write"]
     def read_file(path):
@@ -484,7 +485,7 @@ def grade(case):
         question = event["args"]["text"].lower()
         return any(word in question for word in (
             "ticket source", "ticket policy", "ticket layout", "ticket storage", "shared skills",
-            "worker instructions", "run_root", "config.json", "configuration path",
+            "worker instructions", "run_root", "orchestration.json", "configuration path",
             "change default", "change the default", "save a new default", "configure default",
             "which default", "what default")) or ("default" in question and "future runs" in question)
 
@@ -522,7 +523,7 @@ def grade(case):
             reads = [index for index, event in enumerate(events) if event["operation"] == "read" and event["result"].get("path") == paths["discovery"]]
             require("discovery_read_before_interview", bool(reads and asks) and min(reads) < operations.index("ask"))
             if case.name in ("setup-confirmation", "setup-missing-owners"):
-                require("one_focused_storage_question", sum(paths["config"] in event["args"]["text"] and paths["run_root"] in event["args"]["text"] for event in asks) == 1)
+                require("one_focused_storage_question", sum(paths["run_root"] in event["args"]["text"] for event in asks) == 1)
             if case.name in ("setup-confirmation", "setup-reuse-discovery", "setup-ticket-source"):
                 require("awaits_confirmation_without_saving", config is None and not writes and "check-config" not in operations and len(asks) == 1 and asks[0]["result"].get("awaiting_user"))
             else:

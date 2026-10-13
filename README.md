@@ -29,9 +29,9 @@ npx skills add nthplusio/skills --skill speak-clearly
 | --- | --- |
 | [`scoussens-skills/agent-handoff`](skills/scoussens-skills/agent-handoff/SKILL.md) | Write a handoff another agent or person can act on without asking a question — a preflight that proves the state still holds, only the context and decisions that are load-bearing for what remains, and the rest of the work as a dependency-mapped action table. Invoked explicitly. |
 | [`scoussens-skills/business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Find where a repository's business logic lives, derive the rules its code actually enforces, have a second reader check them, and deliver a tree explorer where business owners mark each rule correct or wrong and export corrections. Asks where the explorer goes and who can see it before publishing. Invoked explicitly. |
+| [`scoussens-skills/harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discover what the running harness can do — threads, subagents, monitoring, skills, instruction files, questions, models, and HTML destinations — and the repository's ticket conventions. Save sourced observations by harness name for any skill to read. |
 | [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
 | [`scoussens-skills/optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluate, design, or improve repository-specific CI for trustworthy feedback, runner cost, and maintainability. Preserves merge and release contracts, including when designing a pipeline without run history. |
-| [`scoussens-skills/orchestration-discovery`](skills/scoussens-skills/orchestration-discovery/SKILL.md) | Discover harness capabilities and repository ticket conventions. Save sourced observations by harness name. |
 | [`scoussens-skills/orchestration-setup`](skills/scoussens-skills/orchestration-setup/SKILL.md) | Interview for project policy and per-harness preferences using saved discovery. Configure multiple harnesses in one repository. |
 | [`scoussens-skills/orchestration-run`](skills/scoussens-skills/orchestration-run/SKILL.md) | Resolve the current harness's setup, confirm run-only choices, and coordinate ticket owners with retained proof and one dashboard. |
 | [`scoussens-skills/pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request: a timeline of how it went, a ledger of what each reviewer said and whether it was acted on, and a scored evaluation, published as an HTML artifact. Invoked explicitly. |
@@ -88,22 +88,28 @@ are both supported.
 
 ## Orchestration
 
-Install all three orchestration skills together. Each supports manual invocation
-and agent discovery:
+Install `harness-discovery`, `orchestration-setup` and `orchestration-run`
+together. Start with `/orchestration-run`. It calls `orchestration-setup` when
+saved setup is missing or unsuitable, and setup calls `harness-discovery` when
+saved discovery is missing or unsuitable. Name `/orchestration-setup` to repair
+setup or add a harness, and `/harness-discovery` to refresh facts. `pstack-sync`
+loads discovery itself.
 
-1. `/orchestration-discovery` saves `.orchestration/discovery.json` with observed
-   capabilities keyed by the discovered harness name.
-2. `/orchestration-setup` calls discovery if needed, then interviews for project
-   ticket policy, shared worker skills, storage, and run defaults. It saves
-   `.orchestration/config.json` with a profile for each harness.
-3. `/orchestration-run` identifies the current harness and resolves its profile.
-   A short confirmation covers the selected tickets, finish line, dashboard
-   audience, and scan interval. Resume reuses confirmed run choices.
+`/orchestration-run` identifies the current harness and resolves its profile.
+A short confirmation covers the selected tickets, finish line, dashboard
+audience, and scan interval. Resume reuses confirmed run choices. Setup, when
+called, interviews for project ticket policy, shared worker skills, storage,
+and run defaults, and saves `.nthplusio-skills/orchestration.json`. Discovery,
+when called, saves `.nthplusio-skills/discovery.json` with observed capabilities
+keyed by the discovered harness name.
 
 Sanitized discovery and setup live in the repository. Runtime records, dashboards,
 and receipts stay ignored local state. Setup preferences do not authorize shared
 actions or dashboard publication. Explicit version 1 configuration can be migrated
 through setup without overwriting the original personal settings.
+
+`harness-discovery` was named `orchestration-discovery`. After updating, delete
+the old skill folder from your skills directory; there is no alias.
 
 Run the contracts for all three stages:
 
@@ -115,6 +121,39 @@ npm run test:orchestration
 
 See [behavioral evaluation instructions](skills/scoussens-skills/orchestration-run/evals/README.md)
 for fresh agent runs and their separate evidence requirements.
+
+### Saved state
+
+These skills keep their saved state in `.nthplusio-skills/` at the root of the
+repository they work in. One script, `state.py`, checks it and resolves a
+harness from it. `harness-discovery` owns the script; `orchestration-setup` and
+`orchestration-run` carry byte-identical copies that a test keeps in step.
+
+| File | Written by | Read by | In Git |
+| --- | --- | --- | --- |
+| `discovery.json` | `harness-discovery` | Every skill that needs harness facts | Yes, sanitized |
+| `orchestration.json` | `orchestration-setup` | `orchestration-run` | Yes |
+| `runs/<harness slug>/` | `orchestration-run` | `orchestration-run` | No; `.nthplusio-skills/.gitignore` |
+
+```bash
+python3 <skill>/scripts/state.py check
+python3 <skill>/scripts/state.py resolve --harness amp --orchestration
+```
+
+A harness is named by its discovered key, such as `Claude Code`, or by that
+key's slug, `claude-code`.
+
+Earlier versions kept this state in `.orchestration/`. `orchestration-setup` and
+`harness-discovery` run `state.py migrate` before they read anything. It moves
+and upgrades earlier state, keeps relative run folders reachable, refuses to
+overwrite a conflicting file, and copies a configuration from outside the
+repository without changing it. `orchestration-run` never migrates; it hands
+legacy state to setup.
+
+To change a saved file's shape, bump its `schema_version`, add one upgrade step
+to `UPGRADES` in `state.py`, and add a fixture of the old shape under
+`harness-discovery/evals/fixtures/`. To move the files, add the old folder to
+`LEGACY_DIRS`. The migration test upgrades every fixture and checks the result.
 
 ## Adding a skill
 
