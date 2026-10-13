@@ -49,8 +49,8 @@ rather than fill them.
   --harness '<harness>'` (the `harness-discovery` skill seeds the file when the
   repository has none). The entry's `artifacts` list names each destination
   with how to present it, how to update it, who can see it, and whether readers
-  can comment. Pick the one whose tool is in your tool list and whose audience
-  matches the reader, and hand off with that destination's `present` and
+  can comment. Pick the one whose `present` operation you can carry out with
+  a tool or skill you have, and whose audience matches the reader, and hand off with that destination's `present` and
   `update` operations named. Its `skills.load` says how the harness loads a
   skill, and `helpers.invoke` says how to run a helper when the page needs one.
 - **Text diagrams** in a chat reply are yours to draw under visuals.md, with no
