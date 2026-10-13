@@ -16,8 +16,9 @@ coordination and the status record; ticket owners own implementation.
 
 ## 1. Read setup and recover the run
 
-Identify the current harness name from runtime context. Resolve its saved
-profile from `<repository root>/.nthplusio-skills/` with:
+Identify the current harness by its canonical product name, as
+`harness-discovery` records it. Resolve its saved profile from
+`<repository root>/.nthplusio-skills/` with:
 
 ```bash
 python3 <this skill's folder>/scripts/state.py resolve --harness '<current harness name>' --orchestration

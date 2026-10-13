@@ -84,6 +84,43 @@ class StateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("pass --root", result.stderr)
 
+    def test_optional_fields_are_checked_when_present(self):
+        discovery = discovery_document()
+        entry = discovery["harnesses"]["Amp"]
+        entry["instructions"] = {"user": "~/.config/amp/AGENTS.md", "project": "AGENTS.md in each directory"}
+        entry["ask_user"] = "A choice tool with two to five options, only when the user asked for questions"
+        entry["models"] = {"select": "Start a thread with an agent mode", "list": "List the agent modes"}
+        entry["skills"].update(locations=".agents/skills/ in the project", reload="The reload-skills tool")
+        self.save(discovery)
+        result = self.state("resolve", "--harness", "amp")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["models"]["list"], "List the agent modes")
+        for section, field in (("instructions", "user"), ("models", "select"), ("skills", "reload"), ("helpers", "readonly")):
+            with self.subTest(field=f"{section}.{field}"):
+                broken = deepcopy(discovery)
+                broken["harnesses"]["Amp"][section][field] = ""
+                self.save(broken)
+                result = self.state("check", "discovery")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f"Amp.{section}.{field} must be nonempty text", result.stderr)
+        for field, value, message in (("ask_user", 3, "Amp.ask_user must be nonempty text"),
+                                      ("models", "Task tool", "Amp.models must be an object")):
+            with self.subTest(field=field):
+                broken = deepcopy(discovery)
+                broken["harnesses"]["Amp"][field] = value
+                self.save(broken)
+                self.assertIn(message, self.state("check", "discovery").stderr)
+
+    def test_entries_saved_before_the_optional_fields_still_validate(self):
+        discovery = discovery_document()
+        for facts in discovery["harnesses"].values():
+            for field in ("instructions", "ask_user", "models"):
+                del facts[field]
+            del facts["helpers"]["readonly"], facts["skills"]["locations"], facts["skills"]["reload"]
+        self.save(discovery)
+        result = self.state("check", "discovery")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_versions_this_tool_cannot_read_are_refused(self):
         for found, message in ((0, "is older than 1"), (2, "update these skills"), ("1", "update these skills")):
             with self.subTest(found=found):
