@@ -270,8 +270,10 @@ def registry_entry(name):
 
 def check_registry():
     """Every registry file is one valid harness entry. The repository section comes from the template."""
+    paths = sorted(registry_dir().glob("*.json")) if registry_dir().is_dir() else []
+    if not paths:
+        return 0
     template = json.loads(TEMPLATE.read_text())
-    paths = sorted(registry_dir().glob("*.json"))
     for path in paths:
         try:
             _, document = registry_entry(path.stem)
