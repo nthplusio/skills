@@ -118,32 +118,48 @@ if [ -n "$release" ]; then
   echo " range, and the pull request numbers are in the commit subjects below."
   echo " Listing by date here would sweep every pull request ever merged.)"
 elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  # gh embeds its own jq and does not accept --arg, so the window is
-  # interpolated into the filter text.
-  upper="${until_date:-9999-12-31}"; lower="${since:-0000-01-01}"
-  jq_filter=".[] | select(.mergedAt[0:10] >= \"$lower\") | select(.mergedAt[0:10] <= \"$upper\")
-             | \"#\\(.number)|\\(.mergedAt[0:10])|\\(.baseRefName)|\\(.title)\""
-  if pr_out=$(gh pr list --state merged --limit 300 \
-        --json number,title,mergedAt,baseRefName --jq "$jq_filter" 2>/dev/null); then
-    if [ -n "$pr_out" ]; then
-      if [ -n "$production" ]; then
-        pr_promo=$(echo "$pr_out" | awk -F'|' -v p="$production" '$3==p' || true)
-        pr_work=$(echo "$pr_out" | awk -F'|' -v p="$production" '$3!=p' || true)
-      else
-        pr_work="$pr_out"
-      fi
-      echo "Product work (merged to the integration branch):"
-      if [ -n "$pr_work" ]; then
-        echo "$pr_work" | sort -t'|' -k2,2
-        echo "  count: $(echo "$pr_work" | grep -c .)"
-      else
-        echo "  (none)"
-      fi
+  # Filter by merge date on the server. `--state merged --limit N` pages by
+  # creation date, so filtering its output here would drop a long-lived pull
+  # request that merged inside the window.
+  window="merged:>=${since}T00:00:00Z"
+  [ -n "$until_date" ] && window="merged:${since}T00:00:00Z..${until_date}T23:59:59Z"
+  merged_into() {
+    gh pr list --state merged ${1:+--base "$1"} --search "$window" --limit 300 \
+      --json number,title,mergedAt,baseRefName,headRefName \
+      --jq 'sort_by(.mergedAt) | .[] | "#\(.number)|\(.mergedAt[0:10])|\(.baseRefName)|\(.headRefName)|\(.title)"' \
+      2>/dev/null
+  }
+  two_branch=""
+  if [ -z "$production" ]; then
+    work_label="Product work (no production branch resolved, so every base):"
+    pr_work=$(merged_into "") || pr_failed=1
+  elif [ -z "$integration" ] || [ "$integration" = "$production" ]; then
+    work_label="Product work (merged to '$production'; each merge is also a release):"
+    pr_work=$(merged_into "$production") || pr_failed=1
+  else
+    two_branch=1
+    work_label="Product work (merged to '$integration'):"
+    pr_work=$(merged_into "$integration") || pr_failed=1
+    pr_promo=$(merged_into "$production") || pr_failed=1
+  fi
+  if [ -n "${pr_failed:-}" ]; then
+    pr_work=""; pr_promo=""
+    echo "(gh could not list pull requests — no remote host, or no access)"
+  else
+    echo "Lines read #number|merged|base|head|title."
+    echo "$work_label"
+    if [ -n "$pr_work" ]; then
+      echo "$pr_work"
+      echo "  count: $(echo "$pr_work" | grep -c .)"
+    else
+      echo "  (none)"
+    fi
+    if [ -n "$two_branch" ]; then
       echo
       echo "Promotions (merged to '$production') — these are releases, NOT changes."
       echo "Do not add them to the change count:"
       if [ -n "$pr_promo" ]; then
-        echo "$pr_promo" | sort -t'|' -k2,2
+        echo "$pr_promo"
         echo "  count: $(echo "$pr_promo" | grep -c .)"
       else
         echo "  (none)"
@@ -152,11 +168,7 @@ elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       echo "Merge date is not release date. A change merged before this window may"
       echo "have gone live inside it, and one merged inside it may still be queued."
       echo "For a period brief, select by the promotion that carried it."
-    else
-      echo "(no pull requests merged in this window)"
     fi
-  else
-    echo "(gh could not list pull requests — no remote host, or no access)"
   fi
 else
   echo "(gh unavailable or not authenticated; skipping)"
@@ -193,8 +205,11 @@ fi
 
 # ── 5. Tracker IDs ──────────────────────────────────────────────────────────
 rule "CANDIDATE TRACKER IDS"
+# Branch names are often lowercase, so match without case and print uppercase.
+# A version such as doorbell-0.1.1 is matched whole and then dropped.
 ids=$(printf '%s\n%s\n' "${commits:-}" "$pr_work" \
-      | grep -oE '\b[A-Z][A-Z0-9]{1,5}-[0-9]+\b' | sort -u -V 2>/dev/null || true)
+      | grep -oiE '\b[a-z][a-z0-9]{1,9}-[0-9]{1,6}(\.[0-9]+)*\b' | grep -v '\.' \
+      | tr '[:lower:]' '[:upper:]' | sort -u -V 2>/dev/null || true)
 if [ -n "$ids" ]; then
   echo "$ids" | tr '\n' ' '; echo
   echo

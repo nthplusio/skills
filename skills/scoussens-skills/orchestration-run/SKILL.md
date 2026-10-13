@@ -3,10 +3,11 @@ name: orchestration-run
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
   milestone, repeatedly checks owner status, reuses retained proof, and maintains
-  one HTML dashboard using repository setup for the current harness. Use for
-  /orchestration-run, orchestrating multiple tickets, or resuming a coordinated
-  run. Confirms only run-specific choices. Calls orchestration-setup when setup
-  is missing or unsuitable. Do not use for a single implementation assignment.
+  one HTML dashboard using repository setup for the current harness. Start here
+  for /orchestration-run, a resume, or a first orchestration, including setting
+  orchestration up or adding a harness. Confirms only run-specific choices.
+  Calls orchestration-setup when setup is missing or unsuitable. Do not use for
+  a single implementation assignment, and do not run harness-discovery first.
 ---
 
 # Orchestration run
@@ -26,17 +27,18 @@ python3 <this skill's folder>/scripts/state.py resolve --harness '<current harne
 
 Use the emitted capabilities, ticket policy, shared skills, defaults, and resolved
 `run_root`. The name selects the profile. Neither the model nor the working
-directory selects another harness's settings. Install `harness-discovery`,
-`orchestration-setup` and this skill together, because this skill hands missing or
-outdated setup to them.
+directory selects another harness's settings.
 
-If setup or saved discovery is missing, malformed, lacks this harness, or has a
-material context mismatch, load `orchestration-setup`. Do the same when `resolve`
-reports legacy state: setup migrates it, and this skill never does. That skill owns discovery
-and the durable interview. Hold affected assignments until its output validates.
-Keep unrelated saved profiles intact. A new run with valid setup needs neither
-tool rediscovery nor a project/harness interview. Configuration describes tools
-and preferences, not permission for shared actions.
+Load `orchestration-setup` when that command prints `run orchestration-setup`,
+`repair this harness profile with orchestration-setup`, or `run state.py migrate`,
+and when a zero exit still shows a saved context that contradicts the harness you
+are in. Hold affected assignments until its output validates. Setup migrates
+legacy state, and this skill never does. Setup owns discovery and the durable
+interview. When `resolve` exits 0 and the saved context matches, do not read the
+`orchestration-setup` or `harness-discovery` SKILL.md. Keep unrelated saved
+profiles intact. A new run with valid setup needs neither tool rediscovery nor a
+project/harness interview. Configuration describes tools and preferences, not
+permission for shared actions.
 
 On resume, use the harness-restored conversation and accessible run files to
 recover the finish line, owners, decisions, and prior evidence assessments

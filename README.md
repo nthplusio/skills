@@ -89,16 +89,19 @@ are both supported.
 ## Orchestration
 
 Install `harness-discovery`, `orchestration-setup` and `orchestration-run`
-together. Each supports manual invocation and agent discovery:
+together. Start with `/orchestration-run`. It calls `orchestration-setup` when
+saved setup is missing or unsuitable, and setup calls `harness-discovery` when
+saved discovery is missing or unsuitable. Name `/orchestration-setup` to repair
+setup or add a harness, and `/harness-discovery` to refresh facts. `pstack-sync`
+loads discovery itself.
 
-1. `/harness-discovery` saves `.nthplusio-skills/discovery.json` with observed
-   capabilities keyed by the discovered harness name.
-2. `/orchestration-setup` calls discovery if needed, then interviews for project
-   ticket policy, shared worker skills, storage, and run defaults. It saves
-   `.nthplusio-skills/orchestration.json` with a profile for each harness.
-3. `/orchestration-run` identifies the current harness and resolves its profile.
-   A short confirmation covers the selected tickets, finish line, dashboard
-   audience, and scan interval. Resume reuses confirmed run choices.
+`/orchestration-run` identifies the current harness and resolves its profile.
+A short confirmation covers the selected tickets, finish line, dashboard
+audience, and scan interval. Resume reuses confirmed run choices. Setup, when
+called, interviews for project ticket policy, shared worker skills, storage,
+and run defaults, and saves `.nthplusio-skills/orchestration.json`. Discovery,
+when called, saves `.nthplusio-skills/discovery.json` with observed capabilities
+keyed by the discovered harness name.
 
 Sanitized discovery and setup live in the repository. Runtime records, dashboards,
 and receipts stay ignored local state. Setup preferences do not authorize shared

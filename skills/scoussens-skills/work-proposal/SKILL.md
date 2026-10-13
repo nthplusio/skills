@@ -144,9 +144,10 @@ than found it.
 
 Theme is not decoration here. It is the cheapest available signal that you
 have read their work.
-[references/output-formats.md](references/output-formats.md) covers finding a
-design system, deriving a palette when there is none, and the constraints each
-delivery format puts on it.
+[references/theming-from-a-repo.md](references/theming-from-a-repo.md) covers
+finding a design system and deriving a palette when there is none;
+[references/output-formats.md](references/output-formats.md) covers the
+constraints each delivery format puts on it.
 
 ## Show what you found along the way
 

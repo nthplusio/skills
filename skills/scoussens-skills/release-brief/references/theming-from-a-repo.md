@@ -1,6 +1,6 @@
 # Theming from a repository
 
-A brief that looks like the product it describes reads as the customer's
+A page that looks like the product it describes reads as the customer's own
 document. This is how to take a real design system rather than approximate one.
 
 ## Contents
@@ -34,7 +34,7 @@ are decorative, which are accessible as text, and which pairings were measured.
 
 Copy the declarations rather than eyeballing an equivalent. If the file defines
 its anchors in a colour space you can use directly — `oklch()`, `lab()`, or hex
-— keep that notation, so a reader comparing the brief to the product sees the
+— keep that notation, so a reader comparing the page to the product sees the
 same colour rather than a near miss.
 
 Extract, in this order:
@@ -44,13 +44,13 @@ Extract, in this order:
 2. **The surface ladder.** Page canvas, card, grouped area, emphasis. These
    carry more of the product's feel than the accent does.
 3. **Text roles.** Primary, secondary, tertiary, plus the border colour.
-4. **Semantic colours** for status or severity, if the brief encodes any.
+4. **Semantic colours** for status or severity, if the page encodes any.
 5. **Radius, shadow, and spacing** tokens. A system that uses warm-tinted
    shadows instead of black is making a deliberate choice worth carrying over.
 
 ## Obey the constraints the stylesheet documents
 
-Design systems record hard-won rules, and a brief that breaks them looks
+Design systems record hard-won rules, and a page that breaks them looks
 off-brand in a way readers feel without diagnosing. Watch for:
 
 - **An accent that is decorative only.** Many bright brand colours fail contrast
@@ -82,8 +82,8 @@ Never redraw a mark by hand. Use the committed asset or omit it.
 
 ## Deriving a dark palette
 
-Products often ship only a light theme, but a brief renders in the reader's
-theme. Derive the dark set from the same hues rather than inverting:
+Products often ship only a light theme, but a hosted page renders in the
+reader's theme. Derive the dark set from the same hues rather than inverting:
 
 - Re-lighten the surface ladder into the 0.17–0.30 lightness range, keeping the
   same hue and roughly the same chroma, so the warmth or coolness survives.
@@ -100,6 +100,14 @@ nobody mistakes it for an existing product decision.
 ## When there is no design system
 
 Pick a restrained palette from the customer's public brand — their site,
-their logo — and commit to it. Two colours and a considered neutral beat a
-generic template. Tell the user you chose rather than found it, so they can
-correct you.
+their logo, or a brand sheet in the repository — and commit to it. Two colours
+and a considered neutral beat a generic template.
+
+A neutral with a slight hue bias toward the accent reads as chosen; a pure
+mid-grey reads as inherited. Where the brand is a single colour, draw the
+neutral from the same hue family rather than adding a second brand colour it
+never uses.
+
+Tell the user you chose rather than found it, so they can correct you. Where
+the repository records a brand inconsistency — logo artwork disagreeing with a
+brand sheet, for instance — flag it rather than silently picking a side.
