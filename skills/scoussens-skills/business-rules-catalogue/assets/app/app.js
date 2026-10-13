@@ -764,7 +764,7 @@
     else if (d.module) select({ type: "module", id: d.module });
     else if (d.package) select({ type: "package", id: d.package });
     else if (d.nodeOpen) { revealNode(d.nodeOpen); treeWalk(d.nodeOpen, true); state.focus = d.nodeOpen; renderTree(); }
-    else if (d.copy) copyText(d.copy);
+    else if (d.copy) copyText(d.copy, t);
     else if (d.term) showTerm(t);
     else if (d.verdict) setVerdict(d.verdict);
     else if (d.nav) navigate(d.nav === "unreviewed" ? "unreviewed" : d.nav);
@@ -779,9 +779,33 @@
     $("#namePrompt").hidden = true;
     if (state.pendingVerdict) { const v = state.pendingVerdict; state.pendingVerdict = null; setVerdict(v); }
   }
-  function copyText(text) {
-    const done = () => toast(`Copied ${text}`);
-    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => toast("Copy failed"));
+  // Hosted frames can withhold clipboard-write while the API still exists, so
+  // the fallback runs when the write is rejected, not when the API is missing.
+  function copyText(text, button) {
+    const execCopy = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      let copied = false;
+      try { copied = document.execCommand("copy"); } catch (e) { copied = false; }
+      area.remove();
+      if (!copied) throw new Error("copy blocked");
+    };
+    Promise.resolve()
+      .then(() => {
+        if (!navigator.clipboard) throw new Error("no clipboard api");
+        return navigator.clipboard.writeText(text);
+      })
+      .catch(execCopy)
+      .then(() => toast(`Copied ${text}`), () => {
+        const shown = button && button.closest(".idline") ? button.closest(".idline").querySelector(".rid") : null;
+        if (shown) window.getSelection().selectAllChildren(shown);
+        toast(shown ? "ID selected. Press Ctrl+C or Command+C to copy it." : `Copy blocked. The ID is ${text}.`);
+      });
   }
   function showTerm(chip) {
     const box = $("#termdef");

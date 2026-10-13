@@ -1,8 +1,8 @@
 # Output formats and theme
 
 A proposal is read in one of three places, and the choice changes the writing
-as much as the export. This covers the constraints of each, and how to take a
-theme from the project rather than reaching for a template.
+as much as the export. This covers the constraints of each, including how much
+of the project's theme each one can carry.
 
 ## Contents
 
@@ -10,8 +10,6 @@ theme from the project rather than reaching for a template.
 - [Artifact](#artifact)
 - [PDF](#pdf)
 - [Email and Markdown](#email-and-markdown)
-- [Taking the theme from the project](#taking-the-theme-from-the-project)
-- [When the project has no design system](#when-the-project-has-no-design-system)
 - [Theme constraints per format](#theme-constraints-per-format)
 
 ## Choosing the format
@@ -125,56 +123,11 @@ writing constraint, not a styling one:
 Markdown is also the right output when the proposal is going into a tracker
 comment or a shared doc, where the destination applies its own styling.
 
-## Taking the theme from the project
-
-Look for a design system before choosing colours. The repository's own agent
-instructions — `CLAUDE.md`, `AGENTS.md`, a `docs/` standards directory — usually
-name the package that owns styling. Failing that:
-
-```bash
-rg -l '@theme|--color-|:root\s*\{|tailwind.config' --type css --type ts
-fd -e css -e ts 'theme|tokens|design|brand' packages apps src 2>/dev/null
-```
-
-Prefer a shared package (`packages/ui/**`, `libs/design-system/**`) over an
-individual app's stylesheet when both exist. Read the comments as well as the
-values — a well-kept tokens file records which colours are decorative, which
-are safe as text, and which pairings someone measured.
-
-Take the values literally rather than approximating them, and keep the notation
-the file uses so a reader comparing the proposal to the product sees the same
-colour. Extract in this order: brand anchors, the surface ladder (page, card,
-grouped area), text roles, semantic status colours, then radius and shadow.
-
-Honour the constraints the file documents. The common ones:
-
-- **A decorative-only accent.** Many brand colours fail contrast as text, so
-  the system ships a darkened variant for that purpose. Use it.
-- **A stated baseline weight.** A body face specified at medium reads wrong at
-  a browser's default 400.
-- **Deliberate absences.** If the system is sans-only, do not add a serif.
-
-Licensed typefaces will not load in a published page. The fallback stack
-usually already names the intended open substitute — use it, and keep the
-licensed face first so a viewer who has it sees the real thing.
-
-## When the project has no design system
-
-Derive a restrained palette from the client's public brand — their site, their
-logo, a brand sheet in the repository. Two colours and a considered neutral
-beat any template.
-
-A neutral with a slight hue bias toward the accent reads as chosen; a pure
-mid-grey reads as inherited. Where the brand is a single colour, pair it with a
-neutral drawn from the same hue family rather than introducing a second brand
-colour it never uses.
-
-Say in your reply that you chose the palette rather than found it, so the user
-can correct you before it reaches the client. Where a repository issue records
-a known brand inconsistency — logo artwork disagreeing with a brand sheet, for
-instance — flag it rather than silently picking a side.
-
 ## Theme constraints per format
+
+Find the project's design system and take its values with
+[theming-from-a-repo.md](theming-from-a-repo.md). This table adds what each
+format allows.
 
 | | Artifact | PDF | Email |
 | --- | --- | --- | --- |
