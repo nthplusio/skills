@@ -8,7 +8,7 @@ Runs the `orchestrate` set's spawn, wait, and handoff loop on Amp orb threads th
 | --- | --- |
 | `agent-runtime.ts` | `AgentRuntime` over the `amp` CLI. |
 | `models.ts` | `ModelCatalog` of Amp agent modes. |
-| `agent-runtime/scripts/core/runtime.ts` | Facade with the Cursor SDK's static `Agent` shape, built over the runtime, so the ported files keep upstream's call sites. Not in the set's ports list yet; see Follow-ups. |
+| `agent-runtime/scripts/core/runtime.ts` | Facade with the Cursor SDK's static `Agent` shape, built over the runtime, so the ported files keep upstream's call sites. Listed in the `agent-runtime` port, so the sync installs it beside the port files. |
 | `agent-runtime/scripts/{core/agent-manager,cli/task,cli/inspect,cli/forensics,tools/nudge-root,tools/probe-models}.ts` | The `agent-runtime` port: upstream files with their SDK calls routed through the facade. |
 | `models/scripts/models.ts` | The `models` port: upstream's catalog shape over Amp modes. |
 | `__tests__/` | `bun test` against a fake `amp` on `PATH`. |
@@ -65,7 +65,7 @@ The OS-3 review (`.amp/in/artifacts/orchestrate-sync/os-3-security-review.md`) n
 1. **Measurement commands.** `tasks[].measurements[].command` runs through `bash -c`, with plan.json as the trust boundary. The port runs them only when plan.json sets `"measurementsEnabled": true` at the top level. `PlanSchema` is strict and lives outside the port, so `agent-manager.ts` lifts the key before parsing and writes it back on every save; without it, each handoff logs `skipped N declared measurement(s)` to `attention.log` and the handoff proceeds. The schema change itself (a `measurementsEnabled` boolean on the plan) belongs in `schemas.ts` and the planner docs; see Follow-ups.
 2. **Clone origin.** `plan.repoUrl` must name the configured origin: `ORCHESTRATE_REPO_URL` when set, otherwise the workspace's `remote.origin.url`. A mismatch fails `AgentManager.load` with a `PlanValidationError`. When neither is set the loop logs one attention line, spawns proceed (an orb project is something the signed-in user already has access to), and the measurement clone stays refused.
 3. **Operator mode and file uploads.** `cli/comments.ts` and `cli/util.ts` are not port files, so the port cannot change them; the workspace confinement stays as upstream wrote it and the operator-mode lift stays reachable. See Follow-ups.
-4. **`@cursor/sdk` dependency.** Every SDK call is routed through the facade and the two remaining `import type` lines are erased by bun, so the package is unused. `scripts/package.json` is not a port file; remove `@cursor/sdk` from `dependencies` after install (the installed tree typechecks clean with it gone, once the two type imports are redirected as below).
+4. **`@cursor/sdk` dependency.** Every SDK call is routed through the facade. The port carries `scripts/package.json` and its lockfile without `@cursor/sdk`, and the set's seed transforms redirect the two remaining `import type` lines in `schemas.ts` and `core/handoff.ts` to the facade, so the installed tree typechecks clean with no SDK on disk.
 
 ## Limits
 
@@ -99,8 +99,6 @@ Tests: `bun test` in this directory (`adapters/amp`), against `__tests__/fake-am
 
 ## Follow-ups outside the port
 
-- Add `scripts/core/runtime.ts` to the `agent-runtime` port's `files` in `sets/orchestrate/set.json`, and `scripts/package.json` (without `@cursor/sdk`) to a port, so the sync installs them; today the port is installed without its facade.
-- Redirect the two unported type imports with a dialect transform: `schemas.ts` `import type { Run, SDKAgent } from "@cursor/sdk"` to `"./core/runtime.ts"`, and `core/handoff.ts` `import type { RunResult } from "@cursor/sdk"` to `"./runtime.ts"`. bun runs either way; `tsc --noEmit` is clean only after the change.
 - Add `measurementsEnabled` (boolean, default false) to `PlanObjectSchema` in `schemas.ts`, regenerate `schemas/plan.schema.json`, and mention it in `references/planner.md`.
 - Decide operator mode in `cli/util.ts` and `cli/comments.ts`: keep the workspace confinement on regardless of `~/.orchestrate/operator-mode`, or make the flag something the orb user cannot create.
 - `prompts/root.md` says "Your thread id is `{{agentId}}`"; on Amp the value is `$AMP_THREAD_ID` plus the facade's note. A dialect row could phrase that directly.
