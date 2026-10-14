@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# A stand-in for the `amp` CLI used by agent-runtime.test.ts. It records every
+# call to $FAKE_AMP_LOG (one line per call, arguments separated by tabs) and
+# serves canned replies from $FAKE_AMP_DIR:
+#
+#   spawn-id                     thread id `amp -ox` reports; stdin is saved to spawn-stdin.txt
+#   export-<id>-<n>.json         reply to the n-th `threads export <id>`; the highest n at or
+#                                below the call count is served, so the last file repeats
+#   export-<id>-<n>.fail         the n-th export exits 1 instead
+#   continue-stdin.txt           where `threads continue <id> -ox` saves its stdin
+#   archived-<id>                touched by `threads archive <id>`
+#   search-<id>.json             reply to `threads search "id:<id> ..." --json`, else []
+#   list.json                    reply to `threads list --json`, else []
+#   agent-options.json           reply to `plugins show-agent-options --json`, else exit 1
+set -u
+dir="${FAKE_AMP_DIR:?FAKE_AMP_DIR is required}"
+log="${FAKE_AMP_LOG:-$dir/calls.log}"
+stdin_text=""
+if [ ! -t 0 ]; then stdin_text="$(cat)"; fi
+argv=("$@")
+{ printf '%s' "${argv[0]}"; for a in "${argv[@]:1}"; do printf '\t%s' "$a"; done; printf '\n'; } >> "$log"
+
+case "${argv[0]}" in
+  -ox)
+    printf '%s' "$stdin_text" > "$dir/spawn-stdin.txt"
+    id="$(cat "$dir/spawn-id" 2>/dev/null || echo T-00000000-0000-0000-0000-000000000000)"
+    echo "https://ampcode.com/threads/$id"
+    ;;
+  threads)
+    case "${argv[1]}" in
+      export)
+        id="${argv[2]}"
+        count_file="$dir/count-$id"
+        n=$(( $(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
+        echo "$n" > "$count_file"
+        if [ -e "$dir/export-$id-$n.fail" ]; then
+          echo "fake amp: transient export failure #$n" >&2
+          exit 1
+        fi
+        pick=""
+        for ((k = n; k >= 1; k--)); do
+          if [ -e "$dir/export-$id-$k.json" ]; then pick="$dir/export-$id-$k.json"; break; fi
+        done
+        if [ -z "$pick" ]; then echo "fake amp: no export fixture for $id (call $n)" >&2; exit 1; fi
+        cat "$pick"
+        ;;
+      continue)
+        printf '%s' "$stdin_text" > "$dir/continue-stdin.txt"
+        echo "https://ampcode.com/threads/${argv[2]}"
+        ;;
+      archive)
+        touch "$dir/archived-${argv[2]}"
+        echo "✓ Thread archived successfully"
+        ;;
+      search)
+        id="$(printf '%s' "${argv[2]}" | grep -o 'T-[0-9a-f-]*' | head -n 1)"
+        if [ -n "$id" ] && [ -e "$dir/search-$id.json" ]; then cat "$dir/search-$id.json"; else echo "[]"; fi
+        ;;
+      list)
+        if [ -e "$dir/list.json" ]; then cat "$dir/list.json"; else echo "[]"; fi
+        ;;
+      *)
+        echo "fake amp: unsupported threads subcommand ${argv[1]}" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  plugins)
+    if [ -e "$dir/agent-options.json" ]; then cat "$dir/agent-options.json"; else
+      echo "fake amp: show-agent-options unavailable" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "fake amp: unsupported command ${argv[0]}" >&2
+    exit 2
+    ;;
+esac
