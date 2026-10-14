@@ -251,7 +251,8 @@
       "markers": [
         "cursor\\.com/agents",
         "review\\.cursor\\.com",
-        "cursor\\.com/dashboard"
+        "cursor\\.com/dashboard",
+        "cursor\\.com\\b"
       ],
       "question": "How does the harness link to a running worker and to a review?",
       "fallback": "Replace with the harness's thread or run URL, or cut the link."

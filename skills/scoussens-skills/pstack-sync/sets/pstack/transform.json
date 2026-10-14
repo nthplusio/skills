@@ -918,12 +918,12 @@
       "ketchup/SKILL.md": {
         "transforms": [
           {
-            "find": "A visual is a picture: a screenshot, a video, a Mermaid diagram, a chart or diagram from `/visualize`, or a generated image. A Markdown table is not a visual, even with a before column and an after column.\n",
-            "replace": "A visual is a picture: a screenshot, a video, a Mermaid diagram, a chart or diagram rendered inline with the `creating-views` skill, or a generated image. A Markdown table is not a visual, even with a before column and an after column.\n"
+            "find": "A visual is a picture: a screenshot, a video, a Mermaid diagram, a chart or diagram from `/visualize`, or a generated image. A Markdown table is not a visual, even with before and after columns.\n",
+            "replace": "A visual is a picture: a screenshot, a video, a Mermaid diagram, a chart or diagram rendered inline with the `creating-views` skill, or a generated image. A Markdown table is not a visual, even with before and after columns.\n"
           },
           {
-            "find": "Use screenshots or a video when the change is visible. If a visible change has none, add it to the visual of what happened, marked \"No screenshot yet.\" For anything else, draw the visual from facts you have: a Mermaid diagram for states, flows, and structures, and a `/visualize` chart for numbers. Never invent a number, and never draw or generate a picture of a screen you did not capture. Link only artifacts that exist.\n",
-            "replace": "Use screenshots or a video when the change is visible. If a visible change has none, add it to the visual of what happened, marked \"No screenshot yet.\" For anything else, draw the visual from facts you have: a Mermaid diagram for states, flows, and structures, and an inline chart from the `creating-views` skill for numbers. Never invent a number, and never draw or generate a picture of a screen you did not capture. Link only artifacts that exist.\n"
+            "find": "Use screenshots or a video when the change is visible. If a visible change has none, mark the box it belongs to \"No screenshot yet,\" and say in a line under the visual what changed on screen. For anything else, draw the visual from facts you have: a Mermaid diagram for states, flows, and structures, and a `/visualize` chart for numbers. Never invent a number, and never draw or generate a picture of a screen you did not capture. Link only artifacts that exist.\n",
+            "replace": "Use screenshots or a video when the change is visible. If a visible change has none, mark the box it belongs to \"No screenshot yet,\" and say in a line under the visual what changed on screen. For anything else, draw the visual from facts you have: a Mermaid diagram for states, flows, and structures, and an inline chart from the `creating-views` skill for numbers. Never invent a number, and never draw or generate a picture of a screen you did not capture. Link only artifacts that exist.\n"
           }
         ],
         "accepted": []
@@ -949,6 +949,12 @@
           }
         ],
         "accepted": []
+      },
+      "poteto-mode/scripts/orch/orch.test.ts": {
+        "transforms": [],
+        "accepted": [
+          "RunResult"
+        ]
       }
     }
   }
