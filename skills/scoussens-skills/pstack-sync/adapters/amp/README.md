@@ -11,7 +11,7 @@ Runs the `orchestrate` set's spawn, wait, and handoff loop on Amp orb threads th
 | `agent-runtime/scripts/core/runtime.ts` | Facade with the Cursor SDK's static `Agent` shape, built over the runtime, so the ported files keep upstream's call sites. Listed in the `agent-runtime` port, so the sync installs it beside the port files. |
 | `agent-runtime/scripts/{core/agent-manager,cli/task,cli/inspect,cli/forensics,tools/nudge-root,tools/probe-models}.ts` | The `agent-runtime` port: upstream files with their SDK calls routed through the facade. |
 | `models/scripts/models.ts` | The `models` port: upstream's catalog shape over Amp modes. |
-| `__tests__/` | `bun test` against a fake `amp` on `PATH`. |
+| `__tests__/` | `bun test` against a fake `amp` on `PATH`: the runtime (`agent-runtime.test.ts`), the facade's `Agent.create`, `send`, `wait` round trip and its id checks (`runtime.test.ts`), the operator gates and the `selfAgentId` guard (`gates.test.ts`), and `models --check` through the port's `tools/probe-models.ts` (`probe-models.test.ts`; upstream's test of that tool calls the SDK signature and is ignored by the set). |
 
 The sync installs each port file at its path under `<skills>/orchestrate/scripts/`; `runtime.ts` finds `agent-runtime.ts` and `models.ts` at `<skills>/pstack-sync/adapters/amp/` beside it (or in the pack layout, or where `ORCHESTRATE_AMP_RUNTIME_DIR` points).
 
