@@ -522,6 +522,21 @@ class DependencyTests(unittest.TestCase):
         (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
         self.assertIn("verify", self.run_sync()["added"], "dropping the set's exclude un-excludes it")
 
+    def test_record_leaves_ignored_local_files_alone(self):
+        self.upstream({**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/run.sh": "#!/bin/sh\n"})
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ignore"] = ["scripts/node_modules/**"]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        self.run_sync()
+        dep = self.skills / "alpha" / "scripts" / "node_modules" / "dep" / "index.js"
+        dep.parent.mkdir(parents=True)
+        dep.write_text("module.exports = 1;\n")
+        (self.skills / "alpha" / "SKILL.md").write_text(skill("alpha", "Adapted.\n"))
+        self.assertEqual(list(self.run_sync("record", "alpha/SKILL.md")["recorded"]), ["alpha"])
+        self.assertTrue(dep.exists(), "an installed dependency the set ignores survives record and sync")
+        self.assertEqual(self.run_sync()["local_drift"], [])
+        self.assertTrue(dep.exists())
+
     def test_profile_gaps_offer_the_shipped_row(self):
         self.upstream()
         self.run_sync()

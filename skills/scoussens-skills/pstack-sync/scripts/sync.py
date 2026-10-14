@@ -1011,7 +1011,8 @@ def cmd_record(a, st):
         dst = os.path.join(st.repo, target)
         blobs = read_blobs(obj for _, obj in up["files"].values())
         extra = [os.path.relpath(os.path.join(dp, fn), dst) for dp, _, fns in os.walk(dst) for fn in fns]
-        extra = [r for r in extra if r not in up["files"] and not port_of(name, r)]
+        extra = [r for r in extra if r not in up["files"] and not port_of(name, r)
+                 and not any(fnmatch.fnmatch(r, g) for g in SET["ignore"])]
         if extra:
             sys.exit(f"error: {target} has files not in upstream: {extra}")
         files, counts = dict(entry.get("files", {})), {}
