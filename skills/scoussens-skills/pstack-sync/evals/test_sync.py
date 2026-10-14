@@ -578,6 +578,17 @@ class ShippedStateTests(unittest.TestCase):
         rows = sync.parse_profile((SKILL / "harness" / "amp.md").read_text())
         self.assertEqual(set(rows), {need["id"] for need in NEEDS} - MAPPED)
 
+    def test_the_cursor_sdk_import_specifier_is_a_marker(self):
+        text = 'import type { Run, SDKAgent } from "@cursor/sdk";\n"@cursor/sdk": "^1.0.12"\n'
+        self.assertEqual(sync.needs_in(text, NEEDS).get("cursor-sdk"), ["@cursor/sdk"])
+
+    def test_orchestrate_port_interfaces_name_what_installed_files_import(self):
+        ports = {p["name"]: p["interface"] for p in json.loads((SKILL / "sets" / "orchestrate" / "set.json").read_text())["ports"]}
+        for name in ("AgentManager", "RespawnSource", "appendAgentFooter", "registerTaskCommands",
+                     "registerInspectCommands", "registerForensicsCommands", "Run", "SDKAgent", "RunResult"):
+            self.assertIn(f"`{name}`", ports["agent-runtime"])
+        self.assertIn("`renderModelCatalog`", ports["models"])
+
     def test_every_discovery_field_exists_in_the_discovery_template(self):
         template = json.loads((DISCOVERY_SKILL / "assets" / "discovery.template.json").read_text())
         entry = next(iter(template["harnesses"].values()))

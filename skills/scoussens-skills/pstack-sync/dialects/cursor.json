@@ -262,6 +262,7 @@
       "uses": "Spawning, polling, and reading cloud agents through the Cursor SDK, its auth, and its error taxonomy.",
       "cursor": [
         "cursor-sdk",
+        "@cursor/sdk",
         "CURSOR_API_KEY",
         "CursorAgentError",
         "Agent.create",
@@ -269,6 +270,7 @@
       ],
       "markers": [
         "cursor-sdk",
+        "@cursor/sdk",
         "CURSOR_API_KEY",
         "CursorAgentError",
         "\\bAgent\\.(create|list|listRuns|getRun|resume)\\b",
