@@ -809,12 +809,35 @@ describe("sendFollowUp", () => {
     serve(ID, 1, FINISHED);
     const rt = createAmpRuntime({ env });
     const result = await rt.sendFollowUp(ID, "Reply with exactly FOLLOWUP-OK.");
+    // Export 2 is the same thread: the message has not landed, so the count before the send is the id.
     expect(result).toEqual({ runId: "m4" });
     const call = calls().find(c => c[0] === "threads" && c[1] === "continue");
     expect(call).toEqual(["threads", "continue", ID, "-ox"]);
     expect(readFileSync(join(dir, "continue-stdin.txt"), "utf8")).toBe(
       "Reply with exactly FOLLOWUP-OK."
     );
+    expect(exportsOf(ID)).toBe(2);
+  });
+
+  test("reads the index back after the send, so a message queued behind a turn gets the right run id", async () => {
+    const working = thread("running_tools", [{ user: "do the task" }, { assistant: "On it." }, { tool: "shell_command" }]);
+    serve(ID, 1, working);
+    serve(ID, 2, thread("running_tools", [
+      ...[{ user: "do the task" }, { assistant: "On it." }, { tool: "shell_command" }, { toolResult: true }, { tool: "shell_command", id: "TU-2" }] as Msg[],
+      { user: "Read the handoffs and continue." },
+    ]));
+    const rt = createAmpRuntime({ env });
+    expect(await rt.sendFollowUp(ID, "Read the handoffs and continue.\n")).toEqual({ runId: "m5" });
+    // An earlier message with the same text does not shadow the new one, and the id is the last match.
+    rmSync(join(dir, `count-${ID}`));
+    serve(ID, 1, thread("idle", [{ user: "same" }, { assistant: "A" }]));
+    serve(ID, 2, thread("idle", [{ user: "same" }, { assistant: "A" }, { user: "same" }]));
+    expect(await rt.sendFollowUp(ID, "same")).toEqual({ runId: "m2" });
+    // The export after a failed read falls back to the count before the send.
+    rmSync(join(dir, `count-${ID}`));
+    serve(ID, 1, FINISHED);
+    serve(ID, 2, "fail");
+    expect(await rt.sendFollowUp(ID, "x")).toEqual({ runId: "m4" });
   });
 });
 

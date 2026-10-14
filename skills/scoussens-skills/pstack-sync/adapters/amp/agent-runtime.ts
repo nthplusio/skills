@@ -354,6 +354,16 @@ function isUserTextMessage(message: ExportMessage): boolean {
   );
 }
 
+/** Index of the last user message whose text is `text`, or null. */
+export function lastUserMessageIndex(exp: ThreadExport, text: string): number | null {
+  const messages = exp.messages ?? [];
+  const wanted = text.trim();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isUserTextMessage(messages[i]) && messageText(messages[i]).trim() === wanted) return i;
+  }
+  return null;
+}
+
 /** Index of the user message that started the thread's latest run. */
 export function latestRunStart(exp: ThreadExport): number | null {
   const messages = exp.messages ?? [];
@@ -949,13 +959,23 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async sendFollowUp(agentId: string, text: string): Promise<{ runId: string }> {
-      // The new user message lands at the current message count, so read it
-      // first; without it the follow-up's run could not be told from the last.
+      // The message count before the send is where the message lands on an
+      // idle thread. On a working thread it queues behind the turn, which may
+      // add messages first, so the index is read back after the send: the
+      // last user message with this text names the run, the count is the
+      // fallback while the message has not landed yet.
       const before = await exportThread(threadIdArg(agentId));
-      const runId = formatRunId((before.messages ?? []).length);
+      const fallback = formatRunId((before.messages ?? []).length);
       const result = await amp(["threads", "continue", agentId, "-ox"], { stdin: text });
       if (result.code !== 0) throw failure(`amp threads continue ${agentId}`, result);
-      return { runId };
+      try {
+        const after = await exportThread(agentId);
+        const index = lastUserMessageIndex(after, text);
+        if (index !== null) return { runId: formatRunId(index) };
+      } catch {
+        // The send went through; the fallback id is upstream's best guess.
+      }
+      return { runId: fallback };
     },
 
     agentUrl(agentId: string): string {
