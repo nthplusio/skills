@@ -22,7 +22,7 @@
  * telling the agent to expand it. After `send`, `agentId` is the real id.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -227,15 +227,63 @@ export const ORCHESTRATE_LABEL = "orchestrate";
 /** The task name the root planner's title uses: `<runTag> root`. */
 export const ROOT_TASK_TITLE = "root";
 
+/** A run tag: six lowercase base36 characters. */
+export const RUN_TAG_RE = /^[a-z0-9]{6}$/;
+
+export function isRunTag(value: unknown): value is string {
+  return typeof value === "string" && RUN_TAG_RE.test(value);
+}
+
+const RUN_TAG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+
 /**
- * Six hex characters naming one run, from a sha1 of `rootSlug` and the root
- * planner's thread id. Kickoff runs before that id exists, so it tags with
- * the slug alone; the manager tags with both once `plan.selfAgentId` is a
- * thread id, and keeps whatever state.json already holds.
+ * A fresh run tag from random bytes, generated once by `kickoff`, so two
+ * runs of the same goal differ. The planner writes it to plan.json as
+ * `runTag`, and every thread of the run carries it from then on.
+ */
+export function newRunTag(): string {
+  let out = "";
+  while (out.length < 6) {
+    for (const byte of randomBytes(12)) {
+      // Rejection sampling keeps every character equally likely (252 = 7 * 36).
+      if (byte >= 252) continue;
+      out += RUN_TAG_ALPHABET[byte % 36];
+      if (out.length === 6) break;
+    }
+  }
+  return out;
+}
+
+/**
+ * The fallback tag for a plan that carries no `runTag` (one kicked off
+ * before tags existed): six hex characters from a sha1 of `rootSlug` and the
+ * root planner's thread id, the slug alone when that is unset.
  */
 export function runTagFor(rootSlug: string, selfAgentId?: string | null): string {
   const input = selfAgentId ? `${rootSlug}\n${selfAgentId}` : rootSlug;
   return createHash("sha1").update(input).digest("hex").slice(0, 6);
+}
+
+export type RunTagSource = "plan" | "state" | "hash";
+
+/**
+ * Which tag this run uses: `plan.runTag` when it is a run tag, else the one
+ * state.json already holds, else the hash fallback. A `plan.runTag` that is
+ * present but not a tag is reported in `attention` and ignored.
+ */
+export function resolveRunTag(args: {
+  planRunTag?: unknown;
+  stateRunTag?: unknown;
+  rootSlug: string;
+  selfAgentId: string | null;
+}): { tag: string; source: RunTagSource; attention: string | null } {
+  if (isRunTag(args.planRunTag)) return { tag: args.planRunTag, source: "plan", attention: null };
+  const attention =
+    args.planRunTag === undefined || args.planRunTag === null
+      ? null
+      : `plan.runTag ${JSON.stringify(args.planRunTag)} is not a run tag (${RUN_TAG_RE.source}); ignoring it`;
+  if (isRunTag(args.stateRunTag)) return { tag: args.stateRunTag, source: "state", attention };
+  return { tag: runTagFor(args.rootSlug, args.selfAgentId), source: "hash", attention };
 }
 
 /** The labels every thread of a run carries: `orchestrate` and `run-<tag>`. */

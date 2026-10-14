@@ -4,8 +4,11 @@ import {
   badThreadIdReason,
   checkRepoUrlAgainstOrigin,
   isPendingAgentId,
+  isRunTag,
   measurementGate,
+  newRunTag,
   repoKey,
+  resolveRunTag,
   resolveSelfAgentId,
   ROOT_TASK_TITLE,
   runLabels,
@@ -119,7 +122,51 @@ describe("run hygiene", () => {
   const ID = "T-01a13830-78c4-723b-8624-f4b865ca42d8";
   const OTHER = "T-01a13b70-1111-7222-8333-444455556666";
 
-  test("runTagFor is the first six hex characters of a sha1 over the slug and the root's thread id", () => {
+  test("newRunTag is six lowercase base36 characters from random bytes, fresh each time", () => {
+    const tags = new Set<string>();
+    for (let i = 0; i < 50; i++) {
+      const tag = newRunTag();
+      expect(tag).toMatch(/^[a-z0-9]{6}$/);
+      expect(isRunTag(tag)).toBe(true);
+      tags.add(tag);
+    }
+    expect(tags.size).toBeGreaterThan(45);
+    for (const bad of ["AB12CD", "ab12c", "ab12cd7", "ab-12c", "", null, 123456, "$AMP_THREAD_ID"]) {
+      expect(isRunTag(bad)).toBe(false);
+    }
+  });
+
+  test("resolveRunTag prefers plan.runTag, then state.json's tag, then the hash fallback", () => {
+    const base = { rootSlug: "demo", selfAgentId: ID };
+    expect(resolveRunTag({ ...base, planRunTag: "k7m2q9", stateRunTag: "aaaaaa" })).toEqual({
+      tag: "k7m2q9",
+      source: "plan",
+      attention: null,
+    });
+    expect(resolveRunTag({ ...base, stateRunTag: "aaaaaa" })).toEqual({
+      tag: "aaaaaa",
+      source: "state",
+      attention: null,
+    });
+    expect(resolveRunTag(base)).toEqual({
+      tag: runTagFor("demo", ID),
+      source: "hash",
+      attention: null,
+    });
+    expect(resolveRunTag({ ...base, selfAgentId: null }).tag).toBe(runTagFor("demo"));
+  });
+
+  test("a plan.runTag that is not a tag is ignored with one attention line", () => {
+    const resolved = resolveRunTag({ rootSlug: "demo", selfAgentId: ID, planRunTag: "RUN-1" });
+    expect(resolved.tag).toBe(runTagFor("demo", ID));
+    expect(resolved.source).toBe("hash");
+    expect(resolved.attention).toContain('plan.runTag "RUN-1" is not a run tag');
+    const withState = resolveRunTag({ rootSlug: "demo", selfAgentId: ID, planRunTag: "", stateRunTag: "aaaaaa" });
+    expect(withState.tag).toBe("aaaaaa");
+    expect(withState.attention).toContain("ignoring it");
+  });
+
+  test("runTagFor, the fallback, is the first six hex characters of a sha1 over the slug and the root's thread id", () => {
     const sha = (input: string) => createHash("sha1").update(input).digest("hex").slice(0, 6);
     expect(runTagFor("demo")).toBe(sha("demo"));
     expect(runTagFor("demo", null)).toBe(sha("demo"));
@@ -135,7 +182,7 @@ describe("run hygiene", () => {
     expect(runLabels(tag)).toEqual(["orchestrate", `run-${tag}`]);
     expect(runLabels(tag).every(label => /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(label))).toBe(true);
     expect(runTitle(tag, "task-a")).toBe(`${tag} task-a`);
-    expect(runTitle(runTagFor("demo"), ROOT_TASK_TITLE)).toBe(`${runTagFor("demo")} root`);
+    expect(runTitle("k7m2q9", ROOT_TASK_TITLE)).toBe("k7m2q9 root");
   });
 
   test("the loop archives a finished worker, verifier, or subplanner thread after its handoff", () => {

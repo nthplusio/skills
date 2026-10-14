@@ -16,9 +16,11 @@ import {
   agentUrl,
   checkRepoUrlAgainstOrigin,
   isThreadId,
+  isRunTag,
   loadRuntime,
   loadSDK as loadAgentApi,
   measurementGate,
+  resolveRunTag,
   resolveSelfAgentId,
   runLabels,
   runTagFor,
@@ -323,7 +325,18 @@ export class AgentManager {
         attention: [],
       };
     }
-    const tagIsNew = state.runTag === undefined;
+    // Amp port: one tag for the run. Kickoff generated it and the planner
+    // wrote it to plan.json as `runTag`; a plan without one gets the hash
+    // fallback. See resolveRunTag in ./runtime.ts.
+    const resolvedTag = resolveRunTag({
+      planRunTag: planFile.runTag,
+      stateRunTag: state.runTag,
+      rootSlug: plan.rootSlug,
+      selfAgentId: selfAgent.id,
+    });
+    if (resolvedTag.attention) slackInitAttention.push(resolvedTag.attention);
+    const tagChanged = state.runTag !== resolvedTag.tag;
+    state.runTag = resolvedTag.tag;
 
     const mgr = new AgentManager({
       workspace,
@@ -338,11 +351,13 @@ export class AgentManager {
         mgr.logAttention(line);
       }
     }
-    if (tagIsNew) {
+    if (tagChanged) {
       mgr.logAttention(
-        `run tag ${mgr.runTag}: threads of this run carry the label run-${mgr.runTag} and titles ${mgr.runTag} <task>`
+        `run tag ${mgr.runTag} (from ${resolvedTag.source === "plan" ? "plan.runTag" : resolvedTag.source === "state" ? "state.json" : "the hash fallback"}): threads of this run carry the label run-${mgr.runTag} and titles ${mgr.runTag} <task>`
       );
-      await mgr.labelRootThread();
+      // Kickoff labelled the root thread with the plan's tag already; only a
+      // fallback tag has to reach the root thread from here.
+      if (resolvedTag.source !== "plan") await mgr.labelRootThread();
     }
     // Converge handed-off rows before any verifier respawns against the placeholder.
     for (const handed of mgr.state.tasks) {
@@ -361,11 +376,11 @@ export class AgentManager {
   }
 
   /**
-   * Amp port: the root planner's own thread was spawned by kickoff before
-   * its id existed, so it carries `run-<tag of the slug alone>`. Once the
-   * manager knows both, it adds this run's label to the root thread too, so
-   * `label:run-<tag>` finds the whole run. Runs once, when the tag is first
-   * written; a failure is one attention line.
+   * Amp port: safety for a run whose tag did not come from plan.json. Kickoff
+   * labels the root thread with the tag it generated, so when the plan
+   * carries that tag the root is labelled already and this is not called;
+   * a hash fallback tag is added to the root thread here, so
+   * `label:run-<tag>` finds the whole run. A failure is one attention line.
    */
   private async labelRootThread(): Promise<void> {
     if (!this.isRootPlanner() || !this.selfAgentId) return;
@@ -1830,22 +1845,26 @@ async function ensureSlackKickoff(args: {
 // planner-authored measurement commands. `PlanSchema` is strict and lives
 // outside this port, so the key is lifted out before parsing and put back
 // on every write; the key is otherwise invisible to upstream code.
-const PLAN_EXTRA_KEYS = ["measurementsEnabled"] as const;
+// `runTag` is the run's tag, written by the root planner from its kickoff
+// prompt; see resolveRunTag in ./runtime.ts.
+const PLAN_EXTRA_KEYS = ["measurementsEnabled", "runTag"] as const;
 const planExtrasByPath = new Map<string, Record<string, unknown>>();
 
 function readPlanFile(planPath: string): {
   text: string;
   measurementsEnabled: boolean;
+  /** `plan.runTag` as written, checked by resolveRunTag; undefined when absent. */
+  runTag: unknown;
 } {
   const raw = readFileSync(planPath, "utf8");
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { text: raw, measurementsEnabled: false };
+    return { text: raw, measurementsEnabled: false, runTag: undefined };
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { text: raw, measurementsEnabled: false };
+    return { text: raw, measurementsEnabled: false, runTag: undefined };
   }
   const record = parsed as Record<string, unknown>;
   const extras: Record<string, unknown> = {};
@@ -1859,6 +1878,7 @@ function readPlanFile(planPath: string): {
   return {
     text: JSON.stringify(record),
     measurementsEnabled: extras.measurementsEnabled === true,
+    runTag: extras.runTag,
   };
 }
 
@@ -1920,7 +1940,7 @@ function readStateFile(statePath: string): AmpState {
     }
   }
   const state = parseStateJson(JSON.stringify(record), statePath) as AmpState;
-  if (typeof extras.runTag === "string" && /^[0-9a-f]{6}$/.test(extras.runTag)) {
+  if (isRunTag(extras.runTag)) {
     state.runTag = extras.runTag;
   }
   for (const task of state.tasks) {
