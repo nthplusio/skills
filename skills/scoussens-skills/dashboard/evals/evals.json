@@ -19,7 +19,7 @@
     {
       "id": 1,
       "name": "render-an-existing-run-record",
-      "prompt": "Here is the status.json an orchestration run keeps. The run already confirmed the local dashboard. Render it and check the served page.",
+      "prompt": "Here is the status.json an orchestrate loop keeps. The run already confirmed the local dashboard. Render it and check the served page.",
       "expected_output": "Skips the sheet because the producer passed a confirmed destination, runs the renderer on the given file, updates the existing page in place and runs check_served.py, reporting PASS or a recorded LIMITED result.",
       "assertions": [
         "no_second_question: does not ask the destination again",

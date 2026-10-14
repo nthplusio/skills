@@ -4,7 +4,7 @@
 The renderer checks the shape of the record: known top-level keys, value sets, well-formed IDs
 and references that resolve. It does not judge whether the record is true or whether the
 producer followed its own lifecycle rules; a producer with such rules checks them before
-rendering, as orchestration-run does with validate_run.py. It never invokes owners or checks.
+rendering. It never invokes owners or checks.
 """
 
 import argparse
@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 # The contract this renderer and references/status-contract.md describe. Bump it when a field,
 # value set or default changes; producers compare it with the version they wrote against.
-CONTRACT_VERSION = "1"
+CONTRACT_VERSION = "2"
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 # Business stages in delivery order, from the contract's machine-readable list. The first two and
 # review/verification are optional so older records still render.
@@ -60,7 +60,7 @@ GROUPS = {"attention": "Needs attention", "moving": "In progress", "resolved": "
 SCHEMA_VERSIONS = (1, 2)
 V2_FIELDS = {"schema_version", "run_id", "title", "goal", "updated_at", "config_path", "harness_name",
              "notice", "run_choices", "monitoring", "presentation", "decisions", "tasks", "evidence",
-             "history", "approvals", "skill_version", "contract_version", "follow_ups", "closed_at"}
+             "history", "approvals", "contract_version", "follow_ups", "closed_at"}
 APPROVAL_STATES = {"active": "Active", "consumed": "Used", "expired": "Expired", "revoked": "Revoked"}
 RUNTIME_STATES = {"held": "In use", "released": "Released", "retained": "Kept on purpose"}
 CODE_KINDS = {"pushed_branch": "Pushed branch", "bundle": "Git bundle", "patch": "Patch file"}

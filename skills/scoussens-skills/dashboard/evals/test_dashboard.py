@@ -73,7 +73,7 @@ OUT = "Not in scope"
 
 class DashboardTests(unittest.TestCase):
     """The page the renderer draws from the preview record. Rules about what a record may claim
-    belong to its producer; orchestration-run tests them against validate_run.py."""
+    belong to its producer, which checks them before rendering."""
 
     def setUp(self):
         self.data = json.loads(PREVIEW.read_text())
@@ -424,6 +424,11 @@ class DashboardTests(unittest.TestCase):
         self.data["feedback_coordination"] = {}
         with self.assertRaisesRegex(ValueError, "unknown top-level field feedback_coordination"):
             render(self.data)
+        # Contract 1 carried skill_version for a producer that no longer exists.
+        self.data = json.loads(PREVIEW.read_text())
+        self.data["skill_version"] = "0123abcd4567"
+        with self.assertRaisesRegex(ValueError, "unknown top-level field skill_version"):
+            render(self.data)
 
     def test_schema_1_records_render_with_extra_fields_and_no_runtime(self):
         self.data["schema_version"] = 1
@@ -470,7 +475,6 @@ class DashboardTests(unittest.TestCase):
         self.data["approvals"][1]["state"] = "active"
         self.data["monitoring"]["unchanged_scans"] = 9
         self.data["closed_at"] = "2026-10-08T15:00:00-05:00"
-        self.data["skill_version"] = "0123abcd4567"
         html = render(self.data)
         self.assertIn("<b>A2</b> Active", html)
         self.assertIn("This run closed at 2026-10-08T15:00:00-05:00", html)
@@ -485,7 +489,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), CONTRACT_VERSION)
 
     def test_minimal_status_renders(self):
-        """A producer that is not an orchestration run writes only the required fields and still gets a page."""
+        """A producer that is not an orchestrate loop writes only the required fields and still gets a page."""
         minimal = {
             "schema_version": 2, "run_id": "thread-42", "title": "Child threads of T-42", "presentation": {},
             "tasks": [

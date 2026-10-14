@@ -3,8 +3,8 @@ name: dashboard
 description: >-
   Renders one status file into a self-contained HTML status page for a
   non-technical reader and keeps it current in place at a destination the user
-  chooses. Any producer feeds it through the same contract — an orchestration
-  run, a single task that spawned subagents, a thread that spawned child
+  chooses. Any producer feeds it through the same contract — an orchestrate
+  loop, a single task that spawned subagents, a thread that spawned child
   threads. Use when asked for a "dashboard for this run", a "status page for
   these threads", or to "show me where the subagents are", and when a
   coordinating skill needs to present progress as one page. Do not load it to
@@ -30,9 +30,13 @@ contract before writing or checking a file. The required fields are
 `schema_version`, `run_id`, `title`, `tasks` and `presentation`; everything
 else is optional and the contract says what the page shows in its place.
 
-- A producer that already writes the file names its path. `orchestration-run`
-  keeps `<run_root>/<run-id>/status.json` and checks its own lifecycle rules
-  with its `validate_run.py` before calling this skill.
+- A producer that already keeps state names the status file it derives from
+  it. An orchestrate loop (the `orchestrate` skill installed from the
+  pstack-sync `orchestrate` set) keeps `.orchestrate/<slug>/state.json`, one
+  row per task with its worker's thread and branch, and `handoffs/<task>.md`,
+  what each worker reported. The planner maps those into
+  `.orchestrate/<slug>/status.json` as the [producers table](#producers)
+  shows and rewrites it from `state.json` after each loop pass.
 - A producer without a file, such as a task that spawned subagents or a thread
   that spawned child threads, writes the minimal record from the
   [producers table](#producers) and keeps it updated from what it can inspect:
@@ -74,8 +78,8 @@ The page's destination is a setting, and `explain-to` owns settings. Load
 Skip the sheet only on the grounds `settings-sheet.md` allows: every setting
 is fixed by the request or by the caller, or the user said not to ask. A
 producer that fixed the destination as well as the settings above, such as
-`orchestration-run` passing the destination its run confirmation agreed,
-leaves nothing open, so there is no sheet; name the destination in the first
+a planner passing the destination the user agreed at kickoff, leaves nothing
+open, so there is no sheet; name the destination in the first
 assumption line of the reply. The user saying where ("just open it", "publish
 it") fixes the destination the same way. One deliverable destination is not a
 skip ground: show it as a one-row sheet, because other choices list only what
@@ -148,7 +152,7 @@ optional fields and their defaults.
 
 | Producer | Rows | Minimal status file |
 | --- | --- | --- |
-| An orchestration run (`orchestration-run`) | one per ticket, with stages, work status, proof, decisions and the run's lifecycle fields | The run writes the full shape in `evals/dashboard-preview.json` and checks it with its own `validate_run.py` first. The minimal run adds `goal`, `updated_at`, `config_path`, `run_choices`, `monitoring`, `approvals`, `follow_ups`, `skill_version`, `contract_version`, `evidence`, `decisions` and `history` to the record below, and every row carries `milestones`, `runtime` and `work`. |
+| An orchestrate loop (`.orchestrate/<slug>/state.json` and `handoffs/`) | one per task in `state.json`; `owner` is the worker thread (`agentId`, its URL from the adapter, and `state` from the task's status), `work` comes from the task's handoff, and `blocked_by` from the plan's dependencies | `{"schema_version": 2, "run_id": "orchestrate-auth-rewrite", "title": "Auth rewrite", "presentation": {}, "updated_at": "2026-10-14T09:00:00Z", "tasks": [{"id": "session-store", "title": "Replace the session store", "owner": {"id": "T-42-7", "label": "Worker thread", "state": "complete", "href": "https://example.org/threads/T-42-7"}, "work": {"state": "delivered", "summary": "Signed-cookie store landed on orch/auth-rewrite/session-store.", "reason": "handoffs/session-store.md"}}, {"id": "verify-login", "title": "Verify the login flow", "owner": {"id": "T-42-9", "label": "Verifier thread", "state": "active", "activity": "Running the login matrix."}, "blocked_by": []}]}`. Fuller records add `goal`, `decisions` when a task is Andon-stopped, `evidence` from handoff links, and `history` from loop passes; `evals/dashboard-preview.json` shows every optional field. |
 | A single task that spawned subagents | one per subagent | `{"schema_version": 2, "run_id": "task-migrate-auth", "title": "Migrate the auth module", "presentation": {}, "tasks": [{"id": "research", "title": "Compare the two session stores", "owner": {"id": "subagent-1", "label": "Research subagent", "state": "complete"}, "work": {"state": "delivered", "summary": "Recommended the signed-cookie store.", "reason": "Report returned."}}, {"id": "tests", "title": "Port the session tests", "owner": {"id": "subagent-2", "label": "Test subagent", "state": "active", "activity": "Rewriting the expiry cases."}}]}` |
 | A thread that spawned child threads | one per child thread | `{"schema_version": 2, "run_id": "thread-42", "title": "Child threads of T-42", "presentation": {}, "tasks": [{"id": "T-42-1", "title": "Index last week's meetings", "owner": {"id": "thread-42-1", "label": "Meeting index thread", "state": "active", "href": "https://example.org/threads/T-42-1"}}, {"id": "T-42-2", "title": "Draft the release brief", "owner": {"id": "thread-42-2", "label": "Release brief thread", "state": "waiting"}, "work": {"state": "waiting", "summary": "Waiting for the meeting index to finish.", "reason": "The brief cites the index."}}]}` |
 

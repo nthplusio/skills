@@ -223,7 +223,7 @@ class StateTests(unittest.TestCase):
                 self.assertIn(message, result.stderr)
 
     def test_a_failure_names_exactly_one_skill(self):
-        phrases = ("run harness-discovery", "run orchestration-setup", "run state.py migrate")
+        phrases = ("run harness-discovery", "run state.py migrate")
 
         def expect(arguments, phrase):
             result = self.state(*arguments)
@@ -258,69 +258,15 @@ class StateTests(unittest.TestCase):
         self.save(discovery_document())
         expect(("resolve", "--harness", "Claude"), "run harness-discovery")
 
-        config_path = self.discovery_path.parent / "orchestration.json"
-        config = {
-            "schema_version": 3,
-            "project": {"ticket_policy": {
-                "source": "Linear", "location": "ENG", "definition": "One outcome",
-                "template": "docs/tickets.md", "id_convention": "ENG-N", "criteria_limit": 3,
-                "confirmed_from": "User confirmed",
-            }, "shared_skills": []},
-            "harnesses": {"Amp": {
-                "run_root": "runs/amp", "shared_skills": [], "confirmed_from": "User confirmed",
-                "defaults": {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60},
-            }},
-        }
-        config["harnesses"] = []
-        config_path.write_text(json.dumps(config))
-        expect(("resolve", "--harness", "Amp", "--orchestration"), "run orchestration-setup")
-
-        config = {
-            "schema_version": 3,
-            "project": {"ticket_policy": {
-                "source": "Linear", "location": "ENG", "definition": "One outcome",
-                "template": "docs/tickets.md", "id_convention": "ENG-N", "criteria_limit": 0,
-                "confirmed_from": "User confirmed",
-            }, "shared_skills": []},
-            "harnesses": {"Amp": {
-                "run_root": "runs/amp", "shared_skills": [], "confirmed_from": "User confirmed",
-                "defaults": {"finish_line": "review-ready PRs", "destination": None, "interval_seconds": 60},
-            }},
-        }
-        config_path.write_text(json.dumps(config))
-        expect(("check", "orchestration"), "run orchestration-setup")
-
-        config["schema_version"] = 1
-        config["project"]["ticket_policy"]["criteria_limit"] = 3
-        config_path.write_text(json.dumps(config))
-        expect(("check", "orchestration"), "run state.py migrate")
-
-        config_path.write_text("{not JSON")
-        expect(("resolve", "--harness", "Amp", "--orchestration"), "run orchestration-setup")
-
-        config["harnesses"]["Amp"]["run_root"] = "C:/runs/amp"
-        config["schema_version"] = 3
-        config_path.write_text(json.dumps(config))
-        repair = self.state("resolve", "--harness", "Amp", "--orchestration")
-        self.assertEqual(repair.returncode, 1)
-        self.assertIn("repair this harness profile with orchestration-setup", repair.stderr)
-        self.assertNotIn("run orchestration-setup", repair.stderr)
-        self.assertNotIn("run harness-discovery", repair.stderr)
-
-        config["harnesses"]["Amp"]["run_root"] = "runs/amp"
-        config_path.write_text(json.dumps(config))
-        result = self.state("resolve", "--harness", "Amp", "--orchestration")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr, "")
-        self.assertIn("run_root", json.loads(result.stdout))
-
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-LEGACY = FIXTURES / "orchestration-v2"
+LEGACY = FIXTURES / "orchestration"
 
 
 class MigrationTests(unittest.TestCase):
-    """Each fixture is a legacy folder exactly as an earlier version saved it."""
+    """Each fixture is a legacy folder exactly as an earlier version saved it, named after that
+    folder without its leading dot. The retired orchestration skills' config.json and run folders
+    sit beside discovery.json there; migrate moves only what a current skill reads."""
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -347,7 +293,7 @@ class MigrationTests(unittest.TestCase):
         for fixture in sorted(path for path in FIXTURES.iterdir() if path.is_dir()):
             with self.subTest(fixture=fixture.name):
                 repository = self.root / fixture.name
-                shutil.copytree(fixture, repository / ("." + fixture.name.rsplit("-v", 1)[0]))
+                shutil.copytree(fixture, repository / ("." + fixture.name))
                 migrated = subprocess.run([sys.executable, "-B", str(STATE), "migrate", "--root", str(repository)],
                                           capture_output=True, text=True)
                 self.assertEqual(migrated.returncode, 0, migrated.stderr)
@@ -355,28 +301,33 @@ class MigrationTests(unittest.TestCase):
                                          capture_output=True, text=True)
                 self.assertEqual(checked.returncode, 0, checked.stderr)
 
-    def test_migrate_moves_upgrades_and_keeps_run_files_reachable(self):
+    def test_migrate_moves_discovery_and_leaves_what_nothing_reads(self):
         summary = self.migrate()
         self.assertTrue(summary["changed"])
-        self.assertEqual(sorted(Path(target).name for _, target in summary["moved"]), ["discovery.json", "orchestration.json"])
-        self.assertEqual(summary["upgraded"], [{"file": str(self.legacy / "config.json"), "from": 2, "to": 3}])
-        self.assertEqual(summary["rebased_run_roots"], [{"harness": "Amp", "from": "runs/amp", "to": "../.orchestration/runs/amp"}])
+        self.assertEqual([Path(target).name for _, target in summary["moved"]], ["discovery.json"])
+        self.assertEqual(summary["upgraded"], [])
+        self.assertEqual(summary["left"], [str(self.legacy / "config.json"), str(self.legacy / "runs")])
         self.assertEqual((self.state_dir / "discovery.json").read_bytes(), (LEGACY / "discovery.json").read_bytes())
-        config = json.loads((self.state_dir / "orchestration.json").read_text())
-        self.assertEqual(config["schema_version"], 3)
-        self.assertNotIn("discovery_file", config)
-        self.assertFalse((self.legacy / "config.json").exists() or (self.legacy / "discovery.json").exists())
+        self.assertFalse((self.state_dir / "orchestration.json").exists())
+        self.assertFalse((self.legacy / "discovery.json").exists())
+        self.assertEqual((self.legacy / "config.json").read_bytes(), (LEGACY / "config.json").read_bytes())
         self.assertTrue(self.run_file.exists())
-        resolved = self.state("resolve", "--harness", "amp", "--orchestration")
+        resolved = self.state("resolve", "--harness", "amp")
         self.assertEqual(resolved.returncode, 0, resolved.stderr)
-        self.assertEqual(json.loads(resolved.stdout)["run_root"], str((self.legacy / "runs" / "amp").resolve()))
+        self.assertEqual(json.loads(resolved.stdout)["harness"]["slug"], "amp")
+
+    def test_an_empty_legacy_folder_is_removed(self):
+        (self.legacy / "config.json").unlink()
+        shutil.rmtree(self.run_file.parents[2])
+        self.assertTrue(self.migrate()["changed"])
+        self.assertFalse(self.legacy.exists())
 
     def test_dry_run_reports_the_changes_without_writing(self):
         summary = self.migrate("--dry-run")
         self.assertTrue(summary["dry_run"] and summary["changed"])
-        self.assertEqual(len(summary["moved"]), 2)
+        self.assertEqual(len(summary["moved"]), 1)
         self.assertFalse(self.state_dir.exists())
-        self.assertEqual((self.legacy / "config.json").read_bytes(), (LEGACY / "config.json").read_bytes())
+        self.assertEqual((self.legacy / "discovery.json").read_bytes(), (LEGACY / "discovery.json").read_bytes())
 
     def test_a_second_run_changes_nothing(self):
         self.migrate()
@@ -392,8 +343,8 @@ class MigrationTests(unittest.TestCase):
         result = self.state("migrate")
         self.assertEqual(result.returncode, 1)
         self.assertIn("both exist and differ", result.stderr)
-        self.assertTrue((self.legacy / "config.json").exists())
-        self.assertFalse((self.state_dir / "orchestration.json").exists())
+        self.assertTrue((self.legacy / "discovery.json").exists())
+        self.assertEqual(json.loads((self.state_dir / "discovery.json").read_text()), current)
 
     def test_an_identical_legacy_copy_is_removed(self):
         self.state_dir.mkdir()
@@ -401,27 +352,19 @@ class MigrationTests(unittest.TestCase):
         summary = self.migrate()
         self.assertEqual(summary["removed_duplicates"], [str(self.legacy / "discovery.json")])
         self.assertFalse((self.legacy / "discovery.json").exists())
-        self.assertTrue((self.state_dir / "orchestration.json").exists())
+        self.assertTrue((self.legacy / "config.json").exists())
 
-    def test_an_outside_configuration_is_copied_and_left_untouched(self):
-        shutil.rmtree(self.legacy)
-        outside = self.root / "project-orchestration"
-        shutil.copytree(LEGACY, outside)
-        summary = self.migrate("--from", str(outside / "config.json"))
-        self.assertEqual(len(summary["copied"]), 2)
-        self.assertEqual((outside / "config.json").read_bytes(), (LEGACY / "config.json").read_bytes())
-        config = json.loads((self.state_dir / "orchestration.json").read_text())
-        self.assertEqual(config["harnesses"]["Amp"]["run_root"], str((outside / "runs" / "amp").resolve()))
-
-    def test_a_version_1_configuration_is_left_for_the_setup_interview(self):
-        (self.legacy / "config.json").write_text(json.dumps({"schema_version": 1, "harness": "Amp"}))
-        summary = self.migrate()
-        self.assertIn("orchestration-setup interview", summary["interview"][0])
-        self.assertEqual(json.loads((self.legacy / "config.json").read_text())["schema_version"], 1)
-        self.assertTrue((self.state_dir / "discovery.json").exists())
+    def test_a_schema_without_an_upgrade_step_is_refused(self):
+        discovery = json.loads((self.legacy / "discovery.json").read_text())
+        discovery["schema_version"] = 0
+        (self.legacy / "discovery.json").write_text(json.dumps(discovery))
+        result = self.state("migrate")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no upgrade from discovery schema_version 0", result.stderr)
+        self.assertFalse(self.state_dir.exists())
 
     def test_check_and_resolve_name_the_migrate_command_for_legacy_state(self):
-        for arguments in (("check",), ("resolve", "--harness", "Amp", "--orchestration")):
+        for arguments in (("check",), ("resolve", "--harness", "Amp")):
             with self.subTest(command=arguments[0]):
                 result = self.state(*arguments)
                 self.assertEqual(result.returncode, 1)
@@ -439,7 +382,7 @@ class MigrationTests(unittest.TestCase):
         self.migrate()
         status = git("status", "--porcelain").splitlines()
         self.assertIn("R  .orchestration/discovery.json -> .nthplusio-skills/discovery.json", status)
-        self.assertIn("RM .orchestration/config.json -> .nthplusio-skills/orchestration.json", status)
+        self.assertNotIn("D  .orchestration/config.json", status)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # Status contract
 
 One JSON file is the renderer's whole input. Any producer that writes this
-shape gets the same page: an orchestration run, a single task that spawned
+shape gets the same page: an orchestrate loop, a single task that spawned
 subagents, a thread that spawned child threads. The renderer turns the file
 into one self-contained HTML page without fetching data or calling harness
 tools.
@@ -10,8 +10,7 @@ The renderer checks the record's **shape**: known top-level keys, value sets,
 well-formed IDs, and references that resolve. It does not judge whether the
 record is true, whether proof supports a claim, or whether the producer
 followed its own rules. A producer with such rules checks them before
-rendering; `orchestration-run` does that with its `validate_run.py`, and its
-`references/dashboard-data.md` holds those rules.
+rendering.
 
 `contract_version` names this document and the renderer that implements it.
 `python3 scripts/render_dashboard.py --contract-version` prints it, and every
@@ -38,8 +37,8 @@ stage list is [`assets/stages.json`](../assets/stages.json).
 
 Required:
 
-- `schema_version`: `2`. Schema 1 is the shape older `orchestration-run`
-  records used; it still renders, with unknown top-level keys ignored and
+- `schema_version`: `2`. Schema 1 is the shape records written before this
+  contract used; it still renders, with unknown top-level keys ignored and
   `approvals` and `follow_ups` not read.
 - `run_id`: stable ID, included in copied questions and copied context.
 - `title`: short plain-language string.
@@ -61,9 +60,9 @@ Optional, shown on the page when present:
   changes.
 
 Allowed and carried for the producer, not shown: `config_path`,
-`harness_name`, `run_choices`, `skill_version`, `contract_version`. The
-renderer rejects any other top-level key by name; keep extra notes in
-`history`.
+`harness_name`, `run_choices`, `contract_version`. The renderer rejects any
+other top-level key by name, including `skill_version`, which contract 1
+carried for a producer that no longer exists; keep extra notes in `history`.
 
 ## Rows
 
