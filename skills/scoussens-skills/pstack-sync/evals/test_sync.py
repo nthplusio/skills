@@ -17,8 +17,9 @@ SCRIPT = SKILL / "scripts" / "sync.py"
 sys.path.insert(0, str(SKILL / "scripts"))
 import sync  # noqa: E402
 
-NEEDS = (json.loads((SKILL / "dialects" / "cursor.json").read_text())["needs"]
-         + json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())["extra_needs"])
+NEEDS = json.loads((SKILL / "dialects" / "cursor.json").read_text())["needs"] + [
+    need for set_file in sorted((SKILL / "sets").glob("*/set.json"))
+    for need in json.loads(set_file.read_text()).get("extra_needs", [])]
 MAPPED = {need["id"] for need in NEEDS if need.get("discovery")}
 
 
@@ -487,6 +488,44 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(stale["stale_ports"], {"runner": ["alpha/scripts/run.sh"]})
         self.assertEqual((self.skills / "alpha" / "scripts" / "run.sh").read_text(), "#!/bin/sh\necho test-harness\n")
         self.assertEqual(self.run_sync()["stale_ports"], {})
+
+    def test_pending_ports_are_reported_and_not_installed(self):
+        files = {**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/run.sh": "#!/bin/sh\necho cursor\n"}
+        self.upstream(files)
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ports"] = [{"name": "runner", "skill": "alpha", "files": ["scripts/run.sh"]}]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        for _ in range(2):
+            report = self.run_sync()
+            self.assertEqual(report["ports_pending"], {"runner": ["alpha/scripts/run.sh"]})
+            self.assertFalse((self.skills / "alpha" / "scripts" / "run.sh").exists())
+            self.assertTrue((self.skills / "alpha" / "SKILL.md").exists())
+        self.assertIn("Outstanding", self.run_sync("status"))
+
+    def test_a_set_can_exclude_and_ignore_upstream_files(self):
+        files = {**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/__tests__/x.test.ts": "test\n",
+                 f"{sync.SUBDIR}/alpha/scripts/run.sh": "#!/bin/sh\n"}
+        self.upstream(files)
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["exclude"] = ["verify"]
+        cfg["ignore"] = ["scripts/__tests__/*"]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        report = self.run_sync()
+        self.assertNotIn("verify", report["added"])
+        self.assertEqual(report["dependencies"]["excluded"], {"verify": ["deslop/SKILL.md"]})
+        self.assertEqual(report["ignored_count"], 1)
+        self.assertFalse((self.skills / "alpha" / "scripts" / "__tests__").exists())
+        self.assertTrue((self.skills / "alpha" / "scripts" / "run.sh").exists())
+        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["exclude"], ["verify"])
+
+    def test_profile_gaps_offer_the_shipped_row(self):
+        self.upstream()
+        self.run_sync()
+        (self.skills / sync.SELF / "harness" / "test.md").write_text(
+            PROFILE + "| `loop` | keep | the test harness loops as written | seed |\n")
+        report = self.run_sync()
+        self.assertIn("loop", report["profile_gaps"])
+        self.assertTrue(report["profile_gaps_in_seed"]["loop"].startswith("| `loop` | keep |"))
 
     def test_dialect_and_set_needs_merge(self):
         self.upstream()
