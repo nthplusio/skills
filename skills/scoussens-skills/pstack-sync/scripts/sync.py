@@ -81,7 +81,8 @@ DEFAULT_REPO = os.path.dirname(os.path.dirname(HERE))
 SELF = "pstack-sync"
 DEFAULT_SET = "pstack"
 SET_DEFAULTS = {"ref": "main", "plugin_marker": ".cursor-plugin/plugin.json", "dialect": "cursor",
-                "agents_dir": None, "collision_prefix": None, "extra_needs": [], "ports": []}
+                "agents_dir": None, "collision_prefix": None, "extra_needs": [], "ports": [],
+                "exclude": [], "ignore": []}
 
 
 def load_set(repo, name):
@@ -353,6 +354,11 @@ def compose_profile(shipped, durable):
     return head.group(1) + ("\n".join(rows) + "\n" if rows else "")
 
 
+def parse_profile_rows(text):
+    """{need id: the full table row} for every row the profile holds."""
+    return {m.group(1): m.group(0) for m in re.finditer(rf"(?m)^\|\s*`?([\w-]+)`?\s*\|\s*(?:{'|'.join(SUPPORT)})\b.*$", text)}
+
+
 def parse_profile(text):
     """{need id: support} from rows like | `subagents` | substitute | ... |"""
     rows = {}
@@ -581,7 +587,8 @@ class State:
         for k, v in (("accept", []), ("global", []), ("files", {})):
             self.local.setdefault(k, type(v)())
         self.managed = norm_skills(self.manifest["skills"])
-        self.exclude = set(self.manifest.get("exclude", []))
+        self.manifest_exclude = sorted(set(self.manifest.get("exclude", [])))  # the install's own, hand edited
+        self.exclude = set(self.manifest_exclude) | set(SET["exclude"])  # applied together; the set's stays in set.json
         self.needs = load_needs(repo)
         self.local_profile_path = os.path.join(self.durable, "harness", f"{harness}.local.md")
         self.profile_exists = os.path.exists(self.profile_path)
@@ -776,7 +783,7 @@ def cmd_sync(a, st):
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
               "needs_security_review": [], "needs_adaptation": {}, "dependencies": {},
-              "ports_pending": {}, "stale_ports": {}}
+              "ports_pending": {}, "stale_ports": {}, "ignored_count": 0}
     new_skills = {}
     prev_fetched = []
 
@@ -817,6 +824,14 @@ def cmd_sync(a, st):
         recorded = entry.get("files", {})
         for rel, (mode, obj) in sorted(up["files"].items()):
             key = f"{name}/{rel}"
+            if any(fnmatch.fnmatch(rel, g) for g in SET["ignore"]):
+                report["ignored_count"] += 1
+                stale_path = os.path.join(dst, rel)
+                if os.path.exists(stale_path):
+                    changed = True
+                    if not a.dry_run:
+                        os.remove(stale_path)
+                continue
             port = port_of(name, rel)
             if port:
                 path = os.path.join(dst, rel)
@@ -894,7 +909,7 @@ def cmd_sync(a, st):
             for dp, _, fns in os.walk(dst):
                 for fn in fns:
                     rel = os.path.relpath(os.path.join(dp, fn), dst)
-                    if rel not in up["files"]:
+                    if rel not in up["files"] or any(fnmatch.fnmatch(rel, g) for g in SET["ignore"]):
                         changed = True
                         if not a.dry_run:
                             os.remove(os.path.join(dp, fn))
@@ -916,6 +931,8 @@ def cmd_sync(a, st):
     flagged = {nid for files in report["needs_adaptation"].values() for p in files.values()
                for nid in p.get("needs", {})}
     report["profile_gaps"] = st.gaps(flagged)
+    seed_rows = parse_profile_rows(read_text(os.path.join(st.repo, SELF, "harness", f"{a.harness}.md")))
+    report["profile_gaps_in_seed"] = {g: seed_rows[g] for g in report["profile_gaps"] if g in seed_rows}
     report["harness_facts"] = st.flagged_facts(flagged)
     report["dependencies"] = st.dependency_report(found, report["needs_adaptation"])
 
@@ -931,7 +948,7 @@ def cmd_sync(a, st):
             with open(os.path.join(state_dir, fn), "wb") as f:
                 f.write(texts[obj])
         st.manifest = {"set": SET["name"], "upstream": f"{UPSTREAM}/tree/{a.ref}/{SUBDIR}", "commit": sha,
-                       "harness": a.harness, "exclude": sorted(st.exclude), "skills": new_skills}
+                       "harness": a.harness, "exclude": st.manifest_exclude, "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
         save_json(st.transform_path, st.transforms)
     print(json.dumps(report, indent=2))
@@ -973,6 +990,8 @@ def cmd_record(a, st):
             if picks[name] is not None and rel not in picks[name]:
                 continue
             key = f"{name}/{rel}"
+            if any(fnmatch.fnmatch(rel, g) for g in SET["ignore"]):
+                continue
             if port_of(name, rel):
                 files[rel] = entry.get("files", {}).get(rel, {"upstream": obj, "installed": None, "port": port_of(name, rel)["name"]})
                 continue

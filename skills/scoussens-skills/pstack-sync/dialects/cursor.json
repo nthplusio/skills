@@ -239,6 +239,74 @@
       "discovery": [
         "helpers.definitions"
       ]
+    },
+    {
+      "id": "cursor-agent-urls",
+      "uses": "Links to a cloud agent, a review, or the dashboard on cursor.com.",
+      "cursor": [
+        "https://cursor.com/agents/<id>",
+        "review.cursor.com",
+        "cursor.com/dashboard"
+      ],
+      "markers": [
+        "cursor\\.com/agents",
+        "review\\.cursor\\.com",
+        "cursor\\.com/dashboard",
+        "cursor\\.com\\b"
+      ],
+      "question": "How does the harness link to a running worker and to a review?",
+      "fallback": "Replace with the harness's thread or run URL, or cut the link."
+    },
+    {
+      "id": "cursor-sdk",
+      "uses": "Spawning, polling, and reading cloud agents through the Cursor SDK, its auth, and its error taxonomy.",
+      "cursor": [
+        "cursor-sdk",
+        "CURSOR_API_KEY",
+        "CursorAgentError",
+        "Agent.create",
+        "RunResult"
+      ],
+      "markers": [
+        "cursor-sdk",
+        "CURSOR_API_KEY",
+        "CursorAgentError",
+        "\\bAgent\\.(create|list|listRuns|getRun|resume)\\b",
+        "\\bRunResult\\b"
+      ],
+      "question": "What runs an isolated worker on a repository, waits for it, and returns its final message?",
+      "fallback": "Name the harness's agent runtime adapter and its auth; cut SDK type names from prose."
+    },
+    {
+      "id": "cursor-tools",
+      "uses": "Cursor's own agent tools named in instructions.",
+      "cursor": [
+        "Shell",
+        "AwaitShell",
+        "ManagePullRequest"
+      ],
+      "markers": [
+        "\\bAwaitShell\\b",
+        "\\bManagePullRequest\\b",
+        "\\bShell default backgrounds\\b"
+      ],
+      "question": "What does the harness use to run a foreground command and to open a pull request?",
+      "fallback": "Name the harness's shell tool and its PR path (for example gh)."
+    },
+    {
+      "id": "cursor-models",
+      "uses": "Cursor model ids named as defaults or examples.",
+      "cursor": [
+        "claude-opus-4-8",
+        "composer-2"
+      ],
+      "markers": [
+        "\\bclaude-opus-4-\\d\\b",
+        "\\bcomposer-\\d\\b",
+        "\\bgpt-5\\.\\d-[a-z]+\\b"
+      ],
+      "question": "How does the harness name a model or mode for a worker?",
+      "fallback": "Use the harness's mode names, or inherit the parent's."
     }
   ]
 }

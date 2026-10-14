@@ -1,0 +1,58 @@
+{
+  "_doc": "Cursor's orchestrate plugin: a root planner decomposes a goal into tasks that isolated workers, subplanners, and verifiers take, talking upward through handoff files in git. The loop (scripts/) calls the Cursor SDK; those files are ports that a harness adapter replaces. Tickets are optional inputs the root planner reads. cursor-sdk is excluded because it documents the Cursor SDK the ports replace; upstream's tests are ignored until the adapter brings its own.",
+  "upstream": "https://github.com/cursor/plugins",
+  "ref": "main",
+  "root_plugin": "orchestrate",
+  "skills_subdir": "orchestrate/skills",
+  "plugin_marker": ".cursor-plugin/plugin.json",
+  "dialect": "cursor",
+  "agents_dir": "orchestrate-agents",
+  "collision_prefix": "orchestrate-",
+  "extra_needs": [
+    {
+      "id": "slack-signal",
+      "uses": "The Andon stop signal and the run thread mirror go through Slack reactions and messages; the loop works without Slack.",
+      "cursor": [
+        ":rotating_light:",
+        "SLACK_BOT_TOKEN"
+      ],
+      "markers": [
+        ":rotating_light:",
+        "SLACK_BOT_TOKEN",
+        "SLACK_CHANNEL_ID"
+      ],
+      "question": "Does the harness have a team-chat channel the loop can mirror to and read a stop signal from?",
+      "fallback": "Keep the text; Slack is optional and the file-based Andon source works without it."
+    }
+  ],
+  "ports": [
+    {
+      "name": "agent-runtime",
+      "skill": "orchestrate",
+      "files": [
+        "scripts/core/agent-manager.ts",
+        "scripts/cli/task.ts",
+        "scripts/cli/inspect.ts",
+        "scripts/cli/forensics.ts",
+        "scripts/tools/nudge-root.ts",
+        "scripts/tools/probe-models.ts"
+      ],
+      "interface": "spawn, getRun, wait, stream, cancel, list, sendFollowUp, agentUrl"
+    },
+    {
+      "name": "models",
+      "skill": "orchestrate",
+      "files": [
+        "scripts/models.ts"
+      ],
+      "interface": "models, probe"
+    }
+  ],
+  "exclude": [
+    "cursor-sdk"
+  ],
+  "ignore": [
+    "scripts/__tests__/*",
+    "scripts/__tests__/**"
+  ]
+}
