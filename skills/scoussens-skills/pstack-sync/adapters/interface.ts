@@ -33,8 +33,14 @@ export interface RunHandle {
  */
 export type RunStatus = "running" | "finished" | "error" | "cancelled";
 
+/** What the agent is in the orchestrate tree. Informational: the runtime records it and the bridge may use it. */
+export type NodeType = "planner" | "subplanner" | "worker" | "verifier";
+
+/** How a spawn reached the harness: through the bridge plugin (nested under the calling thread) or the CLI. */
+export type SpawnVia = "bridge" | "cli";
+
 export interface SpawnArgs {
-  /** Display name for the agent; Amp uses it as the thread title. */
+  /** Display name for the agent; the thread title when `title` is unset. */
   name: string;
   /** Repository the agent works in. */
   repoUrl: string;
@@ -44,9 +50,20 @@ export interface SpawnArgs {
   model: string;
   /** First message; the whole task brief. */
   prompt: string;
+  /** Labels to put on the agent, beside the runtime's own default label. Each must match `[A-Za-z0-9][A-Za-z0-9-]*`. */
+  labels?: string[];
+  /** Thread title; the runtime sets it at spawn when it can and renames the thread to it once the thread has a message. */
+  title?: string;
+  nodeType?: NodeType;
+  /** The run's tag, so the runtime can name the thread `<runTag> <name>` when `title` is unset. */
+  runTag?: string;
 }
 
-export interface SpawnResult extends RunHandle {}
+export interface SpawnResult extends RunHandle {
+  via: SpawnVia;
+  /** Why the spawn took the path it did when that is worth an attention line (the bridge was skipped or refused). */
+  note?: string;
+}
 
 export interface RunSnapshot {
   status: RunStatus;
@@ -92,6 +109,12 @@ export interface AgentRuntime {
   stream(run: RunHandle): AsyncIterable<StreamEvent>;
   /** Stop the run and retire the agent. */
   cancel(agentId: string, runId: string): Promise<void>;
+  /** Retire a finished agent without marking its run cancelled; a later `wait` still reads its final message. */
+  archive(agentId: string): Promise<void>;
+  /** Add labels to an existing agent; each must match the label pattern. */
+  label(agentId: string, labels: string[]): Promise<void>;
+  /** Retitle an existing agent; fails while the agent has no message yet. */
+  rename(agentId: string, title: string): Promise<void>;
   /** Most recent agents, newest first. */
   list(args: { limit: number }): Promise<AgentSummary[]>;
   /** The agent's current or last run, or null when it has none. */
@@ -163,6 +186,9 @@ export interface Run {
   readonly id: string;
   readonly agentId: string;
   readonly status: RunStatus;
+  /** Set on the run a spawn returned: which path created the agent and, when worth noting, why. */
+  readonly via?: SpawnVia;
+  readonly spawnNote?: string;
   stream(): AsyncIterable<SDKMessage>;
   wait(): Promise<RunResult>;
   cancel(): Promise<void>;
@@ -180,6 +206,11 @@ export interface AgentCreateOptions {
   apiKey?: string;
   name?: string;
   model?: ModelSelection;
+  /** Port additions, passed through to `SpawnArgs` by the facade. */
+  labels?: string[];
+  title?: string;
+  nodeType?: NodeType;
+  runTag?: string;
   cloud?: {
     repos: { url: string; startingRef?: string }[];
     autoCreatePR?: boolean;

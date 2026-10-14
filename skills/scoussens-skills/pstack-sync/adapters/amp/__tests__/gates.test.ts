@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   badThreadIdReason,
   checkRepoUrlAgainstOrigin,
@@ -6,6 +7,11 @@ import {
   measurementGate,
   repoKey,
   resolveSelfAgentId,
+  ROOT_TASK_TITLE,
+  runLabels,
+  runTagFor,
+  runTitle,
+  shouldArchiveAfterHandoff,
 } from "../agent-runtime/scripts/core/runtime.ts";
 
 const REPO = "https://github.com/nthplusio/skills";
@@ -106,5 +112,53 @@ describe("resolveSelfAgentId", () => {
       "<agent-id> is the unexpanded placeholder $AMP_THREAD_ID"
     );
     expect(badThreadIdReason("--last", "--agent-id")).toBe('--agent-id "--last" is not an Amp thread id');
+  });
+});
+
+describe("run hygiene", () => {
+  const ID = "T-01a13830-78c4-723b-8624-f4b865ca42d8";
+  const OTHER = "T-01a13b70-1111-7222-8333-444455556666";
+
+  test("runTagFor is the first six hex characters of a sha1 over the slug and the root's thread id", () => {
+    const sha = (input: string) => createHash("sha1").update(input).digest("hex").slice(0, 6);
+    expect(runTagFor("demo")).toBe(sha("demo"));
+    expect(runTagFor("demo", null)).toBe(sha("demo"));
+    expect(runTagFor("demo", ID)).toBe(sha(`demo\n${ID}`));
+    expect(runTagFor("demo", ID)).toMatch(/^[0-9a-f]{6}$/);
+    expect(runTagFor("demo", ID)).not.toBe(runTagFor("demo"));
+    expect(runTagFor("demo", ID)).not.toBe(runTagFor("demo", OTHER));
+    expect(runTagFor("demo", ID)).toBe(runTagFor("demo", ID));
+  });
+
+  test("every thread of a run carries the orchestrate label, the run label, and a tagged title", () => {
+    const tag = runTagFor("demo", ID);
+    expect(runLabels(tag)).toEqual(["orchestrate", `run-${tag}`]);
+    expect(runLabels(tag).every(label => /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(label))).toBe(true);
+    expect(runTitle(tag, "task-a")).toBe(`${tag} task-a`);
+    expect(runTitle(runTagFor("demo"), ROOT_TASK_TITLE)).toBe(`${runTagFor("demo")} root`);
+  });
+
+  test("the loop archives a finished worker, verifier, or subplanner thread after its handoff", () => {
+    for (const type of ["worker", "verifier", "subplanner"]) {
+      expect(
+        shouldArchiveAfterHandoff({ type, resultStatus: "finished", agentId: OTHER, selfAgentId: ID })
+      ).toBe(true);
+    }
+  });
+
+  test("and never the root planner, an errored run, a missing thread, or a thread archived already", () => {
+    const finished = { type: "worker", resultStatus: "finished", agentId: OTHER, selfAgentId: ID };
+    expect(shouldArchiveAfterHandoff({ ...finished, agentId: ID })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, type: "planner" })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, resultStatus: "error" })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, resultStatus: "cancelled" })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, resultStatus: null })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, agentId: null })).toBe(false);
+    expect(shouldArchiveAfterHandoff({ ...finished, agentId: "$AMP_THREAD_ID" })).toBe(false);
+    expect(
+      shouldArchiveAfterHandoff({ ...finished, archivedAt: "2026-10-14T02:14:24.000Z" })
+    ).toBe(false);
+    // Without a known root id, a task thread is still archived.
+    expect(shouldArchiveAfterHandoff({ ...finished, selfAgentId: null })).toBe(true);
   });
 });

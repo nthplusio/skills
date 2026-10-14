@@ -8,6 +8,10 @@ import {
   agentUrl,
   isAgentRuntimeError,
   loadSDK,
+  ROOT_TASK_TITLE,
+  runLabels,
+  runTagFor,
+  runTitle,
 } from "../core/runtime.ts";
 import { resolveModelSelection } from "../models.ts";
 import {
@@ -191,6 +195,9 @@ export function registerTaskCommands(program: Command): void {
             opts.dispatcherName,
             slackChannel
           );
+          // Amp port: the root thread's id does not exist yet, so its tag
+          // is the slug's alone; the loop adds the run's own label later.
+          const runTag = runTagFor(rootSlug);
           const agent = await Agent.create({
             name: `${rootSlug}-root`,
             cloud: {
@@ -198,6 +205,10 @@ export function registerTaskCommands(program: Command): void {
               autoCreatePR: false,
             },
             model: resolveModelSelection(opts.model),
+            labels: runLabels(runTag),
+            title: runTitle(runTag, ROOT_TASK_TITLE),
+            nodeType: "planner",
+            runTag,
           });
           // The thread id is known only after send(); until then
           // agent.agentId is `$AMP_THREAD_ID`, which the orb resolves.
@@ -505,11 +516,16 @@ export async function findActiveRootPlanner(
   const list = await agentApi.list({ runtime: "cloud", limit: 50 });
   // Exact match, not startsWith: a prefix slug would otherwise adopt another
   // goal's `<slug>-root` planner (e.g. "auth" adopting "auth-ui-root").
-  const rootPlannerName = `${rootSlug}-root`;
+  // Amp port: the thread is titled `<runTag> root`; the upstream name still
+  // matches planners spawned before titles carried the tag.
+  const rootPlannerNames = new Set([
+    `${rootSlug}-root`,
+    runTitle(runTagFor(rootSlug), ROOT_TASK_TITLE),
+  ]);
   for (const item of listItems(list)) {
     const name = stringField(item, "name");
     if (!name) continue;
-    if (name !== rootPlannerName) continue;
+    if (!rootPlannerNames.has(name)) continue;
     const createdAt = timeMs(field(item, "createdAt"));
     if (createdAt === null || nowMs - createdAt > MAX_BOOT_MS) continue;
     const agentId =

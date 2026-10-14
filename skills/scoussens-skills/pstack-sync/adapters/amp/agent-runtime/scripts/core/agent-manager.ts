@@ -10,15 +10,20 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { Run, RunResult, SDKAgent, SDKMessage } from "./runtime.ts";
+import type { Run, RunResult, SDKAgent, SDKMessage, SpawnVia } from "./runtime.ts";
 import {
   type AgentApi,
   agentUrl,
   checkRepoUrlAgainstOrigin,
   isThreadId,
+  loadRuntime,
   loadSDK as loadAgentApi,
   measurementGate,
   resolveSelfAgentId,
+  runLabels,
+  runTagFor,
+  runTitle,
+  shouldArchiveAfterHandoff,
 } from "./runtime.ts";
 import { createSlackAdapter } from "../adapters/index.ts";
 import { createSlackWebClient } from "../adapters/slack/client.ts";
@@ -61,6 +66,18 @@ const STUCK_ESCALATION_MS = 1_800_000;
 const WAIT_RECOVERY_RETRY_BACKOFF_MS = 5_000;
 
 export type RespawnSource = "local-cli" | "self-planner" | "script-auto-retry";
+
+// Amp port: what state.json carries beyond upstream's strict schema. The run
+// tag names this run on Amp (labels `run-<tag>`, titles `<tag> <task>`); a
+// task row records which path spawned its thread and when the loop archived
+// it. `StateSchema` and `TaskStateSchema` live outside the port, so the keys
+// are lifted out before parsing and written back with the rest (see
+// readStateFile), the way plan.json's `measurementsEnabled` is handled.
+export type AmpState = State & { runTag?: string };
+export type AmpTaskState = TaskState & {
+  via?: SpawnVia;
+  archivedAt?: string | null;
+};
 
 export interface RunInspection {
   task: string;
@@ -191,6 +208,8 @@ export class AgentManager {
   /** Amp port: `plan.selfAgentId` once resolved; null when the plan holds the
    *  unexpanded `$AMP_THREAD_ID` placeholder or no thread id at all. */
   readonly selfAgentId: string | null;
+  /** Amp port: the tag on every thread of this run; see runTagFor in ./runtime.ts. */
+  readonly runTag: string;
 
   private constructor(args: {
     workspace: string;
@@ -207,6 +226,8 @@ export class AgentManager {
     this.slackAdapter = args.slackAdapter;
     this.measurements = args.measurements;
     this.selfAgentId = resolveSelfAgentId(args.plan.selfAgentId).id;
+    this.runTag = (args.state as AmpState).runTag ?? runTagFor(args.plan.rootSlug, this.selfAgentId);
+    (args.state as AmpState).runTag = this.runTag;
     this.planPath = join(args.workspace, "plan.json");
     this.statePath = join(args.workspace, "state.json");
     this.handoffsDir = join(args.workspace, "handoffs");
@@ -290,9 +311,10 @@ export class AgentManager {
     const handoffsDir = join(workspace, "handoffs");
     mkdirSync(handoffsDir, { recursive: true });
 
-    let state: State;
-    if (existsSync(statePath)) {
-      state = parseStateJson(readFileSync(statePath, "utf8"), statePath);
+    let state: AmpState;
+    const firstLoad = !existsSync(statePath);
+    if (!firstLoad) {
+      state = readStateFile(statePath);
       reconcileStateWithPlan(state, plan);
     } else {
       state = {
@@ -301,6 +323,7 @@ export class AgentManager {
         attention: [],
       };
     }
+    const tagIsNew = state.runTag === undefined;
 
     const mgr = new AgentManager({
       workspace,
@@ -314,6 +337,12 @@ export class AgentManager {
       if (!mgr.state.attention.some(a => a.message === line)) {
         mgr.logAttention(line);
       }
+    }
+    if (tagIsNew) {
+      mgr.logAttention(
+        `run tag ${mgr.runTag}: threads of this run carry the label run-${mgr.runTag} and titles ${mgr.runTag} <task>`
+      );
+      await mgr.labelRootThread();
     }
     // Converge handed-off rows before any verifier respawns against the placeholder.
     for (const handed of mgr.state.tasks) {
@@ -329,6 +358,25 @@ export class AgentManager {
 
   get tasks(): TaskState[] {
     return this.state.tasks;
+  }
+
+  /**
+   * Amp port: the root planner's own thread was spawned by kickoff before
+   * its id existed, so it carries `run-<tag of the slug alone>`. Once the
+   * manager knows both, it adds this run's label to the root thread too, so
+   * `label:run-<tag>` finds the whole run. Runs once, when the tag is first
+   * written; a failure is one attention line.
+   */
+  private async labelRootThread(): Promise<void> {
+    if (!this.isRootPlanner() || !this.selfAgentId) return;
+    try {
+      const rt = await loadRuntime();
+      await rt.label(this.selfAgentId, runLabels(this.runTag));
+    } catch (err) {
+      this.logAttention(
+        `root thread ${this.selfAgentId}: labelling run-${this.runTag} failed: ${truncate(errorMessage(err), 200)}`
+      );
+    }
   }
 
   getTask(name: string): TaskState | undefined {
@@ -688,6 +736,11 @@ export class AgentManager {
             repos: [{ url: this.plan.repoUrl, startingRef }],
             autoCreatePR: def.openPR ?? false,
           },
+          // Amp port: run hygiene; see runTagFor in ./runtime.ts.
+          labels: runLabels(this.runTag),
+          title: runTitle(this.runTag, def.name),
+          nodeType: def.type,
+          runTag: this.runTag,
         });
         // Persist IDs only after send() succeeds; a crash before run creation
         // should recover as an orphaned spawn.
@@ -719,7 +772,12 @@ export class AgentManager {
           agentId: agent.agentId,
           runId: run.id,
           parentAgentId: this.selfAgentId,
+          via: run.via ?? "cli",
+          archivedAt: null,
         });
+        this.logAttention(
+          `${def.name}: spawned ${agent.agentId} via ${run.via ?? "cli"}${run.spawnNote ? ` (${run.spawnNote})` : ""}`
+        );
         if (subAttempt > 1) {
           this.logAttention(
             `${def.name}: transient-retry succeeded on sub-attempt ${subAttempt}`
@@ -787,6 +845,8 @@ export class AgentManager {
       finishedAt: null,
       startingRef: resume ? s.branch : s.startingRef,
       note: `respawned by ${source} (was ${prevStatus}; attempts=${s.attempts ?? 0})`,
+      via: undefined,
+      archivedAt: null,
     });
     this.logAttention(
       `${taskName}: respawned by ${source} (was ${prevStatus})${resume ? `; resuming from ${s.branch}` : ""}`
@@ -1137,6 +1197,40 @@ export class AgentManager {
           `${s.name}: recordHandoffVerification threw: ${errorMessage(err)}`
         );
       }
+      await this.archiveAfterHandoff(s);
+    }
+  }
+
+  /**
+   * Amp port: a worker, verifier, or subplanner thread is retired the moment
+   * its handoff is on disk, so a run leaves no open threads behind but the
+   * root planner. The export still reads, so `inspect` and the dashboard keep
+   * working; a respawn opens a fresh thread anyway. Never the root (it is not
+   * a task row, and `shouldArchiveAfterHandoff` refuses `selfAgentId` too),
+   * never an errored run, and a failure is one attention line.
+   */
+  private async archiveAfterHandoff(s: TaskState): Promise<void> {
+    const row = s as AmpTaskState;
+    if (
+      !shouldArchiveAfterHandoff({
+        type: row.type,
+        resultStatus: row.resultStatus,
+        agentId: row.agentId,
+        selfAgentId: this.selfAgentId,
+        archivedAt: row.archivedAt,
+      })
+    ) {
+      return;
+    }
+    try {
+      const rt = await loadRuntime();
+      await rt.archive(row.agentId as string);
+      this.touch(row, { archivedAt: new Date().toISOString() });
+      this.logAttention(`${s.name}: archived ${row.agentId} after its handoff`);
+    } catch (err) {
+      this.logAttention(
+        `${s.name}: archiving ${row.agentId} after its handoff failed (the thread stays open; cleanup.ts can retire it): ${truncate(errorMessage(err), 200)}`
+      );
     }
   }
 
@@ -1334,7 +1428,7 @@ export class AgentManager {
     }
   }
 
-  touch(task: TaskState, patch: Partial<TaskState>): void {
+  touch(task: TaskState, patch: Partial<AmpTaskState>): void {
     const prevStatus = task.status;
     const prevAgentId = task.agentId;
     Object.assign(task, patch, { lastUpdate: new Date().toISOString() });
@@ -1777,6 +1871,63 @@ function writePlanAtomic(planPath: string, plan: Plan): void {
 
 function planIsRootPlanner(plan: Plan): boolean {
   return !plan.andonStateRef && !plan.andonStatePath;
+}
+
+// Amp port: state.json's port-added keys (see AmpState and AmpTaskState).
+// `StateSchema` is strict and lives outside the port, so they are lifted out
+// before parsing and put back on the parsed rows; `saveState` serialises the
+// rows as they are, so the keys survive every write.
+const STATE_EXTRA_KEYS = ["runTag"] as const;
+const TASK_EXTRA_KEYS = ["via", "archivedAt"] as const;
+
+function readStateFile(statePath: string): AmpState {
+  const raw = readFileSync(statePath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return parseStateJson(raw, statePath);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return parseStateJson(raw, statePath);
+  }
+  const record = parsed as Record<string, unknown>;
+  const extras: Record<string, unknown> = {};
+  for (const key of STATE_EXTRA_KEYS) {
+    if (key in record) {
+      extras[key] = record[key];
+      delete record[key];
+    }
+  }
+  const taskExtras = new Map<string, Partial<AmpTaskState>>();
+  if (Array.isArray(record.tasks)) {
+    for (const row of record.tasks) {
+      if (typeof row !== "object" || row === null) continue;
+      const rec = row as Record<string, unknown>;
+      const lifted: Partial<AmpTaskState> = {};
+      for (const key of TASK_EXTRA_KEYS) {
+        if (!(key in rec)) continue;
+        const value = rec[key];
+        delete rec[key];
+        if (key === "via" && (value === "bridge" || value === "cli")) lifted.via = value;
+        if (key === "archivedAt" && (typeof value === "string" || value === null)) {
+          lifted.archivedAt = value;
+        }
+      }
+      if (typeof rec.name === "string" && Object.keys(lifted).length > 0) {
+        taskExtras.set(rec.name, lifted);
+      }
+    }
+  }
+  const state = parseStateJson(JSON.stringify(record), statePath) as AmpState;
+  if (typeof extras.runTag === "string" && /^[0-9a-f]{6}$/.test(extras.runTag)) {
+    state.runTag = extras.runTag;
+  }
+  for (const task of state.tasks) {
+    const lifted = taskExtras.get(task.name);
+    if (lifted) Object.assign(task, lifted);
+  }
+  return state;
 }
 
 const KICKOFF_GOAL_FALLBACK_CHARS = 200;

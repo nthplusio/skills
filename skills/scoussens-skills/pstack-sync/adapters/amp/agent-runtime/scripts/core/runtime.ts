@@ -22,6 +22,7 @@
  * telling the agent to expand it. After `send`, `agentId` is the real id.
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -39,6 +40,8 @@ import type {
   RunStatus,
   SDKAgent,
   SDKMessage,
+  SpawnArgs,
+  SpawnVia,
 } from "../../../pstack-sync/adapters/interface.ts";
 
 export type {
@@ -46,10 +49,12 @@ export type {
   AgentRuntime,
   ModelCatalog,
   ModelSelection,
+  NodeType,
   Run,
   RunResult,
   SDKAgent,
   SDKMessage,
+  SpawnVia,
 } from "../../../pstack-sync/adapters/interface.ts";
 
 export const PENDING_AGENT_ID = "$AMP_THREAD_ID";
@@ -211,6 +216,60 @@ export function repoKey(remote: string): string | null {
   return `${url.hostname.toLowerCase()}${path.toLowerCase()}`;
 }
 
+// ---------------------------------------------------------------------------
+// Run hygiene: how one run's threads are told apart on Amp. The manager
+// writes the tag to state.json, every spawn carries the labels and a title
+// built from it, and the loop archives a task's thread once its handoff is
+// written.
+// ---------------------------------------------------------------------------
+
+export const ORCHESTRATE_LABEL = "orchestrate";
+/** The task name the root planner's title uses: `<runTag> root`. */
+export const ROOT_TASK_TITLE = "root";
+
+/**
+ * Six hex characters naming one run, from a sha1 of `rootSlug` and the root
+ * planner's thread id. Kickoff runs before that id exists, so it tags with
+ * the slug alone; the manager tags with both once `plan.selfAgentId` is a
+ * thread id, and keeps whatever state.json already holds.
+ */
+export function runTagFor(rootSlug: string, selfAgentId?: string | null): string {
+  const input = selfAgentId ? `${rootSlug}\n${selfAgentId}` : rootSlug;
+  return createHash("sha1").update(input).digest("hex").slice(0, 6);
+}
+
+/** The labels every thread of a run carries: `orchestrate` and `run-<tag>`. */
+export function runLabels(runTag: string): string[] {
+  return [ORCHESTRATE_LABEL, `run-${runTag}`];
+}
+
+/** The title of a run's thread: `<tag> <task>`. */
+export function runTitle(runTag: string, task: string): string {
+  return `${runTag} ${task}`;
+}
+
+/**
+ * Whether the loop archives a task's thread right after its handoff is
+ * written. Only a thread that finished: an errored run may still be working
+ * (the wait deadline) or wants a person in it, and `cleanup.ts` sweeps the
+ * rest later. Never the root planner, which is `selfAgentId` and not a task
+ * row, and never twice.
+ */
+export function shouldArchiveAfterHandoff(args: {
+  type: string;
+  resultStatus: string | null;
+  agentId: string | null;
+  selfAgentId: string | null;
+  archivedAt?: string | null;
+}): boolean {
+  if (args.type !== "worker" && args.type !== "verifier" && args.type !== "subplanner") return false;
+  if (args.resultStatus !== "finished") return false;
+  if (!isThreadId(args.agentId)) return false;
+  if (args.selfAgentId && args.agentId === args.selfAgentId) return false;
+  if (args.archivedAt) return false;
+  return true;
+}
+
 const THREAD_ID_NOTE =
   "Thread id: `$AMP_THREAD_ID` in this prompt is an environment variable your orb sets to this thread's own id. Expand it (`echo $AMP_THREAD_ID`) wherever the prompt uses it, including values you write into plan.json.";
 
@@ -325,6 +384,10 @@ export function buildAgentApi(rt: AgentRuntime): AgentApi {
         repoUrl: repo.url,
         startingRef: repo.startingRef ?? "",
         model: opts.model?.id ?? "inherit",
+        ...(opts.labels === undefined ? {} : { labels: opts.labels }),
+        ...(opts.title === undefined ? {} : { title: opts.title }),
+        ...(opts.nodeType === undefined ? {} : { nodeType: opts.nodeType }),
+        ...(opts.runTag === undefined ? {} : { runTag: opts.runTag }),
       });
     },
     async resume(agentId: string): Promise<SDKAgent> {
@@ -359,7 +422,7 @@ class AmpAgent implements SDKAgent {
 
   constructor(
     private readonly rt: AgentRuntime,
-    private readonly spawnArgs: { name: string; repoUrl: string; startingRef: string; model: string },
+    private readonly spawnArgs: Omit<SpawnArgs, "prompt">,
     existingId?: string
   ) {
     this.threadId = existingId ?? null;
@@ -378,7 +441,7 @@ class AmpAgent implements SDKAgent {
     }
     const spawned = await this.rt.spawn({ ...this.spawnArgs, prompt: text });
     this.threadId = spawned.agentId;
-    return new AmpRun(this.rt, spawned.agentId, spawned.runId, "running");
+    return new AmpRun(this.rt, spawned.agentId, spawned.runId, "running", spawned.via, spawned.note);
   }
 
   async [Symbol.asyncDispose](): Promise<void> {}
@@ -391,7 +454,9 @@ class AmpRun implements Run {
     private readonly rt: AgentRuntime,
     readonly agentId: string,
     readonly id: string,
-    status: RunStatus
+    status: RunStatus,
+    readonly via?: SpawnVia,
+    readonly spawnNote?: string
   ) {
     this.current = status;
   }
