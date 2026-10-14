@@ -25,7 +25,7 @@ type TaskModule = {
   withCiNote(prompt: string): string;
   registerTaskCommands(program: FakeCommand): void;
 };
-type CoreModule = { __resetRuntimeForTests(): void };
+type CoreModule = { __resetRuntimeForTests(): void; goalLabel(rootSlug: string): string };
 
 /** Just enough of commander for `registerTaskCommands` to hand over its actions. */
 class FakeCommand {
@@ -168,6 +168,8 @@ function calls(): string[][] {
 }
 
 async function kickoff(goal: string, opts: Partial<KickoffOpts> = {}): Promise<{ code: number | undefined; out: Record<string, unknown> }> {
+  printed = [];
+  exits = [];
   const program = new FakeCommand();
   taskModule.registerTaskCommands(program);
   const action = program.actions.get("kickoff");
@@ -204,5 +206,86 @@ describe("the root prompt on Amp", () => {
     const spawn = calls().find(c => c[0] === "-ox");
     expect(spawn).toBeDefined();
     expect(spawn?.[spawn.indexOf("--title") + 1]).toBe(`${out.runTag} root`);
+    const label = calls().find(c => c[0] === "threads" && c[1] === "label");
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", `run-${out.runTag}`, coreModule.goalLabel("Add a sparkline to the dashboard")]);
+  });
+});
+
+/** The root thread as `amp threads search` and `amp threads export` show it. */
+function rootThread(state: string, replied: boolean): ThreadExport {
+  const messages: ThreadExport["messages"] = [
+    { role: "user", content: [{ type: "text", text: "You are the root planner for: demo" }], createdAt: "2026-10-14T02:14:29.000Z" },
+  ];
+  if (replied) {
+    messages.push({
+      role: "assistant",
+      content: [{ type: "text", text: "Opened the pull request; done." }],
+      createdAt: "2026-10-14T02:40:44.000Z",
+      state: { type: "complete", stopReason: "end_turn" },
+    });
+  }
+  return { id: ID, title: "ab12cd root", messages, meta: { lastKnownAgentState: { state }, deleted: false } };
+}
+
+function listed(file: string, updatedAt: string, title = "ab12cd root"): void {
+  const key = file === "list.json" ? "updated" : "updatedAt";
+  writeFileSync(join(dir, file), JSON.stringify([{ id: ID, title, [key]: updatedAt, messageCount: 1 }]));
+}
+
+describe("kickoff adoption", () => {
+  const GOAL = "Add a sparkline to the dashboard";
+  const now = () => new Date().toISOString();
+
+  test("a second kickoff for the same goal adopts the running root found by its goal label", async () => {
+    listed("search-labels.json", now());
+    writeFileSync(join(dir, `export-${ID}-1.json`), JSON.stringify(rootThread("working", false)));
+    const { code, out } = await kickoff(GOAL);
+    expect(code).toBe(0);
+    expect(out).toEqual({ agentId: ID, runId: "m0", status: "running", url: `https://ampcode.com/threads/${ID}`, adopted: true });
+    expect(printed[0]).toBe(`adopting ${ID}`);
+    const search = calls().find(c => c[0] === "threads" && c[1] === "search");
+    expect(search?.[2]).toBe(`label:orchestrate label:${coreModule.goalLabel(GOAL)} archived:false`);
+    expect(coreModule.goalLabel(GOAL)).toMatch(/^goal-[0-9a-f]{12}$/);
+    expect(coreModule.goalLabel("another goal")).not.toBe(coreModule.goalLabel(GOAL));
+    expect(calls().some(c => c[0] === "-ox")).toBe(false);
+    // Nothing fell through to the title listing.
+    expect(calls().some(c => c[0] === "threads" && c[1] === "list")).toBe(false);
+  });
+
+  test("spawns a new root when the labelled one has finished, is older than the boot window, or --force is given", async () => {
+    listed("search-labels.json", now());
+    writeFileSync(join(dir, `export-${ID}-1.json`), JSON.stringify(rootThread("idle", true)));
+    expect((await kickoff(GOAL)).out.adopted).toBeUndefined();
+    expect(calls().filter(c => c[0] === "-ox")).toHaveLength(1);
+
+    rmSync(join(dir, "calls.log"));
+    rmSync(join(dir, `count-${ID}`));
+    listed("search-labels.json", "2026-10-14T01:00:00.000Z");
+    writeFileSync(join(dir, `export-${ID}-1.json`), JSON.stringify(rootThread("working", false)));
+    expect((await kickoff(GOAL)).out.adopted).toBeUndefined();
+    expect(calls().filter(c => c[0] === "-ox")).toHaveLength(1);
+    // Too old to adopt: its export was never read.
+    expect(calls().some(c => c[0] === "threads" && c[1] === "export")).toBe(false);
+
+    rmSync(join(dir, "calls.log"));
+    listed("search-labels.json", now());
+    expect((await kickoff(GOAL, { force: true })).out.adopted).toBeUndefined();
+    expect(calls()[0][0]).toBe("-ox");
+    expect(calls().some(c => c[1] === "search" || c[1] === "list")).toBe(false);
+  });
+
+  test("falls back to upstream's exact title match for a root spawned before the goal label existed", async () => {
+    listed("list.json", now(), `${GOAL}-root`);
+    writeFileSync(join(dir, `export-${ID}-1.json`), JSON.stringify(rootThread("working", false)));
+    const { out } = await kickoff(GOAL);
+    expect(out.adopted).toBe(true);
+    expect(out.agentId).toBe(ID);
+    const kinds = calls().map(c => c.slice(0, 2).join(" "));
+    expect(kinds.slice(0, 2)).toEqual(["threads search", "threads list"]);
+    // A prefix of the slug is not a match.
+    rmSync(join(dir, "calls.log"));
+    rmSync(join(dir, `count-${ID}`));
+    listed("list.json", now(), `${GOAL}-ui-root`);
+    expect((await kickoff(GOAL)).out.adopted).toBeUndefined();
   });
 });

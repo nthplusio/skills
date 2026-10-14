@@ -25,7 +25,8 @@
  *   archive       amp threads archive <id>; a finished run still reads as finished
  *   label, rename amp threads label <id> <labels...>, amp threads rename <id> <title>
  *   sendFollowUp  amp threads continue <id> -ox, with the text on stdin
- *   list          amp threads list --json --limit <n>
+ *   list          amp threads list --json --limit <n>; with labels,
+ *                 amp threads search "label:<a> label:<b> archived:false" --json --limit <n>
  *   agentUrl      https://ampcode.com/threads/<id>
  *
  * Run ids are `m<index>`: the index of the user message that started the
@@ -871,17 +872,23 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       if (result.code !== 0) throw failure(`amp threads rename ${agentId}`, result);
     },
 
-    async list(args: { limit: number }): Promise<AgentSummary[]> {
-      const result = await amp(
-        ["threads", "list", "--json", "--limit", String(Math.max(1, args.limit))],
-        { timeoutMs: 60_000 }
-      );
-      if (result.code !== 0) throw failure("amp threads list", result);
+    async list(args: { limit: number; labels?: string[] }): Promise<AgentSummary[]> {
+      const limit = String(Math.max(1, args.limit));
+      const labels = labelArgs(args.labels ?? []);
+      // `threads list` cannot filter by label; `threads search` can, and its
+      // query is built only from labels that passed the label check.
+      const argv =
+        labels.length > 0
+          ? ["threads", "search", `${labels.map(l => `label:${l}`).join(" ")} archived:false`, "--json", "--limit", limit]
+          : ["threads", "list", "--json", "--limit", limit];
+      const what = `amp threads ${argv[1]}`;
+      const result = await amp(argv, { timeoutMs: 60_000 });
+      if (result.code !== 0) throw failure(what, result);
       let parsed: unknown;
       try {
         parsed = JSON.parse(result.stdout);
       } catch (err) {
-        throw new AgentRuntimeError("amp threads list returned non-JSON output", {
+        throw new AgentRuntimeError(`${what} returned non-JSON output`, {
           isRetryable: true,
           cause: err,
         });

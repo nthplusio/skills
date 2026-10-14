@@ -6,9 +6,11 @@ import { DEFAULT_MAX_RUNTIME_SEC, runOrchestrateLoop } from "../core/loop.ts";
 import {
   type AgentApi,
   agentUrl,
+  goalLabel,
   isAgentRuntimeError,
   loadSDK,
   newRunTag,
+  ORCHESTRATE_LABEL,
   ROOT_TASK_TITLE,
   runLabels,
   runTitle,
@@ -41,7 +43,11 @@ export const MAX_BOOT_MS = 30 * 60 * 1000;
 const ACTIVE_ROOT_RUN_STATUSES = new Set(["pending", "running"]);
 
 type AgentListApi = {
-  list: (opts: { runtime: "cloud"; limit: number }) => Promise<unknown>;
+  list: (opts: {
+    runtime: "cloud";
+    limit: number;
+    labels?: string[];
+  }) => Promise<unknown>;
   listRuns?: (
     agentId: string,
     opts: { runtime: "cloud"; limit: number }
@@ -206,7 +212,9 @@ export function registerTaskCommands(program: Command): void {
               autoCreatePR: false,
             },
             model: resolveModelSelection(opts.model),
-            labels: runLabels(runTag),
+            // The goal label is what a second kickoff for the same goal
+            // adopts by; see findActiveRootPlanner.
+            labels: [...runLabels(runTag), goalLabel(rootSlug)],
             title: runTitle(runTag, ROOT_TASK_TITLE),
             nodeType: "planner",
             runTag,
@@ -515,22 +523,43 @@ export function registerTaskCommands(program: Command): void {
     );
 }
 
+/**
+ * The running root planner for `rootSlug`, if one started within the last
+ * 30 minutes, so a second `kickoff` for the same goal adopts it. Amp port: a
+ * root thread is titled `<runTag> root` with a random tag, so the title no
+ * longer names the goal; kickoff labels the root `goal-<hash of the slug>`
+ * (`goalLabel`) and this looks for an unarchived thread carrying that label
+ * and `orchestrate` first. Upstream's exact-title match on `<rootSlug>-root`
+ * stays as the fallback for roots spawned before the label existed.
+ */
 export async function findActiveRootPlanner(
   agentApi: AgentListApi,
   rootSlug: string,
   nowMs: number = Date.now()
 ): Promise<ActiveRootPlanner | null> {
+  const labelled = await agentApi.list({
+    runtime: "cloud",
+    limit: 50,
+    labels: [ORCHESTRATE_LABEL, goalLabel(rootSlug)],
+  });
+  const byLabel = await firstActiveRoot(agentApi, listItems(labelled), nowMs);
+  if (byLabel) return byLabel;
   const list = await agentApi.list({ runtime: "cloud", limit: 50 });
   // Exact match, not startsWith: a prefix slug would otherwise adopt another
   // goal's `<slug>-root` planner (e.g. "auth" adopting "auth-ui-root").
-  // Amp port: a root thread is titled `<runTag> root` with a random tag, so
-  // its title no longer names the goal and only planners spawned before
-  // tags existed can be adopted this way; see the adapter README's Limits.
   const rootPlannerName = `${rootSlug}-root`;
-  for (const item of listItems(list)) {
-    const name = stringField(item, "name");
-    if (!name) continue;
-    if (name !== rootPlannerName) continue;
+  const named = listItems(list).filter(
+    item => stringField(item, "name") === rootPlannerName
+  );
+  return firstActiveRoot(agentApi, named, nowMs);
+}
+
+async function firstActiveRoot(
+  agentApi: AgentListApi,
+  items: Record<string, unknown>[],
+  nowMs: number
+): Promise<ActiveRootPlanner | null> {
+  for (const item of items) {
     const createdAt = timeMs(field(item, "createdAt"));
     if (createdAt === null || nowMs - createdAt > MAX_BOOT_MS) continue;
     const agentId =
@@ -544,7 +573,7 @@ export async function findActiveRootPlanner(
       agentId,
       runId: stringField(run, "id") ?? null,
       status,
-      name,
+      name: stringField(item, "name") ?? "",
     };
   }
   return null;

@@ -850,6 +850,26 @@ describe("getRun, latestRun, list, agentUrl", () => {
     expect(call).toEqual(["threads", "list", "--json", "--limit", "5"]);
   });
 
+  test("list with labels searches for unarchived threads carrying every label", async () => {
+    writeFileSync(
+      join(dir, "search-labels.json"),
+      JSON.stringify([{ id: ID, title: "ab12cd root", updatedAt: "2026-10-14T18:33:23.168Z" }])
+    );
+    const rt = createAmpRuntime({ env });
+    const items = await rt.list({ limit: 50, labels: ["orchestrate", "goal-0123456789ab"] });
+    expect(items).toEqual([
+      { agentId: ID, name: "ab12cd root", updatedAt: "2026-10-14T18:33:23.168Z", messageCount: null },
+    ]);
+    expect(calls()).toEqual([
+      ["threads", "search", "label:orchestrate label:goal-0123456789ab archived:false", "--json", "--limit", "50"],
+    ]);
+    await expect(rt.list({ limit: 5, labels: ["--last"] })).rejects.toBeInstanceOf(AgentRuntimeError);
+    expect(calls()).toHaveLength(1);
+    // An empty label list is the plain listing.
+    await rt.list({ limit: 5, labels: [] });
+    expect(calls()[1]).toEqual(["threads", "list", "--json", "--limit", "5"]);
+  });
+
   test("agentUrl is the ampcode.com thread page", () => {
     const rt = createAmpRuntime({ env });
     expect(rt.agentUrl(ID)).toBe(`https://ampcode.com/threads/${ID}`);

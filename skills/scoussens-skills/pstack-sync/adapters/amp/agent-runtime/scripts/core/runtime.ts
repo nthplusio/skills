@@ -291,6 +291,17 @@ export function runLabels(runTag: string): string[] {
   return [ORCHESTRATE_LABEL, `run-${runTag}`];
 }
 
+/**
+ * The label that ties a root planner's thread to its goal: `goal-` and the
+ * first twelve hex characters of a sha1 of the root slug. The slug itself
+ * is free text (the goal's first line) and cannot be a label, and a label
+ * has to stay short (the bridge caps them at 32 characters). `kickoff` puts
+ * it on the root thread and finds a running root for the same goal by it.
+ */
+export function goalLabel(rootSlug: string): string {
+  return `goal-${createHash("sha1").update(rootSlug).digest("hex").slice(0, 12)}`;
+}
+
 /** The title of a run's thread: `<tag> <task>`. */
 export function runTitle(runTag: string, task: string): string {
   return `${runTag} ${task}`;
@@ -447,8 +458,11 @@ export function buildAgentApi(rt: AgentRuntime): AgentApi {
       const snapshot = await rt.getRun(opts.agentId, runId);
       return new AmpRun(rt, opts.agentId, runId, snapshot.status);
     },
-    async list(opts: { limit: number }): Promise<{ items: AgentListItem[] }> {
-      const items = await rt.list({ limit: opts.limit });
+    async list(opts: { limit: number; labels?: string[] }): Promise<{ items: AgentListItem[] }> {
+      const items = await rt.list({
+        limit: opts.limit,
+        ...(opts.labels === undefined ? {} : { labels: opts.labels }),
+      });
       return {
         items: items.map(item => ({
           id: item.agentId,
