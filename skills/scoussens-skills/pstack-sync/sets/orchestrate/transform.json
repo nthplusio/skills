@@ -15,11 +15,11 @@
           },
           {
             "find": "**Required reading: the `cursor-sdk` skill ([cursor/plugins/cursor-sdk](https://github.com/cursor/plugins/tree/main/cursor-sdk)).** Spawning, auth, and the error taxonomy live there. Don't reimplement what that skill already documents.\n",
-            "replace": "**Required reading: the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR).** Spawning, auth, and the error taxonomy live there. Don't reimplement what that document already covers.\n"
+            "replace": "**Required reading: the Amp agent runtime adapter's documentation, `pstack-sync/adapters/amp/README.md` in the pack this skill was installed from.** Spawning, auth, and the error taxonomy live there. Don't reimplement what that document already covers.\n"
           },
           {
             "find": "- `CURSOR_API_KEY` must be a personal/user key. Create it from [Cursor Dashboard > Integrations](https://cursor.com/dashboard/integrations), then read `cursor-sdk` Auth before using it.\n",
-            "replace": "- Auth is the `amp` CLI's login; there is no API key variable. The CLI must be signed in before kickoff.\n"
+            "replace": "- Auth is the `amp` CLI's login or an access token in `AMP_API_KEY`. One of the two must be in place before kickoff.\n"
           },
           {
             "find": "2. **Planners don't know who picks up their tasks.** The script routes each task to a cloud agent. The planner's mental model stays at the task level.\n",
@@ -75,7 +75,7 @@
         "transforms": [
           {
             "find": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground. The Shell default backgrounds the loop and breaks the heartbeat when your turn ends.\n",
-            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground with the shell tool, which blocks until the loop exits. A backgrounded loop breaks the heartbeat when your turn ends.\n"
+            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` with the shell tool, which blocks until the command exits or the tool's own timeout ends it: pass `--max-runtime-sec` smaller than that timeout and rerun the same command whenever it exits with code 100, or run the loop as a managed service (`amp orb service start`) and poll it. A backgrounded loop breaks the heartbeat when your turn ends.\n"
           },
           {
             "find": "- `unknown`: read the `Last activity` and `SDK error` lines; if no signal, treat as transient and retry as-is; abandon if it fails again.\n",
@@ -92,7 +92,7 @@
         "transforms": [
           {
             "find": "Your cloud agent id is `{{agentId}}`. Set `plan.selfAgentId` in plan.json to that string so spawns record `parentAgentId` and `kill-tree --agent-id` can target this planner.\n",
-            "replace": "When the goal names tickets (an issue URL or ID), read each ticket and write its ID and title into the `brief` of the task that covers it; with no tickets, build the plan from the goal alone.\n\nYour thread id is `{{agentId}}`. Set `plan.selfAgentId` in plan.json to that string so spawns record `parentAgentId` and `kill-tree --agent-id` can target this planner.\n"
+            "replace": "When the goal names tickets (an issue URL or ID), read each ticket and write its ID and title into the `brief` of the task that covers it; with no tickets, build the plan from the goal alone.\n\nYour thread id is `{{agentId}}`: on Amp that is the value of your `AMP_THREAD_ID` environment variable, so run `echo $AMP_THREAD_ID` to read it. Set `plan.selfAgentId` in plan.json to that value, never to the literal text `$AMP_THREAD_ID` (the loop treats the literal as unset), so spawns record `parentAgentId` and `kill-tree --agent-id` can target this planner.\n"
           }
         ],
         "accepted": []
@@ -114,7 +114,7 @@
           },
           {
             "find": "**Lineage.** If `{{selfAgentId}}` is set, put `plan.selfAgentId = \"{{selfAgentId}}\"` in plan.json (SDK does not surface it elsewhere). Details: `references/spawning.md`.\n",
-            "replace": "**Lineage.** If `{{selfAgentId}}` is set, put `plan.selfAgentId = \"{{selfAgentId}}\"` in plan.json (the runtime does not surface it elsewhere). Details: `references/spawning.md`.\n"
+            "replace": "**Lineage.** If `{{selfAgentId}}` is set, put `plan.selfAgentId = \"{{selfAgentId}}\"` in plan.json, expanding it first when it reads `$AMP_THREAD_ID` (that is your orb's environment variable; run `echo $AMP_THREAD_ID`), because the loop treats the literal as unset. Details: `references/spawning.md`.\n"
           },
           {
             "find": "Model selection: pick `tasks[].model` per task by capability. Available models:\n",
@@ -156,7 +156,7 @@
           },
           {
             "find": "`CURSOR_API_KEY` must be a user API key, not a team key. Auth sourcing precedence is documented in the `cursor-sdk` skill (https://github.com/cursor/plugins/tree/main/cursor-sdk). Don't bake keychain lookup into the kickoff CLI itself; cloud-agent VMs have no keychain.\n",
-            "replace": "Auth is the `amp` CLI's login; there is no API key variable. The auth check is documented in the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR). Don't bake keychain lookup into the kickoff CLI itself; orb threads have no keychain.\n"
+            "replace": "Auth is the `amp` CLI's login or an access token in `AMP_API_KEY`. The auth check is documented in the Amp agent runtime adapter's documentation, `pstack-sync/adapters/amp/README.md` in the pack this skill was installed from. Don't bake keychain lookup into the kickoff CLI itself; orb threads have no keychain.\n"
           }
         ],
         "accepted": []
@@ -198,7 +198,7 @@
         "transforms": [
           {
             "find": "1. Load the [cursor-sdk plugin](https://github.com/cursor/plugins/tree/main/cursor-sdk) for auth, spawning, and `CursorAgentError` vs. `RunResult.status === \"error\"`.\n",
-            "replace": "1. Read the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR) for auth, spawning, and the difference between a runtime error and a run that finished with status error.\n"
+            "replace": "1. Read the Amp agent runtime adapter's documentation, `pstack-sync/adapters/amp/README.md` in the pack this skill was installed from, for auth, spawning, and the difference between a runtime error and a run that finished with status error.\n"
           },
           {
             "find": "Slack visibility uses `SLACK_BOT_TOKEN`. Required scopes:\n",
@@ -218,7 +218,7 @@
           },
           {
             "find": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n",
-            "replace": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`; without Slack, the file-based Andon source stands in for the reaction. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n"
+            "replace": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Without a Slack kickoff, the root polls `andon.json` in its workspace instead, the file-based source the Amp adapter ships: write `{\"reason\": \"<why>\"}` there to raise Andon and delete the file to clear it; the `andon raise` and `andon clear` commands below still need Slack. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n"
           },
           {
             "find": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on cloud-agent display titles.\n",
@@ -231,7 +231,7 @@
         "transforms": [
           {
             "find": "Contract between `plan.json` entries and the cloud agents the script spawns. Mechanics (auth, `CursorAgentError` vs `RunResult.status === \"error\"`) live in `cursor-sdk/SKILL.md`. Read that first.\n",
-            "replace": "Contract between `plan.json` entries and the orb threads the script spawns. Mechanics (auth, a runtime error vs a run that finished with status error) live in the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR). Read that first.\n"
+            "replace": "Contract between `plan.json` entries and the orb threads the script spawns. Mechanics (auth, a runtime error vs a run that finished with status error) live in the Amp agent runtime adapter's documentation, `pstack-sync/adapters/amp/README.md` in the pack this skill was installed from. Read that first.\n"
           },
           {
             "find": "Cloud agents own their working branch. `state.json` starts with a deterministic placeholder (`orch/<rootSlug>/<task-name>`) so pre-spawn state is readable, then replaces it with the branch reported by `Run.git.branches[].branch` after handoff. Kebab-case is enforced (`TASK_NAME_RE` in `orchestrate.ts`) so task names still feed filesystem paths and prompt text without escaping. No auto-managed integration branch. Branches live independently until a merge task consolidates them (see `handoffs.md` → \"Merges are tasks\").\n",
@@ -279,7 +279,7 @@
           },
           {
             "find": "Each `state.tasks[]` row's `parentAgentId` is the spawning planner's cloud agent id from `plan.selfAgentId` at spawn. `kill-tree --agent-id` walks those parent links downward. If the planner never set `selfAgentId`, children get `parentAgentId: null` and that subtree is skipped for a scoped kill; omit `--agent-id` to cancel the whole tree.\n",
-            "replace": "Each `state.tasks[]` row's `parentAgentId` is the spawning planner's thread id from `plan.selfAgentId` at spawn. `kill-tree --agent-id` walks those parent links downward. If the planner never set `selfAgentId`, children get `parentAgentId: null` and that subtree is skipped for a scoped kill; omit `--agent-id` to cancel the whole tree.\n"
+            "replace": "Each `state.tasks[]` row's `parentAgentId` is the spawning planner's thread id from `plan.selfAgentId` at spawn. `kill-tree --agent-id` walks those parent links downward. If the planner never set `selfAgentId`, children get `parentAgentId: null` and that subtree is skipped for a scoped kill; omit `--agent-id` to cancel the whole tree. On Amp a planner's own id is the value of its `AMP_THREAD_ID` environment variable (`echo $AMP_THREAD_ID`); the loop treats the literal text `$AMP_THREAD_ID` in `plan.selfAgentId` as unset and logs one attention line, and `nudge-root.ts` and `kill-tree --agent-id` refuse it.\n"
           },
           {
             "find": "Spawn templates use the child's id as `{{selfAgentId}}` and the parent's as `{{parentAgentId}}`. The id from `Agent.create` is valid before `send()`; the cloud client sends it at create time and rejects a mismatched server response.\n",
