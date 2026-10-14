@@ -71,8 +71,13 @@ choices, and proof assessments are restored before assigning work.
 
 For a new run, propose one compact confirmation using the user's request and
 profile defaults. Include selected tickets, target stage, publication scope,
-dashboard destination and audience, scan interval and idle-scan limit. Ask only
-for unresolved run choices. A complete
+scan interval and idle-scan limit, each with a bold default. Ask the dashboard
+destination in the same message through the settings sheet the `dashboard`
+skill's step 2 runs (`explain-to`'s `references/settings-sheet.md`): reader
+and interaction are fixed as that step says, the destination is the open row,
+and the sheet's rule for a calling skill that asks its own questions in the
+same message bundles the confirmation's other questions with it, so one *go*
+settles everything. Ask only for unresolved run choices. A complete
 explicit request already confirms them. A request for only a consequential
 decision can defer presentation as step 5 describes. Save confirmed values in
 this run with the supplied answer receipt or actual message link, leaving setup
@@ -368,11 +373,11 @@ Use the run-specific presentation choice confirmed in step 2 or restored on resu
   and update the local status record; leave dashboard generation, writes and
   hosting held. An old page stays unchanged and is not the current display.
 - Otherwise, reuse the confirmed destination without asking again. If still
-  missing, ask one focused question offering available destinations and audiences.
-  Ask separately from shared-action approvals. A setup preference, template
-  value, or existing path alone is not a run-specific user answer. This run's
-  confirmation replaces the `dashboard` skill's own settings sheet; pass the
-  confirmed destination so that skill does not ask again.
+  missing, ask it through the settings sheet as step 2 describes, separately
+  from shared-action approvals. A setup preference, template value, or
+  existing path alone is not a run-specific user answer. Pass the agreed
+  destination to the `dashboard` skill as a fixed setting; with every setting
+  fixed, that skill shows no sheet.
 - After an actual destination choice, save its values and clear the presentation
   hold. Render through the `dashboard` skill and update that same artifact in
   place. Only this branch runs the renderer below.

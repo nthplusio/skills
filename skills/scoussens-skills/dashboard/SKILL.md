@@ -71,17 +71,21 @@ The page's destination is a setting, and `explain-to` owns settings. Load
   audience that includes the people who need to read it is the
   recommendation. The user decides.
 
-Skip the sheet, and name the destination in the first assumption line of
-the reply, when the producer passes a destination the user already confirmed
-(an orchestration run's confirmed run choices), when the user already said
-where ("just open it", "publish it"), or when only one destination is
-deliverable. A setup preference, a template value or an existing path is not
-a choice. When the user asks only for a decision and leaves the destination
-unanswered, keep the page unrendered and let the producer record the hold;
-an old page stays unchanged and is not the current display.
+Skip the sheet only on the grounds `settings-sheet.md` allows: every setting
+is fixed by the request or by the caller, or the user said not to ask. A
+producer that fixed the destination as well as the settings above, such as
+`orchestration-run` passing the destination its run confirmation agreed,
+leaves nothing open, so there is no sheet; name the destination in the first
+assumption line of the reply. The user saying where ("just open it", "publish
+it") fixes the destination the same way. One deliverable destination is not a
+skip ground: show it as a one-row sheet, because other choices list only what
+you could build. A setup preference, a template value or an existing path is
+not a choice. When the user asks only for a decision and leaves the
+destination unanswered, keep the page unrendered and let the producer record
+the hold; an old page stays unchanged and is not the current display.
 
-**Done when** you hold one destination, agreed through the sheet or left as
-the only one available, and its `auto_refresh` capability.
+**Done when** you hold one destination, agreed through the sheet or fixed by
+the request or the caller, and its `auto_refresh` capability.
 
 ## Step 3 — Render
 

@@ -356,6 +356,17 @@ class InstallTests(unittest.TestCase):
         for skill in state.COORDINATOR_SKILLS:
             self.assertIn(f"`{skill}`", sentence)
 
+    def test_the_destination_is_asked_through_the_settings_sheet_and_passed_as_fixed(self):
+        """Neither skill asks the destination its own way or skips the sheet on a ground the sheet does
+        not allow (audit finding 9)."""
+        run = (RUNNER / "SKILL.md").read_text()
+        dashboard = (DASHBOARD / "SKILL.md").read_text()
+        self.assertIn("settings-sheet.md", run)
+        self.assertIn("as a fixed setting", run)
+        self.assertNotIn("replaces the `dashboard` skill's own settings sheet", run)
+        self.assertNotIn("only one destination is", dashboard)
+        self.assertIn("One deliverable destination is not a\nskip ground", dashboard)
+
     def test_the_runner_names_the_dashboard_skill_for_rendering(self):
         text = (RUNNER / "SKILL.md").read_text()
         self.assertIn("validate_run.py", text)
