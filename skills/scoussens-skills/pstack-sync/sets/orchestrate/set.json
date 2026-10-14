@@ -38,6 +38,7 @@
         "scripts/core/andon-file.ts",
         "scripts/core/runtime.ts",
         "scripts/package.json",
+        "scripts/tools/dashboard.ts",
         "scripts/tools/nudge-root.ts",
         "scripts/tools/probe-models.ts"
       ],
