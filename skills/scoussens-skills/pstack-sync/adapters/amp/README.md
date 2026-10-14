@@ -108,6 +108,8 @@ ORCHESTRATE_REPO_URL=https://github.com/<owner>/<repo> bun scripts/cli.ts run <w
 
 which spawns one thread per ready task, waits, and writes `<workspace>/handoffs/<task>.md`. Add `ORCHESTRATE_MEASUREMENTS=1` only when you have read the `measurements[].command` lines in that plan.json and want the loop to run them.
 
+When `run` returns with every task terminal and `plan.selfAgentId` names a thread, it reads that thread's state through the facade (`listRuns`, which is `finished` only when the export's `meta.lastKnownAgentState` is `idle` after an assistant reply) and, if the thread is idle, sends one follow-up naming the terminal tasks so the planner reads the handoffs and continues; that is the case when the loop was started as an orb service or in the background and the planner's turn ended. A thread that is working is running the loop in the foreground and gets nothing, an unknown state is left alone, and `attention.log` records the decision either way as `planner nudge sent` or `planner nudge skipped` (`nudgeIdlePlanner` in `agent-runtime/scripts/cli/task.ts`, tested in `__tests__/planner-nudge.test.ts`).
+
 Tests: `bun test` in this directory (`adapters/amp`), against `__tests__/fake-amp/amp`.
 
 ## Follow-ups outside the port

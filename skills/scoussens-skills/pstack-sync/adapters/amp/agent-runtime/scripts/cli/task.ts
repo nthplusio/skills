@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import type { Command } from "commander";
 import { createSlackAdapter } from "../adapters/index.ts";
 import { DEFAULT_MAX_RUNTIME_SEC, runOrchestrateLoop } from "../core/loop.ts";
-import { agentUrl, isAgentRuntimeError, loadSDK } from "../core/runtime.ts";
+import {
+  type AgentApi,
+  agentUrl,
+  isAgentRuntimeError,
+  loadSDK,
+} from "../core/runtime.ts";
 import { resolveModelSelection } from "../models.ts";
 import {
   parsePlanTaskJson,
@@ -99,6 +104,23 @@ export function registerTaskCommands(program: Command): void {
           rootMode: opts.root,
           exitOnError: !opts.exitOnAllDone,
         });
+        // Amp port: wake the planner when the loop ends with nothing left
+        // to run and the planner's turn is already over; see nudgeIdlePlanner.
+        if (allTasksTerminal(mgr.tasks)) {
+          try {
+            await nudgeIdlePlanner({
+              agentApi: await loadSDK(),
+              selfAgentId: mgr.selfAgentId,
+              tasks: mgr.tasks,
+              workspace,
+              rootSlug: mgr.plan.rootSlug,
+              rootMode: opts.root ?? false,
+              logAttention: line => mgr.logAttention(line),
+            });
+          } catch (err) {
+            mgr.logAttention(`planner nudge failed: ${errorMessage(err)}`);
+          }
+        }
         process.exit(code);
       }
     );
@@ -505,6 +527,103 @@ export async function findActiveRootPlanner(
     };
   }
   return null;
+}
+
+/**
+ * Amp port: the planner's wake-up after the loop. `planner.md` tells the
+ * planner to run `run` in the foreground, but a loop started as an orb
+ * service or in the background outlives the planner's turn, and nothing
+ * tells an idle thread that its last task finished (the first real run
+ * waited nine minutes for a person to say so). So when the loop returns with
+ * every task terminal and `plan.selfAgentId` names a thread, read that
+ * thread's state through the facade and send one follow-up naming the
+ * terminal tasks when the thread is idle. `listRuns` reports `finished`
+ * only when the export's `meta.lastKnownAgentState` is `idle` after an
+ * assistant reply; `working`, `streaming`, `running_tools`, and any unknown
+ * state read as `running`, which is a thread that is running this loop
+ * itself (a foreground command) or cannot be judged, and both are left
+ * alone. One attention line records the decision either way. Never throws.
+ */
+export async function nudgeIdlePlanner(args: {
+  agentApi: Pick<AgentApi, "listRuns" | "resume">;
+  selfAgentId: string | null;
+  tasks: readonly Pick<TaskState, "name" | "status">[];
+  workspace: string;
+  rootSlug: string;
+  rootMode: boolean;
+  logAttention: (line: string) => void;
+}): Promise<"sent" | "skipped"> {
+  const { agentApi, selfAgentId, tasks } = args;
+  if (!selfAgentId || !allTasksTerminal(tasks)) return "skipped";
+  let status: string | undefined;
+  try {
+    const runs = await agentApi.listRuns(selfAgentId, {
+      runtime: "cloud",
+      limit: 1,
+    });
+    status = runs.items[0]?.status;
+  } catch (err) {
+    args.logAttention(
+      `planner nudge skipped: every task is terminal but the state of ${selfAgentId} could not be read: ${errorMessage(err)}`
+    );
+    return "skipped";
+  }
+  if (status !== "finished") {
+    const why =
+      status === "running"
+        ? "the thread is working or its state is unknown, so it reads the loop's summary itself"
+        : `the thread's last run is ${status ?? "missing"}`;
+    args.logAttention(
+      `planner nudge skipped: every task is terminal; ${selfAgentId} was not idle (${why})`
+    );
+    return "skipped";
+  }
+  try {
+    const agent = await agentApi.resume(selfAgentId);
+    const run = await agent.send({ text: buildPlannerNudge(args) });
+    args.logAttention(
+      `planner nudge sent to ${selfAgentId} as run ${run.id}: every task is terminal and the thread was idle`
+    );
+    return "sent";
+  } catch (err) {
+    args.logAttention(
+      `planner nudge failed for ${selfAgentId}: ${errorMessage(err)}`
+    );
+    return "skipped";
+  }
+}
+
+/** True when no task is `pending` or `running`. */
+export function allTasksTerminal(
+  tasks: readonly Pick<TaskState, "status">[]
+): boolean {
+  return !tasks.some(t => t.status === "pending" || t.status === "running");
+}
+
+/** The follow-up text: the terminal tasks by status, then what to do next. */
+export function buildPlannerNudge(args: {
+  tasks: readonly Pick<TaskState, "name" | "status">[];
+  workspace: string;
+  rootSlug: string;
+  rootMode: boolean;
+}): string {
+  const byStatus = new Map<string, string[]>();
+  for (const t of args.tasks) {
+    const names = byStatus.get(t.status) ?? [];
+    names.push(t.name);
+    byStatus.set(t.status, names);
+  }
+  const lines = [...byStatus.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([status, names]) => `- ${status}: ${names.join(", ")}`);
+  const rootFlag = args.rootMode ? "--root " : "";
+  return [
+    `orchestrate: the \`run\` loop for \`${args.rootSlug}\` exited with every task terminal and found this thread idle.`,
+    "",
+    ...lines,
+    "",
+    `Read the handoffs in \`${args.workspace}/handoffs/\`, run \`bun cli.ts tree ${args.workspace}\`, react to each error, and continue the goal; after changing plan.json, re-run \`bun cli.ts run ${rootFlag}${args.workspace}\` in the foreground. This message is the loop's wake-up, not a new goal.`,
+  ].join("\n");
 }
 
 export function inferKickoffRootSlug(goal: string): string {
