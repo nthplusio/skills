@@ -41,6 +41,10 @@ Owns `pstack-sync/scripts/sync.py` `publish`, its tests in `evals/test_sync.py`,
 - [x] `sync.py publish --pack <pack checkout> --repo <workspace clone> --harness amp [--push] [--verify]`: copy every pack skill over the workspace copy, remove skills the previous publish copied that the pack no longer has (tracked in `.nthplusio-skills/pack-manifest.json` with the pack commit and skill names), run `sync` for every set under the pack's `sets/`, append `profile_gaps_in_seed` rows to the durable profile, refuse to commit when a `node_modules` directory or a file over 2 MB would be added, commit `Refresh workspace skills from nthplusio/skills@<sha>`, push with `--push`, and with `--verify` run `amp skill info <skill>` for one skill from each set and report whether the index has it. Evidence: unit tests on temp pack and workspace repos for the copy, the removal, the refusal, and the manifest; a log of a real publish into a throwaway clone of the workspace repo.
 - [x] Verify: `python3 -m unittest` for pstack-sync, `npm run validate`, `npm run check:private`.
 
+### C2. Seed refresh (branch `rf/c-publish`, found while dogfooding)
+
+- [x] Dogfooding `publish` into a fresh clone of the real workspace applied none of lane A's planner transforms, because `adopt_durable` copies the shipped `transform.json` only when no durable copy exists. Added a three-way seed refresh at the start of every sync: `sets/<set>/seed.json` records the shipped shared block as last adopted; an entry the install left unchanged takes the shipped change, an entry the install recorded stays, and an entry both changed stays and is reported under `seed_conflicts`. Evidence: 6 unit tests, and the live publish log showing planner.md and dispatcher.md in the clone gaining the new text.
+
 ### D. Dashboard producer (branch `rf/d-dashboard`)
 
 Owns `adapters/amp/agent-runtime/scripts/tools/dashboard.ts`, its test, and its README section; adds the file to the `agent-runtime` port in `set.json`. Reads `dashboard/references/status-contract.md` and the producers table in `dashboard/SKILL.md` and follows them without extending the contract.
