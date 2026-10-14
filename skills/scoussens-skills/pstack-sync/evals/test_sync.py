@@ -695,6 +695,11 @@ class PublishTests(unittest.TestCase):
         build_upstream(self.tmp)
         self.pack = self.make_pack()
         self.ws = self.make_workspace()
+        self.plugins_ws = self.tmp / "workspace-plugins"
+        (self.plugins_ws / "unrelated").mkdir(parents=True)
+        (self.plugins_ws / "unrelated" / "index.ts").write_text("export default 'keep';\n")
+        git_repo(self.plugins_ws)
+        commit_all(self.plugins_ws, "init plugins")
 
     def make_pack(self):
         """Two skills and pstack-sync with the pstack and kit sets, a tracked .gitignore, and
@@ -720,6 +725,18 @@ class PublishTests(unittest.TestCase):
             **base, "root_plugin": "cursor-team-kit", "skills_subdir": "cursor-team-kit/skills",
             "agents_dir": "kit-agents", "collision_prefix": "kit-", "extra_needs": []}))
         (me / "harness" / "test.md").write_text(PROFILE + "| `loop` | keep | the test harness loops as written | seed |\n")
+        self.plugin_source = me / "adapters" / "test" / "plugin"
+        for name in ("orchestrate-bridge", "status-panel"):
+            plugin = self.plugin_source / name
+            plugin.mkdir(parents=True)
+            (plugin / "index.ts").write_text(f"export default '{name}';\n")
+        (self.plugin_source / "orchestrate-bridge" / "old.txt").write_text("remove on refresh\n")
+        executable = self.plugin_source / "orchestrate-bridge" / "run.sh"
+        executable.write_text("#!/bin/sh\necho bridge\n")
+        executable.chmod(0o755)
+        other = me / "adapters" / "other" / "plugin" / "other-harness"
+        other.mkdir(parents=True)
+        (other / "index.ts").write_text("export default 'other';\n")
         (pack / ".gitignore").write_text("node_modules/\n*.log\n")
         git_repo(pack)
         subprocess.run(["git", "-C", str(pack), "remote", "add", "origin", "https://github.com/nthplusio/skills.git"], check=True)
@@ -728,6 +745,11 @@ class PublishTests(unittest.TestCase):
         (skills / "one" / "node_modules" / "dep" / "index.js").write_text("module.exports = 1;\n")
         (skills / "one" / "scratch.txt").write_text("untracked\n")
         (skills / "one" / "debug.log").write_text("ignored\n")
+        plugin = self.plugin_source / "orchestrate-bridge"
+        (plugin / "node_modules").mkdir()
+        (plugin / "node_modules" / "scratch.js").write_text("ignored dependency\n")
+        (plugin / "scratch.txt").write_text("untracked\n")
+        (plugin / "debug.log").write_text("ignored\n")
         return pack
 
     def make_workspace(self, manifest_skills=None, extra=()):
@@ -751,8 +773,8 @@ class PublishTests(unittest.TestCase):
         commit_all(ws, "init")
         return ws
 
-    def publish(self, *args, ok=True):
-        env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()}
+    def publish(self, *args, ok=True, env=None):
+        env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri(), **(env or {})}
         result = subprocess.run([sys.executable, "-B", str(SCRIPT), "publish", "--harness", "test",
                                  "--pack", str(self.pack), "--repo", str(self.ws), *args],
                                 env=env, capture_output=True, text=True)
@@ -760,8 +782,14 @@ class PublishTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         return result.returncode, (json.loads(result.stdout) if result.stdout else None), result.stderr
 
-    def git(self, *args):
-        return subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, check=True).stdout
+    def git(self, *args, repo=None):
+        return subprocess.run(["git", "-C", str(repo or self.ws), *args], capture_output=True, text=True, check=True).stdout
+
+    def destination_state(self):
+        return {str(repo): [self.git(*args, repo=repo) for args in (
+            ("rev-parse", "HEAD"), ("status", "--porcelain", "--untracked-files=all"),
+            ("diff",), ("diff", "--cached"), ("worktree", "list", "--porcelain"))]
+            for repo in (self.ws, self.plugins_ws)}
 
     def test_publish_copies_tracked_files_runs_every_set_and_commits(self):
         head = self.git("rev-parse", "HEAD").strip()
@@ -800,6 +828,11 @@ class PublishTests(unittest.TestCase):
         self.assertIn("Set kit: cursor/plugins@", message)
         self.assertIn("Set pstack: cursor/plugins@", message)
         self.assertIsNone(report["pushed"])
+        self.assertEqual(report["plugins"], {
+            "clone": None, "carried": ["orchestrate-bridge", "status-panel"], "status": "not published",
+            "added": [], "updated": [], "removed": [], "unchanged_count": 0,
+            "committed": None, "pushed": None, "verify": None, "refused": None})
+        self.assertFalse((self.ws / "orchestrate-bridge").exists())
         _, again, _ = self.publish()
         self.assertEqual((again["committed"], again["staged_files"], again["skills"]["unchanged_count"]), (None, 0, 3))
         self.assertEqual(again["profile_rows_appended"], {})
@@ -842,7 +875,7 @@ class PublishTests(unittest.TestCase):
     def test_publish_refuses_a_dirty_workspace(self):
         (self.ws / "stray.txt").write_text("not committed\n")
         code, report, err = self.publish(ok=False)
-        self.assertNotEqual(code, 0)
+        self.assertEqual(code, 2)
         self.assertIn("uncommitted changes", err)
         self.assertIn("stray.txt", err)
 
@@ -909,6 +942,237 @@ class PublishTests(unittest.TestCase):
         verify = json.loads(result.stdout)["verify"]
         self.assertIsNone(verify["amp"])
         self.assertIn("not on PATH", verify["note"])
+
+    def test_publish_plugins_copies_tracks_manifest_commits_and_is_idempotent(self):
+        before = self.destination_state()
+        _, preview, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--dry-run")
+        self.assertEqual(preview["plugins"]["added"], ["orchestrate-bridge", "status-panel"])
+        self.assertIsNone(preview["plugins"]["committed"])
+        self.assertEqual(self.destination_state(), before)
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws))
+        plugins = report["plugins"]
+        self.assertEqual(plugins["clone"], str(self.plugins_ws))
+        self.assertEqual(plugins["carried"], ["orchestrate-bridge", "status-panel"])
+        self.assertEqual(plugins["added"], ["orchestrate-bridge", "status-panel"])
+        self.assertEqual((plugins["updated"], plugins["removed"], plugins["unchanged_count"]), ([], [], 0))
+        self.assertEqual(plugins["status"], "published")
+        self.assertEqual((self.plugins_ws / "orchestrate-bridge" / "index.ts").read_text(),
+                         "export default 'orchestrate-bridge';\n")
+        self.assertTrue(os.access(self.plugins_ws / "orchestrate-bridge" / "run.sh", os.X_OK))
+        self.assertEqual(sorted(p.name for p in (self.plugins_ws / "orchestrate-bridge").iterdir()),
+                         ["index.ts", "old.txt", "run.sh"])
+        self.assertEqual((self.plugins_ws / "unrelated" / "index.ts").read_text(), "export default 'keep';\n")
+        manifest_path = self.plugins_ws / ".nthplusio-skills" / "pack-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        pack_head = self.git("rev-parse", "HEAD", repo=self.pack).strip()
+        self.assertEqual(manifest["plugins"], ["orchestrate-bridge", "status-panel"])
+        self.assertEqual(manifest["pack_commit"], pack_head)
+        self.assertEqual(manifest["pack_remote"], "https://github.com/nthplusio/skills.git")
+        self.assertNotIn("skills", manifest)
+        self.assertEqual(plugins["committed"], self.git("rev-parse", "HEAD", repo=self.plugins_ws).strip())
+        self.assertEqual(self.git("log", "-1", "--format=%s", repo=self.plugins_ws).strip(),
+                         f"Refresh workspace plugins from nthplusio/skills@{pack_head[:7]}")
+        self.assertEqual(self.git("status", "--porcelain", repo=self.plugins_ws), "")
+        self.assertIsNone(plugins["pushed"])
+        before = self.destination_state()
+        _, again, _ = self.publish("--plugins-repo", str(self.plugins_ws))
+        self.assertEqual(again["plugins"]["unchanged_count"], 2)
+        self.assertEqual(again["plugins"]["added"], [])
+        self.assertIsNone(again["plugins"]["committed"])
+        self.assertEqual(json.loads(manifest_path.read_text()), manifest)
+        self.assertEqual(self.destination_state(), before)
+        executable = self.plugin_source / "orchestrate-bridge" / "run.sh"
+        executable.chmod(0o644)
+        self.git("add", str(executable), repo=self.pack)
+        self.git("commit", "-qm", "remove executable bit", repo=self.pack)
+        _, changed, _ = self.publish("--plugins-repo", str(self.plugins_ws))
+        self.assertEqual(changed["plugins"]["updated"], ["orchestrate-bridge"])
+        self.assertEqual(changed["plugins"]["unchanged_count"], 1)
+        self.assertFalse(os.access(self.plugins_ws / "orchestrate-bridge" / "run.sh", os.X_OK))
+
+    def test_publish_plugins_replaces_files_and_removes_only_manifest_names(self):
+        self.publish("--plugins-repo", str(self.plugins_ws))
+        (self.plugin_source / "orchestrate-bridge" / "old.txt").unlink()
+        (self.plugin_source / "orchestrate-bridge" / "index.ts").write_text("export default 'new';\n")
+        shutil.rmtree(self.plugin_source / "status-panel")
+        commit_all(self.pack, "refresh plugins")
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws))
+        plugins = report["plugins"]
+        self.assertEqual((plugins["added"], plugins["updated"], plugins["removed"]),
+                         ([], ["orchestrate-bridge"], ["status-panel"]))
+        self.assertEqual((self.plugins_ws / "orchestrate-bridge" / "index.ts").read_text(), "export default 'new';\n")
+        self.assertFalse((self.plugins_ws / "orchestrate-bridge" / "old.txt").exists())
+        self.assertFalse((self.plugins_ws / "status-panel").exists())
+        self.assertEqual((self.plugins_ws / "unrelated" / "index.ts").read_text(), "export default 'keep';\n")
+        manifest = json.loads((self.plugins_ws / ".nthplusio-skills" / "pack-manifest.json").read_text())
+        self.assertEqual(manifest["plugins"], ["orchestrate-bridge"])
+        self.assertEqual(manifest["pack_commit"], self.git("rev-parse", "HEAD", repo=self.pack).strip())
+
+    def test_publish_plugins_can_retire_the_last_carried_plugins(self):
+        self.publish("--plugins-repo", str(self.plugins_ws))
+        shutil.rmtree(self.plugin_source)
+        commit_all(self.pack, "retire plugins")
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws))
+        self.assertEqual(report["plugins"]["removed"], ["orchestrate-bridge", "status-panel"])
+        self.assertEqual(report["plugins"]["carried"], [])
+        self.assertEqual(sorted(p.name for p in self.plugins_ws.iterdir()), [".git", ".nthplusio-skills", "unrelated"])
+        self.assertEqual(json.loads((self.plugins_ws / ".nthplusio-skills" / "pack-manifest.json").read_text())["plugins"], [])
+
+    def test_publish_plugins_refuses_tracked_node_modules_before_changing_either_clone(self):
+        path = self.plugin_source / "orchestrate-bridge" / "node_modules" / "scratch.js"
+        self.git("add", "-f", str(path), repo=self.pack)
+        self.git("commit", "-qm", "track dependency", repo=self.pack)
+        before = self.destination_state()
+        for flags in ((), ("--dry-run",)):
+            with self.subTest(flags=flags):
+                code, report, err = self.publish("--plugins-repo", str(self.plugins_ws), *flags, ok=False)
+                self.assertEqual(code, 2, err)
+                self.assertEqual(report["plugins"]["refused"]["node_modules"], ["orchestrate-bridge/node_modules/scratch.js"])
+                self.assertIn("orchestrate-bridge/node_modules/scratch.js", err)
+                self.assertEqual(self.destination_state(), before)
+
+    def test_publish_plugins_enforces_the_exact_file_size_boundary(self):
+        path = self.plugin_source / "status-panel" / "large.bin"
+        path.write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+        commit_all(self.pack, "oversized plugin")
+        before = self.destination_state()
+        code, report, err = self.publish("--plugins-repo", str(self.plugins_ws), ok=False)
+        self.assertEqual(code, 2, err)
+        self.assertEqual(report["plugins"]["refused"]["oversized"], [{"path": "status-panel/large.bin", "bytes": 2097153}])
+        self.assertEqual(self.destination_state(), before)
+        path.write_bytes(b"x" * (2 * 1024 * 1024))
+        commit_all(self.pack, "at size limit")
+        self.publish("--plugins-repo", str(self.plugins_ws))
+        self.assertEqual((self.plugins_ws / "status-panel" / "large.bin").read_bytes(), b"x" * 2097152)
+
+    def test_publish_preflights_both_destinations(self):
+        for repo in (self.ws, self.plugins_ws):
+            with self.subTest(repo=repo):
+                stray = repo / "stray.txt"
+                stray.write_text("dirty\n")
+                before = self.destination_state()
+                code, _, err = self.publish("--plugins-repo", str(self.plugins_ws), ok=False)
+                self.assertEqual(code, 2, err)
+                self.assertIn("uncommitted changes", err)
+                self.assertEqual(self.destination_state(), before)
+                stray.unlink()
+        invalid = self.tmp / "not-a-clone"
+        invalid.mkdir()
+        unborn = self.tmp / "unborn"
+        git_repo(unborn)
+        for path in (invalid, self.tmp / "missing-clone", unborn):
+            before = self.destination_state()
+            code, _, err = self.publish("--plugins-repo", str(path), ok=False)
+            self.assertEqual(code, 2, err)
+            self.assertEqual(self.destination_state(), before)
+
+    def test_plugin_preflight_rejects_unsafe_manifest_names_and_symlink_destinations(self):
+        manifest = self.plugins_ws / ".nthplusio-skills" / "pack-manifest.json"
+        manifest.parent.mkdir()
+        for name in ("../ws", ".nthplusio-skills"):
+            manifest.write_text(json.dumps({"plugins": [name]}))
+            commit_all(self.plugins_ws, "invalid removal target")
+            before = self.destination_state()
+            code, _, err = self.publish("--plugins-repo", str(self.plugins_ws), ok=False)
+            self.assertEqual(code, 2, err)
+            self.assertIn("unsafe plugin name", err)
+            self.assertEqual(self.destination_state(), before)
+        manifest.write_text(json.dumps({"plugins": []}))
+        (self.plugins_ws / "orchestrate-bridge").symlink_to(self.plugins_ws / "unrelated", target_is_directory=True)
+        commit_all(self.plugins_ws, "aliased plugin")
+        before = self.destination_state()
+        for flags in ((), ("--dry-run",)):
+            code, _, err = self.publish("--plugins-repo", str(self.plugins_ws), *flags, ok=False)
+            self.assertEqual(code, 2, err)
+            self.assertIn("must be a regular directory", err)
+            self.assertEqual(self.destination_state(), before)
+
+    def test_publish_refuses_overlapping_destinations_including_symlink_aliases(self):
+        alias = self.tmp / "alias"
+        alias.symlink_to(self.ws, target_is_directory=True)
+        for path in (self.ws, self.ws / "nested", self.tmp, alias, self.pack):
+            before = self.destination_state()
+            code, _, err = self.publish("--plugins-repo", str(path), "--dry-run", ok=False)
+            self.assertEqual(code, 2, err)
+            self.assertIn("overlap", err)
+            self.assertEqual(self.destination_state(), before)
+
+    def test_plugin_dry_run_uses_destination_heads_and_cleans_worktrees_on_success_and_refusal(self):
+        self.publish("--plugins-repo", str(self.plugins_ws))
+        (self.plugins_ws / "orchestrate-bridge" / "index.ts").write_text("uncommitted plugin\n")
+        (self.plugins_ws / ".nthplusio-skills" / "pack-manifest.json").write_text("invalid dirty manifest\n")
+        (self.ws / "one" / "SKILL.md").write_text("uncommitted skill\n")
+        self.git("add", "one/SKILL.md")
+        before = self.destination_state()
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--dry-run", "--push")
+        self.assertEqual(report["plugins"]["unchanged_count"], 2)
+        self.assertEqual(report["plugins"]["updated"], [])
+        self.assertEqual(report["plugins"]["status"], "dry run")
+        self.assertIsNone(report["plugins"]["committed"])
+        self.assertIsNone(report["plugins"]["pushed"])
+        self.assertIsNone(report["pushed"])
+        self.assertEqual(self.destination_state(), before)
+        build_upstream(self.tmp, {**UPSTREAM, f"{sync.SUBDIR}/alpha/node_modules/index.js": "bad\n"})
+        code, report, err = self.publish("--plugins-repo", str(self.plugins_ws), "--dry-run", ok=False)
+        self.assertEqual(code, 2, err)
+        self.assertEqual(report["refused"]["node_modules"], ["alpha/node_modules/index.js"])
+        self.assertEqual(self.destination_state(), before)
+
+    def test_plugin_dry_run_cleans_worktrees_when_sync_fails(self):
+        config = self.pack / "skills" / "scoussens-skills" / sync.SELF / "sets" / "kit" / "set.json"
+        config.write_text("invalid JSON\n")
+        commit_all(self.pack, "broken set")
+        before = self.destination_state()
+        code, _, err = self.publish("--plugins-repo", str(self.plugins_ws), "--dry-run", ok=False)
+        self.assertNotEqual(code, 0, err)
+        self.assertEqual(self.destination_state(), before)
+
+    def test_push_publishes_both_repositories_to_disposable_local_remotes(self):
+        remotes = {}
+        for repo in (self.ws, self.plugins_ws):
+            remote = self.tmp / f"{repo.name}.git"
+            subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+            self.git("remote", "add", "origin", str(remote), repo=repo)
+            remotes[repo] = remote
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--push")
+        for repo, summary in ((self.ws, report), (self.plugins_ws, report["plugins"])):
+            self.assertEqual(summary["pushed"], self.git("branch", "--show-current", repo=repo).strip())
+            remote_head = self.git("rev-parse", f"refs/heads/{summary['pushed']}", repo=remotes[repo]).strip()
+            self.assertEqual(remote_head, summary["committed"])
+            self.assertEqual(remote_head, self.git("rev-parse", "HEAD", repo=repo).strip())
+
+    def test_plugin_verification_matches_only_exact_workspace_headers_once(self):
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        fake = bin_dir / "amp"
+        calls = self.tmp / "plugin-list-calls"
+        headers = self.tmp / "plugin-list-output"
+        fake.write_text(f'#!/bin/sh\nif [ "$1 $2" = "plugins list" ]; then\n'
+                        f'  echo list >> "{calls}"\n  cat "{headers}"\nelse\n  echo "Skill: $3"\nfi\n')
+        fake.chmod(0o755)
+        headers.write_text("✓ orchestrate-bridge (Workspace Plugins) active\n"
+                           "  tools: status-panel active\n"
+                           "○ status-panel (Workspace Plugins) disabled\n")
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--verify",
+                                    env={"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        self.assertEqual(report["plugins"]["verify"]["plugins"],
+                         {"orchestrate-bridge": {"status": "active"}, "status-panel": {"status": "disabled"}})
+        self.assertEqual(calls.read_text(), "list\n")
+        headers.write_text("✓ orchestrate-bridge-extra (Workspace Plugins) active\n"
+                           "  ✓ orchestrate-bridge (Workspace Plugins) active\n"
+                           "✓ status-panel (User Plugins) active\n")
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--verify",
+                                    env={"PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        self.assertEqual(report["plugins"]["verify"]["plugins"],
+                         {"orchestrate-bridge": {"status": "missing"}, "status-panel": {"status": "missing"}})
+        self.assertEqual(calls.read_text(), "list\nlist\n")
+        without = self.tmp / "without-amp"
+        without.mkdir()
+        (without / "git").symlink_to(shutil.which("git"))
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--verify", env={"PATH": str(without)})
+        self.assertIsNone(report["plugins"]["verify"]["amp"])
+        self.assertIn("not on PATH", report["plugins"]["verify"]["note"])
+        self.assertEqual(report["plugins"]["verify"]["plugins"], {})
 
 
 class HandoffNameTests(unittest.TestCase):

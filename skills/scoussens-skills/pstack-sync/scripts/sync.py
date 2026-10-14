@@ -6,7 +6,7 @@ definitions they hand off to, into a skills directory.
   sync.py record --harness NAME [--repo DIR] [--root DIR] (SKILL | SKILL/FILE ... | --all)
   sync.py status --harness NAME [--repo DIR] [--root DIR] [--since REV]
   sync.py seed   --harness NAME [--repo DIR] [--root DIR] --out DIR
-  sync.py publish --harness NAME --pack DIR --repo DIR [--push] [--verify] [--dry-run]
+  sync.py publish --harness NAME --pack DIR --repo DIR [--plugins-repo DIR] [--push] [--verify] [--dry-run]
 
 sync    Adds new upstream skills, updates changed ones, removes retired or excluded
         ones. Each file renders as: upstream -> rename rewrites -> global transforms
@@ -1337,11 +1337,11 @@ def tree_blobs(path):
     return out
 
 
-def copy_skill(pack, skill, files, dest):
+def copy_pack_files(source, files, dest):
     """Replace dest with the listed pack files; a merge would keep files the pack dropped."""
     shutil.rmtree(dest, ignore_errors=True)
     for rel, mode in sorted(files.items()):
-        src = os.path.join(pack, PACK_SKILLS, skill, rel)
+        src = os.path.join(source, rel)
         dst = os.path.join(dest, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         if mode == "120000":
@@ -1349,6 +1349,64 @@ def copy_skill(pack, skill, files, dest):
         else:
             shutil.copy2(src, dst)
             os.chmod(dst, 0o755 if mode == "100755" else 0o644)
+
+
+def pack_plugin_files(pack, harness):
+    """Tracked files grouped by plugin name for the selected harness."""
+    prefix = f"{PACK_SKILLS}/{SELF}/adapters/{harness}/plugin/"
+    plugins = {}
+    for line in run_git(pack, "ls-files", "-z", "-s", "--", prefix).split("\0"):
+        if not line:
+            continue
+        meta, path = line.split("\t", 1)
+        name, sep, rel = path[len(prefix):].partition("/")
+        if sep:
+            plugins.setdefault(name, {})[rel] = meta.split()[0]
+    return prefix, dict(sorted(plugins.items()))
+
+
+def publish_refusal(detail):
+    sys.stderr.write(f"error: {detail}\n")
+    sys.exit(2)
+
+
+def plugin_preflight(pack, prefix, files, repo, dry_run, report):
+    """Reject unsafe source files and removal targets before either destination changes."""
+    offenders = {"node_modules": [], "oversized": []}
+    for name, entries in files.items():
+        for rel in entries:
+            path = f"{name}/{rel}"
+            if "node_modules" in path.split("/"):
+                offenders["node_modules"].append(path)
+            size = os.lstat(os.path.join(pack, prefix, path)).st_size
+            if size > MAX_PUBLISH_BYTES:
+                offenders["oversized"].append({"path": path, "bytes": size})
+    if offenders["node_modules"] or offenders["oversized"]:
+        report["plugins"]["refused"] = offenders
+        print(json.dumps(report, indent=2))
+        publish_refusal("refusing plugin files: " + json.dumps(offenders))
+    manifest = os.path.join(STATE_DIR, PACK_MANIFEST)
+    if dry_run:
+        previous = run_git(repo, "show", f"HEAD:{manifest}", check=False)
+    else:
+        previous = read_text(os.path.join(repo, manifest))
+    try:
+        names = json.loads(previous).get("plugins", []) if previous else []
+        if not isinstance(names, list):
+            raise ValueError("plugins must be a list")
+        for name in [*names, *files]:
+            if (not isinstance(name, str) or not name or os.path.basename(name) != name
+                    or name in (".", "..", ".git", STATE_DIR)):
+                raise ValueError(f"unsafe plugin name: {name!r}")
+    except (ValueError, AttributeError) as error:
+        publish_refusal(f"invalid plugins manifest or source: {error}")
+    for entry in run_git(repo, "ls-tree", "-z", "HEAD", "--", STATE_DIR, manifest, *names, *files).split("\0"):
+        if not entry:
+            continue
+        meta, path = entry.split("\t", 1)
+        allowed = ("100644", "100755") if path == manifest else ("040000",)
+        if meta.split()[0] not in allowed:
+            publish_refusal(f"{repo}/{path} must be a regular {'file' if path == manifest else 'directory'}")
 
 
 def append_profile_rows(path, rows):
@@ -1426,6 +1484,68 @@ def verify_index(names):
             "skills": out}
 
 
+def verify_plugins(names):
+    """Read exact plugin headers from one `amp plugins list` invocation."""
+    amp = shutil.which("amp")
+    if not amp:
+        return {"amp": None, "note": "amp is not on PATH; run `amp plugins list` where it is", "plugins": {}}
+    try:
+        result = subprocess.run([amp, "plugins", "list"], capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"amp": amp, "plugins": {name: {"status": "timeout"} for name in names}}
+    headers = {}
+    for line in result.stdout.splitlines():
+        line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+        match = re.fullmatch(r"\S+ ([^\s]+) \(Workspace Plugins\) (active|disabled|inactive)\s*", line)
+        if match:
+            headers[match[1]] = match[2]
+    return {"amp": amp, "note": "the list reads loaded plugins, so without --push this describes the previous publish",
+            "plugins": {name: {"status": headers.get(name, "missing") if result.returncode == 0 else "error"}
+                        for name in names},
+            "detail": (result.stderr or result.stdout).strip().splitlines()[:1] if result.returncode else []}
+
+
+def publish_plugins_into(work, pack, prefix, files, a, report):
+    """Replace carried plugins and retire only names from the plugins clone's manifest."""
+    plugins = report["plugins"]
+    manifest_path = os.path.join(work, STATE_DIR, PACK_MANIFEST)
+    previous = load_json(manifest_path, {})
+    for name, entries in files.items():
+        dest = os.path.join(work, name)
+        existed = os.path.isdir(dest)
+        copy_pack_files(os.path.join(pack, prefix, name), entries, dest)
+        if not existed:
+            plugins["added"].append(name)
+        elif run_git(work, "status", "--porcelain", "--", name).strip():
+            plugins["updated"].append(name)
+        else:
+            plugins["unchanged_count"] += 1
+    for name in previous.get("plugins", []):
+        if name not in files and os.path.isdir(os.path.join(work, name)):
+            shutil.rmtree(os.path.join(work, name))
+            plugins["removed"].append(name)
+    manifest = {"pack_commit": report["pack"]["commit"], "pack_remote": report["pack"]["remote"],
+                "plugins": list(files)}
+    if any(previous.get(key) != value for key, value in manifest.items()) or run_git(work, "status", "--porcelain").strip():
+        manifest["published_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+        save_json(manifest_path, manifest)
+    run_git(work, "add", "-A", "--", ".")
+    plugins["refused"] = staged_offenders(work)
+    if plugins["refused"]:
+        run_git(work, "reset", "-q")
+        return
+    plugins["status"] = "dry run" if a.dry_run else "published"
+    if a.dry_run or not run_git(work, "diff", "--cached", "--name-only").strip():
+        return
+    label = pack_label(report["pack"]["remote"]) or os.path.basename(pack)
+    run_git(work, "commit", "-q", "-m", f"Refresh workspace plugins from {label}@{report['pack']['short']}")
+    plugins["committed"] = run_git(work, "rev-parse", "HEAD").strip()
+    if a.push:
+        run_git(work, "push", "origin", plugins["branch"])
+        plugins["pushed"] = plugins["branch"]
+
+
 def publish_into(work, pack, a, report):
     """The publish steps against one working tree; the caller decides whether that tree is the real one."""
     pack_dir = os.path.join(pack, PACK_SKILLS)
@@ -1453,7 +1573,7 @@ def publish_into(work, pack, a, report):
             sys.exit(f"error: git tracks nothing under {PACK_SKILLS}/{name} in {pack}")
         dest = os.path.join(work, name)
         before = tree_blobs(dest) if os.path.isdir(dest) else None
-        copy_skill(pack, name, files, dest)
+        copy_pack_files(os.path.join(pack, PACK_SKILLS, name), files, dest)
         if before is None:
             skills["added"].append(name)
         elif before != tree_blobs(dest):
@@ -1527,11 +1647,24 @@ def publish_into(work, pack, a, report):
 
 def cmd_publish(a):
     pack, repo = os.path.abspath(a.pack), os.path.abspath(a.repo)
-    for path in (pack, repo):
+    plugins_repo = os.path.abspath(a.plugins_repo) if a.plugins_repo else None
+    destinations = [repo] + ([plugins_repo] if plugins_repo else [])
+    if plugins_repo:
+        paths = [os.path.realpath(path) for path in [pack, *destinations]]
+        for i, path in enumerate(paths):
+            for other in paths[i + 1:]:
+                if os.path.commonpath([path, other]) in (path, other):
+                    publish_refusal(f"publish paths overlap: {path} and {other}")
+    for path in [pack, *destinations]:
         if run_git(path, "rev-parse", "--is-inside-work-tree", check=False).strip() != "true":
-            sys.exit(f"error: {path} is not a git working tree")
+            publish_refusal(f"{path} is not a git working tree")
+        if not run_git(path, "rev-parse", "--verify", "HEAD", check=False).strip():
+            publish_refusal(f"{path} has no committed HEAD")
+        if plugins_repo and os.path.realpath(run_git(path, "rev-parse", "--show-toplevel").strip()) != os.path.realpath(path):
+            publish_refusal(f"{path} is not the root of a git working tree")
     if not os.path.isdir(os.path.join(pack, PACK_SKILLS)):
         sys.exit(f"error: {pack} has no {PACK_SKILLS}/; pass the pack checkout as --pack")
+    prefix, plugin_files = pack_plugin_files(pack, a.harness)
     remote = run_git(pack, "remote", "get-url", "origin", check=False).strip() or None
     branch = run_git(repo, "symbolic-ref", "--short", "-q", "HEAD", check=False).strip() or None
     report = {"command": "publish", "dry_run": a.dry_run,
@@ -1540,32 +1673,43 @@ def cmd_publish(a):
                        "dirty": sorted(line[3:] for line in run_git(pack, "status", "--porcelain", "--untracked-files=no", "--", PACK_SKILLS).splitlines())},
               "repo": {"path": repo, "branch": branch, "head_before": run_git(repo, "rev-parse", "HEAD").strip()},
               "skills": {"added": [], "updated": [], "removed": [], "unchanged_count": 0, "skipped_node_modules_files": 0},
+              "plugins": {"clone": plugins_repo, "carried": list(plugin_files), "status": "not published",
+                          "added": [], "updated": [], "removed": [], "unchanged_count": 0,
+                          "committed": None, "pushed": None, "verify": None, "refused": None},
               "sets": {}, "profile_rows_appended": {}, "attention": [], "manifest": None, "staged_files": 0,
               "refused": None, "commit_message": None, "committed": None, "pushed": None, "verify": None}
     if not a.dry_run:
-        dirty = run_git(repo, "status", "--porcelain").strip()
-        if dirty:
-            sys.exit(f"error: {repo} has uncommitted changes; commit or stash them first:\n{dirty}")
+        for path in destinations:
+            dirty = run_git(path, "status", "--porcelain").strip()
+            if dirty:
+                publish_refusal(f"{path} has uncommitted changes; commit or stash them first:\n{dirty}")
+            if a.push and not run_git(path, "symbolic-ref", "--short", "-q", "HEAD", check=False).strip():
+                publish_refusal(f"{path} is not on a branch; --push needs one")
         if report["pack"]["dirty"]:
-            sys.exit(f"error: {pack} has uncommitted changes under {PACK_SKILLS}; the manifest would name a commit "
-                     f"that is not what was copied:\n" + "\n".join(report["pack"]["dirty"]))
-        if a.push and not branch:
-            sys.exit(f"error: {repo} is not on a branch; --push needs one")
+            publish_refusal(f"{pack} has uncommitted changes under {PACK_SKILLS}; the manifest would name a commit "
+                            f"that is not what was copied:\n" + "\n".join(report["pack"]["dirty"]))
+    if plugins_repo:
+        report["plugins"]["branch"] = run_git(plugins_repo, "symbolic-ref", "--short", "-q", "HEAD", check=False).strip() or None
+        plugin_preflight(pack, prefix, plugin_files, plugins_repo, a.dry_run, report)
     tmp = None
+    worktrees = {}
     try:
         if a.dry_run:
             tmp = tempfile.mkdtemp(prefix="pstack-publish-")
-            work = os.path.join(tmp, "worktree")
-            run_git(repo, "worktree", "add", "-q", "--detach", work, "HEAD")
+            for i, path in enumerate(destinations):
+                worktrees[path] = os.path.join(tmp, f"worktree-{i}")
+                run_git(path, "worktree", "add", "-q", "--detach", worktrees[path], "HEAD")
         else:
-            work = repo
-        publish_into(work, pack, a, report)
+            worktrees = {path: path for path in destinations}
+        publish_into(worktrees[repo], pack, a, report)
+        if plugins_repo and not report["refused"]:
+            publish_plugins_into(worktrees[plugins_repo], pack, prefix, plugin_files, a, report)
     finally:
         if tmp:
-            run_git(repo, "worktree", "remove", "--force", work, check=False)
-            run_git(repo, "worktree", "prune", check=False)
+            for path, work in worktrees.items():
+                run_git(path, "worktree", "remove", "--force", work, check=False)
             shutil.rmtree(tmp, ignore_errors=True)
-    if a.verify and not report["refused"]:
+    if a.verify and not report["refused"] and not report["plugins"]["refused"]:
         picks = {"pack": report["manifest"]["skills"][0]} if report["manifest"]["skills"] else {}
         for name in report["sets"]:
             m = load_json(os.path.join(repo, STATE_DIR, SELF, "sets", name, "manifest.json"), {"skills": {}})
@@ -1573,7 +1717,11 @@ def cmd_publish(a):
             if dirs:
                 picks[name] = dirs[0]
         report["verify"] = verify_index(picks)
+        if plugins_repo:
+            report["plugins"]["verify"] = verify_plugins(plugin_files)
     print(json.dumps(report, indent=2))
+    if report["plugins"]["refused"]:
+        publish_refusal("refusing plugin files: " + json.dumps(report["plugins"]["refused"]))
     if report["refused"]:
         r = report["refused"]
         offenders = r["node_modules"] + [f"{o['path']} ({o['bytes'] / 1024 / 1024:.1f} MB)" for o in r["oversized"]]
@@ -1603,9 +1751,10 @@ def main():
     p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
     p.add_argument("--pack", required=True, help="checkout of the skills pack to copy from")
     p.add_argument("--repo", required=True, help="clone of the workspace skills repository to publish into")
-    p.add_argument("--push", action="store_true", help="push the current branch to origin after committing")
-    p.add_argument("--verify", action="store_true", help="ask `amp skill info` for one skill per set and the pack")
-    p.add_argument("--dry-run", action="store_true", help="run in a throwaway worktree and leave the repository untouched")
+    p.add_argument("--plugins-repo", help="clone of the workspace plugins repository to publish carried plugins into")
+    p.add_argument("--push", action="store_true", help="push each destination's current branch to origin after committing")
+    p.add_argument("--verify", action="store_true", help="ask `amp skill info` per source and `amp plugins list` for published plugins")
+    p.add_argument("--dry-run", action="store_true", help="run in throwaway worktrees and leave the destinations untouched")
     a = ap.parse_args()
     if a.cmd == "publish":
         cmd_publish(a)
