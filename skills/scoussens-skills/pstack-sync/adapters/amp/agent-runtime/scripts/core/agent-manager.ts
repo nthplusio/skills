@@ -11,7 +11,13 @@ import {
 import { join, relative, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Run, RunResult, SDKAgent, SDKMessage } from "./runtime.ts";
-import { type AgentApi, agentUrl, loadSDK as loadAgentApi } from "./runtime.ts";
+import {
+  type AgentApi,
+  agentUrl,
+  checkRepoUrlAgainstOrigin,
+  loadSDK as loadAgentApi,
+  measurementGate,
+} from "./runtime.ts";
 import { createSlackAdapter } from "../adapters/index.ts";
 import { createSlackWebClient } from "../adapters/slack/client.ts";
 import type { SlackAdapter, TaskStatus } from "../adapters/types.ts";
@@ -175,9 +181,10 @@ export class AgentManager {
   readonly slackAdapter?: SlackAdapter;
   readonly andon: AndonPoller;
   private readonly slackMirrorQueue = new Map<string, Promise<void>>();
-  /** Amp port: planner-authored measurement commands run only when plan.json
-   *  sets `"measurementsEnabled": true`; see checkWorkerMeasurements. */
-  readonly measurementsEnabled: boolean;
+  /** Amp port: planner-authored measurement commands run only when the
+   *  operator set `ORCHESTRATE_MEASUREMENTS=1` and plan.json opted in; see
+   *  `measurementGate` in ./runtime.ts and checkWorkerMeasurements. */
+  readonly measurements: ReturnType<typeof measurementGate>;
 
   private constructor(args: {
     workspace: string;
@@ -185,14 +192,14 @@ export class AgentManager {
     state: State;
     apiKey: string;
     slackAdapter?: SlackAdapter;
-    measurementsEnabled: boolean;
+    measurements: ReturnType<typeof measurementGate>;
   }) {
     this.workspace = args.workspace;
     this.plan = args.plan;
     this.state = args.state;
     this.apiKey = args.apiKey;
     this.slackAdapter = args.slackAdapter;
-    this.measurementsEnabled = args.measurementsEnabled;
+    this.measurements = args.measurements;
     this.planPath = join(args.workspace, "plan.json");
     this.statePath = join(args.workspace, "state.json");
     this.handoffsDir = join(args.workspace, "handoffs");
@@ -235,10 +242,7 @@ export class AgentManager {
     // field stays empty so the runtime calls below keep upstream's shape.
     const apiKey = "";
     const slackInitAttention: string[] = [];
-    const originCheck = checkRepoUrlAgainstOrigin({
-      workspace,
-      repoUrl: plan.repoUrl,
-    });
+    const originCheck = checkRepoUrlAgainstOrigin({ repoUrl: plan.repoUrl });
     if (originCheck.kind === "mismatch") {
       throw new PlanValidationError(
         `${planPath}: repoUrl ${plan.repoUrl} does not match the configured origin ${originCheck.origin}; set ORCHESTRATE_REPO_URL or fix plan.repoUrl`
@@ -292,7 +296,7 @@ export class AgentManager {
       state,
       apiKey,
       slackAdapter,
-      measurementsEnabled: planFile.measurementsEnabled,
+      measurements: measurementGate({ planOptIn: planFile.measurementsEnabled }),
     });
     for (const line of slackInitAttention) {
       if (!mgr.state.attention.some(a => a.message === line)) {
@@ -491,18 +495,16 @@ export class AgentManager {
     const measurements = planTask?.measurements ?? [];
     if (measurements.length === 0) return null;
     // Amp port: measurement commands come from plan.json and run through
-    // `bash -c`, so they are off unless the plan opts in, and the clone they
-    // run in must be the workspace's own origin.
-    if (!this.measurementsEnabled) {
+    // `bash -c`, so they are off unless the operator's environment and the
+    // plan both opt in, and the clone they run in must be the origin the
+    // operator configured.
+    if (!this.measurements.enabled) {
       this.logAttention(
-        `${task.name}: skipped ${measurements.length} declared measurement(s); set "measurementsEnabled": true in plan.json to let the loop run planner-authored commands`
+        `${task.name}: skipped ${measurements.length} declared measurement(s): ${this.measurements.reason}`
       );
       return null;
     }
-    const originCheck = checkRepoUrlAgainstOrigin({
-      workspace: this.workspace,
-      repoUrl: this.plan.repoUrl,
-    });
+    const originCheck = checkRepoUrlAgainstOrigin({ repoUrl: this.plan.repoUrl });
     if (originCheck.kind !== "match") {
       this.logAttention(
         `${task.name}: refused re-measurement clone of ${this.plan.repoUrl}: ${originCheck.reason}`
@@ -1759,65 +1761,6 @@ function writePlanAtomic(planPath: string, plan: Plan): void {
   const extras = planExtrasByPath.get(planPath) ?? {};
   writeFileSync(tmp, JSON.stringify({ ...plan, ...extras }, null, 2));
   renameSync(tmp, planPath);
-}
-
-/**
- * Amp port: `plan.repoUrl` is where the loop spawns threads and, with
- * measurements on, what it clones to re-run commands. It must name the
- * workspace's own origin: `ORCHESTRATE_REPO_URL` when set, otherwise the
- * checkout's `remote.origin.url`. Without either the check is `unknown`;
- * spawns proceed and callers decide what else to refuse.
- */
-export function checkRepoUrlAgainstOrigin(args: {
-  workspace: string;
-  repoUrl: string;
-}):
-  | { kind: "match"; origin: string }
-  | { kind: "mismatch"; origin: string; reason: string }
-  | { kind: "unknown"; reason: string } {
-  let origin = process.env.ORCHESTRATE_REPO_URL?.trim() ?? "";
-  if (!origin) {
-    try {
-      origin = execFileSync(
-        "git",
-        ["-C", args.workspace, "config", "--get", "remote.origin.url"],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
-      ).trim();
-    } catch {
-      origin = "";
-    }
-  }
-  if (!origin) {
-    return {
-      kind: "unknown",
-      reason:
-        "workspace has no remote.origin.url and ORCHESTRATE_REPO_URL is unset",
-    };
-  }
-  const wanted = repoKey(args.repoUrl);
-  const configured = repoKey(origin);
-  if (!wanted || !configured) {
-    return {
-      kind: "mismatch",
-      origin,
-      reason: `could not parse ${!wanted ? args.repoUrl : origin} as a repository URL`,
-    };
-  }
-  if (wanted !== configured) {
-    return {
-      kind: "mismatch",
-      origin,
-      reason: `repoUrl ${args.repoUrl} is not the configured origin ${origin}`,
-    };
-  }
-  return { kind: "match", origin };
-}
-
-function repoKey(remote: string): string | null {
-  const url = gitRemoteToUrl(remote);
-  if (!url) return null;
-  const path = url.pathname.replace(/\.git$/, "").replace(/\/+$/, "");
-  return `${url.hostname.toLowerCase()}${path.toLowerCase()}`;
 }
 
 function planIsRootPlanner(plan: Plan): boolean {

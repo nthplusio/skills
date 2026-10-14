@@ -54,6 +54,101 @@ export type {
 
 export const PENDING_AGENT_ID = "$AMP_THREAD_ID";
 
+// ---------------------------------------------------------------------------
+// Operator gates. These read the loop's environment, never plan.json alone,
+// because plan.json is written by the root planner (an LLM) and, with
+// `syncStateToGit`, by anyone who can push the state branch.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether planner-authored `tasks[].measurements[].command` lines may run.
+ * They run through `bash -c`, so two parties have to agree: the operator sets
+ * `ORCHESTRATE_MEASUREMENTS=1` in the environment of the process that runs the
+ * loop, and plan.json sets `"measurementsEnabled": true`. Without the
+ * variable the plan's opt-in is inert.
+ */
+export function measurementGate(args: {
+  planOptIn: boolean;
+  env?: NodeJS.ProcessEnv;
+}): { enabled: true } | { enabled: false; reason: string } {
+  const env = args.env ?? process.env;
+  const raw = env.ORCHESTRATE_MEASUREMENTS;
+  if (raw === undefined || raw === "") {
+    return { enabled: false, reason: "ORCHESTRATE_MEASUREMENTS is unset" };
+  }
+  if (raw !== "1") {
+    return { enabled: false, reason: `ORCHESTRATE_MEASUREMENTS is ${JSON.stringify(raw)}, not 1` };
+  }
+  if (!args.planOptIn) {
+    return { enabled: false, reason: 'plan.json does not set "measurementsEnabled": true' };
+  }
+  return { enabled: true };
+}
+
+export type OriginCheck =
+  | { kind: "match"; origin: string }
+  | { kind: "mismatch"; origin: string; reason: string }
+  | { kind: "unknown"; reason: string };
+
+/**
+ * Whether `plan.repoUrl` names the repository the operator configured.
+ * `ORCHESTRATE_REPO_URL` is the only source of truth: the workspace's
+ * `remote.origin.url` is not consulted, because whoever edits plan.json can
+ * also run `git remote set-url`. Without the variable the check is `unknown`;
+ * callers log that once, let spawns proceed (an orb project is one the
+ * signed-in user already has access to), and refuse the measurement clone.
+ */
+export function checkRepoUrlAgainstOrigin(args: {
+  repoUrl: string;
+  env?: NodeJS.ProcessEnv;
+}): OriginCheck {
+  const env = args.env ?? process.env;
+  const origin = env.ORCHESTRATE_REPO_URL?.trim() ?? "";
+  if (!origin) {
+    return { kind: "unknown", reason: "ORCHESTRATE_REPO_URL is unset" };
+  }
+  const wanted = repoKey(args.repoUrl);
+  const configured = repoKey(origin);
+  if (!wanted || !configured) {
+    return {
+      kind: "mismatch",
+      origin,
+      reason: `could not parse ${!wanted ? args.repoUrl : origin} as a repository URL`,
+    };
+  }
+  if (wanted !== configured) {
+    return {
+      kind: "mismatch",
+      origin,
+      reason: `repoUrl ${args.repoUrl} is not the configured origin ${origin}`,
+    };
+  }
+  return { kind: "match", origin };
+}
+
+/** `host/owner/repo`, lowercased, for https, ssh, and scp-style remotes; null when unparseable. */
+export function repoKey(remote: string): string | null {
+  const trimmed = remote.trim();
+  if (!trimmed) return null;
+  let candidate = trimmed;
+  const scp = /^([^@/\s]+)@([^:/\s]+):(.+)$/.exec(trimmed);
+  if (scp) candidate = `ssh://${scp[1]}@${scp[2]}/${scp[3]}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    try {
+      url = new URL(`https://${candidate}`);
+    } catch {
+      return null;
+    }
+  }
+  if (!url.hostname) return null;
+  const path = url.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
+  if (!path || path === "/") return null;
+  return `${url.hostname.toLowerCase()}${path.toLowerCase()}`;
+}
+
 const THREAD_ID_NOTE =
   "Thread id: `$AMP_THREAD_ID` in this prompt is an environment variable your orb sets to this thread's own id. Expand it (`echo $AMP_THREAD_ID`) wherever the prompt uses it, including values you write into plan.json.";
 

@@ -56,14 +56,15 @@ All through environment variables, read when the runtime is created.
 | `ORCHESTRATE_AMP_URL` | `https://ampcode.com` | Web origin for `agentUrl`. |
 | `ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS` | `180000` | Wall-time cap for one CLI invocation. |
 | `ORCHESTRATE_AMP_RUNTIME_DIR` | unset | Directory holding `agent-runtime.ts` and `models.ts` when neither layout applies. |
-| `ORCHESTRATE_REPO_URL` | unset | The configured origin `plan.repoUrl` must match; see Security. |
+| `ORCHESTRATE_REPO_URL` | unset | The repository the operator runs the loop for. `plan.repoUrl` must match it; unset means unchecked. See Security. |
+| `ORCHESTRATE_MEASUREMENTS` | unset | `1` lets the loop run planner-authored measurement commands when plan.json also opts in; anything else keeps them off. See Security. |
 
 ## Security
 
 The OS-3 review (`.amp/in/artifacts/orchestrate-sync/os-3-security-review.md`) named four concerns. The port settles them as follows.
 
-1. **Measurement commands.** `tasks[].measurements[].command` runs through `bash -c`, with plan.json as the trust boundary. The port runs them only when plan.json sets `"measurementsEnabled": true` at the top level. `PlanSchema` is strict and lives outside the port, so `agent-manager.ts` lifts the key before parsing and writes it back on every save; without it, each handoff logs `skipped N declared measurement(s)` to `attention.log` and the handoff proceeds. The schema change itself (a `measurementsEnabled` boolean on the plan) belongs in `schemas.ts` and the planner docs; see Follow-ups.
-2. **Clone origin.** `plan.repoUrl` must name the configured origin: `ORCHESTRATE_REPO_URL` when set, otherwise the workspace's `remote.origin.url`. A mismatch fails `AgentManager.load` with a `PlanValidationError`. When neither is set the loop logs one attention line, spawns proceed (an orb project is something the signed-in user already has access to), and the measurement clone stays refused.
+1. **Measurement commands.** `tasks[].measurements[].command` runs through `bash -c`. plan.json is written by the root planner, an LLM, and with `syncStateToGit` by anyone who can push the state branch, so plan.json alone cannot turn the commands on. They run only when the operator sets `ORCHESTRATE_MEASUREMENTS=1` in the environment of the process that runs the loop **and** plan.json sets `"measurementsEnabled": true` at the top level (`measurementGate` in `agent-runtime/scripts/core/runtime.ts`). Without the variable each handoff logs `skipped N declared measurement(s): ORCHESTRATE_MEASUREMENTS is unset` to `attention.log` and proceeds; with the variable but no opt-in the line names the missing key. `PlanSchema` is strict and lives outside the port, so `agent-manager.ts` lifts `measurementsEnabled` before parsing and writes it back on every save. The schema change itself belongs in `schemas.ts` and the planner docs; see Follow-ups.
+2. **Clone origin.** `plan.repoUrl` must name the repository in `ORCHESTRATE_REPO_URL`, which only the operator sets (`checkRepoUrlAgainstOrigin` in `runtime.ts`). The workspace's `remote.origin.url` is not a fallback, because whoever edits plan.json can also run `git remote set-url`. A mismatch fails `AgentManager.load` with a `PlanValidationError`. When the variable is unset the loop logs one attention line, spawns proceed (an orb project is something the signed-in user already has access to), and the measurement clone stays refused, so measurements need both variables.
 3. **Operator mode and file uploads.** `cli/comments.ts` and `cli/util.ts` are not port files, so the port cannot change them; the workspace confinement stays as upstream wrote it and the operator-mode lift stays reachable. See Follow-ups.
 4. **`@cursor/sdk` dependency.** Every SDK call is routed through the facade. The port carries `scripts/package.json` and its lockfile without `@cursor/sdk`, and the set's seed transforms redirect the two remaining `import type` lines in `schemas.ts` and `core/handoff.ts` to the facade, so the installed tree typechecks clean with no SDK on disk.
 
@@ -93,7 +94,7 @@ bun scripts/cli.ts kickoff "<goal>" --repo https://github.com/<owner>/<repo> [--
 ORCHESTRATE_REPO_URL=https://github.com/<owner>/<repo> bun scripts/cli.ts run <workspace>
 ```
 
-which spawns one thread per ready task, waits, and writes `<workspace>/handoffs/<task>.md`.
+which spawns one thread per ready task, waits, and writes `<workspace>/handoffs/<task>.md`. Add `ORCHESTRATE_MEASUREMENTS=1` only when you have read the `measurements[].command` lines in that plan.json and want the loop to run them.
 
 Tests: `bun test` in this directory (`adapters/amp`), against `__tests__/fake-amp/amp`.
 
