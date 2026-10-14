@@ -22,7 +22,7 @@
  * telling the agent to expand it. After `send`, `agentId` is the real id.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
@@ -222,12 +222,36 @@ interface ModelsModule {
   createAmpModelCatalog: (options?: { env?: NodeJS.ProcessEnv }) => ModelCatalog;
 }
 
+/**
+ * Amp's skill cache installs each skill as `<name>@<hash>` and keeps older
+ * hashes around, so the plain `pstack-sync` sibling lookup misses there.
+ * Returns the adapter directory under every `pstack-sync@*` sibling of
+ * `root` that holds `agent-runtime.ts`, newest first; `[]` when `root`
+ * cannot be read.
+ */
+export function hashedSiblingDirs(root: string): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.startsWith("pstack-sync@"))
+    .map((name) => join(root, name, "adapters", "amp"))
+    .filter((dir) => existsSync(join(dir, "agent-runtime.ts")))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+}
+
 function candidateDirs(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
   const dirs: string[] = [];
   if (process.env.ORCHESTRATE_AMP_RUNTIME_DIR) dirs.push(process.env.ORCHESTRATE_AMP_RUNTIME_DIR);
   // Installed: <skills>/orchestrate/scripts/core -> <skills>/pstack-sync/adapters/amp
-  dirs.push(join(here, "..", "..", "..", "pstack-sync", "adapters", "amp"));
+  const skillsRoot = join(here, "..", "..", "..");
+  dirs.push(join(skillsRoot, "pstack-sync", "adapters", "amp"));
+  // Orb skill cache: <cache>/orchestrate@<hash>/scripts/core -> <cache>/pstack-sync@<hash>/adapters/amp
+  dirs.push(...hashedSiblingDirs(skillsRoot));
   // Pack: pstack-sync/adapters/amp/agent-runtime/scripts/core -> pstack-sync/adapters/amp
   dirs.push(join(here, "..", "..", ".."));
   return dirs;

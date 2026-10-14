@@ -5,7 +5,7 @@
  * layout; bun erases them, so the pack layout runs here.
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ import { createAmpRuntime, type ThreadExport } from "../agent-runtime.ts";
 import {
   __resetRuntimeForTests,
   buildAgentApi,
+  hashedSiblingDirs,
   isAgentRuntimeError,
   loadSDK,
   PENDING_AGENT_ID,
@@ -214,6 +215,30 @@ describe("loadSDK in the pack layout", () => {
       __resetRuntimeForTests();
       for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
       Object.assign(process.env, saved);
+    }
+  });
+});
+
+describe("hashedSiblingDirs for the orb skill cache layout", () => {
+  test("lists pstack-sync@<hash> adapters newest first and skips hashes without the runtime", () => {
+    const root = mkdtempSync(join(tmpdir(), "os4-cache-"));
+    try {
+      const make = (hash: string, withRuntime: boolean, ageSec: number) => {
+        const adapter = join(root, `pstack-sync@${hash}`, "adapters", "amp");
+        mkdirSync(adapter, { recursive: true });
+        if (withRuntime) writeFileSync(join(adapter, "agent-runtime.ts"), "");
+        const when = new Date(Date.now() - ageSec * 1000);
+        utimesSync(adapter, when, when);
+        return adapter;
+      };
+      const old = make("1111", true, 600);
+      const fresh = make("2222", true, 0);
+      make("3333", false, 0);
+      mkdirSync(join(root, "orchestrate@abcd", "scripts", "core"), { recursive: true });
+      expect(hashedSiblingDirs(root)).toEqual([fresh, old]);
+      expect(hashedSiblingDirs(join(root, "missing"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
