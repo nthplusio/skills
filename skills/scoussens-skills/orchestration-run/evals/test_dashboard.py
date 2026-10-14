@@ -348,6 +348,14 @@ class InstallTests(unittest.TestCase):
                                  f"copy {copy.name}/{path} from {owner.name}/{path}")
 
 
+    def test_owner_briefs_exclude_every_coordinator_skill(self):
+        """The brief instruction names the same skills state.py refuses in shared_skills (audit finding 8)."""
+        import state
+        text = (RUNNER / "SKILL.md").read_text()
+        sentence = text[text.index("Pass the applicable shared skills"):text.index("Owners\nmay load")]
+        for skill in state.COORDINATOR_SKILLS:
+            self.assertIn(f"`{skill}`", sentence)
+
     def test_the_runner_names_the_dashboard_skill_for_rendering(self):
         text = (RUNNER / "SKILL.md").read_text()
         self.assertIn("validate_run.py", text)

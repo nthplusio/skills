@@ -126,7 +126,8 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding `harness-discovery` and both orchestration skills. Owners
+from setup and this run explicitly, excluding the four coordinator skills:
+`harness-discovery`, `orchestration-setup`, `orchestration-run` and `dashboard`. Owners
 may load additional role-specific skills and should launch bounded helpers
 (subagents) for research, review preparation, verification and other separable
 tasks within the ticket. Pass relevant
