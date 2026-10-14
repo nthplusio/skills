@@ -77,10 +77,23 @@ def load_saved(path, kind):
 # Earlier homes of the saved state, oldest first. Each held config.json and the
 # discovery file its discovery_file named, by default discovery.json.
 LEGACY_DIRS = (".orchestration",)
-COORDINATOR_SKILLS = {"harness-discovery", "orchestration-setup", "orchestration-run"}
-# Business stage keys from orchestration-run's dashboard data contract.
-STAGES = ("defined", "researched", "pr_readiness", "code_publication", "review", "verification",
-          "deployment", "business_acceptance")
+COORDINATOR_SKILLS = {"harness-discovery", "orchestration-setup", "orchestration-run", "dashboard"}
+# Business stage keys from the dashboard skill's status contract (dashboard/assets/stages.json).
+# The file is read from the sibling skill in the pack or in a skills repository; this literal is
+# the fallback when the dashboard skill is not installed beside this one.
+STAGE_FALLBACK = ("defined", "researched", "pr_readiness", "code_publication", "review", "verification",
+                  "deployment", "business_acceptance")
+
+
+def stage_keys():
+    for candidate in (SKILL_DIR.parent / "dashboard" / "assets" / "stages.json",
+                      SKILL_DIR.parent.parent / "dashboard" / "assets" / "stages.json"):
+        if candidate.is_file():
+            return tuple(item["key"] for item in json.loads(candidate.read_text()))
+    return STAGE_FALLBACK
+
+
+STAGES = stage_keys()
 
 
 def text(value, label):
@@ -195,7 +208,7 @@ def check_orchestration(config, discovery):
     def shared(values):
         texts(values, "shared_skills")
         if COORDINATOR_SKILLS & set(values):
-            raise ValueError("harness-discovery, orchestration-setup and orchestration-run belong to the coordinator, not shared workers")
+            raise ValueError("harness-discovery, orchestration-setup, orchestration-run and dashboard belong to the coordinator, not shared workers")
 
     shared(config["project"]["shared_skills"])
     stage_skills = config["project"].get("stage_skills", {})
