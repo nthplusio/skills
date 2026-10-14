@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import type { Command } from "commander";
 import { cancelCloudRun } from "../core/agent-manager.ts";
+import { badThreadIdReason } from "../core/runtime.ts";
 import {
   collectRunningAgentsInTree,
   crawlBranch,
@@ -90,6 +91,13 @@ export function registerForensicsCommands(program: Command): void {
         rootSlug: string,
         opts: { fetch?: boolean; yes?: boolean; agentId?: string }
       ) => {
+        if (opts.agentId !== undefined) {
+          const reason = badThreadIdReason(opts.agentId, "--agent-id");
+          if (reason) {
+            console.error(`kill-tree: ${reason}`);
+            process.exit(2);
+          }
+        }
         if (opts.fetch !== false) {
           try {
             execFileSync(

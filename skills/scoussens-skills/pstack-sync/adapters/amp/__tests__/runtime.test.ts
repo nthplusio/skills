@@ -79,7 +79,7 @@ describe("agent ids", () => {
     for (const bad of ["--help", "--last", PENDING_AGENT_ID, ""]) {
       const err = await Agent.resume(bad).catch(e => e);
       expect(isAgentRuntimeError(err)).toBe(true);
-      expect(err.message).toContain(JSON.stringify(bad));
+      expect(err.message).toContain(bad === PENDING_AGENT_ID ? "unexpanded placeholder" : JSON.stringify(bad));
     }
     expect(calls()).toEqual([]);
   });

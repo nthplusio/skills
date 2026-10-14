@@ -15,8 +15,10 @@ import {
   type AgentApi,
   agentUrl,
   checkRepoUrlAgainstOrigin,
+  isThreadId,
   loadSDK as loadAgentApi,
   measurementGate,
+  resolveSelfAgentId,
 } from "./runtime.ts";
 import { createSlackAdapter } from "../adapters/index.ts";
 import { createSlackWebClient } from "../adapters/slack/client.ts";
@@ -185,6 +187,9 @@ export class AgentManager {
    *  operator set `ORCHESTRATE_MEASUREMENTS=1` and plan.json opted in; see
    *  `measurementGate` in ./runtime.ts and checkWorkerMeasurements. */
   readonly measurements: ReturnType<typeof measurementGate>;
+  /** Amp port: `plan.selfAgentId` once resolved; null when the plan holds the
+   *  unexpanded `$AMP_THREAD_ID` placeholder or no thread id at all. */
+  readonly selfAgentId: string | null;
 
   private constructor(args: {
     workspace: string;
@@ -200,6 +205,7 @@ export class AgentManager {
     this.apiKey = args.apiKey;
     this.slackAdapter = args.slackAdapter;
     this.measurements = args.measurements;
+    this.selfAgentId = resolveSelfAgentId(args.plan.selfAgentId).id;
     this.planPath = join(args.workspace, "plan.json");
     this.statePath = join(args.workspace, "state.json");
     this.handoffsDir = join(args.workspace, "handoffs");
@@ -253,6 +259,8 @@ export class AgentManager {
         `repoUrl ${plan.repoUrl} not checked against an origin: ${originCheck.reason}; spawns proceed, measurement clones stay refused`
       );
     }
+    const selfAgent = resolveSelfAgentId(plan.selfAgentId);
+    if (selfAgent.attention) slackInitAttention.push(selfAgent.attention);
     const isRootPlanner = planIsRootPlanner(plan);
     if (isRootPlanner && opts.slackChannel && !plan.slackChannel) {
       plan.slackChannel = opts.slackChannel;
@@ -706,7 +714,7 @@ export class AgentManager {
         this.touch(s, {
           agentId: agent.agentId,
           runId: run.id,
-          parentAgentId: this.plan.selfAgentId ?? null,
+          parentAgentId: this.selfAgentId,
         });
         if (subAttempt > 1) {
           this.logAttention(
@@ -1806,7 +1814,8 @@ function truncateForKickoff(goal: string, max: number): string {
  */
 export function formatAgentFooter(agentId: string | null | undefined): string {
   const id = agentId?.trim();
-  if (!id) return "";
+  // Amp port: a placeholder or malformed id would link nowhere; omit the footer.
+  if (!id || !isThreadId(id)) return "";
   return `<${agentUrl(id)}|view>`;
 }
 

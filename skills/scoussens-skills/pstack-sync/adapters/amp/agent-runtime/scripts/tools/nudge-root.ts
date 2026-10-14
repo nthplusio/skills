@@ -12,7 +12,7 @@
 // latest run is not "running". On Amp a message sent to a working thread is
 // queued behind the current turn, so --wait-idle is the safer default for
 // anything the planner must act on immediately.
-import { agentUrl, loadSDK } from "../core/runtime.ts";
+import { agentUrl, badThreadIdReason, loadSDK } from "../core/runtime.ts";
 
 const Agent = await loadSDK();
 
@@ -236,6 +236,13 @@ async function sendWithBusyRetry(args: Args, deadline: number): Promise<void> {
 }
 
 const args = await parseArgs(process.argv.slice(2));
+{
+  const reason = badThreadIdReason(args.agentId, "<agent-id>");
+  if (reason) {
+    console.error(`nudge-root: ${reason}`);
+    process.exit(2);
+  }
+}
 const deadline = Date.now() + args.maxWaitMs;
 log(
   "nudging " +

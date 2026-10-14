@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  badThreadIdReason,
   checkRepoUrlAgainstOrigin,
+  isPendingAgentId,
   measurementGate,
   repoKey,
+  resolveSelfAgentId,
 } from "../agent-runtime/scripts/core/runtime.ts";
 
 const REPO = "https://github.com/nthplusio/skills";
@@ -71,5 +74,37 @@ describe("checkRepoUrlAgainstOrigin", () => {
     expect(repoKey("git@github.com:a/b.git")).toBe("github.com/a/b");
     expect(repoKey("")).toBeNull();
     expect(repoKey("https://github.com")).toBeNull();
+  });
+});
+
+describe("resolveSelfAgentId", () => {
+  const ID = "T-01a13830-78c4-723b-8624-f4b865ca42d8";
+
+  test("a missing key is upstream's unset and raises nothing", () => {
+    expect(resolveSelfAgentId(undefined)).toEqual({ id: null, attention: null });
+  });
+
+  test("a thread id passes through", () => {
+    expect(resolveSelfAgentId(ID)).toEqual({ id: ID, attention: null });
+  });
+
+  test("the unexpanded placeholder, an empty string, and a non-id are unknown with one attention line", () => {
+    for (const value of ["$AMP_THREAD_ID", "${AMP_THREAD_ID}", " $AMP_THREAD_ID ", "", "bc-123", "--last"]) {
+      const resolved = resolveSelfAgentId(value);
+      expect(resolved.id).toBeNull();
+      expect(resolved.attention).toContain("echo $AMP_THREAD_ID");
+      expect(resolved.attention).toContain("kill-tree --agent-id");
+    }
+    expect(resolveSelfAgentId("$AMP_THREAD_ID").attention).toContain("unexpanded placeholder");
+    expect(resolveSelfAgentId("bc-123").attention).toContain('"bc-123" is not an Amp thread id');
+  });
+
+  test("badThreadIdReason tells nudge-root and kill-tree why they refuse", () => {
+    expect(badThreadIdReason(ID)).toBeNull();
+    expect(isPendingAgentId("$AMP_THREAD_ID")).toBe(true);
+    expect(badThreadIdReason("$AMP_THREAD_ID", "<agent-id>")).toContain(
+      "<agent-id> is the unexpanded placeholder $AMP_THREAD_ID"
+    );
+    expect(badThreadIdReason("--last", "--agent-id")).toBe('--agent-id "--last" is not an Amp thread id');
   });
 });

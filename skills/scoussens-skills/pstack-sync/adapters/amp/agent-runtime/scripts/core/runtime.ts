@@ -63,6 +63,20 @@ export function isThreadId(value: unknown): value is string {
   return typeof value === "string" && THREAD_ID_EXACT_RE.test(value);
 }
 
+/** True for the unexpanded placeholder, `$AMP_THREAD_ID` or `${AMP_THREAD_ID}`. */
+export function isPendingAgentId(value: unknown): boolean {
+  return typeof value === "string" && /^\$\{?AMP_THREAD_ID\}?$/.test(value.trim());
+}
+
+/** Why `value` cannot be used as an agent id, or null when it can. */
+export function badThreadIdReason(value: unknown, what = "agent id"): string | null {
+  if (isThreadId(value)) return null;
+  if (isPendingAgentId(value)) {
+    return `${what} is the unexpanded placeholder ${PENDING_AGENT_ID}; use the value of \`echo $AMP_THREAD_ID\` in that agent's own orb, or the agentId recorded in state.json`;
+  }
+  return `${what} ${JSON.stringify(value)} is not an Amp thread id`;
+}
+
 /**
  * Refuse an agent id that is not a whole thread id before it reaches the
  * runtime, so `--last` or `--help` from state.json or a flag never becomes an
@@ -70,8 +84,32 @@ export function isThreadId(value: unknown): value is string {
  * test `isAgentRuntimeError` treat it as a startup failure, not a run result.
  */
 export function requireThreadId(agentId: unknown, what = "agent id"): string {
-  if (isThreadId(agentId)) return agentId;
-  throw agentIdError(`${what} ${JSON.stringify(agentId)} is not an Amp thread id`);
+  const reason = badThreadIdReason(agentId, what);
+  if (reason === null) return agentId as string;
+  throw agentIdError(reason);
+}
+
+/**
+ * What the loop takes `plan.selfAgentId` to be. The root prompt names the
+ * planner's id as `$AMP_THREAD_ID` and tells it to expand that; when the
+ * literal lands in plan.json (or an empty string, or anything that is not a
+ * thread id) the loop treats the id as unknown rather than passing it on to
+ * every child's `parentAgentId`, the Slack footer, and `kill-tree`. A missing
+ * key is upstream's "not set" and raises no attention.
+ */
+export function resolveSelfAgentId(value: unknown): {
+  id: string | null;
+  attention: string | null;
+} {
+  if (value === undefined || value === null) return { id: null, attention: null };
+  if (isThreadId(value)) return { id: value, attention: null };
+  const why = isPendingAgentId(value)
+    ? `plan.selfAgentId is the unexpanded placeholder ${PENDING_AGENT_ID}`
+    : `plan.selfAgentId ${JSON.stringify(value)} is not an Amp thread id`;
+  return {
+    id: null,
+    attention: `${why}; treating it as unset, so children record parentAgentId: null and kill-tree --agent-id cannot target this planner. Set it to the value of \`echo $AMP_THREAD_ID\` in the root planner's orb.`,
+  };
 }
 
 function agentIdError(message: string): Error & { isRetryable: boolean } {
