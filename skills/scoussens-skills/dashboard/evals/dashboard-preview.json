@@ -1,12 +1,11 @@
 {
   "schema_version": 2,
   "run_id": "template-preview",
-  "skill_version": "synthetic-preview",
-  "contract_version": "1",
+  "contract_version": "2",
   "title": "Orchestration preview",
   "goal": "Get each fix ready for review, and release only the changes we've been asked to ship.",
   "updated_at": "2026-10-08T14:30:00-05:00",
-  "config_path": "/example/repository/.nthplusio-skills/orchestration.json",
+  "config_path": "/example/repository/.orchestrate/preview/plan.json",
   "notice": "Synthetic examples based on historical patterns. Not live ticket status or real proof.",
   "run_choices": {
     "ticket_ids": ["UI-101", "API-102", "REVIEW-103", "API-104", "OPS-105", "ENV-106", "SHIP-107", "TRIAGE-108", "UI-109", "UI-110", "UI-111"],

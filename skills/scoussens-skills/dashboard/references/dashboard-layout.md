@@ -76,7 +76,7 @@ dialog and a decision dialog at desktop and phone widths. Render the minimal
 record from the [status contract](status-contract.md#a-minimal-record) too, so
 a producer that writes only the required fields still gets a page. Then run
 this skill's evals
-(`python3 -B -m unittest discover -s <this skill's folder>/evals -v`); the
-`orchestration-run` evals render the same preview and catch a change that
-breaks that producer. Routine data updates need only the renderer check, not
-repeated screenshots of an unchanged layout.
+(`python3 -B -m unittest discover -s <this skill's folder>/evals -v`), which
+render the same preview and the minimal records from the producers table.
+Routine data updates need only the renderer check, not repeated screenshots
+of an unchanged layout.
