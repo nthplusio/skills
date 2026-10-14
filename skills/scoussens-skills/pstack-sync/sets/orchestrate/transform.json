@@ -75,7 +75,7 @@
         "transforms": [
           {
             "find": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground. The Shell default backgrounds the loop and breaks the heartbeat when your turn ends.\n",
-            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` with the shell tool, which blocks until the command exits or the tool's own timeout ends it: pass `--max-runtime-sec` smaller than that timeout and rerun the same command whenever it exits with code 100, or run the loop as a managed service (`amp orb service start`) and poll it. A backgrounded loop breaks the heartbeat when your turn ends.\n"
+            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground with the shell tool, which blocks until the command exits or the tool's own timeout ends it: pass `--max-runtime-sec` smaller than that timeout and rerun the same command whenever it exits with code 100. Never start the loop as an orb service (`amp orb service start`) or in the background: it outlives your turn, and nothing wakes you when its last task finishes.\n"
           },
           {
             "find": "- `unknown`: read the `Last activity` and `SDK error` lines; if no signal, treat as transient and retry as-is; abandon if it fails again.\n",
@@ -140,7 +140,7 @@
           },
           {
             "find": "1. Take the user's goal. Ask for clarification only if the goal is missing or ambiguous. The user chose parallel cloud orchestration deliberately; push back only if the task is genuinely trivial.\n",
-            "replace": "1. Take the user's goal. Ask for clarification only if the goal is missing or ambiguous. The user chose parallel orchestration across orb threads deliberately; push back only if the task is genuinely trivial.\n"
+            "replace": "1. Take the user's goal. Ask for clarification only if the goal is missing or ambiguous. The user chose parallel orchestration across orb threads deliberately; push back only if the task is genuinely trivial. A goal that decomposes into fewer than four independent tasks stays in the current thread: do it with worktree subagents, one per task, and skip kickoff, because the loop pays for itself only when four or more tasks can run at once.\n"
           },
           {
             "find": "bun cli.ts kickoff \"<goal>\" [--repo <url>] [--ref main] [--model claude-opus-4-8] [--slack-channel C123] [--dispatcher-name \"Alex\"]\n",
@@ -157,6 +157,10 @@
           {
             "find": "`CURSOR_API_KEY` must be a user API key, not a team key. Auth sourcing precedence is documented in the `cursor-sdk` skill (https://github.com/cursor/plugins/tree/main/cursor-sdk). Don't bake keychain lookup into the kickoff CLI itself; cloud-agent VMs have no keychain.\n",
             "replace": "Auth is the `amp` CLI's login or an access token in `AMP_API_KEY`. The auth check is documented in the Amp agent runtime adapter's documentation, `pstack-sync/adapters/amp/README.md` in the pack this skill was installed from. Don't bake keychain lookup into the kickoff CLI itself; orb threads have no keychain.\n"
+          },
+          {
+            "find": "2. Run the kickoff CLI with that goal and any user-specified constraints (model override, repo override).\n",
+            "replace": "2. Run `bun <path-to-orchestrate>/scripts/tools/doctor.ts --repo <url>` first. It checks the script dependencies, the Amp runtime, the `amp` login, and the repository's access, and exits 1 with the fix for anything missing; fix what it reports before going on. Then run the kickoff CLI with that goal and any user-specified constraints (model override, repo override).\n"
           }
         ],
         "accepted": []
@@ -223,6 +227,30 @@
           {
             "find": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on cloud-agent display titles.\n",
             "replace": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on thread titles.\n"
+          },
+          {
+            "find": "Write `plan.json` at `<workspace>`; the default workspace is `.orchestrate/<rootSlug>/`.\n",
+            "replace": "Write `plan.json` at `<workspace>`; the default workspace is `.orchestrate/<rootSlug>/` at the root of the repository checkout, never inside an application directory, so the integration branch's pull request does not carry it. Add `.orchestrate/` to `.git/info/exclude` only when the plan sets `syncStateToGit: false`: the sync stages the workspace files with `git add`, which refuses an excluded path, so an excluded workspace with sync on fails every commit with `git-sync failed` in `attention.log` (Finding agents says when to keep sync on).\n"
+          },
+          {
+            "find": "- Merges are tasks. Publish a worker whose `scopedGoal` says which branches to merge, conflict intent, and verification.\n",
+            "replace": "- Merges are tasks. Publish a worker whose `scopedGoal` says which branches to merge, conflict intent, and verification. Once the integration branch holds a task's commits, delete that task's `orch/<rootSlug>/<task>` branch from the remote (`git push origin --delete <branch>`), and list every branch that remains, with why, in the pull request body.\n"
+          },
+          {
+            "find": "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs.\n",
+            "replace": "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs. A repository with no workflow under `.github/workflows/` has no CI: say `no CI configured` once, in the handoff or the pull request body, and do not subscribe to CI on its pull requests; a `No CI checks found for this commit` notice restates that absence and is not a finding.\n"
+          },
+          {
+            "find": "Do not detach `run`. The script is the heartbeat for state, handoffs, Slack mirrors, retry-queue draining, and Andon polling. When it exits, call `tree`. If any task is still `pending` or `running`, run the loop again.\n",
+            "replace": "Do not detach `run`, and never start it as an orb service (`amp orb service start`): a service outlives your turn, and nothing wakes you when its last task finishes. Run it in the foreground with the shell tool, with `--max-runtime-sec` under the tool's timeout (a minute under the limit leaves room for the checkpoint commit), and re-invoke the same command each time it exits with code `100` until `tree` shows every task terminal. The script is the heartbeat for state, handoffs, Slack mirrors, retry-queue draining, and Andon polling. When it exits, call `tree`. If any task is still `pending` or `running`, run the loop again. As a safety net, a loop that ends with every task terminal while this thread is idle (`plan.selfAgentId` set and your turn already over) sends one follow-up to the thread naming the terminal tasks; read the handoffs and continue from it, it is not a new goal.\n"
+          },
+          {
+            "find": "`state.json` is the source of truth. Inspect with `tree`, `list`, and `status`.\n",
+            "replace": "`state.json` is the source of truth. Inspect with `tree`, `list`, and `status`. To show progress to a person, run `bun <path-to-orchestrate>/scripts/tools/dashboard.ts <workspace>`: it writes `status.json` from the workspace and renders the dashboard page from it, which replaces sending `/dashboard` into this thread or polling thread exports.\n"
+          },
+          {
+            "find": "`syncStateToGit` defaults on so remote observers can read `state.json` and handoffs from git. Set it to `false` when those artifacts should stay local.\n",
+            "replace": "`syncStateToGit` defaults on so remote observers can read `state.json` and handoffs from git: every status change stages `plan.json`, `state.json`, `handoffs/`, and the retry queue with `git add`, commits, and pushes the branch checked out in this workspace. On Amp set it to `false` in the root plan when the tree has no subplanners and nobody needs `crawl` or `kill-tree`, and keep `.orchestrate/` excluded. Keep it on when the tree has subplanners (a respawned subplanner clones its own branch and resumes from the state committed there) or an observer reads the tree from git, and then commit from a branch of your own (`orch/<rootSlug>/root`, checked out before the first `run`) so the state commits never ride the integration branch.\n"
           }
         ],
         "accepted": []
