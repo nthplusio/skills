@@ -41,6 +41,8 @@ beforeEach(() => {
     ORCHESTRATE_AMP_BIN: "",
     ORCHESTRATE_AMP_POLL_MS: "5",
     ORCHESTRATE_AMP_ARCHIVED_CHECK_MS: "3600000",
+    // The facade is under test, not the grace window; agent-runtime.test.ts covers that.
+    ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0",
   };
 });
 

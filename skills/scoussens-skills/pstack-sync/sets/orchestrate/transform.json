@@ -222,7 +222,7 @@
           },
           {
             "find": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n",
-            "replace": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Without a Slack kickoff, the root polls `andon.json` in its workspace instead, the file-based source the Amp adapter ships: write `{\"reason\": \"<why>\"}` there to raise Andon and delete the file to clear it; the `andon raise` and `andon clear` commands below still need Slack. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n"
+            "replace": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Without a Slack kickoff, the root polls `andon.json` in its workspace instead, the file-based source the Amp adapter ships: `andon raise --workspace <workspace> --reason <why>` writes that file and `andon clear --workspace <workspace>` deletes it (or write `{\"reason\": \"<why>\"}` there and delete it by hand). Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n"
           },
           {
             "find": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on cloud-agent display titles.\n",
@@ -359,6 +359,26 @@
           {
             "find": "      \"Cloud agent id for the footer link back to cursor.com (omit for operator-issued clears).\"\n",
             "replace": "      \"Thread id for the footer link back to ampcode.com (omit for operator-issued clears).\"\n"
+          },
+          {
+            "find": "import { appendAgentFooter } from \"../core/agent-manager.ts\";\nimport {\n  assertOperatorModeOrBail,\n",
+            "replace": "import { appendAgentFooter } from \"../core/agent-manager.ts\";\nimport {\n  clearAndonFile,\n  raiseAndonFile,\n  resolveFileAndonWorkspace,\n} from \"../core/andon-file.ts\";\nimport {\n  assertOperatorModeOrBail,\n"
+          },
+          {
+            "find": "      \"Posted to the run thread so the tree sees why orchestration paused.\"\n    )\n    .option(\n      \"--workspace <path>\",\n      \"Workspace containing plan.json with slackKickoffRef\"\n    )\n",
+            "replace": "      \"Posted to the run thread so the tree sees why orchestration paused.\"\n    )\n    .option(\n      \"--workspace <path>\",\n      \"Workspace containing plan.json. Without a Slack kickoff (or SLACK_BOT_TOKEN), writes <workspace>/andon.json, which the root planner's loop polls.\"\n    )\n"
+          },
+          {
+            "find": "          const { slack, ref } = loadAndonTargetOrBail(opts);\n          const head = `${ANDON_RAISED_PREFIX} by ${opts.sender}: ${opts.reason}`;\n",
+            "replace": "          // Amp port: a run without a Slack kickoff signals through\n          // <workspace>/andon.json, which the root planner's loop polls.\n          const fileWorkspace = resolveFileAndonWorkspace(opts.workspace);\n          if (fileWorkspace) {\n            const path = raiseAndonFile({\n              workspace: fileWorkspace,\n              reason: opts.reason,\n              raisedBy: opts.sender,\n            });\n            console.log(`andon raised: wrote ${path}`);\n            return;\n          }\n          const { slack, ref } = loadAndonTargetOrBail(opts);\n          const head = `${ANDON_RAISED_PREFIX} by ${opts.sender}: ${opts.reason}`;\n"
+          },
+          {
+            "find": "    .option(\n      \"--workspace <path>\",\n      \"Workspace containing plan.json with slackKickoffRef\"\n    )\n    .option(\n      \"--note <text>\",\n",
+            "replace": "    .option(\n      \"--workspace <path>\",\n      \"Workspace containing plan.json. Without a Slack kickoff (or SLACK_BOT_TOKEN), deletes <workspace>/andon.json.\"\n    )\n    .option(\n      \"--note <text>\",\n"
+          },
+          {
+            "find": "          assertOperatorModeOrBail(\n            \"andon clear (workers must not clear an active Andon)\"\n          );\n          const { slack, ref } = loadAndonTargetOrBail(opts);\n",
+            "replace": "          assertOperatorModeOrBail(\n            \"andon clear (workers must not clear an active Andon)\"\n          );\n          // Amp port: the file mode, gated the same way as the Slack path.\n          const fileWorkspace = resolveFileAndonWorkspace(opts.workspace);\n          if (fileWorkspace) {\n            const { path, cleared } = clearAndonFile(fileWorkspace);\n            console.log(\n              cleared\n                ? `andon cleared: removed ${path}`\n                : `andon was not raised: no ${path}`\n            );\n            return;\n          }\n          const { slack, ref } = loadAndonTargetOrBail(opts);\n"
           }
         ],
         "accepted": []
@@ -368,6 +388,18 @@
           {
             "find": "      \"Cloud agent id for the footer link back to cursor.com (omit for operator-issued posts).\"\n",
             "replace": "      \"Thread id for the footer link back to ampcode.com (omit for operator-issued posts).\"\n"
+          },
+          {
+            "find": "      \"Upload a local file to the target thread instead of posting text. Path must resolve under --workspace outside operator mode.\"\n",
+            "replace": "      \"Upload a local file to the target thread instead of posting text. Path must resolve under --workspace.\"\n"
+          },
+          {
+            "find": "  // Non-operators can only upload files from the run workspace.\n  if (allowedThread !== undefined) {\n    assertThreadAllowed(args.threadTs, allowedThread);\n    if (!args.workspace) {\n      throw new Error(\n        \"--file requires --workspace so uploads stay confined to the run's workspace\"\n      );\n    }\n    assertFileInsideWorkspace(args.filePath, args.workspace);\n  }\n",
+            "replace": "  // Amp port: uploads stay confined to the run workspace in operator mode\n  // too. The flag is a file in the orb user's own home directory, which\n  // every thread of the project can create, so it cannot lift a boundary.\n  if (allowedThread !== undefined) {\n    assertThreadAllowed(args.threadTs, allowedThread);\n  }\n  if (!args.workspace) {\n    throw new Error(\n      \"--file requires --workspace so uploads stay confined to the run's workspace\"\n    );\n  }\n  assertFileInsideWorkspace(args.filePath, args.workspace);\n"
+          },
+          {
+            "find": "        `--workspace ${workspaceAbs}; uploads are confined to the workspace ` +\n        `subtree unless operator mode is enabled.`\n",
+            "replace": "        `--workspace ${workspaceAbs}; uploads are confined to the workspace ` +\n        `subtree.`\n"
           }
         ],
         "accepted": []
@@ -435,7 +467,7 @@
         "transforms": [
           {
             "find": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using the ManagePullRequest tool. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`\n",
-            "replace": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using \\`gh pr create --draft --base ${prBase}\\`. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`\n"
+            "replace": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using \\`gh pr create --draft --base ${prBase}\\`. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration. Subscribe to the pull request's CI only when the repository has a workflow under \\`.github/workflows/\\`; otherwise write \\`no CI configured\\` once in the pull request body, do not subscribe, and never report a \\`No CI checks found\\` notice as a finding.`\n"
           }
         ],
         "accepted": []

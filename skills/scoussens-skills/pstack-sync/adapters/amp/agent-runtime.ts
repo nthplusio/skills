@@ -17,12 +17,16 @@
  *   getRun, wait  amp threads export <id>, polled; the run is terminal when
  *                 `meta.lastKnownAgentState.state` is idle and the last
  *                 message is an assistant message after the run's start.
+ *                 When that message has no `## Status` or `## Verification`
+ *                 section, wait and stream keep polling for a grace period
+ *                 (`handoffGraceMs`) so a later turn can produce the handoff.
  *   stream        the same export, polled, diffed against what was yielded.
  *   cancel        amp threads archive <id>; the run reads as cancelled
  *   archive       amp threads archive <id>; a finished run still reads as finished
  *   label, rename amp threads label <id> <labels...>, amp threads rename <id> <title>
  *   sendFollowUp  amp threads continue <id> -ox, with the text on stdin
- *   list          amp threads list --json --limit <n>
+ *   list          amp threads list --json --limit <n>; with labels,
+ *                 amp threads search "label:<a> label:<b> archived:false" --json --limit <n>
  *   agentUrl      https://ampcode.com/threads/<id>
  *
  * Run ids are `m<index>`: the index of the user message that started the
@@ -40,6 +44,7 @@ import {
   AgentRuntimeError,
   type AgentSummary,
   type LatestRun,
+  type NodeType,
   type RunHandle,
   type RunSnapshot,
   type RunStatus,
@@ -68,12 +73,22 @@ export interface AmpRuntimeOptions {
   commandTimeoutMs?: number;
   /** Longest `wait` or `stream` keeps polling a run that has not ended; `ORCHESTRATE_WAIT_TIMEOUT_SEC`, default 7200 s. */
   waitTimeoutSec?: number;
+  /**
+   * How long `wait` and `stream` keep polling after a turn ends idle without a
+   * `## Status` or `## Verification` section, so a later turn can produce the
+   * handoff before the run reads as finished; `ORCHESTRATE_AMP_HANDOFF_GRACE_MS`,
+   * default 120 s, `0` disables.
+   */
+  handoffGraceMs?: number;
   /** Where lines that deserve a person's attention go when no run can carry them (a rename or label that failed); default stderr. */
   onAttention?: (line: string) => void;
   /** Working directory for CLI invocations and the second place the bridge file is looked for. */
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 }
+
+/** The grace window's default: long enough for a thread to start and finish one more turn. */
+export const DEFAULT_HANDOFF_GRACE_MS = 120_000;
 
 const DEFAULTS = {
   bin: "amp",
@@ -85,6 +100,7 @@ const DEFAULTS = {
   url: "https://ampcode.com",
   commandTimeoutMs: 180_000,
   waitTimeoutSec: 7_200,
+  handoffGraceMs: DEFAULT_HANDOFF_GRACE_MS,
 };
 
 export function readRuntimeOptionsFromEnv(
@@ -96,6 +112,13 @@ export function readRuntimeOptionsFromEnv(
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
+  // Zero is a value here: it turns the grace window off.
+  const nonNegative = (key: string): number | undefined => {
+    const raw = env[key];
+    if (raw === undefined || raw.trim() === "") return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
   return {
     bin: env.ORCHESTRATE_AMP_BIN || undefined,
     pollMs: num("ORCHESTRATE_AMP_POLL_MS"),
@@ -106,6 +129,7 @@ export function readRuntimeOptionsFromEnv(
     url: env.ORCHESTRATE_AMP_URL || undefined,
     commandTimeoutMs: num("ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS"),
     waitTimeoutSec: num("ORCHESTRATE_WAIT_TIMEOUT_SEC"),
+    handoffGraceMs: nonNegative("ORCHESTRATE_AMP_HANDOFF_GRACE_MS"),
   };
 }
 
@@ -117,6 +141,16 @@ const TITLE_MAX_CHARS = 100;
 export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 /** The mode the bridge runs when the caller says `inherit`. */
 export const BRIDGE_DEFAULT_MODE = "high";
+
+/**
+ * The label a spawn's `nodeType` becomes, the same one the bridge plugin
+ * derives from the field: `node-planner`, `node-worker`, and so on. The
+ * runtime adds it on both spawn paths, so a run looks the same whichever
+ * created its threads and whether or not the bridge knows the field.
+ */
+export function nodeTypeLabel(nodeType: NodeType): string {
+  return `node-${nodeType}`;
+}
 
 /** True for a whole Amp thread id and nothing else. */
 export function isThreadId(value: string): boolean {
@@ -282,6 +316,8 @@ export interface RunDescription {
   durationMs: number | null;
   /** Index of the last message considered, for stream cursors. */
   messageCount: number;
+  /** Whether `finalText` carries a handoff section; see `hasHandoffSection`. */
+  hasHandoff: boolean;
 }
 
 export function parseRunId(runId: string): number {
@@ -318,6 +354,16 @@ function isUserTextMessage(message: ExportMessage): boolean {
   );
 }
 
+/** Index of the last user message whose text is `text`, or null. */
+export function lastUserMessageIndex(exp: ThreadExport, text: string): number | null {
+  const messages = exp.messages ?? [];
+  const wanted = text.trim();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isUserTextMessage(messages[i]) && messageText(messages[i]).trim() === wanted) return i;
+  }
+  return null;
+}
+
 /** Index of the user message that started the thread's latest run. */
 export function latestRunStart(exp: ThreadExport): number | null {
   const messages = exp.messages ?? [];
@@ -334,6 +380,15 @@ export function parseBranchLine(body: string): string[] {
   const raw = match[1].trim().replace(/^`([^`]+)`$/, "$1").trim();
   if (!raw || raw.startsWith("##") || /^\(no branch\)$/i.test(raw)) return [];
   return [raw];
+}
+
+/**
+ * The same test as upstream's `hasStructuredHandoff` in `core/failure-handoff.ts`:
+ * a handoff opens a `## Status` (or, for a verifier, `## Verification`)
+ * section. A turn that ends without one is a progress message, not a handoff.
+ */
+export function hasHandoffSection(body: string): boolean {
+  return /^##\s+(Status|Verification)\s*$/m.test(body);
 }
 
 function agentState(exp: ThreadExport): string {
@@ -362,7 +417,13 @@ export function describeRun(exp: ThreadExport, runId: string): RunDescription {
     Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
       ? endedAt - startedAt
       : null;
-  const base = { finalText, branches, durationMs, messageCount: messages.length };
+  const base = {
+    finalText,
+    branches,
+    durationMs,
+    messageCount: messages.length,
+    hasHandoff: hasHandoffSection(finalText),
+  };
 
   if (exp.meta?.deleted === true) {
     return { status: "cancelled", ...base };
@@ -527,7 +588,14 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
 
   async function spawnViaBridge(
     bridge: BridgeFile,
-    body: { name: string; prompt: string; project: string; mode: string; labels: string[] }
+    body: {
+      name: string;
+      prompt: string;
+      project: string;
+      mode: string;
+      labels: string[];
+      nodeType?: NodeType;
+    }
   ): Promise<string> {
     let response: Response;
     try {
@@ -577,20 +645,59 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
   }
 
   /**
-   * Yield one export per poll until the caller stops consuming or the
-   * deadline passes. Shared by `wait` and `stream`, so both tolerate up to
-   * `maxConsecutiveFailures` failed exports in a row (the thread keeps running
-   * on the server while the local view is dark), both notice a thread another
-   * process archived, and both stop after `waitTimeoutSec` without a terminal
-   * state: the final item carries `timedOut: true` and the generator ends.
+   * Yield one export per poll, with the status the caller should act on,
+   * until the caller stops consuming or the deadline passes. Shared by `wait`
+   * and `stream`, so both tolerate up to `maxConsecutiveFailures` failed
+   * exports in a row (the thread keeps running on the server while the local
+   * view is dark), both notice a thread another process archived, both hold
+   * a finished run without a handoff section for `handoffGraceMs` (the third
+   * real run had a worker end a turn on a progress message and write the
+   * handoff on its next turn, after the loop had already respawned it), and
+   * both stop after `waitTimeoutSec` without a terminal state: the final item
+   * carries `timedOut: true` and the generator ends.
    */
   async function* pollExports(
     run: RunHandle
-  ): AsyncGenerator<{ exp: ThreadExport; timedOut: boolean }, void> {
+  ): AsyncGenerator<{ exp: ThreadExport; status: RunStatus; timedOut: boolean }, void> {
     const startedAt = Date.now();
     const deadlineMs = cfg.waitTimeoutSec * 1000;
     let failures = 0;
     let lastArchivedCheck = startedAt;
+    // When the turn that ended without a handoff section was first seen; null
+    // while the thread is working, so each such turn gets its own window.
+    let graceStartedAt: number | null = null;
+
+    /**
+     * A finished run whose final text has no handoff section stays `running`
+     * for `handoffGraceMs` from the first poll that saw it, then reads as
+     * finished with that text, as before. A thread that resumes a turn in
+     * between clears the clock. An archived thread gets no grace: it cannot
+     * take another turn.
+     */
+    function withHandoffGrace(run: RunHandle, exp: ThreadExport, status: RunStatus): RunStatus {
+      if (status === "running") {
+        graceStartedAt = null;
+        return status;
+      }
+      if (status !== "finished" || cfg.handoffGraceMs <= 0 || exp.meta?.archived === true) {
+        return status;
+      }
+      if (describeRun(exp, run.runId).hasHandoff) return status;
+      const graceSec = Math.round(cfg.handoffGraceMs / 1000);
+      if (graceStartedAt === null) {
+        graceStartedAt = Date.now();
+        attention(
+          `${run.agentId} ${run.runId}: turn ended idle without a \`## Status\` or \`## Verification\` section; polling up to ${graceSec}s more for a later turn to produce the handoff`
+        );
+      }
+      if (Date.now() - graceStartedAt < cfg.handoffGraceMs) return "running";
+      attention(
+        `${run.agentId} ${run.runId}: no handoff section after ${graceSec}s of grace; the run reads as finished with its last text`
+      );
+      graceStartedAt = null;
+      return status;
+    }
+
     while (true) {
       let exp: ThreadExport | null = null;
       if (cancelledHere.has(run.agentId)) {
@@ -611,15 +718,17 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         }
       }
       if (exp) {
-        const running = describeRun(exp, run.runId).status === "running";
-        if (running && Date.now() - lastArchivedCheck >= cfg.archivedCheckMs) {
+        let status = describeRun(exp, run.runId).status;
+        if (status === "running" && Date.now() - lastArchivedCheck >= cfg.archivedCheckMs) {
           lastArchivedCheck = Date.now();
           if (await isArchivedElsewhere(run.agentId)) {
             exp = { ...exp, meta: { ...(exp.meta ?? {}), archived: true } };
+            status = describeRun(exp, run.runId).status;
           }
         }
-        const timedOut = running && Date.now() - startedAt >= deadlineMs;
-        yield { exp, timedOut };
+        status = withHandoffGrace(run, exp, status);
+        const timedOut = status === "running" && Date.now() - startedAt >= deadlineMs;
+        yield { exp, status, timedOut };
         if (timedOut) return;
       }
       await sleep(cfg.pollMs);
@@ -632,7 +741,11 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
 
   const runtime: AgentRuntime = {
     async spawn(args: SpawnArgs): Promise<SpawnResult> {
-      const labels = labelArgs([...(cfg.label ? [cfg.label] : []), ...(args.labels ?? [])]);
+      const labels = labelArgs([
+        ...(cfg.label ? [cfg.label] : []),
+        ...(args.nodeType ? [nodeTypeLabel(args.nodeType)] : []),
+        ...(args.labels ?? []),
+      ]);
       const title = titleFor(
         args.title ?? (args.runTag ? `${args.runTag} ${args.name}` : args.name)
       );
@@ -651,6 +764,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
             project: args.repoUrl,
             mode: mode ?? BRIDGE_DEFAULT_MODE,
             labels,
+            ...(args.nodeType === undefined ? {} : { nodeType: args.nodeType }),
           });
           pendingTitles.set(agentId, title);
           return { agentId, runId: formatRunId(0), via: "bridge" };
@@ -706,10 +820,10 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     async wait(run: RunHandle): Promise<WaitResult> {
       threadIdArg(run.agentId);
       runIdArg(run.runId);
-      for await (const { exp, timedOut } of pollExports(run)) {
+      for await (const { exp, status, timedOut } of pollExports(run)) {
         const d = describeRun(exp, run.runId);
         const base = { finalText: d.finalText, branches: d.branches, durationMs: d.durationMs };
-        if (d.status !== "running") return { status: d.status, ...base };
+        if (status !== "running") return { status, ...base };
         if (timedOut) return { status: "error", ...base, error: timeoutMessage(run, exp) };
       }
       throw new AgentRuntimeError(`polling ${run.agentId} ended without a result`);
@@ -721,7 +835,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       // Per message index: the first block not fully yielded and, when that
       // block is text still growing, how much of it went out already.
       const yielded = new Map<number, { next: number; partialLen: number }>();
-      for await (const { exp, timedOut } of pollExports(run)) {
+      for await (const { exp, status, timedOut } of pollExports(run)) {
         const messages = exp.messages ?? [];
         for (let i = start + 1; i < messages.length; i++) {
           const m = messages[i];
@@ -752,9 +866,8 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
           }
           yielded.set(i, seen);
         }
-        const d = describeRun(exp, run.runId);
-        if (d.status !== "running") {
-          yield { type: "status", status: d.status };
+        if (status !== "running") {
+          yield { type: "status", status };
           return;
         }
         if (timedOut) {
@@ -792,17 +905,23 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       if (result.code !== 0) throw failure(`amp threads rename ${agentId}`, result);
     },
 
-    async list(args: { limit: number }): Promise<AgentSummary[]> {
-      const result = await amp(
-        ["threads", "list", "--json", "--limit", String(Math.max(1, args.limit))],
-        { timeoutMs: 60_000 }
-      );
-      if (result.code !== 0) throw failure("amp threads list", result);
+    async list(args: { limit: number; labels?: string[] }): Promise<AgentSummary[]> {
+      const limit = String(Math.max(1, args.limit));
+      const labels = labelArgs(args.labels ?? []);
+      // `threads list` cannot filter by label; `threads search` can, and its
+      // query is built only from labels that passed the label check.
+      const argv =
+        labels.length > 0
+          ? ["threads", "search", `${labels.map(l => `label:${l}`).join(" ")} archived:false`, "--json", "--limit", limit]
+          : ["threads", "list", "--json", "--limit", limit];
+      const what = `amp threads ${argv[1]}`;
+      const result = await amp(argv, { timeoutMs: 60_000 });
+      if (result.code !== 0) throw failure(what, result);
       let parsed: unknown;
       try {
         parsed = JSON.parse(result.stdout);
       } catch (err) {
-        throw new AgentRuntimeError("amp threads list returned non-JSON output", {
+        throw new AgentRuntimeError(`${what} returned non-JSON output`, {
           isRetryable: true,
           cause: err,
         });
@@ -840,13 +959,23 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async sendFollowUp(agentId: string, text: string): Promise<{ runId: string }> {
-      // The new user message lands at the current message count, so read it
-      // first; without it the follow-up's run could not be told from the last.
+      // The message count before the send is where the message lands on an
+      // idle thread. On a working thread it queues behind the turn, which may
+      // add messages first, so the index is read back after the send: the
+      // last user message with this text names the run, the count is the
+      // fallback while the message has not landed yet.
       const before = await exportThread(threadIdArg(agentId));
-      const runId = formatRunId((before.messages ?? []).length);
+      const fallback = formatRunId((before.messages ?? []).length);
       const result = await amp(["threads", "continue", agentId, "-ox"], { stdin: text });
       if (result.code !== 0) throw failure(`amp threads continue ${agentId}`, result);
-      return { runId };
+      try {
+        const after = await exportThread(agentId);
+        const index = lastUserMessageIndex(after, text);
+        if (index !== null) return { runId: formatRunId(index) };
+      } catch {
+        // The send went through; the fallback id is upstream's best guess.
+      }
+      return { runId: fallback };
     },
 
     agentUrl(agentId: string): string {

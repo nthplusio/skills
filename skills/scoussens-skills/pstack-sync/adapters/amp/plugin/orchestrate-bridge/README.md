@@ -27,6 +27,7 @@ An Amp plugin that gives the orchestrate loop a way to create threads nested und
    | `mode` | `low`, `medium`, `high`, or `ultra`. |
    | `labels` | Array of strings matching `[A-Za-z0-9][A-Za-z0-9-]*`, each at most 32 characters, at most 20 of them. May be empty or omitted. |
    | `parent` | Optional thread id (`T-...`). Defaults to the session thread. |
+   | `nodeType` | Optional: `planner`, `subplanner`, `worker`, or `verifier`, what the thread is in the orchestrate tree. Becomes the label `node-<type>` ahead of `labels` (once, when `labels` already holds it) and names the thread in the log line. A bridge built before this field ignores it, so the loop also sends the same label in `labels`. |
 
    The plugin creates the thread with `getBuiltinAgent(mode).createThread({ parentThreadID, executor: 'orb', project, visibility: 'private' })`, adds the labels, appends the prompt, and answers `200 {"threadID": "T-...", "parent": "T-..."}`. Spawns run one at a time; a second request waits for the first.
 
@@ -61,4 +62,4 @@ Dispose callbacks do not run when the plugin process is killed, so a stale file 
 cd skills/scoussens-skills/pstack-sync/adapters/amp && bun test __tests__/bridge-plugin.test.ts
 ```
 
-The test drives the default export with a fake `PluginAPI` (a stub `getBuiltinAgent` whose fake thread records `addLabels` and `append`) over real loopback HTTP: the file is written and removed, a good request creates the child with the right options in order, bad token, bad label, bad mode, and oversized prompt are refused with the right codes, an Amp failure is a `500` without a stack, and dispose closes the server.
+The test drives the default export with a fake `PluginAPI` (a stub `getBuiltinAgent` whose fake thread records `addLabels` and `append`) over real loopback HTTP: the file is written and removed, a good request creates the child with the right options in order, a `nodeType` becomes its label once, bad token, bad label, bad mode, bad node type, and oversized prompt are refused with the right codes, an Amp failure is a `500` without a stack, and dispose closes the server.

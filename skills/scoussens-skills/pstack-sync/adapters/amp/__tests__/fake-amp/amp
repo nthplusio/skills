@@ -14,6 +14,7 @@
 #                                fails with "Cannot rename an empty thread." unless the last export
 #                                served for <id> had a message, and fails outright when rename-fail exists
 #   search-<id>.json             reply to `threads search "id:<id> ..." --json`, else []
+#   search-labels.json           reply to a `threads search "label:..." --json` query without an id, else []
 #   list.json                    reply to `threads list --json`, else []
 #   agent-options.json           reply to `plugins show-agent-options --json`, else exit 1
 set -u
@@ -83,7 +84,9 @@ case "${argv[0]}" in
         ;;
       search)
         id="$(printf '%s' "${argv[2]}" | grep -o 'T-[0-9a-f-]*' | head -n 1)"
-        if [ -n "$id" ] && [ -e "$dir/search-$id.json" ]; then cat "$dir/search-$id.json"; else echo "[]"; fi
+        if [ -n "$id" ] && [ -e "$dir/search-$id.json" ]; then cat "$dir/search-$id.json"
+        elif [ -z "$id" ] && [ -e "$dir/search-labels.json" ]; then cat "$dir/search-labels.json"
+        else echo "[]"; fi
         ;;
       list)
         if [ -e "$dir/list.json" ]; then cat "$dir/list.json"; else echo "[]"; fi

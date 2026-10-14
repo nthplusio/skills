@@ -33,7 +33,7 @@ export interface RunHandle {
  */
 export type RunStatus = "running" | "finished" | "error" | "cancelled";
 
-/** What the agent is in the orchestrate tree. Informational: the runtime records it and the bridge may use it. */
+/** What the agent is in the orchestrate tree. The runtime labels the agent `node-<type>` and passes the field to the bridge. */
 export type NodeType = "planner" | "subplanner" | "worker" | "verifier";
 
 /** How a spawn reached the harness: through the bridge plugin (nested under the calling thread) or the CLI. */
@@ -115,8 +115,8 @@ export interface AgentRuntime {
   label(agentId: string, labels: string[]): Promise<void>;
   /** Retitle an existing agent; fails while the agent has no message yet. */
   rename(agentId: string, title: string): Promise<void>;
-  /** Most recent agents, newest first. */
-  list(args: { limit: number }): Promise<AgentSummary[]>;
+  /** Most recent agents, newest first; with `labels`, only unarchived agents carrying every one of them. */
+  list(args: { limit: number; labels?: string[] }): Promise<AgentSummary[]>;
   /** The agent's current or last run, or null when it has none. */
   latestRun(agentId: string): Promise<LatestRun | null>;
   /** Send a further message to an existing agent; starts a new run. */
@@ -243,7 +243,7 @@ export interface AgentApi {
   create(opts: AgentCreateOptions): Promise<SDKAgent>;
   resume(agentId: string): Promise<SDKAgent>;
   getRun(runId: string, opts: GetRunOptions): Promise<Run>;
-  list(opts: { runtime?: "cloud"; limit: number }): Promise<{ items: AgentListItem[] }>;
+  list(opts: { runtime?: "cloud"; limit: number; labels?: string[] }): Promise<{ items: AgentListItem[] }>;
   listRuns(
     agentId: string,
     opts: { runtime?: "cloud"; limit: number }

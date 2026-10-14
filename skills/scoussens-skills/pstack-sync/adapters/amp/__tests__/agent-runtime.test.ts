@@ -9,12 +9,15 @@ import { AgentRuntimeError, type StreamEvent } from "../../interface.ts";
 import {
   bridgeCandidates,
   createAmpRuntime,
+  DEFAULT_HANDOFF_GRACE_MS,
   describeRun,
+  hasHandoffSection,
   isLoopbackUrl,
   isThreadId,
   labelArgs,
   parseBranchLine,
   readBridgeFile,
+  readRuntimeOptionsFromEnv,
   type ThreadExport,
   titleFor,
   withStartingRef,
@@ -51,6 +54,8 @@ beforeEach(() => {
     ORCHESTRATE_AMP_MAX_EXPORT_FAILURES: "5",
     ORCHESTRATE_AMP_BRIDGE: "",
     AMP_WORKING_DIRECTORY: "",
+    // Off unless a test turns it on: most fixtures end on a plain reply.
+    ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0",
   };
 });
 
@@ -306,6 +311,21 @@ describe("spawn through the bridge", () => {
     expect(calls()).toEqual([]);
   });
 
+  test("sends nodeType to the bridge and its node-<type> label on both paths", async () => {
+    const bridge = await startBridge();
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"], nodeType: "planner" });
+    expect(bridge.requests[0].body.nodeType).toBe("planner");
+    expect(bridge.requests[0].body.labels).toEqual(["orchestrate", "node-planner", "run-ab12cd"]);
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"] });
+    expect(bridge.requests[1].body).not.toHaveProperty("nodeType");
+    expect(bridge.requests[1].body.labels).toEqual(["orchestrate", "run-ab12cd"]);
+    const cli = createAmpRuntime({ env });
+    await cli.spawn({ ...SPAWN, labels: ["run-ab12cd"], nodeType: "verifier" });
+    const label = calls().find(c => c[0] === "threads" && c[1] === "label");
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", "node-verifier", "run-ab12cd"]);
+  });
+
   test("maps a non-inherit model to the bridge's mode", async () => {
     const bridge = await startBridge();
     const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
@@ -542,6 +562,106 @@ describe("deadline", () => {
   });
 });
 
+describe("handoff grace", () => {
+  const PROGRESS = "Tests pass; pushing the branch next and will hand off after.";
+  const midTurn: Msg[] = [{ user: "do the task" }, { assistant: PROGRESS }, { tool: "shell_command", id: "TU-2" }];
+  const handedOff: Msg[] = [...midTurn, { toolResult: true }, { assistant: "## Status\nsuccess\n\n## Branch\n`orch/demo/task-a`" }];
+
+  test("holds a finished run without a handoff section until a later turn produces one", async () => {
+    serve(ID, 1, thread("working", [{ user: "do the task" }]));
+    serve(ID, 2, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    serve(ID, 3, thread("running_tools", midTurn));
+    serve(ID, 4, thread("idle", handedOff));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 2_000, onAttention: sink.onAttention });
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(result.status).toBe("finished");
+    expect(result.finalText.startsWith("## Status\nsuccess")).toBe(true);
+    expect(result.branches).toEqual(["orch/demo/task-a"]);
+    expect(exportsOf(ID)).toBe(4);
+    expect(sink.lines).toHaveLength(1);
+    expect(sink.lines[0]).toContain(`${ID} m0: turn ended idle without a \`## Status\``);
+    expect(sink.lines[0]).toContain("polling up to 2s more");
+  });
+
+  test("returns finished with the last text once the grace expires, and says so", async () => {
+    serve(ID, 1, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 60, onAttention: sink.onAttention });
+    const started = Date.now();
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(55);
+    expect(result.status).toBe("finished");
+    expect(result.finalText).toBe(PROGRESS);
+    expect(exportsOf(ID)).toBeGreaterThan(1);
+    expect(sink.lines).toHaveLength(2);
+    expect(sink.lines[1]).toContain(`${ID} m0: no handoff section after 0s of grace`);
+  });
+
+  test("stream keeps yielding through the window and ends with the handoff turn's status", async () => {
+    serve(ID, 1, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    serve(ID, 2, thread("working", midTurn));
+    serve(ID, 3, thread("idle", handedOff));
+    const rt = createAmpRuntime({ env, handoffGraceMs: 2_000, onAttention: () => {} });
+    const events: StreamEvent[] = [];
+    for await (const event of rt.stream({ agentId: ID, runId: "m0" })) events.push(event);
+    const text = events
+      .filter((e): e is Extract<StreamEvent, { type: "assistant" }> => e.type === "assistant")
+      .map(e => e.text)
+      .join("");
+    expect(text).toBe(`${PROGRESS}## Status\nsuccess\n\n## Branch\n\`orch/demo/task-a\``);
+    expect(events.filter(e => e.type === "tool_call")).toHaveLength(1);
+    expect(events.at(-1)).toEqual({ type: "status", status: "finished" });
+    expect(exportsOf(ID)).toBe(3);
+  });
+
+  test("a verifier's ## Verification section is a handoff too", async () => {
+    serve(ID, 1, thread("idle", [{ user: "verify" }, { assistant: "## Verification\nverified\n\n## Notes\n- ok" }]));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 60_000, onAttention: sink.onAttention });
+    expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+    expect(exportsOf(ID)).toBe(1);
+    expect(sink.lines).toEqual([]);
+    expect(hasHandoffSection("## Status\nsuccess")).toBe(true);
+    expect(hasHandoffSection("##  Verification  \nverified")).toBe(true);
+    expect(hasHandoffSection("Status: success\n### Status\ndone")).toBe(false);
+    expect(hasHandoffSection("")).toBe(false);
+  });
+
+  test("no grace for an archived, cancelled, or errored run, or when the window is 0", async () => {
+    const sink = attentionSink();
+    const cases: [string, ThreadExport, string][] = [
+      ["archived", thread("idle", [{ user: "x" }, { assistant: PROGRESS }], { archived: true }), "finished"],
+      ["cancelled", thread("idle", [{ user: "x" }, { assistant: PROGRESS, stop: "cancelled" }]), "cancelled"],
+      ["errored", thread("idle", [{ user: "x" }, { assistant: PROGRESS, stop: "error" }]), "error"],
+    ];
+    for (const [label, exp, status] of cases) {
+      rmSync(join(dir, `count-${ID}`), { force: true });
+      serve(ID, 1, exp);
+      const rt = createAmpRuntime({ env, handoffGraceMs: 60_000, onAttention: sink.onAttention });
+      expect([label, (await rt.wait({ agentId: ID, runId: "m0" })).status]).toEqual([label, status]);
+    }
+    rmSync(join(dir, `count-${ID}`), { force: true });
+    serve(ID, 1, thread("idle", [{ user: "x" }, { assistant: PROGRESS }]));
+    const off = createAmpRuntime({
+      env: { ...env, ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0" },
+      onAttention: sink.onAttention,
+    });
+    expect((await off.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+    expect(exportsOf(ID)).toBe(4);
+    expect(sink.lines).toEqual([]);
+  });
+
+  test("the window comes from ORCHESTRATE_AMP_HANDOFF_GRACE_MS and defaults to two minutes", () => {
+    expect(DEFAULT_HANDOFF_GRACE_MS).toBe(120_000);
+    expect(readRuntimeOptionsFromEnv({}).handoffGraceMs).toBeUndefined();
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0" }).handoffGraceMs).toBe(0);
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "30000" }).handoffGraceMs).toBe(30_000);
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "-1" }).handoffGraceMs).toBeUndefined();
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "soon" }).handoffGraceMs).toBeUndefined();
+  });
+});
+
 describe("describeRun", () => {
   test("an idle thread whose last message is still the user's is running", () => {
     expect(describeRun(thread("idle", [{ user: "x" }]), "m0").status).toBe("running");
@@ -689,12 +809,35 @@ describe("sendFollowUp", () => {
     serve(ID, 1, FINISHED);
     const rt = createAmpRuntime({ env });
     const result = await rt.sendFollowUp(ID, "Reply with exactly FOLLOWUP-OK.");
+    // Export 2 is the same thread: the message has not landed, so the count before the send is the id.
     expect(result).toEqual({ runId: "m4" });
     const call = calls().find(c => c[0] === "threads" && c[1] === "continue");
     expect(call).toEqual(["threads", "continue", ID, "-ox"]);
     expect(readFileSync(join(dir, "continue-stdin.txt"), "utf8")).toBe(
       "Reply with exactly FOLLOWUP-OK."
     );
+    expect(exportsOf(ID)).toBe(2);
+  });
+
+  test("reads the index back after the send, so a message queued behind a turn gets the right run id", async () => {
+    const working = thread("running_tools", [{ user: "do the task" }, { assistant: "On it." }, { tool: "shell_command" }]);
+    serve(ID, 1, working);
+    serve(ID, 2, thread("running_tools", [
+      ...[{ user: "do the task" }, { assistant: "On it." }, { tool: "shell_command" }, { toolResult: true }, { tool: "shell_command", id: "TU-2" }] as Msg[],
+      { user: "Read the handoffs and continue." },
+    ]));
+    const rt = createAmpRuntime({ env });
+    expect(await rt.sendFollowUp(ID, "Read the handoffs and continue.\n")).toEqual({ runId: "m5" });
+    // An earlier message with the same text does not shadow the new one, and the id is the last match.
+    rmSync(join(dir, `count-${ID}`));
+    serve(ID, 1, thread("idle", [{ user: "same" }, { assistant: "A" }]));
+    serve(ID, 2, thread("idle", [{ user: "same" }, { assistant: "A" }, { user: "same" }]));
+    expect(await rt.sendFollowUp(ID, "same")).toEqual({ runId: "m2" });
+    // The export after a failed read falls back to the count before the send.
+    rmSync(join(dir, `count-${ID}`));
+    serve(ID, 1, FINISHED);
+    serve(ID, 2, "fail");
+    expect(await rt.sendFollowUp(ID, "x")).toEqual({ runId: "m4" });
   });
 });
 
@@ -743,6 +886,26 @@ describe("getRun, latestRun, list, agentUrl", () => {
     ]);
     const call = calls().find(c => c[1] === "list");
     expect(call).toEqual(["threads", "list", "--json", "--limit", "5"]);
+  });
+
+  test("list with labels searches for unarchived threads carrying every label", async () => {
+    writeFileSync(
+      join(dir, "search-labels.json"),
+      JSON.stringify([{ id: ID, title: "ab12cd root", updatedAt: "2026-10-14T18:33:23.168Z" }])
+    );
+    const rt = createAmpRuntime({ env });
+    const items = await rt.list({ limit: 50, labels: ["orchestrate", "goal-0123456789ab"] });
+    expect(items).toEqual([
+      { agentId: ID, name: "ab12cd root", updatedAt: "2026-10-14T18:33:23.168Z", messageCount: null },
+    ]);
+    expect(calls()).toEqual([
+      ["threads", "search", "label:orchestrate label:goal-0123456789ab archived:false", "--json", "--limit", "50"],
+    ]);
+    await expect(rt.list({ limit: 5, labels: ["--last"] })).rejects.toBeInstanceOf(AgentRuntimeError);
+    expect(calls()).toHaveLength(1);
+    // An empty label list is the plain listing.
+    await rt.list({ limit: 5, labels: [] });
+    expect(calls()[1]).toEqual(["threads", "list", "--json", "--limit", "5"]);
   });
 
   test("agentUrl is the ampcode.com thread page", () => {
