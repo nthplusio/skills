@@ -22,7 +22,7 @@
         "SLACK_CHANNEL_ID"
       ],
       "question": "Does the harness have a team-chat channel the loop can mirror to and read a stop signal from?",
-      "fallback": "Keep the text; Slack is optional and the file-based Andon source works without it."
+      "fallback": "Keep the text; Slack is optional. Say how the harness's adapter carries the stop signal without it (the Amp adapter reads `andon.json` in the root workspace)."
     }
   ],
   "ports": [
@@ -35,6 +35,7 @@
         "scripts/cli/inspect.ts",
         "scripts/cli/task.ts",
         "scripts/core/agent-manager.ts",
+        "scripts/core/andon-file.ts",
         "scripts/core/runtime.ts",
         "scripts/package.json",
         "scripts/tools/nudge-root.ts",

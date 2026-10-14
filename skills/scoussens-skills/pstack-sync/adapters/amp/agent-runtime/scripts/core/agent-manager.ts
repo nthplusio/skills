@@ -41,6 +41,7 @@ import {
 } from "../schemas.ts";
 import { plannedBranchForTask } from "./branches.ts";
 import type { CommentDestinations } from "./comment-retry-queue.ts";
+import { ANDON_FILE_NAME, FileAndonSource } from "./andon-file.ts";
 
 const SPAWN_MAX_ATTEMPTS = 3;
 const SPAWN_RETRY_BACKOFF_MS = 2_000;
@@ -210,14 +211,17 @@ export class AgentManager {
     this.statePath = join(args.workspace, "state.json");
     this.handoffsDir = join(args.workspace, "handoffs");
     this.attentionLog = join(args.workspace, "attention.log");
+    // Amp port: a root planner without a Slack kickoff reads the stop signal
+    // from <workspace>/andon.json instead of a reaction; see ./andon-file.ts.
     this.andon = new AndonPoller({
-      source:
-        this.isRootPlanner() && this.slackAdapter && this.plan.slackKickoffRef
+      source: !this.isRootPlanner()
+        ? undefined
+        : this.slackAdapter && this.plan.slackKickoffRef
           ? new SlackReactionAndonSource(
               this.slackAdapter,
               this.plan.slackKickoffRef
             )
-          : undefined,
+          : new FileAndonSource(join(this.workspace, ANDON_FILE_NAME)),
       getState: () => this.state,
       saveState: reason => this.saveAndonState(reason),
       logAttention: line => this.logAttention(line),
