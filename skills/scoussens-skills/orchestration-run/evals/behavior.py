@@ -13,6 +13,7 @@ import subprocess
 RUNNER = Path(__file__).resolve().parent.parent
 SETUP = RUNNER.parent / "orchestration-setup"
 DISCOVERY = RUNNER.parent / "harness-discovery"
+DASHBOARD = RUNNER.parent / "dashboard"
 CASES = {
     "discovery-no-interview": (DISCOVERY, 0),
     "setup-discovery-first": (SETUP, 5),
@@ -121,7 +122,7 @@ def prepare(root, names):
         Path(paths["repository_guidance"]).write_text("This repository uses Linear issues and the compact ticket layout with at most five acceptance criteria.\n")
         save(Path(paths["repository_tickets"]), {})
         config = configuration(case, name)
-        status = load(RUNNER / "evals" / "dashboard-preview.json")
+        status = load(DASHBOARD / "evals" / "dashboard-preview.json")
         status["tasks"] = [task for task in status["tasks"] if task["id"] in
                            ("UI-101", "API-102", "REVIEW-103", "API-104", "OPS-105", "ENV-106", "SHIP-107")]
         # These scenarios exercise recovery of legacy schema 1 records without explicit work outcomes.
@@ -163,7 +164,7 @@ def prepare(root, names):
             result["milestones"]["pr_readiness"].update(state="verified", evidence=["E1"])
             owners = {
                 "A": {"state": "idle", "result": a, "evidence": [], "ci": "running"},
-                "B": {"state": "idle", "result": result, "evidence": [load(RUNNER / "evals" / "dashboard-preview.json")["evidence"][0]]},
+                "B": {"state": "idle", "result": result, "evidence": [load(DASHBOARD / "evals" / "dashboard-preview.json")["evidence"][0]]},
             }
             config["owners"]["resume"] = None
         if name in ("runner-parallel-helpers", "runner-no-helpers"):
@@ -425,9 +426,15 @@ def call(case, operation, args):
             command = ["python3", "-B", str(RUNNER / "scripts" / "state.py"), "resolve", "--harness", args["harness"],
                        "--orchestration", *root]
         else:
-            command = ["python3", "-B", str(RUNNER / "scripts" / "render_dashboard.py"), paths["status"], paths["dashboard"]]
-        completed = subprocess.run(command, capture_output=True, text=True)
-        result = {"exit_code": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr}
+            # The coordinator's render step: the run's own rules first, then the dashboard skill's renderer.
+            command = ["python3", "-B", str(RUNNER / "scripts" / "validate_run.py"), paths["status"]]
+            validated = subprocess.run(command, capture_output=True, text=True)
+            if validated.returncode:
+                result = {"exit_code": validated.returncode, "stdout": validated.stdout, "stderr": validated.stderr}
+            command = ["python3", "-B", str(DASHBOARD / "scripts" / "render_dashboard.py"), paths["status"], paths["dashboard"]]
+        if result is None:
+            completed = subprocess.run(command, capture_output=True, text=True)
+            result = {"exit_code": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr}
     elif operation == "reply":
         (case / "reply.md").write_text(args["text"] + "\n")
         result = {"recorded": True}

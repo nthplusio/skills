@@ -1,0 +1,47 @@
+{
+  "skill_name": "dashboard",
+  "note": "Prompts for a candidate agent. test_dashboard.py checks the renderer's contract separately; these check how the skill takes a status file, settles the destination and keeps the page current.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "status-page-for-child-threads",
+      "prompt": "I started three child threads from this one. Show me where they are as a status page I can keep open.",
+      "expected_output": "Writes a minimal status file per the contract from the harness's actual thread status, shows the explain-to settings sheet with reader and interaction fixed and the destination open, renders after the answer, delivers to that destination and says how the page refreshes.",
+      "assertions": [
+        "minimal_record: the status file has schema_version, run_id, title, tasks and presentation, and each row has id, title and owner id, label and state",
+        "status_from_inspection: owner states come from inspected thread status, not from the prompt",
+        "sheet_before_render: the settings sheet appears before any render and fixes reader and interaction",
+        "same_artifact: later renders update the same file or hosted artifact",
+        "refresh_truthful: auto_refresh is set only from the destination's discovered capability"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "render-an-existing-run-record",
+      "prompt": "Here is the status.json an orchestration run keeps. The run already confirmed the local dashboard. Render it and check the served page.",
+      "expected_output": "Skips the sheet because the producer passed a confirmed destination, runs the renderer on the given file, updates the existing page in place and runs check_served.py, reporting PASS or a recorded LIMITED result.",
+      "assertions": [
+        "no_second_question: does not ask the destination again",
+        "renders_given_file: runs render_dashboard.py on the producer's file without rewriting it",
+        "served_check: runs check_served.py after updating the destination",
+        "no_lifecycle_judgement: does not rewrite the record's statuses or proof"
+      ],
+      "files": [
+        "skills/scoussens-skills/dashboard/evals/dashboard-preview.json"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "rejected-record-keeps-the-old-page",
+      "prompt": "Re-render the dashboard; I added a top-level feedback section to the status file.",
+      "expected_output": "Reports the renderer's rejection of the unknown key by name, leaves the previous page in place, and moves the note into history or asks the producer to, rather than extending the contract.",
+      "assertions": [
+        "names_the_key: the reply quotes the unknown top-level field from the renderer's message",
+        "old_page_intact: the destination still serves the previous render",
+        "no_contract_edit: does not change the renderer or the contract to admit the key"
+      ],
+      "files": []
+    }
+  ]
+}

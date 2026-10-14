@@ -1,0 +1,10 @@
+[
+  {"key": "defined", "label": "Defined", "technical_label": "Definition", "description": "The goal and acceptance criteria are written down and agreed.", "required": false},
+  {"key": "researched", "label": "Researched", "technical_label": "Research", "description": "Open questions are investigated and an approach is chosen.", "required": false},
+  {"key": "pr_readiness", "label": "Implemented", "technical_label": "PR readiness", "description": "The change is built and its checks are ready for code review.", "required": true},
+  {"key": "code_publication", "label": "Submitted", "technical_label": "Code publication", "description": "The change is shared as a branch or pull request.", "required": true},
+  {"key": "review", "label": "Reviewed", "technical_label": "Code review", "description": "The requested code review is complete.", "required": false},
+  {"key": "verification", "label": "Verified", "technical_label": "Verification", "description": "An agent has checked the change against the plan and spec.", "required": false},
+  {"key": "deployment", "label": "Deployed", "technical_label": "Deployment", "description": "The change is running in the intended environment.", "required": true},
+  {"key": "business_acceptance", "label": "Accepted", "technical_label": "Business acceptance", "description": "Users have accepted the deployed result.", "required": true}
+]

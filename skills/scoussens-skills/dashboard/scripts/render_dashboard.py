@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Render a local orchestration status record; never invoke owners or checks."""
+"""Render one status file that follows references/status-contract.md as a self-contained HTML page.
+
+The renderer checks the shape of the record: known top-level keys, value sets, well-formed IDs
+and references that resolve. It does not judge whether the record is true or whether the
+producer followed its own lifecycle rules; a producer with such rules checks them before
+rendering, as orchestration-run does with validate_run.py. It never invokes owners or checks.
+"""
 
 import argparse
 from datetime import datetime
-import hashlib
 from html import escape
 from ipaddress import ip_address
 import json
@@ -12,21 +17,17 @@ import re
 from urllib.parse import urlsplit
 
 
-# Business stages in delivery order: plain label, technical label, one-line explanation.
-# The first two and review/verification are optional so older records still render.
-STAGES = {
-    "defined": ("Defined", "Definition", "The goal and acceptance criteria are written down and agreed."),
-    "researched": ("Researched", "Research", "Open questions are investigated and an approach is chosen."),
-    "pr_readiness": ("Implemented", "PR readiness", "The change is built and its checks are ready for code review."),
-    "code_publication": ("Submitted", "Code publication", "The change is shared as a branch or pull request."),
-    "review": ("Reviewed", "Code review", "The requested code review is complete."),
-    "verification": ("Verified", "Verification", "An agent has checked the change against the plan and spec."),
-    "deployment": ("Deployed", "Deployment", "The change is running in the intended environment."),
-    "business_acceptance": ("Accepted", "Business acceptance", "Users have accepted the deployed result."),
-}
-REQUIRED_STAGES = ("pr_readiness", "code_publication", "deployment", "business_acceptance")
+# The contract this renderer and references/status-contract.md describe. Bump it when a field,
+# value set or default changes; producers compare it with the version they wrote against.
+CONTRACT_VERSION = "1"
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
+# Business stages in delivery order, from the contract's machine-readable list. The first two and
+# review/verification are optional so older records still render.
+STAGE_LIST = json.loads((ASSETS / "stages.json").read_text())
+STAGES = {item["key"]: (item["label"], item["technical_label"], item["description"]) for item in STAGE_LIST}
+REQUIRED_STAGES = tuple(item["key"] for item in STAGE_LIST if item["required"])
 NOT_RECORDED = {"state": "not_requested", "note": "Not recorded in this status record.", "evidence": []}
-# Orchestration status of the agent that owns the ticket.
+# Status of the agent that owns the row.
 OWNER_STATES = {
     "active": "Working",
     "waiting": "Waiting",
@@ -35,7 +36,6 @@ OWNER_STATES = {
     "complete": "Finished",
     "closed": "Closed",
 }
-OPEN_OWNER_STATES = ("active", "waiting", "blocked", "unreachable")
 STATES = {
     "verified": ("Done", "✓"),
     "pending": ("In progress", "…"),
@@ -56,22 +56,17 @@ WORK_STATES = {
     "deferred": ("Postponed", "resolved"),
 }
 GROUPS = {"attention": "Needs attention", "moving": "In progress", "resolved": "Wrapped up"}
-# Schema 2 adds the lifecycle contract: publication scope, approvals, runtime and retained code.
+# Schema 2 fixes the set of top-level keys; schema 1 records keep rendering with extra keys ignored.
 SCHEMA_VERSIONS = (1, 2)
 V2_FIELDS = {"schema_version", "run_id", "title", "goal", "updated_at", "config_path", "harness_name",
              "notice", "run_choices", "monitoring", "presentation", "decisions", "tasks", "evidence",
-             "history", "approvals", "skill_version", "follow_ups", "closed_at"}
-HISTORY_LIMIT = 800
-PUBLICATION_SCOPES = {
-    "none": "No branch or pull request will be published",
-    "draft": "Owners may push branches and open draft pull requests",
-    "ready": "Owners may also mark pull requests ready for review",
-    "merge": "Owners may also merge pull requests that pass required checks",
-}
+             "history", "approvals", "skill_version", "contract_version", "follow_ups", "closed_at"}
 APPROVAL_STATES = {"active": "Active", "consumed": "Used", "expired": "Expired", "revoked": "Revoked"}
 RUNTIME_STATES = {"held": "In use", "released": "Released", "retained": "Kept on purpose"}
 CODE_KINDS = {"pushed_branch": "Pushed branch", "bundle": "Git bundle", "patch": "Patch file"}
-WAITING_ON_PEOPLE = ("needs_decision", "waiting", "awaiting_acceptance")
+# Row fields a producer may leave out; the page shows these values in their place.
+TASK_DEFAULTS = {"blocker": "", "next_action": "", "done_when": "", "resources": [], "blocked_by": [],
+                 "obligations": [], "runtime": []}
 
 
 def friendly_time(moment):
@@ -102,20 +97,22 @@ def work_status(task):
     return {"state": state, "reason": "Work status inferred from owner activity; confirm at the next scan."}
 
 
+def stages(task):
+    """Every stage in order; a stage the record leaves out shows as not recorded."""
+    recorded = task.get("milestones") or {}
+    return {key: recorded.get(key, NOT_RECORDED) for key in STAGES}
+
+
 def unsubmitted(task):
     """Delivered implementation that was never published, so readers do not mistake it for shipped work."""
-    phases = task["milestones"]
+    phases = stages(task)
     return (work_status(task)["state"] == "delivered" and phases["pr_readiness"]["state"] == "verified"
-            and phases.get("code_publication", NOT_RECORDED)["state"] != "verified")
+            and phases["code_publication"]["state"] != "verified")
 
 
 def work_label(task):
     state = work_status(task)["state"]
     return "Done, not submitted" if unsubmitted(task) else WORK_STATES[state][0]
-
-
-def stages(task):
-    return {key: task["milestones"].get(key, NOT_RECORDED) for key in STAGES}
 
 
 def stage_position(task):
@@ -160,17 +157,6 @@ def link(href, hosted):
     return escape(href, quote=True)
 
 
-def skill_version():
-    """Digest of the files a coordinator follows: instructions, references, assets and scripts."""
-    root = Path(__file__).resolve().parent.parent
-    digest = hashlib.sha256()
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if path.is_file() and relative.parts[0] != "evals" and "__pycache__" not in relative.parts:
-            digest.update(str(relative).encode() + b"\0" + path.read_bytes() + b"\0")
-    return digest.hexdigest()[:12]
-
-
 def moment(value, field):
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} needs an ISO 8601 timestamp")
@@ -185,60 +171,69 @@ def nonempty(value, field):
         raise ValueError(f"{field} must be nonempty text")
 
 
-def check_lifecycle(data, tasks, updated):
-    """Schema 2 rules. Return runtime entries whose retention date has passed."""
-    unknown = set(data) - V2_FIELDS
-    if unknown:
-        raise ValueError(f"unknown top-level field {', '.join(sorted(unknown))}; extend the contract or keep it in history")
-    choices = data["run_choices"]
-    if choices.get("target_stage") not in STAGES:
-        raise ValueError("run_choices.target_stage must name a business stage")
-    scope = choices.get("publication_scope")
-    if scope not in PUBLICATION_SCOPES:
-        raise ValueError(f"run_choices.publication_scope must be one of {', '.join(PUBLICATION_SCOPES)}")
-    nonempty(choices.get("confirmed_from"), "run_choices.confirmed_from")
-    limit = choices.get("idle_scan_limit")
-    if type(limit) is not int or limit < 1:
-        raise ValueError("run_choices.idle_scan_limit must be a positive integer")
+def with_defaults(task):
+    """A copy of the row with the contract's defaults filled in, so the page never reads a missing field."""
+    task, owner = dict(task), dict(task["owner"])
+    for field, default in TASK_DEFAULTS.items():
+        task.setdefault(field, list(default) if isinstance(default, list) else default)
+    for field in ("location", "handoff"):
+        owner.setdefault(field, "")
+    task["owner"] = owner
+    return task
 
-    monitoring = data["monitoring"]
-    unchanged = monitoring.get("unchanged_scans")
-    if type(unchanged) is not int or unchanged < 0:
-        raise ValueError("monitoring.unchanged_scans must be a nonnegative integer")
-    open_work = [task for task in tasks.values() if WORK_STATES[work_status(task)["state"]][1] != "resolved"]
-    if (unchanged >= limit and monitoring.get("next_check_at") and open_work
-            and all(work_status(task)["state"] in WAITING_ON_PEOPLE for task in open_work)):
-        raise ValueError(f"{unchanged} unchanged scans with only people-gated work left: "
-                         "stop scheduled checks, set next_check_at to null and record the hold")
 
-    nonempty(data.get("skill_version"), "skill_version")
-    long = [index for index, item in enumerate(data["history"]) if len(item) > HISTORY_LIMIT]
-    if long:
-        raise ValueError(f"history entries {long} exceed {HISTORY_LIMIT} characters; keep the detail in proof and summarise the change")
-    follow_ups = indexed(data.get("follow_ups", []))
-    for item in follow_ups.values():
-        nonempty(item.get("text"), f"{item['id']}.text")
-        if item.get("from_task") not in tasks:
-            raise ValueError(f"{item['id']}: follow-up needs the assigned task it came from")
-        if item.get("owner") is not None:
-            nonempty(item["owner"], f"{item['id']}.owner")
-
-    approvals = indexed(data["approvals"])
-    for item in approvals.values():
-        for field in ("scope", "receipt", "side_effects"):
-            nonempty(item.get(field), f"{item['id']}.{field}")
-        if item.get("state") not in APPROVAL_STATES:
-            raise ValueError(f"{item['id']}: invalid approval state")
-        if any(key not in tasks for key in item.get("task_ids", [])):
-            raise ValueError(f"{item['id']}: approval names an unknown task")
-        moment(item.get("granted_at"), f"{item['id']}.granted_at")
-        if item.get("expires_at") is not None and item["state"] == "active" \
-                and moment(item["expires_at"], f"{item['id']}.expires_at") <= updated:
-            raise ValueError(f"{item['id']}: approval expired; mark it expired and ask again before acting")
-
-    overdue = []
+def check_shape(data, tasks, evidence, decisions):
+    """Value sets, well-formed IDs and references that resolve. Rules about what the values mean stay
+    with the producer."""
+    if data["schema_version"] >= 2:
+        unknown = set(data) - V2_FIELDS
+        if unknown:
+            raise ValueError(f"unknown top-level field {', '.join(sorted(unknown))}; extend the contract or keep it in history")
+    for item in evidence.values():
+        if item["result"] not in ("passed", "failed", "interrupted", "observed"):
+            raise ValueError(f"{item['id']}: invalid evidence result")
+        if item["assessment"] not in ("accepted", "limited", "superseded"):
+            raise ValueError(f"{item['id']}: invalid evidence assessment")
+        if not item.get("href") and not item.get("output", "").strip():
+            raise ValueError(f"{item['id']}: proof needs an artifact link or literal output")
+    owners = set()
     for task in tasks.values():
         key, owner = task["id"], task["owner"]
+        nonempty(owner.get("id"), f"{key}: owner needs its actual harness ID; owner.id")
+        if owner["state"] not in OWNER_STATES:
+            raise ValueError(f"{key}: invalid owner state")
+        activity = owner.get("activity")
+        if activity is not None and (not isinstance(activity, str) or not activity.strip()):
+            raise ValueError(f"{key}: owner activity must be nonempty text when present")
+        if owner["id"] in owners:
+            raise ValueError(f"{key}: owner {owner['id']} is already bound to another ticket; use that ticket's owner or a separate owner")
+        owners.add(owner["id"])
+        code = owner.get("retained_code")
+        if code is not None and (not isinstance(code, dict) or code.get("kind") not in CODE_KINDS):
+            raise ValueError(f"{key}: retained_code.kind must be one of {', '.join(CODE_KINDS)}")
+        recorded = task.get("milestones")
+        if recorded is not None:
+            unknown = set(recorded) - set(STAGES)
+            if unknown:
+                raise ValueError(f"{key}: unknown stage {', '.join(sorted(unknown))}")
+            missing = [stage for stage in REQUIRED_STAGES if stage not in recorded]
+            if missing:
+                raise ValueError(f"{key}: missing stage {missing[0]}")
+            for stage, phase in recorded.items():
+                if phase["state"] not in STATES:
+                    raise ValueError(f"{key}: invalid stage state")
+                for proof_id in phase["evidence"]:
+                    if proof_id not in evidence:
+                        raise ValueError(f"{key}: missing proof {proof_id}")
+        work = work_status(task)
+        if not isinstance(work, dict) or work.get("state") not in WORK_STATES:
+            raise ValueError(f"{key}: invalid work state")
+        nonempty(work.get("reason"), f"{key}: work needs a reason; work.reason")
+        if "summary" in work and (not isinstance(work["summary"], str) or not work["summary"].strip()):
+            raise ValueError(f"{key}: work summary must be nonempty text when present")
+        proof_ids = work.get("evidence", [])
+        if not isinstance(proof_ids, list) or any(proof_id not in evidence for proof_id in proof_ids):
+            raise ValueError(f"{key}: work evidence must name retained proof")
         for entry in indexed(task["runtime"]).values():
             nonempty(entry.get("kind"), f"{key}.runtime.{entry['id']}.kind")
             nonempty(entry.get("ref"), f"{key}.runtime.{entry['id']}.ref")
@@ -246,53 +241,30 @@ def check_lifecycle(data, tasks, updated):
                 raise ValueError(f"{key}: invalid runtime state for {entry['id']}")
             if entry["state"] == "retained":
                 nonempty(entry.get("reason"), f"{key}.runtime.{entry['id']}.reason")
-                if moment(entry.get("until"), f"{key}.runtime.{entry['id']}.until") <= updated:
-                    overdue.append((key, entry))
-        finished = owner["state"] in ("complete", "closed") or WORK_STATES[work_status(task)["state"]][1] == "resolved"
-        held = [entry["id"] for entry in task["runtime"] if entry["state"] == "held"]
-        if finished and held:
-            raise ValueError(f"{key}: release or retain runtime {', '.join(held)} with a reason and date before finishing")
-        phases = task["milestones"]
-        unpublished = phases["pr_readiness"]["state"] == "verified" and phases["code_publication"]["state"] != "verified"
-        if owner["state"] in ("complete", "closed") and unpublished:
-            code = owner.get("retained_code")
-            if not isinstance(code, dict) or code.get("kind") not in CODE_KINDS:
-                raise ValueError(f"{key}: unpublished code must be kept outside the owner's workspace "
-                                 f"({', '.join(CODE_KINDS)}) before the owner finishes")
-            nonempty(code.get("ref"), f"{key}.owner.retained_code.ref")
-            if code["kind"] != "pushed_branch":
-                nonempty(code.get("checksum"), f"{key}.owner.retained_code.checksum")
-        if scope == "none" and phases["code_publication"]["state"] in ("pending", "blocked"):
-            raise ValueError(f"{key}: code publication is requested but this run's publication scope is none")
-        acceptance = phases["business_acceptance"]
-        if acceptance["state"] in ("pending", "blocked"):
-            nonempty(acceptance.get("accountable"), f"{key}.business_acceptance.accountable")
-            nonempty(acceptance.get("revisit"), f"{key}.business_acceptance.revisit")
-
-    if data.get("closed_at") is not None:
-        moment(data["closed_at"], "closed_at")
-        still_open = [task["id"] for task in tasks.values() if task["owner"]["state"] in OPEN_OWNER_STATES]
-        held = [task["id"] for task in tasks.values() if any(entry["state"] == "held" for entry in task["runtime"])]
-        unowned = [item["id"] for item in follow_ups.values() if not item.get("owner")]
-        problems = ([f"open owner {key}" for key in still_open] + [f"held runtime on {key}" for key in held]
-                    + [f"unowned follow-up {key}" for key in unowned]
-                    + (["pending decisions"] if data["decisions"] else [])
-                    + (["a scheduled check"] if monitoring.get("next_check_at") else []))
-        if problems:
-            raise ValueError(f"a closed run cannot keep {', '.join(problems)}")
-    return approvals, overdue, follow_ups
+                moment(entry.get("until"), f"{key}.runtime.{entry['id']}.until")
+    for item in decisions.values():
+        affected = item.get("task_ids", [])
+        if not isinstance(affected, list) or any(key not in tasks for key in affected):
+            raise ValueError(f"{item['id']}: unknown affected task; task_ids must name assigned rows in tasks. Name unassigned tickets in the decision text and leave task_ids empty.")
+        discussion = item.get("discussion", {})
+        if not isinstance(discussion, dict) or (discussion and any(
+            not isinstance(discussion.get(key), str) or not discussion[key].strip() for key in ("owner_id", "label")
+        )):
+            raise ValueError(f"{item['id']}: discussion needs an owner_id and label")
+        if "requires_human" in discussion:
+            raise ValueError(f"{item['id']}: requires_human belongs on the decision, alongside discussion")
+        human = item.get("requires_human", False)
+        if not isinstance(human, bool):
+            raise ValueError(f"{item['id']}: requires_human must be boolean")
+        if human and not discussion:
+            raise ValueError(f"{item['id']}: human-only gate needs a discussion owner")
 
 
 def render(data, hosted=False):
     if data["schema_version"] not in SCHEMA_VERSIONS:
         raise ValueError("unsupported dashboard schema_version")
-    updated = datetime.fromisoformat(data["updated_at"].replace("Z", "+00:00"))
-    if updated.tzinfo is None:
-        raise ValueError("updated_at needs a timezone")
-    if not isinstance(data["run_id"], str) or not data["run_id"].strip():
-        raise ValueError("run_id must be nonempty text")
-    if not isinstance(data["config_path"], str) or not data["config_path"].strip():
-        raise ValueError("record the harness config_path")
+    nonempty(data["run_id"], "run_id")
+    updated = moment(data["updated_at"], "updated_at") if data.get("updated_at") is not None else None
     auto_refresh = data["presentation"].get("auto_refresh", False)
     if type(auto_refresh) is not bool:
         raise ValueError("presentation.auto_refresh must be boolean")
@@ -304,90 +276,23 @@ def render(data, hosted=False):
             raise ValueError("automatic refresh needs a positive integer monitoring.interval_seconds")
         refresh_meta = f'<meta http-equiv="refresh" content="{interval}">'
         refresh_status = f"This page reloads every {friendly_interval(interval)} to show the coordinator's latest update."
-    evidence = indexed(data["evidence"])
-    tasks = indexed(data["tasks"])
-    decisions = indexed(data["decisions"])
-    for item in evidence.values():
-        if item["result"] not in ("passed", "failed", "interrupted", "observed"):
-            raise ValueError(f"{item['id']}: invalid evidence result")
-        if item["assessment"] not in ("accepted", "limited", "superseded"):
-            raise ValueError(f"{item['id']}: invalid evidence assessment")
-        if not item.get("href") and not item.get("output", "").strip():
-            raise ValueError(f"{item['id']}: proof needs an artifact link or literal output")
-    owners = {}
-    for task in tasks.values():
-        owner_id = task["owner"]["id"]
-        if not isinstance(owner_id, str) or not owner_id.strip():
-            raise ValueError(f"{task['id']}: owner needs its actual harness ID")
-        if task["owner"]["state"] not in OWNER_STATES:
-            raise ValueError(f"{task['id']}: invalid owner state")
-        if task["owner"]["state"] == "blocked" and not task["blocker"].strip():
-            raise ValueError(f"{task['id']}: blocked owner needs an actionable blocker")
-        activity = task["owner"].get("activity")
-        if activity is not None and (not isinstance(activity, str) or not activity.strip()):
-            raise ValueError(f"{task['id']}: owner activity must be nonempty text when present")
-        if owner_id in owners:
-            raise ValueError(f"{task['id']}: owner {owner_id} is already bound to another ticket; use that ticket's owner or a separate owner")
-        owners[owner_id] = task["owner"]["state"]
-        unknown = set(task["milestones"]) - set(STAGES)
-        if unknown:
-            raise ValueError(f"{task['id']}: unknown stage {', '.join(sorted(unknown))}")
-        for key in STAGES:
-            if key not in task["milestones"]:
-                if key in REQUIRED_STAGES:
-                    raise ValueError(f"{task['id']}: missing stage {key}")
-                continue
-            phase = task["milestones"][key]
-            if phase["state"] not in STATES:
-                raise ValueError(f"{task['id']}: invalid stage state")
-            for proof_id in phase["evidence"]:
-                if proof_id not in evidence:
-                    raise ValueError(f"{task['id']}: missing proof {proof_id}")
-            if phase["state"] == "verified":
-                if not phase["evidence"] or any(
-                    evidence[proof_id]["assessment"] != "accepted"
-                    or evidence[proof_id]["result"] in ("failed", "interrupted")
-                    for proof_id in phase["evidence"]
-                ):
-                    raise ValueError(f"{task['id']}: verified stage needs accepted supporting proof")
-        if task["owner"]["state"] in ("complete", "closed"):
-            if task["obligations"] or task["blocker"] or not task["owner"]["handoff"].strip():
-                raise ValueError(f"{task['id']}: completed owner needs a handoff and settled obligations")
-            if any(phase["state"] in ("pending", "blocked") for phase in task["milestones"].values()):
-                raise ValueError(f"{task['id']}: unfinished stage prevents owner completion")
-        work = work_status(task)
-        if not isinstance(work, dict) or work.get("state") not in WORK_STATES:
-            raise ValueError(f"{task['id']}: invalid work state")
-        if not isinstance(work.get("reason"), str) or not work["reason"].strip():
-            raise ValueError(f"{task['id']}: work needs a reason")
-        if "summary" in work and (not isinstance(work["summary"], str) or not work["summary"].strip()):
-            raise ValueError(f"{task['id']}: work summary must be nonempty text when present")
-        proof_ids = work.get("evidence", [])
-        if not isinstance(proof_ids, list) or any(key not in evidence for key in proof_ids):
-            raise ValueError(f"{task['id']}: work evidence must name retained proof")
-        resolved = WORK_STATES[work["state"]][1] == "resolved"
-        if resolved:
-            if task["obligations"] or task["blocker"]:
-                raise ValueError(f"{task['id']}: resolved work needs settled obligations and no blocker")
-            if any(phase["state"] in ("pending", "blocked") for phase in task["milestones"].values()):
-                raise ValueError(f"{task['id']}: unfinished stage prevents work resolution")
-        elif "work" in task and work["state"] != "unknown" and task["owner"]["state"] in ("complete", "closed"):
-            raise ValueError(f"{task['id']}: unfinished work prevents owner completion")
-        if work["state"] in ("delivered", "no_change_needed"):
-            if not proof_ids or any(evidence[key]["assessment"] != "accepted"
-                                    or evidence[key]["result"] in ("failed", "interrupted") for key in proof_ids):
-                raise ValueError(f"{task['id']}: work outcome needs accepted supporting proof")
-        if work["state"] in ("cancelled", "deferred"):
-            if not isinstance(work.get("receipt"), str) or not work["receipt"].strip():
-                raise ValueError(f"{task['id']}: cancellation or deferral needs a decision receipt")
-        if work["state"] == "deferred":
-            if not isinstance(work.get("revisit"), str) or not work["revisit"].strip():
-                raise ValueError(f"{task['id']}: deferred work needs a revisit trigger")
-        if work["state"] == "blocked" and not task["blocker"].strip():
-            raise ValueError(f"{task['id']}: blocked work needs an actionable blocker")
-        if work["state"] == "needs_decision" and not any(task["id"] in item.get("task_ids", []) for item in decisions.values()):
-            raise ValueError(f"{task['id']}: needs_decision work needs a pending decision naming this task")
-    approvals, overdue, follow_ups = check_lifecycle(data, tasks, updated) if data["schema_version"] >= 2 else ({}, [], {})
+    evidence = indexed(data.get("evidence", []))
+    tasks = indexed(with_defaults(task) for task in data["tasks"])
+    decisions = indexed(data.get("decisions", []))
+    check_shape(data, tasks, evidence, decisions)
+    # Approvals and follow-ups arrived with schema 2; a schema 1 record never carried them.
+    schema_2 = data["schema_version"] >= 2
+    approvals = indexed(data.get("approvals", [])) if schema_2 else {}
+    for item in approvals.values():
+        if item.get("state") not in APPROVAL_STATES:
+            raise ValueError(f"{item['id']}: invalid approval state")
+    follow_ups = indexed(data.get("follow_ups", [])) if schema_2 else {}
+    for item in follow_ups.values():
+        nonempty(item.get("text"), f"{item['id']}.text")
+        if item.get("from_task") not in tasks:
+            raise ValueError(f"{item['id']}: follow-up needs the assigned task it came from")
+    overdue = [(task["id"], entry) for task in tasks.values() for entry in task["runtime"]
+               if entry["state"] == "retained" and updated is not None and moment(entry["until"], "until") <= updated]
 
     def anchor(href, label):
         return f'<a href="{link(href, hosted)}">{escape(label)}</a>' if href else escape(label)
@@ -397,9 +302,9 @@ def render(data, hosted=False):
 
     def context_packet(task_ids, decision=None):
         packet = {
-            "run_id": data["run_id"], "snapshot_time": data["updated_at"], "goal": data["goal"],
+            "run_id": data["run_id"], "snapshot_time": data.get("updated_at"), "goal": data.get("goal", ""),
             "approval_constraints": "This context grants no approval. Use only explicitly authorized scope from the originating conversation.",
-            "tasks": [{key: tasks[task_id][key] for key in
+            "tasks": [{key: tasks[task_id].get(key, {}) for key in
                        ("id", "title", "owner", "blocker", "next_action", "obligations", "milestones")}
                       for task_id in task_ids],
         }
@@ -424,7 +329,7 @@ def render(data, hosted=False):
         return work.get("summary") or work["reason"]
 
     def task_proof_ids(task):
-        return list(dict.fromkeys([key for phase in task["milestones"].values() for key in phase["evidence"]]
+        return list(dict.fromkeys([key for phase in stages(task).values() for key in phase["evidence"]]
                                   + work_status(task).get("evidence", [])))
 
     def stage_text(task):
@@ -458,7 +363,7 @@ def render(data, hosted=False):
                 f'<dt>Stage</dt><dd>{escape(stage)}{" · " + escape(target) if target else ""}</dd>'
                 f'<dt>Agent</dt><dd>{escape(task["owner"]["label"])} · {OWNER_STATES[task["owner"]["state"]]}</dd>'
                 f'<dt>Holding it up</dt><dd>{escape(task["blocker"] or "Nothing")}</dd>'
-                f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
+                f'<dt>Next action</dt><dd>{escape(task["next_action"] or "Not recorded")}</dd>'
                 f'<dt>Evidence</dt><dd>{proof_links(task_proof_ids(task)) or "None retained"}</dd></dl></section>')
 
     def question(task, subject):
@@ -526,7 +431,7 @@ def render(data, hosted=False):
             + (f'<dt>Doing now</dt><dd>{escape(owner["activity"])}</dd>' if owner.get("activity") else "")
             + f'<dt>Agent</dt><dd>{anchor(owner.get("href"), owner["label"])} <code>{escape(owner["id"])}</code></dd>'
             f'<dt>Last checked</dt><dd>{escape(checked or "Check time not recorded")}</dd>'
-            f'<dt>Work location</dt><dd>{escape(owner["location"])}</dd>'
+            f'<dt>Work location</dt><dd>{escape(owner["location"] or "Not recorded")}</dd>'
             f'<dt>Retained handoff</dt><dd>{escape(owner["handoff"] or "Not complete")}</dd>'
             + (f'<dt>Retained code</dt><dd>{CODE_KINDS[owner["retained_code"]["kind"]]} '
                f'<code>{escape(owner["retained_code"]["ref"])}</code>'
@@ -537,8 +442,8 @@ def render(data, hosted=False):
         technical = (
             f'<dt>Work state</dt><dd><code>{work["state"]}</code> · {escape(work["reason"])}</dd>'
             f'<dt>Blocker</dt><dd>{escape(task["blocker"] or "None")}</dd>'
-            f'<dt>Next action</dt><dd>{escape(task["next_action"])}</dd>'
-            f'<dt>Done when</dt><dd>{escape(task["done_when"])}</dd>'
+            f'<dt>Next action</dt><dd>{escape(task["next_action"] or "Not recorded")}</dd>'
+            f'<dt>Done when</dt><dd>{escape(task["done_when"] or "Not recorded")}</dd>'
             + (f'<dt>Decision receipt</dt><dd>{escape(work["receipt"])}</dd>' if work.get("receipt") else "")
             + (f'<dt>Outcome proof</dt><dd>{proof_links(work["evidence"])}</dd>' if work.get("evidence") else "")
             + f'<dt>Resources</dt><dd>{escape(resources)}</dd><dt>Dependencies</dt><dd>{escape(dependencies)}</dd>'
@@ -633,7 +538,7 @@ def render(data, hosted=False):
         f'<small>Side effects: {escape(item["side_effects"])} · Granted {escape(item["granted_at"])}'
         f' · {"Expires " + escape(item["expires_at"]) if item.get("expires_at") else "No expiry"}'
         f' · Source: {escape(item["receipt"])}</small></li>' for item in approvals.values())
-    held = [(task["id"], entry) for task in tasks.values() for entry in task.get("runtime", []) if entry["state"] != "released"]
+    held = [(task["id"], entry) for task in tasks.values() for entry in task["runtime"] if entry["state"] != "released"]
     overdue_ids = {(key, entry["id"]) for key, entry in overdue}
     runtime_html = "".join(
         f'<li><b>{key}</b> {RUNTIME_STATES[entry["state"]]} · {escape(entry["kind"])} <code>{escape(entry["ref"])}</code>'
@@ -647,9 +552,6 @@ def render(data, hosted=False):
         f'{" · " + escape(item["trigger"]) if item.get("trigger") else ""}</small></li>' for item in follow_ups.values())
     unowned = sum(1 for item in follow_ups.values() if not item.get("owner"))
     notice = data.get("notice", "")
-    if data["schema_version"] >= 2 and data["skill_version"] != skill_version():
-        notice = (notice + " " if notice else "") + (f"This record was written for orchestration-run {data['skill_version']}; "
-                  f"the current version is {skill_version()}. The coordinator migrates it on its next scan.")
     if data.get("closed_at"):
         notice = (notice + " " if notice else "") + f"This run closed at {data['closed_at']}. The page no longer changes."
     total = len(tasks)
@@ -678,8 +580,9 @@ def render(data, hosted=False):
                     f'{"s are" if len(overdue) != 1 else " is"} past {"their" if len(overdue) != 1 else "its"} cleanup date →</a>')
     replacements = {
         "TITLE": escape(data["title"]), "RUN_ID": escape(data["run_id"]),
-        "GOAL": escape(data["goal"]), "UPDATED": escape(data["updated_at"]),
-        "UPDATED_FRIENDLY": escape(friendly_time(updated)),
+        "GOAL": escape(data.get("goal", "")), "UPDATED": escape(data.get("updated_at") or ""),
+        "UPDATED_FRIENDLY": escape(friendly_time(updated) if updated else "Snapshot time not recorded"),
+        "CONTRACT_VERSION": CONTRACT_VERSION,
         "REFRESH_META": refresh_meta, "REFRESH_STATUS": refresh_status,
         "NOTICE": escape(notice),
         "FOLLOW_UPS": follow_up_html or '<li class="muted">No follow-up work recorded.</li>', "TASK_COUNT": str(total),
@@ -689,7 +592,7 @@ def render(data, hosted=False):
         "METER_LEGEND": meter_legend,
         "AGENT_COUNTS": "".join(f'<span class="agent-status agent-{state}"><b>{count}</b> {label}</span>'
                                  for state, label in OWNER_STATES.items()
-                                 if (count := sum(value == state for value in owners.values())))
+                                 if (count := sum(task["owner"]["state"] == state for task in tasks.values())))
                         or '<span class="muted">No agents assigned yet.</span>',
         "WORK_COUNTS": "".join(f'<span class="work-status work-{state}"><b>{count}</b> {WORK_STATES[state][0]}</span>'
                                 for state, count in counts.items() if count),
@@ -703,13 +606,13 @@ def render(data, hosted=False):
         "PROOFS": "".join(proofs) or '<p class="muted">No evidence retained yet.</p>',
         "APPROVALS": approval_html or '<li class="muted">No approvals recorded.</li>',
         "RUNTIME": runtime_html or '<li class="muted">Nothing is running or kept for this run.</li>',
-        "HISTORY": "".join(f'<li>{escape(item)}</li>' for item in data["history"]) or '<li>No material changes recorded.</li>',
+        "HISTORY": "".join(f'<li>{escape(item)}</li>' for item in data.get("history", [])) or '<li>No material changes recorded.</li>',
         "QUESTION": escape(question(tasks[first], "status") if first else f"In orchestration run {data['run_id']}: what work is assigned?"),
         "COORDINATOR": anchor(data["presentation"].get("coordinator_href"), "Open coordinator") if data["presentation"].get("coordinator_href") else "Paste into your coordinator conversation.",
         "INTERACTION": escape(data["presentation"].get("interaction", "")),
         "FIRST_TASK": first,
     }
-    template = (Path(__file__).resolve().parent.parent / "assets" / "dashboard-template.html").read_text()
+    template = (ASSETS / "dashboard-template.html").read_text()
     return re.sub(r"\{\{([A-Z_]+)\}\}", lambda match: replacements[match[1]], template)
 
 
@@ -718,10 +621,10 @@ def main():
     parser.add_argument("status", type=Path, nargs="?")
     parser.add_argument("output", type=Path, nargs="?")
     parser.add_argument("--hosted", action="store_true")
-    parser.add_argument("--skill-version", action="store_true", help="print this skill's version and exit")
+    parser.add_argument("--contract-version", action="store_true", help="print the status contract version and exit")
     args = parser.parse_args()
-    if args.skill_version:
-        print(skill_version())
+    if args.contract_version:
+        print(CONTRACT_VERSION)
         return
     if args.status is None or args.output is None:
         parser.error("status and output are required")

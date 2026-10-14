@@ -11,12 +11,19 @@ schema-version-3 `.nthplusio-skills/orchestration.json`. Owner operations use se
 internally; they do not replace the saved-file contract.
 
 The coordination scenarios retain their original ticket set and omit `work`
-to exercise recovery of legacy records. `test_dashboard.py` separately checks
-explicit work outcomes, grouped rows and totals, decision links, copied resolution
-context, and refusal to resolve work without settled scope and supporting proof
-or decisions. The synthetic `dashboard-preview.json` includes delivery,
-no-change, cancellation and two deferral examples; its statuses and receipts
-are not live project evidence.
+to exercise recovery of legacy records. `test_dashboard.py` here holds
+`LifecycleTests`, which run `validate_run.py`'s rules against the dashboard
+skill's synthetic `evals/dashboard-preview.json` (proof behind claims, settled
+scope, publication scope, retained code and runtime, approvals, idle scans,
+history length, a clean closed run, and the version notes), `InstallTests` for
+the files shared between skills and the hand-off to the `dashboard` skill, and
+`ConfigTests` for `state.py`. The page itself (explicit work outcomes, grouped
+rows and totals, decision links, copied resolution context, the contract's
+shape checks) is tested in the `dashboard` skill's `evals/test_dashboard.py`.
+The preview record includes delivery, no-change, cancellation and two deferral
+examples; its statuses and receipts are not live project evidence.
+`test_chain_contract.py` checks that the four skills' descriptions route a
+request to the right one.
 
 | Case | Skill and prompt ID | Observable contract |
 | --- | --- | --- |

@@ -41,7 +41,7 @@
         "does_not_replay_receipts: artifact inspection is not described as a new execution"
       ],
       "files": [
-        "skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"
+        "skills/scoussens-skills/dashboard/evals/dashboard-preview.json"
       ]
     },
     {
@@ -83,7 +83,7 @@
         "avoids_tracker_dependency: the answer and dashboard supply status without requiring another tool's board"
       ],
       "files": [
-        "skills/scoussens-skills/orchestration-run/evals/dashboard-preview.json"
+        "skills/scoussens-skills/dashboard/evals/dashboard-preview.json"
       ]
     },
     {

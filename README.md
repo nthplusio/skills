@@ -29,12 +29,13 @@ npx skills add nthplusio/skills --skill speak-clearly
 | --- | --- |
 | [`scoussens-skills/agent-handoff`](skills/scoussens-skills/agent-handoff/SKILL.md) | Write a handoff another agent or person can act on without asking a question — a preflight that proves the state still holds, only the context and decisions that are load-bearing for what remains, and the rest of the work as a dependency-mapped action table. Invoked explicitly. |
 | [`scoussens-skills/business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Find where a repository's business logic lives, derive the rules its code actually enforces, have a second reader check them, and deliver a tree explorer where business owners mark each rule correct or wrong and export corrections. Asks where the explorer goes and who can see it before publishing. Invoked explicitly. |
+| [`scoussens-skills/dashboard`](skills/scoussens-skills/dashboard/SKILL.md) | Render one status file that follows its contract into a self-contained HTML status page for a non-technical reader, choose the destination through `explain-to`'s settings sheet, and keep the page current in place. Any producer feeds it: an orchestration run, a task with subagents, a thread with child threads. |
 | [`scoussens-skills/explain-to`](skills/scoussens-skills/explain-to/SKILL.md) | Fit an explanation of a concept, problem, or change to one named reader — audience, altitude, anchor analogy with its twist, output type, and whether the reader must operate it — then hand sentences to `speak-clearly` and the medium to the harness's page or view skill. |
 | [`scoussens-skills/harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discover what the running harness can do — threads, subagents, monitoring, skills, instruction files, questions, models, and HTML destinations — and the repository's ticket conventions. Save sourced observations by harness name for any skill to read. |
 | [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
 | [`scoussens-skills/optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluate, design, or improve repository-specific CI for trustworthy feedback, runner cost, and maintainability. Preserves merge and release contracts, including when designing a pipeline without run history. |
 | [`scoussens-skills/orchestration-setup`](skills/scoussens-skills/orchestration-setup/SKILL.md) | Interview for project policy and per-harness preferences using saved discovery. Configure multiple harnesses in one repository. |
-| [`scoussens-skills/orchestration-run`](skills/scoussens-skills/orchestration-run/SKILL.md) | Resolve the current harness's setup, confirm run-only choices, and coordinate ticket owners with retained proof and one dashboard. |
+| [`scoussens-skills/orchestration-run`](skills/scoussens-skills/orchestration-run/SKILL.md) | Resolve the current harness's setup, confirm run-only choices, and coordinate ticket owners with retained proof and one dashboard rendered through the `dashboard` skill. |
 | [`scoussens-skills/pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request: a timeline of how it went, a ledger of what each reviewer said and whether it was acted on, and a scored evaluation, published as an HTML artifact. Invoked explicitly. |
 | [`scoussens-skills/pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact, grouped by theme and tied to its tickets, with what the period adds up to. Invoked explicitly. |
 | [`scoussens-skills/pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests oldest first: review each at a depth scaled to its risk, verify every finding at the current head, then approve, unblock, or land it. Invoked explicitly. |
@@ -89,8 +90,8 @@ are both supported.
 
 ## Orchestration
 
-Install `harness-discovery`, `orchestration-setup` and `orchestration-run`
-together. Start with `/orchestration-run`. It calls `orchestration-setup` when
+Install `harness-discovery`, `orchestration-setup`, `orchestration-run` and
+`dashboard` together. Start with `/orchestration-run`. It calls `orchestration-setup` when
 saved setup is missing or unsuitable, and setup calls `harness-discovery` when
 saved discovery is missing or unsuitable. Name `/orchestration-setup` to repair
 setup or add a harness, and `/harness-discovery` to refresh facts. `pstack-sync`
@@ -105,7 +106,11 @@ when called, saves `.nthplusio-skills/discovery.json` with observed capabilities
 keyed by the discovered harness name.
 
 Sanitized discovery and setup live in the repository. Runtime records, dashboards,
-and receipts stay ignored local state. Setup preferences do not authorize shared
+and receipts stay ignored local state. The run record follows the `dashboard`
+skill's status contract (`dashboard/references/status-contract.md`), so the
+same page serves a run, a task with subagents, or a thread with child threads;
+`orchestration-run` checks its own lifecycle rules with `validate_run.py`
+before rendering. Setup preferences do not authorize shared
 actions or dashboard publication. Explicit version 1 configuration can be migrated
 through setup without overwriting the original personal settings.
 
@@ -118,7 +123,8 @@ Run the contracts for all three stages:
 npm run test:orchestration
 ```
 
-`npm run test:skills` runs these with every other skill's `evals/test_*.py`.
+`npm run test:skills` runs these, the `dashboard` skill's renderer tests, and
+every other skill's `evals/test_*.py`.
 
 See [behavioral evaluation instructions](skills/scoussens-skills/orchestration-run/evals/README.md)
 for fresh agent runs and their separate evidence requirements.
@@ -136,7 +142,7 @@ harness from it. `harness-discovery` owns the script; `orchestration-setup` and
 | `harness-discovery/registry/<slug>.json` (in the pack, not in `.nthplusio-skills/`) | `harness-discovery` `export` | `harness-discovery` `seed`, which copies it into `discovery.json` and checks its fingerprint | Yes; one shared entry per harness |
 | `orchestration.json` | `orchestration-setup` | `orchestration-run` | Yes |
 | `pstack-sync/manifest.json`, `transform.json`, `LICENSE-*`, `harness/<slug>.md` | `pstack-sync` | `pstack-sync` | Yes |
-| `runs/<harness slug>/` | `orchestration-run` | `orchestration-run` | No; `.nthplusio-skills/.gitignore` |
+| `runs/<harness slug>/<run-id>/status.json`, per the `dashboard` skill's status contract | `orchestration-run` | `orchestration-run` (`validate_run.py`) and `dashboard` (the renderer) | No; `.nthplusio-skills/.gitignore` |
 
 ```bash
 python3 <skill>/scripts/state.py check

@@ -2,8 +2,9 @@
 name: orchestration-run
 description: >-
   Coordinates ticket-owned threads, sessions, or teammates through a named
-  milestone, repeatedly checks owner status, reuses retained proof, and maintains
-  one HTML dashboard using repository setup for the current harness. Start here
+  milestone, repeatedly checks owner status, reuses retained proof, and keeps
+  one HTML dashboard current through the dashboard skill, using repository
+  setup for the current harness. Start here
   for /orchestration-run, a resume, or a first orchestration, including setting
   orchestration up or adding a harness. Confirms only run-specific choices.
   Calls orchestration-setup when setup is missing or unsuitable. Do not use for
@@ -49,28 +50,32 @@ whether a check is needed. Conversation recovery follows the harness's rules.
 If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
-Record the skill version a run follows in `skill_version`, using
-`python3 <this skill's folder>/scripts/render_dashboard.py --skill-version`. On
-resume, and whenever this skill reloads mid-run, compare it with the saved
-value. When it differs, read what changed in the data contract and this file,
-migrate the record, then save the new version and one history line naming the
-change. Schema 1 records migrate as the
-[run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
+Record the versions a run follows: `skill_version` from
+`python3 <this skill's folder>/scripts/validate_run.py --skill-version`, which also covers
+the dashboard contract the run renders through, and `contract_version` from the `dashboard`
+skill's `render_dashboard.py --contract-version`. On resume, and whenever this skill reloads
+mid-run, compare both with the saved values; `validate_run.py` reports a difference as a
+note, which a run that should show it copies into `notice`. When either differs, read what
+changed in the status contract, [dashboard data](references/dashboard-data.md) and this
+file, migrate the record, then save both new versions and one history line. Schema 1
+records migrate as the [run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
 
 **Done when** the current harness resolves to valid setup. On resume, ownership,
 choices, and proof assessments are restored before assigning work.
 
 ## 2. Establish the finish line and ownership
 
-For a new run, propose one compact confirmation using the user's request and
-profile defaults. Include selected tickets, target stage, publication scope,
-dashboard destination and audience, scan interval and idle-scan limit. Ask only
-for unresolved run choices. A complete
-explicit request already confirms them. A request for only a consequential
-decision can defer presentation as step 5 describes. Save confirmed values in
-this run with the supplied answer receipt or actual message link, leaving setup
-defaults unchanged. On resume, reuse saved choices and
-ask only about a requested change or missing run choice.
+For a new run, propose one compact confirmation using the user's request and profile
+defaults: selected tickets, target stage, publication scope, scan interval and idle-scan
+limit, each with a bold default, and the dashboard destination, asked in the same message
+through the settings sheet the `dashboard` skill's step 2 runs (`explain-to`'s
+`references/settings-sheet.md`). Reader and interaction are fixed as that step says, the
+destination is the open row, and the sheet's same-message rule bundles the other questions,
+so one *go* settles everything. Ask only for unresolved run choices; a complete explicit
+request already confirms them. A request for only a consequential decision can defer
+presentation as step 5 describes. Save confirmed values in this run with the supplied
+answer receipt or actual message link, leaving setup defaults unchanged. On resume, reuse
+saved choices and ask only about a requested change or missing run choice.
 
 State the finish line as a target stage and show its plain label. The legacy
 review-ready default is `pr_readiness`, shown as "Implemented: no pull request
@@ -119,13 +124,12 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding `harness-discovery` and both orchestration skills. Owners
+from setup and this run explicitly, excluding `harness-discovery`, `orchestration-setup`, `orchestration-run` and `dashboard`. Owners
 may load additional role-specific skills and should launch bounded helpers
 (subagents) for research, review preparation, verification and other separable
-tasks within the ticket. Pass relevant
-instructions to those helpers too; do not assume inheritance or launch recursive
-coordinators. Use the harness's supported briefing mechanism if direct skill
-loading is unavailable. Include step 3's status collection and decision routing
+tasks within the ticket. Pass relevant instructions to those helpers too; do not assume
+inheritance or launch recursive coordinators. Use the harness's supported briefing mechanism
+if direct skill loading is unavailable. Include step 3's status collection and decision routing
 in owner briefs so owners can discuss ticket-local choices with the user and
 record the outcome in their own conversations.
 
@@ -267,11 +271,10 @@ choice in its owner's conversation or give quick answers by ID to the coordinato
 Relay exact user answers to the discussion owner when the harness permits it.
 An owner can apply a local answer within existing authorization and record the
 answer, source and outcome in its conversation for inspection; the user need
-not repeat it to the coordinator.
-Record the decision and scope once, and remove it from the pending queue.
-Answering changes the decision queue, not the owner's activity status. Update
-owner state and `owner.activity` from inspected state or an actual progress report; a delivery
-receipt proves communication, not that the owner resumed work.
+not repeat it to the coordinator. Record the decision and scope once, and remove it
+from the pending queue. Answering changes the decision queue, not the owner's activity
+status. Update owner state and `owner.activity` from inspected state or an actual progress
+report; a delivery receipt proves communication, not that the owner resumed work.
 
 Inspect native input gates using configured capabilities. A human-only gate
 must be answered by the user in its owning conversation; show that direct route
@@ -340,7 +343,15 @@ Record `harness_name`, `config_path`, and the actual run-choice confirmation in
 the record. A resume in a different harness needs explicit ownership/evidence
 transfer; selecting its setup profile alone does not transfer an existing run.
 
-Use the data contract in [dashboard data](references/dashboard-data.md).
+The record's shape is the `dashboard` skill's status contract, in that
+skill's `references/status-contract.md`; the rules this run adds are in
+[dashboard data](references/dashboard-data.md), and `validate_run.py` checks
+them. Record all three status views for every row: stage, work status and
+agent status. The page serves non-technical stakeholders first: give every row
+a plain-language `work.summary`, write the goal and decision text the same way,
+and keep technical wording in `reason`, `blocker`, `next_action` and stage
+notes. Recover missing outcomes from retained results and decisions; closure
+alone leaves the outcome unclassified. Stamp `updated_at` with the real time.
 
 Use the run-specific presentation choice confirmed in step 2 or restored on resume:
 
@@ -352,30 +363,38 @@ Use the run-specific presentation choice confirmed in step 2 or restored on resu
   and update the local status record; leave dashboard generation, writes and
   hosting held. An old page stays unchanged and is not the current display.
 - Otherwise, reuse the confirmed destination without asking again. If still
-  missing, ask one focused question offering available destinations and audiences.
-  Ask separately from shared-action approvals. A setup preference, template
-  value, or existing path alone is not a run-specific user answer.
+  missing, ask it through the settings sheet as step 2 describes, separately
+  from shared-action approvals. A setup preference, template value, or existing
+  path alone is not a run-specific user answer. Pass the agreed destination to
+  the `dashboard` skill as a fixed setting, so it shows no sheet.
 - After an actual destination choice, save its values and clear the presentation
-  hold. Generate from the bundled template and update that same artifact in place.
-  Only this branch runs the renderer below.
+  hold. Render through the `dashboard` skill and update that same artifact in
+  place. Only this branch runs the renderer below.
 
 Publishing the dashboard does not authorize uploading underlying private proof,
-publishing code, or publishing skills. Use accessible proof links for its audience,
-or identify privately retained proof. Follow the selected host's instructions.
-In a remote sandbox, local HTML needs a supported preview or portal for the user;
-a sandbox-local URL is not a delivery link.
+publishing code, or publishing skills. Use accessible proof links for its
+audience, or identify privately retained proof. In a remote sandbox, local HTML
+needs a supported preview or portal; a sandbox-local URL is not a delivery link.
 
-A routine scan writes `status.json`, renders, updates the destination, and
-compares the served page with the rendered file:
+A routine scan writes `status.json`, checks it, renders it, updates the
+destination, and compares the served page with the rendered file:
 
 ```bash
-python3 <this skill's folder>/scripts/check_served.py <dashboard.html> <served URL>
+python3 <this skill's folder>/scripts/validate_run.py <status.json>
+python3 <dashboard skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html>
+# Before hosting, reject local proof/owner links that the audience cannot use:
+python3 <dashboard skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html> --hosted
+python3 <dashboard skill's folder>/scripts/check_served.py <dashboard.html> <served URL>
 ```
 
-PASS ends the dashboard check for that scan. LIMITED means the page cannot be
-fetched from here, such as behind a sign-in; record that limitation once and
-reuse it. Take screenshots, inspect the DOM, or open a browser only when the
-template or renderer changed.
+`validate_run.py` prints every lifecycle finding and exits 1; fix each one in
+the record before rendering, because the renderer checks the record's shape,
+not the truth of its claims or this run's rules. The renderer leaves the
+previous page in place when it rejects a record. `check_served.py` PASS ends
+the dashboard check for that scan. LIMITED means the page cannot be fetched
+from here, such as behind a sign-in; record that limitation once and reuse it.
+Take screenshots, inspect the DOM, or open a browser only when the `dashboard`
+skill's template or renderer changed.
 
 Set `presentation.auto_refresh` from the selected destination's discovered
 `auto_refresh` capability. Inspect missing capability facts through discovery.
@@ -388,44 +407,24 @@ correct discovery and keep the page static with the limitation.
 Reloads continue through pauses and completion and can discard open dialogs and
 drafted questions. They do not run status checks or establish fresh evidence.
 
-```bash
-python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html>
-# Before hosting, reject local proof/owner links that the audience cannot use:
-python3 <this skill's folder>/scripts/render_dashboard.py <status.json> <dashboard.html> --hosted
-```
-
-The renderer checks the display contract, not the truth of supplied evidence.
 Refresh at step 3's cycle boundaries, including dependency/approval changes,
-corrected verdicts and owner closure. Record each task's `work` status and reason
-under the [work status contract](references/dashboard-data.md#work-status-and-resolution).
-Recover missing outcomes from retained results and decisions; closure alone
-leaves the outcome unclassified. The dashboard serves non-technical stakeholders,
-such as testers or executives, first: give every row a plain-language
-`work.summary`, and write the goal and decision text the same way. Keep
-technical wording in `reason`, `blocker`, `next_action` and stage notes, which
-appear when a reader opens an item. Record all three status views for every
-row: stage, work status and agent status. Stamp `updated_at` with the real
-update time.
-
-Keep task, proof, decision, and run IDs stable; the page uses them for links,
-copied questions and copied context. Record the coordinator link and any
-configured native comment/message mechanism in `presentation`. Use host-native
-interaction when supported. A clipboard copy is preparation, not delivery or
-approval. Interpret answers against the same record and update it without asking
-the user to repeat a decision already made in its authoritative conversation.
-
-When creating or changing the template or renderer, follow
-[dashboard layout](references/dashboard-layout.md) and verify the change as it
-describes.
+corrected verdicts and owner closure. Keep task, proof, decision, and run IDs
+stable; the page uses them for links, copied questions and copied context.
+Record the coordinator link and any configured native comment/message
+mechanism in `presentation`. Use host-native interaction when supported. A
+clipboard copy is preparation, not delivery or approval. Interpret answers
+against the same record and update it without asking the user to repeat a
+decision already made in its authoritative conversation.
 
 Chat updates cover decisions needed, material blockers/plan changes, and reached
 stages. Say what changed, what needs attention, and the recommendation where
 applicable. Link the dashboard; leave routine receipts and investigation detail
 there. Honor harness progress requirements with brief updates.
 
-**Done when** the selected dashboard presents the current record with accessible
-or clearly private proof, or the record explicitly holds unselected presentation
-without writing HTML. A presentation hold does not hold unrelated owner work.
+**Done when** `validate_run.py` passes and the selected dashboard presents the
+current record with accessible or clearly private proof, or the record
+explicitly holds unselected presentation without writing HTML. A presentation
+hold does not hold unrelated owner work.
 
 ## 6. Close completed owners
 
@@ -489,8 +488,9 @@ or when the user ends it:
    the reason.
 5. Within the publication scope, delete merged branches the run created.
 6. Read back the ticket tracker so its states match the record.
-7. Set `closed_at`, render a final dashboard and verify the served page.
+7. Set `closed_at`, run `validate_run.py`, render a final dashboard through
+   the `dashboard` skill and verify the served page.
 
-**Done when** the renderer accepts the closed record. The final chat states
+**Done when** `validate_run.py` accepts the closed record. The final chat states
 actual delivery, follow-ups and their owners, retained runtime and its dates,
 limitations, and the dashboard location, without repeating its audit trail.
