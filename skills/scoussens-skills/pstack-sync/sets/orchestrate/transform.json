@@ -460,11 +460,19 @@
           },
           {
             "find": "      .describe(\"This planner's cloud agent id.\"),\n",
-            "replace": "      .describe(\"This planner's thread id.\"),\n"
+            "replace": "      .describe(\"This planner's thread id.\"),\n    runTag: z\n      .string()\n      .regex(/^[a-z0-9]{6}$/)\n      .optional()\n      .describe(\n        \"Run tag kickoff generated; the labels run-<tag> and the titles <tag> <task> carry it.\"\n      ),\n    measurementsEnabled: z\n      .boolean()\n      .optional()\n      .describe(\n        \"Planner opt-in for measurement commands; the loop also needs ORCHESTRATE_MEASUREMENTS=1.\"\n      ),\n"
           },
           {
             "find": "      \"The cloud run's RunResult.status.\"\n",
             "replace": "      \"The worker run's final status, as the runtime adapter reports it.\"\n"
+          },
+          {
+            "find": "    finishedAt: nullableDateTimeSchema,\n    lastUpdate: nullableDateTimeSchema,\n",
+            "replace": "    finishedAt: nullableDateTimeSchema,\n    archivedAt: nullableDateTimeSchema\n      .optional()\n      .describe(\"When the loop archived this row's thread after its handoff.\"),\n    via: z\n      .enum([\"bridge\", \"cli\"])\n      .optional()\n      .describe(\"How the thread was spawned: the bridge plugin or the amp CLI.\"),\n    lastUpdate: nullableDateTimeSchema,\n"
+          },
+          {
+            "find": "    rootSlug: taskNameSchema,\n    tasks: z.array(TaskStateSchema),\n",
+            "replace": "    rootSlug: taskNameSchema,\n    runTag: z\n      .string()\n      .optional()\n      .describe(\"The run tag every thread of this run carries.\"),\n    tasks: z.array(TaskStateSchema),\n"
           }
         ],
         "accepted": []
