@@ -426,9 +426,15 @@ def call(case, operation, args):
             command = ["python3", "-B", str(RUNNER / "scripts" / "state.py"), "resolve", "--harness", args["harness"],
                        "--orchestration", *root]
         else:
+            # The coordinator's render step: the run's own rules first, then the dashboard skill's renderer.
+            command = ["python3", "-B", str(RUNNER / "scripts" / "validate_run.py"), paths["status"]]
+            validated = subprocess.run(command, capture_output=True, text=True)
+            if validated.returncode:
+                result = {"exit_code": validated.returncode, "stdout": validated.stdout, "stderr": validated.stderr}
             command = ["python3", "-B", str(DASHBOARD / "scripts" / "render_dashboard.py"), paths["status"], paths["dashboard"]]
-        completed = subprocess.run(command, capture_output=True, text=True)
-        result = {"exit_code": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr}
+        if result is None:
+            completed = subprocess.run(command, capture_output=True, text=True)
+            result = {"exit_code": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr}
     elif operation == "reply":
         (case / "reply.md").write_text(args["text"] + "\n")
         result = {"recorded": True}
