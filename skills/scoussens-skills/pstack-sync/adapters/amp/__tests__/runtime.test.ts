@@ -43,6 +43,11 @@ beforeEach(() => {
     ORCHESTRATE_AMP_ARCHIVED_CHECK_MS: "3600000",
     // The facade is under test, not the grace window; agent-runtime.test.ts covers that.
     ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0",
+    // Never a real bridge: with the orchestrate-bridge plugin installed, the
+    // orb that runs the tests has a live one under AMP_WORKING_DIRECTORY, and
+    // a spawn through it creates a real thread.
+    ORCHESTRATE_AMP_BRIDGE: "",
+    AMP_WORKING_DIRECTORY: "",
   };
 });
 

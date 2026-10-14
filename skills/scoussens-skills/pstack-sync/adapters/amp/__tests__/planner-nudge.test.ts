@@ -150,6 +150,9 @@ beforeEach(() => {
     ORCHESTRATE_AMP_BIN: "",
     ORCHESTRATE_AMP_POLL_MS: "5",
     ORCHESTRATE_AMP_ARCHIVED_CHECK_MS: "3600000",
+    // Never a real bridge; see runtime.test.ts.
+    ORCHESTRATE_AMP_BRIDGE: "",
+    AMP_WORKING_DIRECTORY: "",
   };
 });
 
