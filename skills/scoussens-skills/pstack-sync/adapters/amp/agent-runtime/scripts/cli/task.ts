@@ -8,6 +8,10 @@ import {
   agentUrl,
   isAgentRuntimeError,
   loadSDK,
+  newRunTag,
+  ROOT_TASK_TITLE,
+  runLabels,
+  runTitle,
 } from "../core/runtime.ts";
 import { resolveModelSelection } from "../models.ts";
 import {
@@ -191,6 +195,10 @@ export function registerTaskCommands(program: Command): void {
             opts.dispatcherName,
             slackChannel
           );
+          // Amp port: the run's tag is generated here, once, and reaches
+          // every thread of the run through plan.json (the prompt below
+          // tells the planner to write it there).
+          const runTag = newRunTag();
           const agent = await Agent.create({
             name: `${rootSlug}-root`,
             cloud: {
@@ -198,15 +206,22 @@ export function registerTaskCommands(program: Command): void {
               autoCreatePR: false,
             },
             model: resolveModelSelection(opts.model),
+            labels: runLabels(runTag),
+            title: runTitle(runTag, ROOT_TASK_TITLE),
+            nodeType: "planner",
+            runTag,
           });
           // The thread id is known only after send(); until then
           // agent.agentId is `$AMP_THREAD_ID`, which the orb resolves.
-          const prompt = buildKickoffPrompt({
-            goal,
-            agentId: agent.agentId,
-            dispatcherFirstName,
-            slackChannel,
-          });
+          const prompt = withRunTagNote(
+            buildKickoffPrompt({
+              goal,
+              agentId: agent.agentId,
+              dispatcherFirstName,
+              slackChannel,
+            }),
+            runTag
+          );
           const run = await agent.send({ text: prompt });
           console.log(
             JSON.stringify({
@@ -215,6 +230,7 @@ export function registerTaskCommands(program: Command): void {
               status: run.status,
               url: agentUrl(agent.agentId),
               dispatcherFirstName: dispatcherFirstName ?? null,
+              runTag,
             })
           );
           // Nothing holds the event loop here, but the explicit exit keeps
@@ -505,6 +521,9 @@ export async function findActiveRootPlanner(
   const list = await agentApi.list({ runtime: "cloud", limit: 50 });
   // Exact match, not startsWith: a prefix slug would otherwise adopt another
   // goal's `<slug>-root` planner (e.g. "auth" adopting "auth-ui-root").
+  // Amp port: a root thread is titled `<runTag> root` with a random tag, so
+  // its title no longer names the goal and only planners spawned before
+  // tags existed can be adopted this way; see the adapter README's Limits.
   const rootPlannerName = `${rootSlug}-root`;
   for (const item of listItems(list)) {
     const name = stringField(item, "name");
@@ -624,6 +643,15 @@ export function buildPlannerNudge(args: {
     "",
     `Read the handoffs in \`${args.workspace}/handoffs/\`, run \`bun cli.ts tree ${args.workspace}\`, react to each error, and continue the goal; after changing plan.json, re-run \`bun cli.ts run ${rootFlag}${args.workspace}\` in the foreground. This message is the loop's wake-up, not a new goal.`,
   ].join("\n");
+}
+
+/**
+ * Amp port: the one line of the root prompt that carries the run tag. The
+ * planner writes it to plan.json next to `selfAgentId`; the loop reads it
+ * from there (`resolveRunTag`) and tags every thread of the run with it.
+ */
+export function withRunTagNote(prompt: string, runTag: string): string {
+  return `${prompt}\n\nRun tag: this run's tag is \`${runTag}\`. Write it into plan.json as \`"runTag": "${runTag}"\` next to \`selfAgentId\`. The loop labels every thread of this run \`run-${runTag}\` and titles them \`${runTag} <task>\`; this thread is \`${runTag} root\`.`;
 }
 
 export function inferKickoffRootSlug(goal: string): string {

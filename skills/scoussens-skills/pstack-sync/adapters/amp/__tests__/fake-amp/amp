@@ -8,7 +8,11 @@
 #                                below the call count is served, so the last file repeats
 #   export-<id>-<n>.fail         the n-th export exits 1 instead
 #   continue-stdin.txt           where `threads continue <id> -ox` saves its stdin
-#   archived-<id>                touched by `threads archive <id>`
+#   archived-<id>                touched by `threads archive <id>`; removed by `threads archive --unarchive <id>`
+#   labels-<id>                  `threads label <id> <labels...>` appends one label per line
+#   title-<id>                   `threads rename <id> <title>` writes the title; like the real CLI it
+#                                fails with "Cannot rename an empty thread." unless the last export
+#                                served for <id> had a message, and fails outright when rename-fail exists
 #   search-<id>.json             reply to `threads search "id:<id> ..." --json`, else []
 #   list.json                    reply to `threads list --json`, else []
 #   agent-options.json           reply to `plugins show-agent-options --json`, else exit 1
@@ -49,8 +53,33 @@ case "${argv[0]}" in
         echo "https://ampcode.com/threads/${argv[2]}"
         ;;
       archive)
-        touch "$dir/archived-${argv[2]}"
-        echo "✓ Thread archived successfully"
+        if [ "${argv[2]}" = "--unarchive" ]; then
+          rm -f "$dir/archived-${argv[3]}"
+          echo "✓ Thread unarchived successfully"
+        else
+          touch "$dir/archived-${argv[2]}"
+          echo "✓ Thread archived successfully"
+        fi
+        ;;
+      label)
+        id="${argv[2]}"
+        for l in "${argv[@]:3}"; do echo "$l" >> "$dir/labels-$id"; done
+        echo "✓ Labels added"
+        ;;
+      rename)
+        id="${argv[2]}"
+        if [ -e "$dir/rename-fail" ]; then echo "fake amp: rename refused" >&2; exit 1; fi
+        n="$(cat "$dir/count-$id" 2>/dev/null || echo 0)"
+        pick=""
+        for ((k = n; k >= 1; k--)); do
+          if [ -e "$dir/export-$id-$k.json" ]; then pick="$dir/export-$id-$k.json"; break; fi
+        done
+        if [ -z "$pick" ] || grep -q '"messages":\[\]' "$pick"; then
+          echo "Cannot rename an empty thread." >&2
+          exit 1
+        fi
+        printf '%s' "${argv[3]}" > "$dir/title-$id"
+        echo "✓ Thread renamed"
         ;;
       search)
         id="$(printf '%s' "${argv[2]}" | grep -o 'T-[0-9a-f-]*' | head -n 1)"

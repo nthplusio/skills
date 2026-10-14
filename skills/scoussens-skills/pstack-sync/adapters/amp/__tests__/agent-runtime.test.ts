@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AgentRuntimeError, type StreamEvent } from "../../interface.ts";
 import {
+  bridgeCandidates,
   createAmpRuntime,
   describeRun,
+  isLoopbackUrl,
   isThreadId,
+  labelArgs,
   parseBranchLine,
+  readBridgeFile,
   type ThreadExport,
+  titleFor,
   withStartingRef,
 } from "../agent-runtime.ts";
 import { AMP_BUILTIN_MODES, createAmpModelCatalog, pluginModesFrom } from "../models.ts";
@@ -17,17 +24,22 @@ import { AMP_BUILTIN_MODES, createAmpModelCatalog, pluginModesFrom } from "../mo
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FAKE_DIR = join(HERE, "fake-amp");
 const ID = "T-01a13830-78c4-723b-8624-f4b865ca42d8";
+const CHILD = "T-01a13b70-1111-7222-8333-444455556666";
+const PARENT = "T-01a13b6a-aaaa-7bbb-8ccc-ddddeeeeffff";
 const REPO = "https://github.com/nthplusio/skills";
 
 let dir: string;
 let env: NodeJS.ProcessEnv;
+let servers: Server[];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "os4-fake-amp-"));
   chmodSync(join(FAKE_DIR, "amp"), 0o755);
   writeFileSync(join(dir, "spawn-id"), ID);
+  servers = [];
   // The fake is found through PATH, as a real `amp` would be; the runtime's
-  // default binary name is what gets resolved.
+  // default binary name is what gets resolved. The orb that runs the tests
+  // sets AMP_WORKING_DIRECTORY, and a bridge file there must not be found.
   env = {
     ...process.env,
     PATH: `${FAKE_DIR}:${process.env.PATH ?? ""}`,
@@ -37,12 +49,75 @@ beforeEach(() => {
     ORCHESTRATE_AMP_POLL_MS: "5",
     ORCHESTRATE_AMP_ARCHIVED_CHECK_MS: "3600000",
     ORCHESTRATE_AMP_MAX_EXPORT_FAILURES: "5",
+    ORCHESTRATE_AMP_BRIDGE: "",
+    AMP_WORKING_DIRECTORY: "",
   };
 });
 
-afterEach(() => {
+afterEach(async () => {
+  for (const server of servers) await new Promise<void>(resolve => server.close(() => resolve()));
   rmSync(dir, { recursive: true, force: true });
 });
+
+interface BridgeRequest {
+  method: string | undefined;
+  url: string | undefined;
+  authorization: string | undefined;
+  body: Record<string, unknown>;
+}
+
+/**
+ * A stand-in for the orchestrate-bridge plugin: a loopback `node:http`
+ * server that records each request and answers 200 `{threadID, parent}` or
+ * the status and body it was told to. Writes the bridge file the runtime
+ * reads to `path` (default `<dir>/bridge.json`).
+ */
+async function startBridge(
+  opts: { status?: number; reply?: Record<string, unknown>; path?: string } = {}
+): Promise<{ requests: BridgeRequest[]; url: string; token: string; path: string }> {
+  const requests: BridgeRequest[] = [];
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", chunk => {
+      data += chunk;
+    });
+    req.on("end", () => {
+      requests.push({
+        method: req.method,
+        url: req.url,
+        authorization: req.headers.authorization,
+        body: data ? (JSON.parse(data) as Record<string, unknown>) : {},
+      });
+      const status = opts.status ?? 200;
+      res.writeHead(status, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify(
+          status === 200 ? { threadID: CHILD, parent: PARENT } : (opts.reply ?? { error: "refused" })
+        )
+      );
+    });
+  });
+  servers.push(server);
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}/spawn`;
+  const token = `tok-${port}-${Date.now()}`;
+  const path = opts.path ?? join(dir, "bridge.json");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({ url, token, thread: PARENT, startedAt: "2026-10-14T02:14:24.000Z" })
+  );
+  return { requests, url, token, path };
+}
+
+const SPAWN = {
+  name: "demo/task-a",
+  repoUrl: REPO,
+  startingRef: "main",
+  model: "inherit",
+  prompt: "You are a worker.\n\nDo the thing.",
+};
 
 function calls(): string[][] {
   const path = join(dir, "calls.log");
@@ -100,6 +175,15 @@ function serve(id: string, n: number, exp: ThreadExport | "fail"): void {
   else writeFileSync(join(dir, `export-${id}-${n}.json`), JSON.stringify(exp));
 }
 
+function attentionSink(): { lines: string[]; onAttention: (line: string) => void } {
+  const lines: string[] = [];
+  return { lines, onAttention: line => lines.push(line) };
+}
+
+function renames(): string[][] {
+  return calls().filter(c => c[0] === "threads" && c[1] === "rename");
+}
+
 const FINISHED = thread("idle", [
   { user: "do the task" },
   { tool: "shell_command" },
@@ -113,14 +197,13 @@ const FINISHED = thread("idle", [
 describe("spawn", () => {
   test("runs amp -ox against the repository with the prompt on stdin and returns the thread id", async () => {
     const rt = createAmpRuntime({ env });
-    const result = await rt.spawn({
-      name: "demo/task-a",
-      repoUrl: REPO,
-      startingRef: "main",
-      model: "inherit",
-      prompt: "You are a worker.\n\nDo the thing.",
+    const result = await rt.spawn(SPAWN);
+    expect(result).toEqual({
+      agentId: ID,
+      runId: "m0",
+      via: "cli",
+      note: expect.stringContaining("used the CLI: no bridge file at"),
     });
-    expect(result).toEqual({ agentId: ID, runId: "m0" });
     const [call] = calls();
     expect(call[0]).toBe("-ox");
     expect(call).toContain("--project");
@@ -129,9 +212,53 @@ describe("spawn", () => {
     expect(call[call.indexOf("--visibility") + 1]).toBe("private");
     expect(call).toContain("--no-archive-after-execute");
     expect(call).not.toContain("-m");
+    expect(call).not.toContain("-l");
     const stdin = readFileSync(join(dir, "spawn-stdin.txt"), "utf8");
     expect(stdin.startsWith("Start from git ref `main`")).toBe(true);
     expect(stdin.endsWith("You are a worker.\n\nDo the thing.")).toBe(true);
+  });
+
+  test("labels the thread after the spawn, with the default label first, and titles it from the run tag", async () => {
+    const rt = createAmpRuntime({ env });
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd", "orchestrate"], runTag: "ab12cd" });
+    const [spawn, label] = calls();
+    expect(spawn[spawn.indexOf("--title") + 1]).toBe("ab12cd demo/task-a");
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", "run-ab12cd"]);
+    expect(readFileSync(join(dir, `labels-${ID}`), "utf8")).toBe("orchestrate\nrun-ab12cd\n");
+  });
+
+  test("an explicit title wins over the run tag, and an empty ORCHESTRATE_AMP_LABEL drops the default label", async () => {
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_LABEL: "" } });
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"], runTag: "ab12cd", title: "ab12cd root" });
+    const [spawn, label] = calls();
+    expect(spawn[spawn.indexOf("--title") + 1]).toBe("ab12cd root");
+    expect(label).toEqual(["threads", "label", ID, "run-ab12cd"]);
+  });
+
+  test("refuses a label outside the CLI's pattern before any command runs", async () => {
+    const rt = createAmpRuntime({ env });
+    for (const bad of ["--help", "run:ab12", "-x", "", "a b"]) {
+      const err = await rt.spawn({ ...SPAWN, labels: [bad] }).catch(e => e);
+      expect(err).toBeInstanceOf(AgentRuntimeError);
+      expect(err.message).toContain(JSON.stringify(bad));
+    }
+    expect(calls()).toEqual([]);
+    expect(labelArgs(["a", "a", "b-2"])).toEqual(["a", "b-2"]);
+  });
+
+  test("does not rename a CLI-spawned thread whose export already carries the title", async () => {
+    const rt = createAmpRuntime({ env });
+    await rt.spawn({ ...SPAWN, runTag: "ab12cd" });
+    serve(ID, 1, { ...FINISHED, title: "ab12cd demo/task-a" });
+    expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+    expect(renames()).toEqual([]);
+  });
+
+  test("titleFor keeps one line of at most 100 characters that cannot read as a flag", () => {
+    expect(titleFor("  ab12cd   task-a \n")).toBe("ab12cd task-a");
+    expect(titleFor("--last")).toBe("last");
+    expect(titleFor("")).toBe("orchestrate");
+    expect(titleFor("x".repeat(120))).toHaveLength(100);
   });
 
   test("passes a non-inherit model as the agent mode", async () => {
@@ -153,6 +280,158 @@ describe("spawn", () => {
 
   test("withStartingRef leaves the prompt alone when the ref is empty", () => {
     expect(withStartingRef("p", "  ")).toBe("p");
+  });
+});
+
+describe("spawn through the bridge", () => {
+  test("posts the spawn to the bridge named by ORCHESTRATE_AMP_BRIDGE and nests under its thread", async () => {
+    const bridge = await startBridge();
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    const result = await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"], title: "ab12cd task-a" });
+    expect(result).toEqual({ agentId: CHILD, runId: "m0", via: "bridge" });
+    expect(bridge.requests).toHaveLength(1);
+    const [request] = bridge.requests;
+    expect(request.method).toBe("POST");
+    expect(request.url).toBe("/spawn");
+    expect(request.authorization).toBe(`Bearer ${bridge.token}`);
+    expect(request.body.name).toBe("demo/task-a");
+    expect(request.body.project).toBe(REPO);
+    expect(request.body.mode).toBe("high");
+    expect(request.body.labels).toEqual(["orchestrate", "run-ab12cd"]);
+    expect(request.body.parent).toBeUndefined();
+    const prompt = request.body.prompt as string;
+    expect(prompt.startsWith("Start from git ref `main`")).toBe(true);
+    expect(prompt.endsWith(SPAWN.prompt)).toBe(true);
+    // No CLI call at all: the bridge created, labelled, and prompted the thread.
+    expect(calls()).toEqual([]);
+  });
+
+  test("maps a non-inherit model to the bridge's mode", async () => {
+    const bridge = await startBridge();
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    await rt.spawn({ ...SPAWN, model: "low" });
+    expect(bridge.requests[0].body.mode).toBe("low");
+  });
+
+  test("finds the file under the working directory, then under AMP_WORKING_DIRECTORY", async () => {
+    const cwd = join(dir, "cwd");
+    const bridge = await startBridge({ path: join(cwd, ".orchestrate", "bridge.json") });
+    const fromCwd = createAmpRuntime({ env, cwd });
+    expect((await fromCwd.spawn(SPAWN)).via).toBe("bridge");
+    const amp = join(dir, "amp-wd");
+    await startBridge({ path: join(amp, ".orchestrate", "bridge.json") });
+    const fromAmp = createAmpRuntime({ env: { ...env, AMP_WORKING_DIRECTORY: amp }, cwd: dir });
+    expect((await fromAmp.spawn(SPAWN)).via).toBe("bridge");
+    expect(bridge.requests).toHaveLength(1);
+    expect(bridgeCandidates({ ORCHESTRATE_AMP_BRIDGE: "/x/b.json", AMP_WORKING_DIRECTORY: amp }, cwd)).toEqual([
+      "/x/b.json",
+    ]);
+    expect(bridgeCandidates({ AMP_WORKING_DIRECTORY: amp }, cwd)).toEqual([
+      join(cwd, ".orchestrate", "bridge.json"),
+      join(amp, ".orchestrate", "bridge.json"),
+    ]);
+    expect(bridgeCandidates({}, cwd)).toEqual([join(cwd, ".orchestrate", "bridge.json")]);
+  });
+
+  test("falls back to the CLI with a note naming why when the bridge refuses", async () => {
+    const bridge = await startBridge({ status: 401, reply: { error: "bad token" } });
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    const result = await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"] });
+    expect(result.agentId).toBe(ID);
+    expect(result.via).toBe("cli");
+    expect(result.note).toContain(`bridge at ${bridge.path} refused the spawn`);
+    expect(result.note).toContain("401: bad token");
+    expect(bridge.requests).toHaveLength(1);
+    const [spawn, label] = calls();
+    expect(spawn[0]).toBe("-ox");
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", "run-ab12cd"]);
+  });
+
+  test("falls back to the CLI when the file is missing, malformed, or not loopback, without a request", async () => {
+    const cases: [string, string][] = [
+      [join(dir, "nowhere.json"), `no bridge file at ${join(dir, "nowhere.json")}`],
+      [join(dir, "junk.json"), "is not JSON"],
+      [join(dir, "no-token.json"), "has no url and token"],
+      [join(dir, "remote.json"), "is not a loopback address"],
+    ];
+    writeFileSync(join(dir, "junk.json"), "{");
+    writeFileSync(join(dir, "no-token.json"), JSON.stringify({ url: "http://127.0.0.1:1/spawn" }));
+    writeFileSync(
+      join(dir, "remote.json"),
+      JSON.stringify({ url: "http://bridge.example.com/spawn", token: "t" })
+    );
+    for (const [path, reason] of cases) {
+      const lookup = readBridgeFile({ ORCHESTRATE_AMP_BRIDGE: path }, dir);
+      expect(lookup.kind).toBe("missing");
+      expect(lookup.kind === "missing" && lookup.reason).toContain(reason);
+      const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: path } });
+      const result = await rt.spawn(SPAWN);
+      expect(result.via).toBe("cli");
+      expect(result.note).toContain(reason);
+    }
+    expect(isLoopbackUrl("http://localhost:8/x")).toBe(true);
+    expect(isLoopbackUrl("http://[::1]:8/x")).toBe(true);
+    expect(isLoopbackUrl("http://127.0.0.1.example.com/x")).toBe(false);
+    expect(isLoopbackUrl("file:///etc/passwd")).toBe(false);
+  });
+
+  test("renames the thread on the first poll that sees a message, once", async () => {
+    const bridge = await startBridge();
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    const { agentId } = await rt.spawn({ ...SPAWN, title: "ab12cd task-a" });
+    // The first export is the empty thread (the bridge's append has not
+    // landed): no rename, which the fake would refuse. The second has the
+    // prompt; the third is the finished run.
+    serve(agentId, 1, thread("working", []));
+    serve(agentId, 2, thread("working", [{ user: "do the task" }]));
+    serve(agentId, 3, FINISHED);
+    const result = await rt.wait({ agentId, runId: "m0" });
+    expect(result.status).toBe("finished");
+    expect(renames()).toEqual([["threads", "rename", agentId, "ab12cd task-a"]]);
+    expect(readFileSync(join(dir, `title-${agentId}`), "utf8")).toBe("ab12cd task-a");
+    const order = calls().map(c => c.slice(0, 2).join(" "));
+    expect(order.indexOf("threads rename")).toBe(2);
+  });
+
+  test("a rename that fails is one attention line and never the run's status", async () => {
+    const bridge = await startBridge();
+    const sink = attentionSink();
+    const rt = createAmpRuntime({
+      env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path },
+      onAttention: sink.onAttention,
+    });
+    const { agentId } = await rt.spawn({ ...SPAWN, title: "ab12cd task-a" });
+    writeFileSync(join(dir, "rename-fail"), "");
+    serve(agentId, 1, thread("working", [{ user: "do the task" }]));
+    serve(agentId, 2, thread("streaming", [{ user: "do the task" }, { tool: "shell_command" }]));
+    serve(agentId, 3, FINISHED);
+    const events: StreamEvent[] = [];
+    for await (const event of rt.stream({ agentId, runId: "m0" })) events.push(event);
+    expect(events.at(-1)).toEqual({ type: "status", status: "finished" });
+    expect(renames()).toHaveLength(1);
+    expect(sink.lines).toHaveLength(1);
+    expect(sink.lines[0]).toContain(`${agentId}: rename to "ab12cd task-a" failed`);
+    expect(sink.lines[0]).toContain("rename refused");
+  });
+
+  test("rename refuses an empty thread the way the real CLI does", async () => {
+    const rt = createAmpRuntime({ env });
+    const err = await rt.rename(ID, "ab12cd task-a").catch(e => e);
+    expect(err).toBeInstanceOf(AgentRuntimeError);
+    expect(err.message).toContain("Cannot rename an empty thread.");
+    serve(ID, 1, thread("working", [{ user: "go" }]));
+    await rt.getRun(ID, "m0");
+    await rt.rename(ID, "ab12cd task-a");
+    expect(readFileSync(join(dir, `title-${ID}`), "utf8")).toBe("ab12cd task-a");
+  });
+
+  test("label adds labels to an existing thread and refuses bad ones", async () => {
+    const rt = createAmpRuntime({ env });
+    await rt.label(ID, ["orchestrate", "run-ab12cd"]);
+    expect(readFileSync(join(dir, `labels-${ID}`), "utf8")).toBe("orchestrate\nrun-ab12cd\n");
+    await expect(rt.label(ID, ["--last"])).rejects.toBeInstanceOf(AgentRuntimeError);
+    await expect(rt.label("--last", ["a"])).rejects.toBeInstanceOf(AgentRuntimeError);
+    expect(calls()).toHaveLength(1);
   });
 });
 
@@ -351,6 +630,57 @@ describe("cancel", () => {
     expect(calls().some(c => c[0] === "threads" && c[1] === "archive" && c[2] === ID)).toBe(true);
     expect((await rt.getRun(ID, "m0")).status).toBe("cancelled");
     expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("cancelled");
+  });
+
+  test("a run cancelled here stays cancelled even when its export later shows an idle reply", async () => {
+    serve(ID, 1, { ...FINISHED, meta: { ...FINISHED.meta, archived: true } });
+    const rt = createAmpRuntime({ env });
+    await rt.cancel(ID, "m0");
+    expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("cancelled");
+  });
+});
+
+describe("archive", () => {
+  test("retires the thread without touching the run: an archived idle reply still reads finished", async () => {
+    serve(ID, 1, { ...FINISHED, meta: { ...FINISHED.meta, archived: true } });
+    const rt = createAmpRuntime({ env });
+    await rt.archive(ID);
+    expect(existsSync(join(dir, `archived-${ID}`))).toBe(true);
+    expect(calls()).toEqual([["threads", "archive", ID]]);
+    expect((await rt.getRun(ID, "m0")).status).toBe("finished");
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(result.status).toBe("finished");
+    expect(result.branches).toEqual(["orch/demo/task-a"]);
+  });
+
+  test("refuses anything but a whole thread id and surfaces a CLI failure", async () => {
+    const rt = createAmpRuntime({ env });
+    await expect(rt.archive("--last")).rejects.toBeInstanceOf(AgentRuntimeError);
+    expect(calls()).toEqual([]);
+  });
+
+  test("describeRun: archived after an idle reply is finished, archived mid-turn or before a reply is cancelled", () => {
+    const archived = { archived: true };
+    expect(
+      describeRun(thread("idle", [{ user: "x" }, { assistant: "done" }], archived), "m0").status
+    ).toBe("finished");
+    expect(
+      describeRun(thread("working", [{ user: "x" }, { tool: "shell_command" }], archived), "m0").status
+    ).toBe("cancelled");
+    expect(describeRun(thread("idle", [{ user: "x" }], archived), "m0").status).toBe("cancelled");
+    expect(
+      describeRun(
+        thread("idle", [{ user: "x" }, { assistant: "A" }, { user: "y" }], archived),
+        "m2"
+      ).status
+    ).toBe("cancelled");
+    // Earlier runs of an archived thread read as finished too.
+    expect(
+      describeRun(
+        thread("idle", [{ user: "x" }, { assistant: "A" }, { user: "y" }, { assistant: "B" }], archived),
+        "m0"
+      ).status
+    ).toBe("finished");
   });
 });
 

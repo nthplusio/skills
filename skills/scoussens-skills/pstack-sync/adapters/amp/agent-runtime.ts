@@ -5,15 +5,22 @@
  * Operation to command, as `.amp/in/artifacts/orchestrate-sync/prototype-roundtrip.log`
  * proved them:
  *
- *   spawn         amp -ox --project <repoUrl> --visibility private
- *                     --no-archive-after-execute --title <name> [-m <mode>]
- *                 with the prompt on stdin; the thread id comes from the URL
- *                 the command prints.
+ *   spawn         POST to the bridge plugin named by `.orchestrate/bridge.json`
+ *                 when that file exists and the bridge answers, so the thread
+ *                 nests under the calling thread; otherwise
+ *                 amp -ox --project <repoUrl> --visibility private
+ *                     --no-archive-after-execute --title <title> [-m <mode>]
+ *                 with the prompt on stdin and the thread id from the URL the
+ *                 command prints, then amp threads label <id> <labels...>.
+ *                 The first wait or stream poll that sees a message renames
+ *                 the thread when its title is not the one asked for.
  *   getRun, wait  amp threads export <id>, polled; the run is terminal when
  *                 `meta.lastKnownAgentState.state` is idle and the last
  *                 message is an assistant message after the run's start.
  *   stream        the same export, polled, diffed against what was yielded.
- *   cancel        amp threads archive <id>
+ *   cancel        amp threads archive <id>; the run reads as cancelled
+ *   archive       amp threads archive <id>; a finished run still reads as finished
+ *   label, rename amp threads label <id> <labels...>, amp threads rename <id> <title>
  *   sendFollowUp  amp threads continue <id> -ox, with the text on stdin
  *   list          amp threads list --json --limit <n>
  *   agentUrl      https://ampcode.com/threads/<id>
@@ -25,6 +32,8 @@
  */
 
 import { spawn as spawnProcess } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   type AgentRuntime,
@@ -59,6 +68,9 @@ export interface AmpRuntimeOptions {
   commandTimeoutMs?: number;
   /** Longest `wait` or `stream` keeps polling a run that has not ended; `ORCHESTRATE_WAIT_TIMEOUT_SEC`, default 7200 s. */
   waitTimeoutSec?: number;
+  /** Where lines that deserve a person's attention go when no run can carry them (a rename or label that failed); default stderr. */
+  onAttention?: (line: string) => void;
+  /** Working directory for CLI invocations and the second place the bridge file is looked for. */
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 }
@@ -101,6 +113,10 @@ export const THREAD_ID_RE = /T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 const THREAD_ID_EXACT_RE = new RegExp(`^${THREAD_ID_RE.source}$`, "i");
 const RUN_ID_RE = /^m\d+$/;
 const TITLE_MAX_CHARS = 100;
+/** What `amp threads label` accepts, as probed: alphanumeric with hyphens, starting alphanumeric. */
+export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+/** The mode the bridge runs when the caller says `inherit`. */
+export const BRIDGE_DEFAULT_MODE = "high";
 
 /** True for a whole Amp thread id and nothing else. */
 export function isThreadId(value: string): boolean {
@@ -129,6 +145,105 @@ function runIdArg(runId: string): string {
     );
   }
   return runId;
+}
+
+/** True for a label the CLI accepts and nothing else. */
+export function isLabel(value: string): boolean {
+  return typeof value === "string" && LABEL_RE.test(value);
+}
+
+/**
+ * Labels land in `amp threads label <id> <labels...>` argv and in the bridge
+ * request, so anything outside the CLI's own pattern is refused before a
+ * process starts: `--help` cannot become a flag. Duplicates are dropped.
+ */
+export function labelArgs(labels: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const label of labels) {
+    if (!isLabel(label)) {
+      throw new AgentRuntimeError(
+        `refusing label ${JSON.stringify(label)}: Amp labels match ${LABEL_RE.source}`
+      );
+    }
+    if (!out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// The bridge file. The orchestrate-bridge plugin writes it when a thread
+// starts, so a spawn can nest under that thread. Exported for tests.
+// ---------------------------------------------------------------------------
+
+export interface BridgeFile {
+  url: string;
+  token: string;
+  thread?: string;
+  startedAt?: string;
+}
+
+/** Where the bridge file is looked for, in order; the first that exists wins. */
+export function bridgeCandidates(env: NodeJS.ProcessEnv, cwd: string): string[] {
+  if (env.ORCHESTRATE_AMP_BRIDGE) return [env.ORCHESTRATE_AMP_BRIDGE];
+  const out = [join(cwd, ".orchestrate", "bridge.json")];
+  if (env.AMP_WORKING_DIRECTORY) {
+    out.push(join(env.AMP_WORKING_DIRECTORY, ".orchestrate", "bridge.json"));
+  }
+  return out;
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/**
+ * The bridge serves on loopback. A file naming any other host is ignored,
+ * because the request carries the task prompt and the file's token, and the
+ * file sits in a working directory that git can write.
+ */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+export type BridgeLookup =
+  | { kind: "found"; path: string; bridge: BridgeFile }
+  | { kind: "missing"; reason: string };
+
+export function readBridgeFile(env: NodeJS.ProcessEnv, cwd: string): BridgeLookup {
+  const candidates = bridgeCandidates(env, cwd);
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(path, "utf8"));
+    } catch (err) {
+      return { kind: "missing", reason: `bridge file ${path} is not JSON: ${errorMessage(err)}` };
+    }
+    const rec = (typeof parsed === "object" && parsed !== null ? parsed : {}) as Record<string, unknown>;
+    if (typeof rec.url !== "string" || !rec.url || typeof rec.token !== "string" || !rec.token) {
+      return { kind: "missing", reason: `bridge file ${path} has no url and token` };
+    }
+    if (!isLoopbackUrl(rec.url)) {
+      return { kind: "missing", reason: `bridge file ${path} names ${rec.url}, which is not a loopback address` };
+    }
+    return {
+      kind: "found",
+      path,
+      bridge: {
+        url: rec.url,
+        token: rec.token,
+        thread: typeof rec.thread === "string" ? rec.thread : undefined,
+        startedAt: typeof rec.startedAt === "string" ? rec.startedAt : undefined,
+      },
+    };
+  }
+  return { kind: "missing", reason: `no bridge file at ${candidates.join(" or ")}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +364,7 @@ export function describeRun(exp: ThreadExport, runId: string): RunDescription {
       : null;
   const base = { finalText, branches, durationMs, messageCount: messages.length };
 
-  if (exp.meta?.deleted === true || exp.meta?.archived === true) {
+  if (exp.meta?.deleted === true) {
     return { status: "cancelled", ...base };
   }
   const stopType = (last?.state?.type ?? "").toLowerCase();
@@ -264,7 +379,15 @@ export function describeRun(exp: ThreadExport, runId: string): RunDescription {
   // Only `idle` ends a run. The agent state has been seen as working,
   // streaming, and running_tools while a turn is in flight, and an unknown
   // or missing state is treated the same way rather than as finished.
-  if (state === "idle" && last?.role === "assistant" && lastIndex > start && finalText) {
+  const idleReply =
+    state === "idle" && last?.role === "assistant" && lastIndex > start && finalText.length > 0;
+  // An archived thread still exports. One archived after its reply (the loop
+  // archives workers right after their handoff) is finished; one archived
+  // mid-turn, by `cancel` or another process, is cancelled.
+  if (exp.meta?.archived === true) {
+    return { status: idleReply ? "finished" : "cancelled", ...base };
+  }
+  if (idleReply) {
     return { status: "finished", ...base };
   }
   if (state === "error" || state === "failed") {
@@ -291,7 +414,14 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     ...stripUndefined(options),
   };
   const env = options.env ?? process.env;
+  const cwd = options.cwd ?? process.cwd();
+  const attention =
+    options.onAttention ?? ((line: string) => console.error(`[amp-runtime] ${line}`));
   const cancelledHere = new Set<string>();
+  // Threads spawned through the bridge get their title from the first poll
+  // that sees a message; a CLI spawn sets it with --title. Either way the
+  // rename runs once, only when the export's title is not the one wanted.
+  const pendingTitles = new Map<string, string>();
 
   async function amp(
     args: string[],
@@ -395,6 +525,57 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     }
   }
 
+  async function spawnViaBridge(
+    bridge: BridgeFile,
+    body: { name: string; prompt: string; project: string; mode: string; labels: string[] }
+  ): Promise<string> {
+    let response: Response;
+    try {
+      response = await fetch(bridge.url, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${bridge.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(cfg.commandTimeoutMs),
+      });
+    } catch (err) {
+      throw new Error(`request to ${bridge.url} failed: ${errorMessage(err)}`);
+    }
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    const rec = (typeof parsed === "object" && parsed !== null ? parsed : {}) as Record<string, unknown>;
+    if (response.status !== 200) {
+      const reason = typeof rec.error === "string" ? rec.error : truncate(text.trim(), 200);
+      throw new Error(`${bridge.url} answered ${response.status}${reason ? `: ${reason}` : ""}`);
+    }
+    if (typeof rec.threadID !== "string" || !isThreadId(rec.threadID)) {
+      throw new Error(`${bridge.url} answered 200 without a thread id`);
+    }
+    return rec.threadID;
+  }
+
+  /** The one rename a spawned thread gets; a failure is one attention line, never a run status. */
+  async function applyPendingTitle(agentId: string, exp: ThreadExport): Promise<void> {
+    const title = pendingTitles.get(agentId);
+    if (title === undefined || (exp.messages ?? []).length === 0) return;
+    pendingTitles.delete(agentId);
+    if ((exp.title ?? "").trim() === title) return;
+    try {
+      await runtime.rename(agentId, title);
+    } catch (err) {
+      attention(
+        `${agentId}: rename to ${JSON.stringify(title)} failed, keeping the thread's own title: ${errorMessage(err)}`
+      );
+    }
+  }
+
   /**
    * Yield one export per poll until the caller stops consuming or the
    * deadline passes. Shared by `wait` and `stream`, so both tolerate up to
@@ -418,6 +599,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         try {
           exp = await exportThread(run.agentId);
           failures = 0;
+          await applyPendingTitle(run.agentId, exp);
         } catch (err) {
           failures++;
           if (failures >= cfg.maxConsecutiveFailures) {
@@ -450,6 +632,35 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
 
   const runtime: AgentRuntime = {
     async spawn(args: SpawnArgs): Promise<SpawnResult> {
+      const labels = labelArgs([...(cfg.label ? [cfg.label] : []), ...(args.labels ?? [])]);
+      const title = titleFor(
+        args.title ?? (args.runTag ? `${args.runTag} ${args.name}` : args.name)
+      );
+      const mode = args.model && args.model !== "inherit" ? args.model : undefined;
+      const prompt = withStartingRef(args.prompt, args.startingRef);
+
+      // Bridge first: the thread nests under the thread that wrote the file.
+      // Any failure falls back to the CLI, and the result's note says why.
+      let note: string | undefined;
+      const lookup = readBridgeFile(env, cwd);
+      if (lookup.kind === "found") {
+        try {
+          const agentId = await spawnViaBridge(lookup.bridge, {
+            name: args.name,
+            prompt,
+            project: args.repoUrl,
+            mode: mode ?? BRIDGE_DEFAULT_MODE,
+            labels,
+          });
+          pendingTitles.set(agentId, title);
+          return { agentId, runId: formatRunId(0), via: "bridge" };
+        } catch (err) {
+          note = `bridge at ${lookup.path} refused the spawn, used the CLI: ${errorMessage(err)}`;
+        }
+      } else {
+        note = `used the CLI: ${lookup.reason}`;
+      }
+
       const argv = [
         "-ox",
         "--project",
@@ -458,11 +669,9 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         cfg.visibility,
         "--no-archive-after-execute",
         "--title",
-        titleFor(args.name),
+        title,
       ];
-      if (cfg.label) argv.push("-l", cfg.label);
-      if (args.model && args.model !== "inherit") argv.push("-m", args.model);
-      const prompt = withStartingRef(args.prompt, args.startingRef);
+      if (mode) argv.push("-m", mode);
       const result = await amp(argv, { stdin: prompt });
       if (result.code !== 0) throw failure("amp -ox", result);
       const match = THREAD_ID_RE.exec(result.stdout);
@@ -472,7 +681,18 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
           { isRetryable: true }
         );
       }
-      return { agentId: match[0], runId: formatRunId(0) };
+      const agentId = match[0];
+      // `-l` on `amp -ox` does not apply; labelling afterwards does. A label
+      // failure is hygiene lost, not a spawn lost.
+      if (labels.length > 0) {
+        try {
+          await runtime.label(agentId, labels);
+        } catch (err) {
+          attention(`${agentId}: labelling ${labels.join(", ")} failed: ${errorMessage(err)}`);
+        }
+      }
+      pendingTitles.set(agentId, title);
+      return { agentId, runId: formatRunId(0), via: "cli", note };
     },
 
     async getRun(agentId: string, runId: string): Promise<RunSnapshot> {
@@ -545,11 +765,31 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async cancel(agentId: string, _runId: string): Promise<void> {
+      await runtime.archive(agentId);
+      cancelledHere.add(agentId);
+    },
+
+    async archive(agentId: string): Promise<void> {
       const result = await amp(["threads", "archive", threadIdArg(agentId)], {
         timeoutMs: 60_000,
       });
       if (result.code !== 0) throw failure(`amp threads archive ${agentId}`, result);
-      cancelledHere.add(agentId);
+    },
+
+    async label(agentId: string, labels: string[]): Promise<void> {
+      const id = threadIdArg(agentId);
+      const args = labelArgs(labels);
+      if (args.length === 0) return;
+      const result = await amp(["threads", "label", id, ...args], { timeoutMs: 60_000 });
+      if (result.code !== 0) throw failure(`amp threads label ${agentId}`, result);
+    },
+
+    async rename(agentId: string, title: string): Promise<void> {
+      const id = threadIdArg(agentId);
+      const result = await amp(["threads", "rename", id, titleFor(title)], {
+        timeoutMs: 60_000,
+      });
+      if (result.code !== 0) throw failure(`amp threads rename ${agentId}`, result);
     },
 
     async list(args: { limit: number }): Promise<AgentSummary[]> {
@@ -627,8 +867,9 @@ export function withStartingRef(prompt: string, startingRef: string): string {
   return `Start from git ref \`${ref}\`: before anything else, run \`git fetch origin ${ref} && git checkout ${ref}\` in the repository checkout, because the orb may have opened the project's default branch.\n\n${prompt}`;
 }
 
-function titleFor(name: string): string {
-  const trimmed = name.trim().replace(/\s+/g, " ");
+/** One line, at most 100 characters, never starting with a dash: it lands in argv after `--title` and after `rename <id>`. */
+export function titleFor(name: string): string {
+  const trimmed = name.trim().replace(/\s+/g, " ").replace(/^-+/, "");
   const title = trimmed || "orchestrate";
   return title.length > TITLE_MAX_CHARS ? title.slice(0, TITLE_MAX_CHARS) : title;
 }
