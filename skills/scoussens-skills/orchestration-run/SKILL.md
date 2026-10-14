@@ -51,38 +51,31 @@ If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
 Record the versions a run follows: `skill_version` from
-`python3 <this skill's folder>/scripts/validate_run.py --skill-version`, which
-covers this skill and the dashboard contract it renders through, and
-`contract_version` from
-`python3 <dashboard skill's folder>/scripts/render_dashboard.py --contract-version`.
-On resume, and whenever this skill reloads mid-run, compare both with the saved
-values; `validate_run.py` reports a difference as a note, and a run that
-should show it on the page copies the note into the record's `notice`. When
-either differs, read what changed in the `dashboard` skill's status contract,
-in [dashboard data](references/dashboard-data.md) and in this file, migrate the
-record, then save both new versions and one history line naming the change.
-Schema 1 records migrate as the
-[run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
+`python3 <this skill's folder>/scripts/validate_run.py --skill-version`, which also covers
+the dashboard contract the run renders through, and `contract_version` from the `dashboard`
+skill's `render_dashboard.py --contract-version`. On resume, and whenever this skill reloads
+mid-run, compare both with the saved values; `validate_run.py` reports a difference as a
+note, which a run that should show it copies into `notice`. When either differs, read what
+changed in the status contract, [dashboard data](references/dashboard-data.md) and this
+file, migrate the record, then save both new versions and one history line. Schema 1
+records migrate as the [run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
 
 **Done when** the current harness resolves to valid setup. On resume, ownership,
 choices, and proof assessments are restored before assigning work.
 
 ## 2. Establish the finish line and ownership
 
-For a new run, propose one compact confirmation using the user's request and
-profile defaults. Include selected tickets, target stage, publication scope,
-scan interval and idle-scan limit, each with a bold default. Ask the dashboard
-destination in the same message through the settings sheet the `dashboard`
-skill's step 2 runs (`explain-to`'s `references/settings-sheet.md`): reader
-and interaction are fixed as that step says, the destination is the open row,
-and the sheet's rule for a calling skill that asks its own questions in the
-same message bundles the confirmation's other questions with it, so one *go*
-settles everything. Ask only for unresolved run choices. A complete
-explicit request already confirms them. A request for only a consequential
-decision can defer presentation as step 5 describes. Save confirmed values in
-this run with the supplied answer receipt or actual message link, leaving setup
-defaults unchanged. On resume, reuse saved choices and
-ask only about a requested change or missing run choice.
+For a new run, propose one compact confirmation using the user's request and profile
+defaults: selected tickets, target stage, publication scope, scan interval and idle-scan
+limit, each with a bold default, and the dashboard destination, asked in the same message
+through the settings sheet the `dashboard` skill's step 2 runs (`explain-to`'s
+`references/settings-sheet.md`). Reader and interaction are fixed as that step says, the
+destination is the open row, and the sheet's same-message rule bundles the other questions,
+so one *go* settles everything. Ask only for unresolved run choices; a complete explicit
+request already confirms them. A request for only a consequential decision can defer
+presentation as step 5 describes. Save confirmed values in this run with the supplied
+answer receipt or actual message link, leaving setup defaults unchanged. On resume, reuse
+saved choices and ask only about a requested change or missing run choice.
 
 State the finish line as a target stage and show its plain label. The legacy
 review-ready default is `pr_readiness`, shown as "Implemented: no pull request
@@ -131,14 +124,12 @@ before replacing an owner or taking over its implementation yourself.
 
 Brief owners with the goal, relevant evidence, decisions already made,
 boundaries, proof needed, and work location. Pass the applicable shared skills
-from setup and this run explicitly, excluding the four coordinator skills:
-`harness-discovery`, `orchestration-setup`, `orchestration-run` and `dashboard`. Owners
+from setup and this run explicitly, excluding `harness-discovery`, `orchestration-setup`, `orchestration-run` and `dashboard`. Owners
 may load additional role-specific skills and should launch bounded helpers
 (subagents) for research, review preparation, verification and other separable
-tasks within the ticket. Pass relevant
-instructions to those helpers too; do not assume inheritance or launch recursive
-coordinators. Use the harness's supported briefing mechanism if direct skill
-loading is unavailable. Include step 3's status collection and decision routing
+tasks within the ticket. Pass relevant instructions to those helpers too; do not assume
+inheritance or launch recursive coordinators. Use the harness's supported briefing mechanism
+if direct skill loading is unavailable. Include step 3's status collection and decision routing
 in owner briefs so owners can discuss ticket-local choices with the user and
 record the outcome in their own conversations.
 
@@ -280,11 +271,10 @@ choice in its owner's conversation or give quick answers by ID to the coordinato
 Relay exact user answers to the discussion owner when the harness permits it.
 An owner can apply a local answer within existing authorization and record the
 answer, source and outcome in its conversation for inspection; the user need
-not repeat it to the coordinator.
-Record the decision and scope once, and remove it from the pending queue.
-Answering changes the decision queue, not the owner's activity status. Update
-owner state and `owner.activity` from inspected state or an actual progress report; a delivery
-receipt proves communication, not that the owner resumed work.
+not repeat it to the coordinator. Record the decision and scope once, and remove it
+from the pending queue. Answering changes the decision queue, not the owner's activity
+status. Update owner state and `owner.activity` from inspected state or an actual progress
+report; a delivery receipt proves communication, not that the owner resumed work.
 
 Inspect native input gates using configured capabilities. A human-only gate
 must be answered by the user in its owning conversation; show that direct route
@@ -374,10 +364,9 @@ Use the run-specific presentation choice confirmed in step 2 or restored on resu
   hosting held. An old page stays unchanged and is not the current display.
 - Otherwise, reuse the confirmed destination without asking again. If still
   missing, ask it through the settings sheet as step 2 describes, separately
-  from shared-action approvals. A setup preference, template value, or
-  existing path alone is not a run-specific user answer. Pass the agreed
-  destination to the `dashboard` skill as a fixed setting; with every setting
-  fixed, that skill shows no sheet.
+  from shared-action approvals. A setup preference, template value, or existing
+  path alone is not a run-specific user answer. Pass the agreed destination to
+  the `dashboard` skill as a fixed setting, so it shows no sheet.
 - After an actual destination choice, save its values and clear the presentation
   hold. Render through the `dashboard` skill and update that same artifact in
   place. Only this branch runs the renderer below.
