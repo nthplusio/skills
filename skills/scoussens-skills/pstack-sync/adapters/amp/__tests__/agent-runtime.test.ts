@@ -311,6 +311,21 @@ describe("spawn through the bridge", () => {
     expect(calls()).toEqual([]);
   });
 
+  test("sends nodeType to the bridge and its node-<type> label on both paths", async () => {
+    const bridge = await startBridge();
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"], nodeType: "planner" });
+    expect(bridge.requests[0].body.nodeType).toBe("planner");
+    expect(bridge.requests[0].body.labels).toEqual(["orchestrate", "node-planner", "run-ab12cd"]);
+    await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"] });
+    expect(bridge.requests[1].body).not.toHaveProperty("nodeType");
+    expect(bridge.requests[1].body.labels).toEqual(["orchestrate", "run-ab12cd"]);
+    const cli = createAmpRuntime({ env });
+    await cli.spawn({ ...SPAWN, labels: ["run-ab12cd"], nodeType: "verifier" });
+    const label = calls().find(c => c[0] === "threads" && c[1] === "label");
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", "node-verifier", "run-ab12cd"]);
+  });
+
   test("maps a non-inherit model to the bridge's mode", async () => {
     const bridge = await startBridge();
     const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });

@@ -33,7 +33,7 @@ export interface RunHandle {
  */
 export type RunStatus = "running" | "finished" | "error" | "cancelled";
 
-/** What the agent is in the orchestrate tree. Informational: the runtime records it and the bridge may use it. */
+/** What the agent is in the orchestrate tree. The runtime labels the agent `node-<type>` and passes the field to the bridge. */
 export type NodeType = "planner" | "subplanner" | "worker" | "verifier";
 
 /** How a spawn reached the harness: through the bridge plugin (nested under the calling thread) or the CLI. */

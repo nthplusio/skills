@@ -159,6 +159,27 @@ describe("the plugin's default export", () => {
     await amp.disposers[0]();
   });
 
+  test("a nodeType becomes the node-<type> label ahead of the labels, once, and names the log line", async () => {
+    const amp = fakeAmp();
+    plugin(amp as never);
+    await amp.handlers["session.start"]({ thread: { id: VEHICLE } }, {});
+    const file = readBridge(dir);
+
+    expect((await post(file, goodRequest({ nodeType: "planner" }))).status).toBe(200);
+    expect(amp.calls[2]).toEqual({ op: "addLabels", args: ["node-planner", "orchestrate", "orch-probe"] });
+    expect(amp.logs.some((l) => l.includes(`(planner th-e-child)`))).toBe(true);
+    // A caller that already sent the label (for a bridge without the field) gets it once.
+    amp.calls.length = 0;
+    expect((await post(file, goodRequest({ nodeType: "worker", labels: ["orchestrate", "node-worker"] }))).status).toBe(200);
+    expect(amp.calls[2]).toEqual({ op: "addLabels", args: ["node-worker", "orchestrate"] });
+    // Without the field nothing changes.
+    amp.calls.length = 0;
+    expect((await post(file, goodRequest({ labels: [] }))).status).toBe(200);
+    expect(amp.calls.map((c) => c.op)).toEqual(["getBuiltinAgent", "createThread", "append"]);
+    expect(amp.logs.some((l) => l.includes(`(node th-e-child)`))).toBe(true);
+    await amp.disposers[0]();
+  });
+
   test("an explicit parent is used instead of the session thread; empty labels skip addLabels", async () => {
     const amp = fakeAmp();
     plugin(amp as never);
@@ -290,6 +311,8 @@ describe("validateSpawnRequest", () => {
       [{ ...good, labels: ["a".repeat(33)] }, "at most 32 characters"],
       [{ ...good, labels: Array.from({ length: 21 }, (_, i) => `l${i}`) }, "labels must hold at most 20 items"],
       [{ ...good, parent: "not-a-thread" }, "parent must be a thread id (T-...)"],
+      [{ ...good, nodeType: "root" }, "nodeType must be one of planner|subplanner|worker|verifier"],
+      [{ ...good, nodeType: 1 }, "nodeType must be one of"],
     ];
     for (const [body, reason] of cases) {
       const result = validateSpawnRequest(body, VEHICLE);

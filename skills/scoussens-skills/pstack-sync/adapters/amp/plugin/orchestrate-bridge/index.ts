@@ -12,7 +12,7 @@
  * The loop (the pack's `agent-runtime.ts`) reads that file and sends
  *
  *   POST <url>   Authorization: Bearer <token>
- *   { "name", "prompt", "project", "mode", "labels", "parent"? }
+ *   { "name", "prompt", "project", "mode", "labels", "parent"?, "nodeType"? }
  *
  * and gets `200 {"threadID": "T-...", "parent": "T-..."}`. A bad token is
  * `401 {"error"}`, bad input `400 {"error"}`, an Amp failure `500 {"error"}`,
@@ -39,6 +39,8 @@ export const BRIDGE_DIR = ".orchestrate";
 export const BRIDGE_FILE = "bridge.json";
 export const SPAWN_PATH = "/spawn";
 export const MODES = ["low", "medium", "high", "ultra"] as const;
+/** What the thread is in the orchestrate tree; optional, and a bridge without it ignores the field. */
+export const NODE_TYPES = ["planner", "subplanner", "worker", "verifier"] as const;
 export const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 export const MAX_LABEL_LENGTH = 32;
 export const MAX_LABELS = 20;
@@ -49,6 +51,7 @@ export const MAX_BODY_BYTES = MAX_PROMPT_BYTES + 16 * 1024;
 export const THREAD_ID_PATTERN = /^T-[A-Za-z0-9-]+$/;
 
 export type Mode = (typeof MODES)[number];
+export type NodeType = (typeof NODE_TYPES)[number];
 export type ThreadID = `T-${string}`;
 
 export interface SpawnRequest {
@@ -58,6 +61,12 @@ export interface SpawnRequest {
   mode: Mode;
   labels: string[];
   parent: ThreadID;
+  nodeType?: NodeType;
+}
+
+/** The label a node type becomes on the thread, so a planner is told from a worker in a search. */
+export function nodeTypeLabel(nodeType: NodeType): string {
+  return `node-${nodeType}`;
 }
 
 export interface SpawnResponse {
@@ -145,13 +154,33 @@ export function validateSpawnRequest(body: unknown, defaultParent: ThreadID): Va
     parent = b.parent as ThreadID;
   }
 
-  return { ok: true, value: { name, prompt, project, mode: mode as Mode, labels: labels as string[], parent } };
+  let nodeType: NodeType | undefined;
+  if (b.nodeType !== undefined) {
+    if (typeof b.nodeType !== "string" || !(NODE_TYPES as readonly string[]).includes(b.nodeType)) {
+      return { ok: false, error: `nodeType must be one of ${NODE_TYPES.join("|")}` };
+    }
+    nodeType = b.nodeType as NodeType;
+  }
+
+  return {
+    ok: true,
+    value: {
+      name,
+      prompt,
+      project,
+      mode: mode as Mode,
+      labels: labels as string[],
+      parent,
+      ...(nodeType === undefined ? {} : { nodeType }),
+    },
+  };
 }
 
 /**
  * Create the child thread: create under the parent as a private orb thread,
  * add the labels, then append the prompt, in that order, so the thread
- * carries its labels before it starts working.
+ * carries its labels before it starts working. A `nodeType` becomes the
+ * label `node-<type>` ahead of the request's labels, once.
  */
 export async function spawnThread(amp: BridgeAPI, request: SpawnRequest): Promise<SpawnResponse> {
   const thread = await amp.getBuiltinAgent(request.mode).createThread({
@@ -160,7 +189,9 @@ export async function spawnThread(amp: BridgeAPI, request: SpawnRequest): Promis
     project: request.project,
     visibility: "private",
   });
-  if (request.labels.length > 0) await thread.addLabels(request.labels);
+  const labels = request.nodeType === undefined ? request.labels : [nodeTypeLabel(request.nodeType), ...request.labels];
+  const unique = labels.filter((label, i) => labels.indexOf(label) === i);
+  if (unique.length > 0) await thread.addLabels(unique);
   await thread.append([{ type: "user-message", content: request.prompt }]);
   return { threadID: thread.id, parent: request.parent };
 }
@@ -261,7 +292,9 @@ export function createBridgeHandler(options: HandlerOptions): (req: IncomingMess
         queue = run.catch(() => undefined);
         try {
           const result = await run;
-          amp.logger.log(`orchestrate-bridge: spawned ${result.threadID} under ${result.parent} (${request.name})`);
+          amp.logger.log(
+            `orchestrate-bridge: spawned ${result.threadID} under ${result.parent} (${request.nodeType ?? "node"} ${request.name})`,
+          );
           send(res, 200, result);
         } catch (e) {
           amp.logger.log(`orchestrate-bridge: spawn of ${request.name} failed: ${errorMessage(e)}`);

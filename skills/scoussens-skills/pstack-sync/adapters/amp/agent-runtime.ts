@@ -44,6 +44,7 @@ import {
   AgentRuntimeError,
   type AgentSummary,
   type LatestRun,
+  type NodeType,
   type RunHandle,
   type RunSnapshot,
   type RunStatus,
@@ -140,6 +141,16 @@ const TITLE_MAX_CHARS = 100;
 export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 /** The mode the bridge runs when the caller says `inherit`. */
 export const BRIDGE_DEFAULT_MODE = "high";
+
+/**
+ * The label a spawn's `nodeType` becomes, the same one the bridge plugin
+ * derives from the field: `node-planner`, `node-worker`, and so on. The
+ * runtime adds it on both spawn paths, so a run looks the same whichever
+ * created its threads and whether or not the bridge knows the field.
+ */
+export function nodeTypeLabel(nodeType: NodeType): string {
+  return `node-${nodeType}`;
+}
 
 /** True for a whole Amp thread id and nothing else. */
 export function isThreadId(value: string): boolean {
@@ -567,7 +578,14 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
 
   async function spawnViaBridge(
     bridge: BridgeFile,
-    body: { name: string; prompt: string; project: string; mode: string; labels: string[] }
+    body: {
+      name: string;
+      prompt: string;
+      project: string;
+      mode: string;
+      labels: string[];
+      nodeType?: NodeType;
+    }
   ): Promise<string> {
     let response: Response;
     try {
@@ -713,7 +731,11 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
 
   const runtime: AgentRuntime = {
     async spawn(args: SpawnArgs): Promise<SpawnResult> {
-      const labels = labelArgs([...(cfg.label ? [cfg.label] : []), ...(args.labels ?? [])]);
+      const labels = labelArgs([
+        ...(cfg.label ? [cfg.label] : []),
+        ...(args.nodeType ? [nodeTypeLabel(args.nodeType)] : []),
+        ...(args.labels ?? []),
+      ]);
       const title = titleFor(
         args.title ?? (args.runTag ? `${args.runTag} ${args.name}` : args.name)
       );
@@ -732,6 +754,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
             project: args.repoUrl,
             mode: mode ?? BRIDGE_DEFAULT_MODE,
             labels,
+            ...(args.nodeType === undefined ? {} : { nodeType: args.nodeType }),
           });
           pendingTitles.set(agentId, title);
           return { agentId, runId: formatRunId(0), via: "bridge" };

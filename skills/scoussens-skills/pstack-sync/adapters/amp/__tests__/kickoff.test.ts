@@ -207,7 +207,7 @@ describe("the root prompt on Amp", () => {
     expect(spawn).toBeDefined();
     expect(spawn?.[spawn.indexOf("--title") + 1]).toBe(`${out.runTag} root`);
     const label = calls().find(c => c[0] === "threads" && c[1] === "label");
-    expect(label).toEqual(["threads", "label", ID, "orchestrate", `run-${out.runTag}`, coreModule.goalLabel("Add a sparkline to the dashboard")]);
+    expect(label).toEqual(["threads", "label", ID, "orchestrate", "node-planner", `run-${out.runTag}`, coreModule.goalLabel("Add a sparkline to the dashboard")]);
   });
 });
 
