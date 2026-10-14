@@ -264,6 +264,40 @@ class LifecycleTests(unittest.TestCase):
         validate(self.data)
         self.assertEqual(notes(self.data), [])
 
+    def test_plausible_bad_values_are_findings_not_tracebacks(self):
+        """A null blocker, a string schema version and an unknown schema version each produce a FAIL line
+        (audit finding 6)."""
+        baseline = deepcopy(self.data)
+        task = self.tasks["ENV-106"]
+        task["blocker"] = None
+        task["work"] = {"state": "waiting", "reason": "Lane is held."}
+        with self.assertRaisesRegex(ValueError, "ENV-106: blocked owner needs an actionable blocker"):
+            validate(self.data)
+        task["owner"]["state"] = "active"
+        task["work"]["state"] = "blocked"
+        with self.assertRaisesRegex(ValueError, "ENV-106: blocked work needs an actionable blocker"):
+            validate(self.data)
+        self.tasks["UI-101"]["owner"]["handoff"] = None
+        with self.assertRaisesRegex(ValueError, "UI-101: completed owner needs a handoff"):
+            validate(self.data)
+        for schema, shown in (("2", "'2'"), (3, "3"), (None, "None"), (2.0, "2.0")):
+            with self.subTest(schema_version=schema):
+                data = deepcopy(baseline)
+                data["schema_version"] = schema
+                with self.assertRaisesRegex(ValueError, f"schema_version must be one of 1, 2, not {shown}"):
+                    validate(data)
+        with tempfile.TemporaryDirectory() as directory:
+            status = Path(directory) / "status.json"
+            baseline["schema_version"] = "2"
+            baseline["tasks"][5]["blocker"] = None
+            status.write_text(json.dumps(baseline))
+            result = subprocess.run([sys.executable, "-B", str(RUNNER / "scripts" / "validate_run.py"), str(status)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertIn("FAIL: schema_version must be one of 1, 2, not '2'", result.stderr)
+            self.assertIn("FAIL: ENV-106: blocked owner needs an actionable blocker", result.stderr)
+
     def test_history_entries_stay_short(self):
         self.data["history"].append("Scan inspected six owners; all idle and unchanged. " * 20)
         with self.assertRaisesRegex(ValueError, "history entries \\[5\\] exceed 800 characters"):

@@ -51,6 +51,7 @@ PUBLICATION_SCOPES = ("none", "draft", "ready", "merge")
 APPROVAL_STATES = ("active", "consumed", "expired", "revoked")
 CODE_KINDS = ("pushed_branch", "bundle", "patch")
 HISTORY_LIMIT = 800
+SCHEMA_VERSIONS = (1, 2)
 
 
 def contract_version():
@@ -130,7 +131,7 @@ def check_task_proof(task, evidence, decisions):
     and finished rows have nothing left open, and attention states name what holds them."""
     key, owner = task["id"], task["owner"]
     phases = task.get("milestones") or {}
-    if owner["state"] == "blocked" and not task.get("blocker", "").strip():
+    if owner["state"] == "blocked" and not (task.get("blocker") or "").strip():
         raise ValueError(f"{key}: blocked owner needs an actionable blocker")
     for stage, phase in phases.items():
         for proof_id in phase["evidence"]:
@@ -140,7 +141,7 @@ def check_task_proof(task, evidence, decisions):
             raise ValueError(f"{key}: verified stage needs accepted supporting proof")
     unfinished = any(phase["state"] in ("pending", "blocked") for phase in phases.values())
     if owner["state"] in FINISHED_OWNER_STATES:
-        if task.get("obligations") or task.get("blocker") or not owner.get("handoff", "").strip():
+        if task.get("obligations") or task.get("blocker") or not (owner.get("handoff") or "").strip():
             raise ValueError(f"{key}: completed owner needs a handoff and settled obligations")
         if unfinished:
             raise ValueError(f"{key}: unfinished stage prevents owner completion")
@@ -163,7 +164,7 @@ def check_task_proof(task, evidence, decisions):
         raise ValueError(f"{key}: cancellation or deferral needs a decision receipt")
     if work["state"] == "deferred" and (not isinstance(work.get("revisit"), str) or not work["revisit"].strip()):
         raise ValueError(f"{key}: deferred work needs a revisit trigger")
-    if work["state"] == "blocked" and not task.get("blocker", "").strip():
+    if work["state"] == "blocked" and not (task.get("blocker") or "").strip():
         raise ValueError(f"{key}: blocked work needs an actionable blocker")
     if work["state"] == "needs_decision" and not any(key in item.get("task_ids", []) for item in decisions.values()):
         raise ValueError(f"{key}: needs_decision work needs a pending decision naming this task")
@@ -307,6 +308,10 @@ def findings(data):
 
     attempt(required, "run_id")
     attempt(required, "config_path")
+    schema = data.get("schema_version", 2)
+    if type(schema) is not int or schema not in SCHEMA_VERSIONS:
+        found.append(f"schema_version must be one of {', '.join(map(str, SCHEMA_VERSIONS))}, not {schema!r}")
+        schema = None
     updated = attempt(moment, data.get("updated_at"), "updated_at")
     try:
         evidence, tasks, decisions = indexed(data["evidence"]), indexed(data["tasks"]), indexed(data["decisions"])
@@ -315,7 +320,7 @@ def findings(data):
         return found
     for task in tasks.values():
         attempt(check_task_proof, task, evidence, decisions)
-    if data.get("schema_version", 2) < 2:
+    if schema != 2:
         return found
     attempt(required, "goal")
     limit = attempt(check_run_choices, data)
