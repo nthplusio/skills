@@ -5,6 +5,8 @@ definitions they hand off to, into a skills directory.
   sync.py sync   --harness NAME [--repo DIR] [--root DIR] [--ref BRANCH] [--dry-run]
   sync.py record --harness NAME [--repo DIR] [--root DIR] (SKILL | SKILL/FILE ... | --all)
   sync.py status --harness NAME [--repo DIR] [--root DIR] [--since REV]
+  sync.py seed   --harness NAME [--repo DIR] [--root DIR] --out DIR
+  sync.py publish --harness NAME --pack DIR --repo DIR [--push] [--verify] [--dry-run]
 
 sync    Adds new upstream skills, updates changed ones, removes retired or excluded
         ones. Each file renders as: upstream -> rename rewrites -> global transforms
@@ -17,6 +19,15 @@ record  Stores the installed content of the given skills or files as file transf
 status  Prints a human-readable summary of what changed since REV (default HEAD) in
         the skills repository: transforms first, then new, updated, and removed
         skills, dependencies, then outstanding adaptation and drift.
+seed    Writes the shared transforms and profile back into a pack checkout.
+publish Refreshes a workspace skills repository from a pack checkout: replaces each
+        pack skill with the pack's tracked files, removes skills the previous publish
+        copied that the pack retired, runs sync for every set the pack ships, appends
+        the profile rows the seed offers for reported gaps, and commits. Refuses to
+        commit a node_modules directory or a file over 2 MB. --push pushes the
+        branch; --verify asks `amp skill info` for one skill per source; --dry-run
+        does everything in a throwaway worktree and leaves the repository untouched.
+        Prints a JSON report for the agent.
 
 Dependencies: a skill or subagent definition elsewhere in cursor/plugins that a synced file hands
 off to installs beside pstack and is adapted the same way, followed transitively. A file hands
@@ -56,6 +67,12 @@ Durable state, beside discovery.json, kept across a pack refresh:
                         pstack-agents), and a "local" sub-block of the same shape for
                         entries that belong to this install only (record --local). seed
                         exports every block without its local sub-block.
+  .nthplusio-skills/pstack-sync/sets/<set>/seed.json
+                        per harness, the shipped shared block as of the last sync. sync
+                        three-way merges the shipped seed into the durable shared block
+                        against it, so a transform the pack ships later reaches the
+                        install; a key both sides changed keeps the durable entry and is
+                        reported as a seed conflict.
   .nthplusio-skills/pstack-sync/sets/<set>/LICENSE-<plugin>
                         the license of each plugin the installed skills come from.
   .nthplusio-skills/pstack-sync/harness/<harness>.md
@@ -67,6 +84,9 @@ Durable state, beside discovery.json, kept across a pack refresh:
   .nthplusio-skills/pstack-sync/harness/<harness>.local.md
                         rows that hold for this install only; a local row overrides
                         the shared row. seed never exports it.
+  .nthplusio-skills/pack-manifest.json
+                        what publish copied last: pack commit and remote, when, and the
+                        skill names. publish removes only directories named here.
 
 Harness facts (owned by harness-discovery, not pstack-sync):
   .nthplusio-skills/discovery.json at the root of the Git repository holding --repo, or
@@ -74,7 +94,7 @@ Harness facts (owned by harness-discovery, not pstack-sync):
                         profiled once every field it names is discovered; null means
                         the harness has no such operation.
 """
-import argparse, difflib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys
+import argparse, datetime, difflib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = os.path.dirname(os.path.dirname(HERE))
@@ -578,6 +598,8 @@ class State:
         self.durable, self.set_dir = adopt_durable(repo, root, harness)
         self.manifest_path = os.path.join(self.set_dir, "manifest.json")
         self.transform_path = os.path.join(self.set_dir, "transform.json")
+        self.seed_path = os.path.join(self.set_dir, "seed.json")
+        self.seed_next = None  # seed.json to write once the refresh is saved
         self.profile_path = os.path.join(self.durable, "harness", f"{harness}.md")
         self.manifest = load_json(self.manifest_path, {"skills": {}})
         self.transforms = load_json(self.transform_path, {})
@@ -758,9 +780,69 @@ def read_installed(path):
         return None
 
 
+# ---------- seed refresh ----------
+
+def entry_key(item):
+    """An accept regex or a global transform as a dict key."""
+    return item if isinstance(item, str) else json.dumps(item, sort_keys=True)
+
+
+def merge_seed_part(durable, seed, shipped, label, refreshed, conflicts):
+    """Three-way merge of one part of a harness block, {key: entry} each, against the seed
+    adopted last time. None for seed is the bootstrap: the shipped entry wins wherever the
+    durable one differs. Keys the seed never had and the pack does not ship stay as recorded."""
+    out = {}
+    keys = list(durable) + [k for k in shipped if k not in durable]
+    if seed:
+        keys += [k for k in seed if k not in durable and k not in shipped]
+    for key in keys:
+        d, s1 = durable.get(key, MISSING), shipped.get(key, MISSING)
+        if seed is None:
+            pick = s1 if s1 is not MISSING else d
+            if s1 is not MISSING and s1 != d:
+                refreshed.append(label(key))
+        else:
+            s0 = seed.get(key, MISSING)
+            if s1 == s0 or d == s1:
+                pick = d
+            elif d == s0:
+                pick = s1
+                refreshed.append(label(key))
+            else:
+                pick = d
+                conflicts.append(label(key))
+        if pick is not MISSING:
+            out[key] = pick
+    return out
+
+
+def refresh_seed(st):
+    """Bring the shipped seed's changes since the last sync into the durable shared block.
+    Returns (refreshed keys, conflicting keys); the local block is never read or written."""
+    shipped_all = load_json(os.path.join(st.repo, SELF, "sets", SET["name"], "transform.json"), None)
+    if not isinstance(shipped_all, dict) or st.harness not in shipped_all:
+        return [], []
+    shipped = shipped_all[st.harness]
+    seeds = load_json(st.seed_path, {})
+    seed = seeds.get(st.harness)
+    refreshed, conflicts = [], []
+    for part in ("accept", "global"):
+        merged = merge_seed_part({entry_key(i): i for i in st.shared.get(part, [])},
+                                 {entry_key(i): i for i in seed.get(part, [])} if seed is not None else None,
+                                 {entry_key(i): i for i in shipped.get(part, [])},
+                                 lambda k, part=part: f"{part}: {k}", refreshed, conflicts)
+        st.shared[part] = list(merged.values())
+    st.shared["files"] = merge_seed_part(st.shared["files"], seed.get("files", {}) if seed is not None else None,
+                                         shipped.get("files", {}), lambda k: k, refreshed, conflicts)
+    seeds[st.harness] = {k: v for k, v in shipped.items() if k != "local"}
+    st.seed_next = seeds
+    return refreshed, conflicts
+
+
 # ---------- commands ----------
 
 def cmd_sync(a, st):
+    seed_refreshed, seed_conflicts = refresh_seed(st)
     sha = fetch(a.ref)
     inv = inventory(sha)
     read = blob_reader()
@@ -783,7 +865,8 @@ def cmd_sync(a, st):
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
               "needs_security_review": [], "needs_adaptation": {}, "dependencies": {},
-              "ports_pending": {}, "stale_ports": {}, "ignored_count": 0}
+              "ports_pending": {}, "stale_ports": {}, "ignored_count": 0,
+              "seed_refreshed": seed_refreshed, "seed_conflicts": seed_conflicts}
     new_skills = {}
     prev_fetched = []
 
@@ -980,7 +1063,9 @@ def cmd_sync(a, st):
                        "harness": a.harness, "exclude": st.manifest_exclude, "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
         save_json(st.transform_path, st.transforms)
-    print(json.dumps(report, indent=2))
+        if st.seed_next is not None:
+            save_json(st.seed_path, st.seed_next)
+    return report
 
 
 def cmd_record(a, st):
@@ -1054,7 +1139,7 @@ def cmd_record(a, st):
     st.manifest["skills"] = st.managed
     save_json(st.manifest_path, st.manifest)
     save_json(st.transform_path, st.transforms)
-    print(json.dumps({"recorded": summary}, indent=2))
+    return {"recorded": summary}
 
 
 def cmd_seed(a, st):
@@ -1072,8 +1157,7 @@ def cmd_seed(a, st):
         with open(os.path.join(a.out, "harness", f"{st.harness}.md"), "w") as f:
             f.write(compose_profile(shipped, durable))
         written.append(f"harness/{st.harness}.md")
-    print(json.dumps({"seeded": written, "out": a.out,
-                      "local_entries_kept_back": sorted(st.local["files"])}, indent=2))
+    return {"seeded": written, "out": a.out, "local_entries_kept_back": sorted(st.local["files"])}
 
 
 def cmd_status(a, st):
@@ -1206,6 +1290,298 @@ def cmd_status(a, st):
     print("\n".join(out))
 
 
+# ---------- publish ----------
+
+PACK_SKILLS = os.path.join("skills", "scoussens-skills")
+PACK_MANIFEST = "pack-manifest.json"
+MAX_PUBLISH_BYTES = 2 * 1024 * 1024  # the pack validator's limit; the skill index omits larger files
+
+
+def run_git(cwd, *args, check=True):
+    r = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True)
+    if check and r.returncode:
+        sys.exit(f"error: git {' '.join(args)} in {cwd}: {(r.stderr or r.stdout).strip()}")
+    return r.stdout
+
+
+def pack_label(remote):
+    """owner/repo from a GitHub remote, for the commit subject; else the remote as written."""
+    m = re.match(r"^(?:https?://github\.com/|git@github\.com:)([^/]+/[^/]+?)(?:\.git)?/?$", remote or "")
+    return m.group(1) if m else remote
+
+
+def pack_skill_files(pack, skill):
+    """{rel: mode} for the files git tracks under one pack skill, without node_modules.
+    Untracked scratch and anything the pack's .gitignore ignores are never listed."""
+    prefix = f"{PACK_SKILLS}/{skill}/"
+    files, skipped = {}, 0
+    for line in run_git(pack, "ls-files", "-z", "-s", "--", prefix).split("\0"):
+        if not line:
+            continue
+        meta, path = line.split("\t", 1)
+        rel = path[len(prefix):]
+        if "node_modules" in rel.split("/"):
+            skipped += 1
+            continue
+        files[rel] = meta.split()[0]
+    return files, skipped
+
+
+def tree_blobs(path):
+    """{rel: blob sha} of every file under a directory, the shape a copy is compared against."""
+    out = {}
+    for dp, _, fns in os.walk(path):
+        for fn in fns:
+            full = os.path.join(dp, fn)
+            out[os.path.relpath(full, path)] = blob_sha(read_installed(full) or b"")
+    return out
+
+
+def copy_skill(pack, skill, files, dest):
+    """Replace dest with the listed pack files; a merge would keep files the pack dropped."""
+    shutil.rmtree(dest, ignore_errors=True)
+    for rel, mode in sorted(files.items()):
+        src = os.path.join(pack, PACK_SKILLS, skill, rel)
+        dst = os.path.join(dest, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if mode == "120000":
+            os.symlink(os.readlink(src), dst)
+        else:
+            shutil.copy2(src, dst)
+            os.chmod(dst, 0o755 if mode == "100755" else 0o644)
+
+
+def append_profile_rows(path, rows):
+    """Append the seed's rows for needs the durable profile lacks; returns the ids appended."""
+    text = read_text(path)
+    have = parse_profile_rows(text)
+    new = {i: r for i, r in rows.items() if i not in have}
+    if new:
+        if text and not text.endswith("\n"):
+            text += "\n"
+        with open(path, "w") as f:
+            f.write(text + "".join(r + "\n" for r in new.values()))
+    return sorted(new)
+
+
+def publish_sync(work, harness, name):
+    """cmd_sync for one set of the workspace's pack copy, as `sync --set name` would run it."""
+    configure(load_set(work, name))
+    a = argparse.Namespace(cmd="sync", harness=harness, repo=work, root=None, set=name, ref=SET["ref"], dry_run=False)
+    return cmd_sync(a, State(work, harness)), SET["upstream"]
+
+
+def merge_passes(first, second):
+    """The second pass's report with the first pass's skill changes, which the second saw as unchanged."""
+    updated = sorted((set(first["updated"]) | set(second["updated"])) - set(first["added"]))
+    extra = len(set(updated) - set(first["updated"]))
+    return {**second, "previous_commit": first["previous_commit"], "added": first["added"], "updated": updated,
+            "removed": first["removed"], "unchanged_count": first["unchanged_count"] - extra,
+            "seed_refreshed": first["seed_refreshed"], "seed_conflicts": first["seed_conflicts"]}
+
+
+def set_summary(report, upstream):
+    """The parts of a sync report the operator acts on; the full report is too long to publish."""
+    deps = report["dependencies"]
+    return {"upstream": upstream, "upstream_commit": report["upstream_commit"],
+            "previous_commit": report["previous_commit"], "added": report["added"],
+            "updated": report["updated"], "removed": report["removed"],
+            "unchanged_count": report["unchanged_count"], "needs_adaptation": report["needs_adaptation"],
+            "local_drift": report["local_drift"], "profile_gaps": report["profile_gaps"],
+            "profile_gaps_in_seed": report["profile_gaps_in_seed"],
+            "unresolved_dependencies": deps.get("unresolved", {}), "excluded_dependencies": deps.get("excluded", {}),
+            "ambiguous_dependencies": deps.get("ambiguous", {}), "ports_pending": report["ports_pending"],
+            "stale_ports": report["stale_ports"], "needs_security_review": report["needs_security_review"],
+            "seed_refreshed": report["seed_refreshed"], "seed_conflicts": report["seed_conflicts"]}
+
+
+def staged_offenders(work):
+    """Staged additions and modifications the skill index would choke on."""
+    out = {"node_modules": [], "oversized": []}
+    for path in run_git(work, "diff", "--cached", "--name-only", "-z", "--diff-filter=AM").split("\0"):
+        if not path:
+            continue
+        if "node_modules" in path.split("/"):
+            out["node_modules"].append(path)
+        size = os.lstat(os.path.join(work, path)).st_size
+        if size > MAX_PUBLISH_BYTES:
+            out["oversized"].append({"path": path, "bytes": size})
+    return out if out["node_modules"] or out["oversized"] else None
+
+
+def verify_index(names):
+    """`amp skill info` for each name: found, missing, or why it could not be asked."""
+    amp = shutil.which("amp")
+    if not amp:
+        return {"amp": None, "note": "amp is not on PATH; run `amp skill info <skill>` where it is", "skills": {}}
+    out = {}
+    for source, name in names.items():
+        try:
+            r = subprocess.run([amp, "skill", "info", name], capture_output=True, text=True, timeout=120)
+            out[name] = {"source": source, "status": "found" if r.returncode == 0 else "missing",
+                         "detail": (r.stdout if r.returncode == 0 else r.stderr or r.stdout).strip().splitlines()[:1]}
+        except subprocess.TimeoutExpired:
+            out[name] = {"source": source, "status": "timeout", "detail": []}
+    return {"amp": amp, "note": "the index reads the pushed repository, so without --push this describes the previous publish",
+            "skills": out}
+
+
+def publish_into(work, pack, a, report):
+    """The publish steps against one working tree; the caller decides whether that tree is the real one."""
+    pack_dir = os.path.join(pack, PACK_SKILLS)
+    state_dir = os.path.join(work, STATE_DIR)
+    manifest_path = os.path.join(state_dir, PACK_MANIFEST)
+    previous = load_json(manifest_path, {})
+    names = sorted(d for d in os.listdir(pack_dir) if os.path.isfile(os.path.join(pack_dir, d, "SKILL.md")))
+    if not names:
+        sys.exit(f"error: no skills under {pack_dir}")
+    sets = sorted(d for d in os.listdir(os.path.join(pack_dir, SELF, "sets"))
+                  if os.path.isfile(os.path.join(pack_dir, SELF, "sets", d, "set.json"))) if SELF in names else []
+    managed = set()
+    for name in sets:
+        m = load_json(os.path.join(state_dir, SELF, "sets", name, "manifest.json"), {"skills": {}})
+        managed |= {v["dir"] for v in norm_skills(m["skills"]).values()}
+    clash = sorted(set(names) & managed)
+    if clash:
+        sys.exit(f"error: the pack and a set both install {', '.join(clash)}; exclude one side first")
+
+    skills = report["skills"]
+    for name in names:
+        files, skipped = pack_skill_files(pack, name)
+        skills["skipped_node_modules_files"] += skipped
+        if not files:
+            sys.exit(f"error: git tracks nothing under {PACK_SKILLS}/{name} in {pack}")
+        dest = os.path.join(work, name)
+        before = tree_blobs(dest) if os.path.isdir(dest) else None
+        copy_skill(pack, name, files, dest)
+        if before is None:
+            skills["added"].append(name)
+        elif before != tree_blobs(dest):
+            skills["updated"].append(name)
+        else:
+            skills["unchanged_count"] += 1
+    for name in previous.get("skills", []):
+        if name not in names and os.path.isdir(os.path.join(work, name)):
+            shutil.rmtree(os.path.join(work, name))
+            skills["removed"].append(name)
+
+    gaps_appended = report["profile_rows_appended"]
+    profile = os.path.join(state_dir, SELF, "harness", f"{a.harness}.md")
+    passes = {}
+    for name in sets:
+        passes[name] = publish_sync(work, a.harness, name)
+        appended = append_profile_rows(profile, passes[name][0]["profile_gaps_in_seed"])
+        if appended:
+            gaps_appended[name] = appended
+    if gaps_appended:  # the profile is shared, and every set's transform hashes include its rows
+        for name in sets:
+            second, upstream = publish_sync(work, a.harness, name)
+            passes[name] = (merge_passes(passes[name][0], second), upstream)
+    for name, (out, upstream) in passes.items():
+        report["sets"][name] = set_summary(out, upstream)
+    for name, summary in report["sets"].items():
+        for key in ("needs_adaptation", "local_drift", "profile_gaps", "unresolved_dependencies",
+                    "excluded_dependencies", "ambiguous_dependencies", "ports_pending", "stale_ports", "seed_conflicts"):
+            n = len(summary[key])
+            if n:
+                report["attention"].append(f"{name}: {n} {key.replace('_', ' ')}")
+
+    manifest = {"pack_commit": report["pack"]["commit"], "pack_remote": report["pack"]["remote"],
+                "published_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+                "skills": names}
+    os.makedirs(state_dir, exist_ok=True)
+    changed = bool(run_git(work, "status", "--porcelain").strip())
+    if changed or previous.get("skills") != names or previous.get("pack_remote") != manifest["pack_remote"]:
+        save_json(manifest_path, manifest)
+        report["manifest"] = manifest
+    else:
+        report["manifest"] = previous
+
+    run_git(work, "add", "-A", "--", ".")
+    staged = [p for p in run_git(work, "diff", "--cached", "--name-only", "-z").split("\0") if p]
+    report["staged_files"] = len(staged)
+    report["refused"] = staged_offenders(work)
+    if report["refused"]:
+        run_git(work, "reset", "-q")
+        return
+    label = pack_label(report["pack"]["remote"]) or os.path.basename(pack)
+    lines = [f"Refresh workspace skills from {label}@{report['pack']['short']}", ""]
+    for key in ("added", "updated", "removed"):
+        lines.append(f"{key.capitalize()}: " + (", ".join(skills[key]) or "none"))
+    for name, summary in report["sets"].items():
+        u = re.sub(r"^https?://github\.com/", "", summary["upstream"].rstrip("/"))
+        lines.append(f"Set {name}: {u}@{summary['upstream_commit'][:7]} "
+                     f"(+{len(summary['added'])} ~{len(summary['updated'])} -{len(summary['removed'])})")
+    report["commit_message"] = "\n".join(lines) + "\n"
+    if not staged:
+        return
+    if a.dry_run:
+        return
+    subprocess.run(["git", "-C", work, "commit", "-q", "-F", "-"], input=report["commit_message"],
+                   capture_output=True, text=True, check=True)
+    report["committed"] = run_git(work, "rev-parse", "HEAD").strip()
+    if a.push:
+        run_git(work, "push", "origin", report["repo"]["branch"])
+        report["pushed"] = report["repo"]["branch"]
+
+
+def cmd_publish(a):
+    pack, repo = os.path.abspath(a.pack), os.path.abspath(a.repo)
+    for path in (pack, repo):
+        if run_git(path, "rev-parse", "--is-inside-work-tree", check=False).strip() != "true":
+            sys.exit(f"error: {path} is not a git working tree")
+    if not os.path.isdir(os.path.join(pack, PACK_SKILLS)):
+        sys.exit(f"error: {pack} has no {PACK_SKILLS}/; pass the pack checkout as --pack")
+    remote = run_git(pack, "remote", "get-url", "origin", check=False).strip() or None
+    branch = run_git(repo, "symbolic-ref", "--short", "-q", "HEAD", check=False).strip() or None
+    report = {"command": "publish", "dry_run": a.dry_run,
+              "pack": {"path": pack, "commit": run_git(pack, "rev-parse", "HEAD").strip(),
+                       "short": run_git(pack, "rev-parse", "--short", "HEAD").strip(), "remote": remote,
+                       "dirty": sorted(line[3:] for line in run_git(pack, "status", "--porcelain", "--untracked-files=no", "--", PACK_SKILLS).splitlines())},
+              "repo": {"path": repo, "branch": branch, "head_before": run_git(repo, "rev-parse", "HEAD").strip()},
+              "skills": {"added": [], "updated": [], "removed": [], "unchanged_count": 0, "skipped_node_modules_files": 0},
+              "sets": {}, "profile_rows_appended": {}, "attention": [], "manifest": None, "staged_files": 0,
+              "refused": None, "commit_message": None, "committed": None, "pushed": None, "verify": None}
+    if not a.dry_run:
+        dirty = run_git(repo, "status", "--porcelain").strip()
+        if dirty:
+            sys.exit(f"error: {repo} has uncommitted changes; commit or stash them first:\n{dirty}")
+        if report["pack"]["dirty"]:
+            sys.exit(f"error: {pack} has uncommitted changes under {PACK_SKILLS}; the manifest would name a commit "
+                     f"that is not what was copied:\n" + "\n".join(report["pack"]["dirty"]))
+        if a.push and not branch:
+            sys.exit(f"error: {repo} is not on a branch; --push needs one")
+    tmp = None
+    try:
+        if a.dry_run:
+            tmp = tempfile.mkdtemp(prefix="pstack-publish-")
+            work = os.path.join(tmp, "worktree")
+            run_git(repo, "worktree", "add", "-q", "--detach", work, "HEAD")
+        else:
+            work = repo
+        publish_into(work, pack, a, report)
+    finally:
+        if tmp:
+            run_git(repo, "worktree", "remove", "--force", work, check=False)
+            run_git(repo, "worktree", "prune", check=False)
+            shutil.rmtree(tmp, ignore_errors=True)
+    if a.verify and not report["refused"]:
+        picks = {"pack": report["manifest"]["skills"][0]} if report["manifest"]["skills"] else {}
+        for name in report["sets"]:
+            m = load_json(os.path.join(repo, STATE_DIR, SELF, "sets", name, "manifest.json"), {"skills": {}})
+            dirs = sorted(v["dir"] for v in norm_skills(m["skills"]).values() if v["dir"] != AGENTS)
+            if dirs:
+                picks[name] = dirs[0]
+        report["verify"] = verify_index(picks)
+    print(json.dumps(report, indent=2))
+    if report["refused"]:
+        r = report["refused"]
+        offenders = r["node_modules"] + [f"{o['path']} ({o['bytes'] / 1024 / 1024:.1f} MB)" for o in r["oversized"]]
+        sys.stderr.write("error: refusing to commit; the skill index would omit or choke on:\n  "
+                         + "\n  ".join(offenders) + "\nRemove or ignore them in the workspace and run publish again.\n")
+        sys.exit(2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1223,12 +1599,24 @@ def main():
                                        help="record under the local block, which seed never exports")
     sub.choices["seed"].add_argument("--out", required=True, help="directory to write transform.json and harness/ into")
     sub.choices["status"].add_argument("--since", default="HEAD")
+    p = sub.add_parser("publish")
+    p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
+    p.add_argument("--pack", required=True, help="checkout of the skills pack to copy from")
+    p.add_argument("--repo", required=True, help="clone of the workspace skills repository to publish into")
+    p.add_argument("--push", action="store_true", help="push the current branch to origin after committing")
+    p.add_argument("--verify", action="store_true", help="ask `amp skill info` for one skill per set and the pack")
+    p.add_argument("--dry-run", action="store_true", help="run in a throwaway worktree and leave the repository untouched")
     a = ap.parse_args()
+    if a.cmd == "publish":
+        cmd_publish(a)
+        return
     configure(load_set(os.path.abspath(a.repo), a.set))
     if getattr(a, "ref", None) is None and a.cmd == "sync":
         a.ref = SET["ref"]
     st = State(os.path.abspath(a.repo), a.harness, a.root)
-    {"sync": cmd_sync, "record": cmd_record, "status": cmd_status, "seed": cmd_seed}[a.cmd](a, st)
+    out = {"sync": cmd_sync, "record": cmd_record, "status": cmd_status, "seed": cmd_seed}[a.cmd](a, st)
+    if out is not None:
+        print(json.dumps(out, indent=2))
 
 
 if __name__ == "__main__":
