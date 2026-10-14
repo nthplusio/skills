@@ -516,7 +516,11 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(report["ignored_count"], 1)
         self.assertFalse((self.skills / "alpha" / "scripts" / "__tests__").exists())
         self.assertTrue((self.skills / "alpha" / "scripts" / "run.sh").exists())
-        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["exclude"], ["verify"])
+        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["exclude"], [],
+                         "a set's exclude applies without being written into the install's own list")
+        cfg["exclude"] = []
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        self.assertIn("verify", self.run_sync()["added"], "dropping the set's exclude un-excludes it")
 
     def test_profile_gaps_offer_the_shipped_row(self):
         self.upstream()

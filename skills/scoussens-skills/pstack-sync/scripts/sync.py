@@ -587,7 +587,8 @@ class State:
         for k, v in (("accept", []), ("global", []), ("files", {})):
             self.local.setdefault(k, type(v)())
         self.managed = norm_skills(self.manifest["skills"])
-        self.exclude = set(self.manifest.get("exclude", [])) | set(SET["exclude"])
+        self.manifest_exclude = sorted(set(self.manifest.get("exclude", [])))  # the install's own, hand edited
+        self.exclude = set(self.manifest_exclude) | set(SET["exclude"])  # applied together; the set's stays in set.json
         self.needs = load_needs(repo)
         self.local_profile_path = os.path.join(self.durable, "harness", f"{harness}.local.md")
         self.profile_exists = os.path.exists(self.profile_path)
@@ -947,7 +948,7 @@ def cmd_sync(a, st):
             with open(os.path.join(state_dir, fn), "wb") as f:
                 f.write(texts[obj])
         st.manifest = {"set": SET["name"], "upstream": f"{UPSTREAM}/tree/{a.ref}/{SUBDIR}", "commit": sha,
-                       "harness": a.harness, "exclude": sorted(st.exclude), "skills": new_skills}
+                       "harness": a.harness, "exclude": st.manifest_exclude, "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
         save_json(st.transform_path, st.transforms)
     print(json.dumps(report, indent=2))
