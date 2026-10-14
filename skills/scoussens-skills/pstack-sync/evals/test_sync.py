@@ -400,6 +400,98 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("alpha", report["needs_adaptation"])
         self.assertIn("alpha/SKILL.md", self.transforms()["local"]["files"])
 
+    def shipped(self, replace, key="alpha/SKILL.md", find=ALPHA_DESLOP):
+        """Write the pack's seed for pstack with one file entry."""
+        seed = {"test": {"accept": [], "global": [], "files": {key: {"transforms": [{"find": find, "replace": replace}], "accepted": []}}}}
+        (self.skills / sync.SELF / "sets" / "pstack" / "transform.json").write_text(json.dumps(seed))
+        return seed["test"]
+
+    def seed_json(self):
+        return json.loads((self.durable() / "seed.json").read_text())
+
+    def test_seed_refresh_bootstraps_an_install_without_seed_json(self):
+        self.upstream()
+        self.shipped("Shipped one.\n")
+        first = self.run_sync()
+        self.assertEqual((first["seed_refreshed"], first["seed_conflicts"]), ([], []), "the first run adopts the seed as is")
+        self.assertEqual(self.seed_json()["test"]["files"]["alpha/SKILL.md"]["transforms"][0]["replace"], "Shipped one.\n")
+        (self.durable() / "seed.json").unlink()  # an install from before seed.json
+        shipped = self.shipped("Shipped two.\n")
+        report = self.run_sync()
+        self.assertEqual(report["seed_refreshed"], ["alpha/SKILL.md"])
+        self.assertEqual(report["seed_conflicts"], [])
+        self.assertIn("Shipped two.", (self.skills / "alpha" / "SKILL.md").read_text())
+        self.assertEqual(self.transforms()["files"]["alpha/SKILL.md"], shipped["files"]["alpha/SKILL.md"])
+        self.assertEqual(self.seed_json()["test"], shipped)
+        self.assertEqual(self.run_sync()["seed_refreshed"], [], "a second sync has nothing to refresh")
+
+    def test_seed_refresh_applies_a_shipped_change_to_an_unchanged_key(self):
+        self.upstream()
+        self.shipped("Shipped one.\n")
+        self.run_sync()
+        self.shipped("Shipped two.\n")
+        report = self.run_sync()
+        self.assertEqual(report["seed_refreshed"], ["alpha/SKILL.md"])
+        self.assertEqual(report["updated"], ["alpha"])
+        self.assertIn("Shipped two.", (self.skills / "alpha" / "SKILL.md").read_text())
+        self.assertNotIn("alpha", report["local_drift"])
+        self.assertEqual(self.run_sync("status")[:1], "#")
+
+    def test_seed_refresh_keeps_entries_the_install_recorded(self):
+        self.upstream()
+        self.shipped("Shipped one.\n")
+        self.run_sync()
+        beta = self.skills / "beta" / "SKILL.md"
+        beta.write_text(beta.read_text().replace("Keep it tidy", "Keep it neat").replace("Repeat with", "Loop with"))
+        self.run_sync("record", "beta/SKILL.md")
+        recorded = self.transforms()["files"]["beta/SKILL.md"]
+        self.shipped("Shipped two.\n")
+        report = self.run_sync()
+        self.assertEqual(report["seed_refreshed"], ["alpha/SKILL.md"])
+        self.assertEqual(self.transforms()["files"]["beta/SKILL.md"], recorded, "a key the seed never had stays as recorded")
+        self.assertEqual(beta.read_text().count("Loop with"), 1)
+        installed = self.skills / "alpha" / "SKILL.md"
+        installed.write_text(installed.read_text().replace("Shipped two.", "Mine."))
+        self.run_sync("record", "alpha/SKILL.md")
+        mine = self.transforms()["files"]["alpha/SKILL.md"]
+        report = self.run_sync()
+        self.assertEqual((report["seed_refreshed"], report["seed_conflicts"]), ([], []), "a key only the install changed keeps it")
+        self.assertEqual(self.transforms()["files"]["alpha/SKILL.md"], mine)
+        self.assertIn("Mine.", installed.read_text())
+
+    def test_seed_refresh_keeps_the_durable_entry_when_both_changed_and_reports_it(self):
+        self.upstream()
+        self.shipped("Shipped one.\n")
+        self.run_sync()
+        installed = self.skills / "alpha" / "SKILL.md"
+        installed.write_text(installed.read_text().replace("Shipped one.", "Mine."))
+        self.run_sync("record", "alpha/SKILL.md")
+        mine = self.transforms()["files"]["alpha/SKILL.md"]
+        shipped = self.shipped("Shipped two.\n")
+        report = self.run_sync()
+        self.assertEqual(report["seed_conflicts"], ["alpha/SKILL.md"])
+        self.assertEqual(report["seed_refreshed"], [])
+        self.assertEqual(self.transforms()["files"]["alpha/SKILL.md"], mine)
+        self.assertIn("Mine.", installed.read_text())
+        self.assertEqual(self.seed_json()["test"], shipped, "the seed moves on so the conflict is reported once")
+        self.assertEqual(self.run_sync()["seed_conflicts"], [])
+        self.assertIn("alpha/SKILL.md", self.transforms()["local"]["files"] | self.transforms()["files"])
+
+    def test_seed_refresh_never_touches_the_local_block(self):
+        self.adapt_alpha()
+        self.run_sync("record", "--local", "alpha/SKILL.md")
+        local = self.transforms()["local"]
+        self.shipped("Shipped.\n", key="beta/SKILL.md", find="Keep it tidy.\n")
+        report = self.run_sync()
+        self.assertEqual(report["seed_refreshed"], ["beta/SKILL.md"])
+        self.assertEqual(self.transforms()["local"], local)
+        self.assertNotIn("local", self.seed_json()["test"])
+        out = self.tmp / "seed"
+        self.run_sync("seed", "--out", str(out))
+        self.assertEqual(sorted(p.name for p in (out / "sets" / "pstack").iterdir()), ["transform.json"], "seed --out writes no seed.json")
+        self.assertIn("beta/SKILL.md", json.loads((out / "sets" / "pstack" / "transform.json").read_text())["test"]["files"])
+
+
     def set_config(self, name, **changes):
         """Write a second set beside pstack in the test skills directory, from pstack's config."""
         base = json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())
@@ -773,6 +865,23 @@ class PublishTests(unittest.TestCase):
         self.assertFalse((self.ws / "two").exists())
         self.assertFalse((self.ws / ".nthplusio-skills" / "pack-manifest.json").exists())
         self.assertEqual(len(self.git("worktree", "list").splitlines()), 1, "the throwaway worktree is gone")
+
+    def test_publish_reports_a_seed_conflict_under_attention(self):
+        entry = lambda replace: {"transforms": [{"find": ALPHA_DESLOP, "replace": replace}], "accepted": []}
+        pack_seed = self.pack / "skills" / "scoussens-skills" / sync.SELF / "sets" / "pstack" / "transform.json"
+        pack_seed.write_text(json.dumps({"test": {"accept": [], "global": [], "files": {"alpha/SKILL.md": entry("Shipped two.\n")}}}))
+        commit_all(self.pack, "seed")
+        durable = self.ws / ".nthplusio-skills" / sync.SELF / "sets" / "pstack"
+        durable.mkdir(parents=True)
+        (durable / "transform.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {"alpha/SKILL.md": entry("Mine.\n")},
+                                                                      "local": {"accept": [], "global": [], "files": {}}}}))
+        (durable / "seed.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {"alpha/SKILL.md": entry("Shipped one.\n")}}}))
+        commit_all(self.ws, "state")
+        _, report, _ = self.publish()
+        self.assertEqual(report["sets"]["pstack"]["seed_conflicts"], ["alpha/SKILL.md"])
+        self.assertIn("pstack: 1 seed conflicts", report["attention"])
+        self.assertIn("Mine.", (self.ws / "alpha" / "SKILL.md").read_text())
+        self.assertEqual(json.loads((durable / "seed.json").read_text())["test"]["files"]["alpha/SKILL.md"], entry("Shipped two.\n"))
 
     def test_verify_reports_each_skill_or_that_amp_is_absent(self):
         env_path = self.tmp / "bin"

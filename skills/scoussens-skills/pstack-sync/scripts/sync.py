@@ -67,6 +67,12 @@ Durable state, beside discovery.json, kept across a pack refresh:
                         pstack-agents), and a "local" sub-block of the same shape for
                         entries that belong to this install only (record --local). seed
                         exports every block without its local sub-block.
+  .nthplusio-skills/pstack-sync/sets/<set>/seed.json
+                        per harness, the shipped shared block as of the last sync. sync
+                        three-way merges the shipped seed into the durable shared block
+                        against it, so a transform the pack ships later reaches the
+                        install; a key both sides changed keeps the durable entry and is
+                        reported as a seed conflict.
   .nthplusio-skills/pstack-sync/sets/<set>/LICENSE-<plugin>
                         the license of each plugin the installed skills come from.
   .nthplusio-skills/pstack-sync/harness/<harness>.md
@@ -592,6 +598,8 @@ class State:
         self.durable, self.set_dir = adopt_durable(repo, root, harness)
         self.manifest_path = os.path.join(self.set_dir, "manifest.json")
         self.transform_path = os.path.join(self.set_dir, "transform.json")
+        self.seed_path = os.path.join(self.set_dir, "seed.json")
+        self.seed_next = None  # seed.json to write once the refresh is saved
         self.profile_path = os.path.join(self.durable, "harness", f"{harness}.md")
         self.manifest = load_json(self.manifest_path, {"skills": {}})
         self.transforms = load_json(self.transform_path, {})
@@ -772,9 +780,69 @@ def read_installed(path):
         return None
 
 
+# ---------- seed refresh ----------
+
+def entry_key(item):
+    """An accept regex or a global transform as a dict key."""
+    return item if isinstance(item, str) else json.dumps(item, sort_keys=True)
+
+
+def merge_seed_part(durable, seed, shipped, label, refreshed, conflicts):
+    """Three-way merge of one part of a harness block, {key: entry} each, against the seed
+    adopted last time. None for seed is the bootstrap: the shipped entry wins wherever the
+    durable one differs. Keys the seed never had and the pack does not ship stay as recorded."""
+    out = {}
+    keys = list(durable) + [k for k in shipped if k not in durable]
+    if seed:
+        keys += [k for k in seed if k not in durable and k not in shipped]
+    for key in keys:
+        d, s1 = durable.get(key, MISSING), shipped.get(key, MISSING)
+        if seed is None:
+            pick = s1 if s1 is not MISSING else d
+            if s1 is not MISSING and s1 != d:
+                refreshed.append(label(key))
+        else:
+            s0 = seed.get(key, MISSING)
+            if s1 == s0 or d == s1:
+                pick = d
+            elif d == s0:
+                pick = s1
+                refreshed.append(label(key))
+            else:
+                pick = d
+                conflicts.append(label(key))
+        if pick is not MISSING:
+            out[key] = pick
+    return out
+
+
+def refresh_seed(st):
+    """Bring the shipped seed's changes since the last sync into the durable shared block.
+    Returns (refreshed keys, conflicting keys); the local block is never read or written."""
+    shipped_all = load_json(os.path.join(st.repo, SELF, "sets", SET["name"], "transform.json"), None)
+    if not isinstance(shipped_all, dict) or st.harness not in shipped_all:
+        return [], []
+    shipped = shipped_all[st.harness]
+    seeds = load_json(st.seed_path, {})
+    seed = seeds.get(st.harness)
+    refreshed, conflicts = [], []
+    for part in ("accept", "global"):
+        merged = merge_seed_part({entry_key(i): i for i in st.shared.get(part, [])},
+                                 {entry_key(i): i for i in seed.get(part, [])} if seed is not None else None,
+                                 {entry_key(i): i for i in shipped.get(part, [])},
+                                 lambda k, part=part: f"{part}: {k}", refreshed, conflicts)
+        st.shared[part] = list(merged.values())
+    st.shared["files"] = merge_seed_part(st.shared["files"], seed.get("files", {}) if seed is not None else None,
+                                         shipped.get("files", {}), lambda k: k, refreshed, conflicts)
+    seeds[st.harness] = {k: v for k, v in shipped.items() if k != "local"}
+    st.seed_next = seeds
+    return refreshed, conflicts
+
+
 # ---------- commands ----------
 
 def cmd_sync(a, st):
+    seed_refreshed, seed_conflicts = refresh_seed(st)
     sha = fetch(a.ref)
     inv = inventory(sha)
     read = blob_reader()
@@ -797,7 +865,8 @@ def cmd_sync(a, st):
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
               "needs_security_review": [], "needs_adaptation": {}, "dependencies": {},
-              "ports_pending": {}, "stale_ports": {}, "ignored_count": 0}
+              "ports_pending": {}, "stale_ports": {}, "ignored_count": 0,
+              "seed_refreshed": seed_refreshed, "seed_conflicts": seed_conflicts}
     new_skills = {}
     prev_fetched = []
 
@@ -994,6 +1063,8 @@ def cmd_sync(a, st):
                        "harness": a.harness, "exclude": st.manifest_exclude, "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
         save_json(st.transform_path, st.transforms)
+        if st.seed_next is not None:
+            save_json(st.seed_path, st.seed_next)
     return report
 
 
@@ -1305,7 +1376,8 @@ def merge_passes(first, second):
     updated = sorted((set(first["updated"]) | set(second["updated"])) - set(first["added"]))
     extra = len(set(updated) - set(first["updated"]))
     return {**second, "previous_commit": first["previous_commit"], "added": first["added"], "updated": updated,
-            "removed": first["removed"], "unchanged_count": first["unchanged_count"] - extra}
+            "removed": first["removed"], "unchanged_count": first["unchanged_count"] - extra,
+            "seed_refreshed": first["seed_refreshed"], "seed_conflicts": first["seed_conflicts"]}
 
 
 def set_summary(report, upstream):
@@ -1319,7 +1391,8 @@ def set_summary(report, upstream):
             "profile_gaps_in_seed": report["profile_gaps_in_seed"],
             "unresolved_dependencies": deps.get("unresolved", {}), "excluded_dependencies": deps.get("excluded", {}),
             "ambiguous_dependencies": deps.get("ambiguous", {}), "ports_pending": report["ports_pending"],
-            "stale_ports": report["stale_ports"], "needs_security_review": report["needs_security_review"]}
+            "stale_ports": report["stale_ports"], "needs_security_review": report["needs_security_review"],
+            "seed_refreshed": report["seed_refreshed"], "seed_conflicts": report["seed_conflicts"]}
 
 
 def staged_offenders(work):
@@ -1408,7 +1481,7 @@ def publish_into(work, pack, a, report):
         report["sets"][name] = set_summary(out, upstream)
     for name, summary in report["sets"].items():
         for key in ("needs_adaptation", "local_drift", "profile_gaps", "unresolved_dependencies",
-                    "excluded_dependencies", "ambiguous_dependencies", "ports_pending", "stale_ports"):
+                    "excluded_dependencies", "ambiguous_dependencies", "ports_pending", "stale_ports", "seed_conflicts"):
             n = len(summary[key])
             if n:
                 report["attention"].append(f"{name}: {n} {key.replace('_', ' ')}")
