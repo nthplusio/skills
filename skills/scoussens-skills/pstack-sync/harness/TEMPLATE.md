@@ -1,6 +1,6 @@
 # Harness profile: <harness>
 
-How pstack's needs map onto <harness>. Built and maintained per [`../references/adapting.md`](../references/adapting.md); need IDs come from [`../needs.json`](../needs.json).
+How pstack's needs map onto <harness>. Built and maintained per [`../references/adapting.md`](../references/adapting.md); need IDs come from [`../dialects/cursor.json`](../dialects/cursor.json).
 
 ## Destination
 
@@ -11,7 +11,7 @@ How pstack's needs map onto <harness>. Built and maintained per [`../references/
 
 ## Needs
 
-Add a row for each need in [`../needs.json`](../needs.json) that names no discovery fields. The others take their facts from the repository's `.nthplusio-skills/discovery.json`; give one a row only to override it, per [`../references/adapting.md`](../references/adapting.md).
+Add a row for each need in [`../dialects/cursor.json`](../dialects/cursor.json) that names no discovery fields. The others take their facts from the repository's `.nthplusio-skills/discovery.json`; give one a row only to override it, per [`../references/adapting.md`](../references/adapting.md).
 
 | Need | Support | <harness> equivalent | Source |
 | --- | --- | --- | --- |

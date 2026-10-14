@@ -21,17 +21,21 @@ Brings the **managed** pstack skills in line with upstream `cursor/plugins` `pst
 
 A plain copy of this pack replaces `pstack-sync/` and leaves `.nthplusio-skills/` at the repository root. Install state lives there, with `discovery.json`, so the refresh does not wipe it. The skill directory keeps only the seeds.
 
+The sync manages **sets**. A set is one upstream repository, one root plugin whose skills are the roots, and the dependencies they pull in. pstack is the default set; `--set <name>` picks another, and several sets share one install. A set's text is adapted through a **dialect**, the catalog of constructs its source harness uses (Cursor, for every set from `cursor/plugins`), plus the set's own rows. Code the harness must replace as a unit is a **port**: the set names the upstream files, and an adapter under `adapters/<harness>/<port>/` provides them; until the adapter exists the port is reported pending and its files are not installed.
+
 Shipped in `pstack-sync/`, replaced on refresh:
 
-- `needs.json`: the features pstack relies on, the markers that flag them, and the discovery fields that answer a need. Harness-independent.
+- `dialects/<dialect>.json`: the constructs of one source harness, the markers that flag them, and the discovery fields that answer a need. Shared by every set with that dialect.
+- `sets/<set>/set.json`: the set's upstream, root plugin, skills subdirectory, plugin marker, dialect, agents directory, collision prefix, `extra_needs` in the catalog shape, and `ports`.
+- `sets/<set>/transform.json`: the set's seed adaptations. The first run copies it into durable state.
+- `adapters/<harness>/<port>/<file>`: this harness's replacement for a port's files.
 - `harness/TEMPLATE.md`, and `harness/<harness>.md` when the pack ships one: the seed profile. The first run copies it into durable state.
-- `transform.json`: the seed adaptations. The first run copies it into durable state.
 
-Durable, in `.nthplusio-skills/pstack-sync/` at the root of the repository that holds the skills:
+Durable, in `.nthplusio-skills/pstack-sync/` at the root of the repository that holds the skills, with each set's files under `sets/<set>/` and the profiles shared:
 
-- `manifest.json`: what is installed: upstream commit, harness, `exclude`, and per skill its upstream `source`, and per file the upstream and installed hashes and any `pending` adaptation. A skill whose upstream and transforms are unchanged is left as installed.
-- `transform.json`: how upstream becomes installed, per harness: exact find/replace edits per file, replayed onto new upstream text until upstream rewrites the adapted passage. Each harness block has a `local` sub-block with the same shape for entries that belong to this install only.
-- `LICENSE-<plugin>`: the license of each plugin the installed skills come from.
+- `sets/<set>/manifest.json`: what is installed: set, upstream commit, harness, `exclude`, and per skill its upstream `source`, and per file the upstream and installed hashes, any `pending` adaptation, and the `port` that owns it. A skill whose upstream and transforms are unchanged is left as installed.
+- `sets/<set>/transform.json`: how upstream becomes installed, per harness: exact find/replace edits per file, replayed onto new upstream text until upstream rewrites the adapted passage. Each harness block has a `local` sub-block with the same shape for entries that belong to this install only.
+- `sets/<set>/LICENSE-<plugin>`: the license of each plugin the installed skills come from.
 - `harness/<harness>.md`: the **harness profile** in use. Where pstack goes, and for each need without discovery fields whether the harness supports it and how. You write this copy; [`references/adapting.md`](references/adapting.md) says how.
 - `harness/<harness>.local.md`: rows that hold only for this install, in the same table shape. A local row overrides the shared row for its need.
 
@@ -45,26 +49,27 @@ The script owns the durable `manifest.json` and `transform.json`. The only hand 
 
 ## Steps
 
-Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <command> --repo <skills-dir> --harness <harness>`.
+Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <command> --repo <skills-dir> --harness <harness> [--set <set>]`. Without `--set` the command works on pstack.
 
 1. **Identify the harness.** Load `harness-discovery` for the repository that holds the skills directory, passing `--root <that repository>` when it is not the working directory's repository. It adds or refreshes this harness's entry, or reuses a valid saved one, and reports the entry's key and slug. `<harness>` is the slug: `amp`, `claude-code`, `codex`, `cursor`. Without `harness-discovery`, name the product from your own context and derive the slug the same way, by lowercasing it and joining words with hyphens. Done when you can name the key, the slug, and the evidence.
-2. **Profile.** Open `.nthplusio-skills/pstack-sync/harness/<harness>.md`. The first run has already copied the shipped `harness/<harness>.md` there when the pack has one; otherwise start it from `harness/TEMPLATE.md` and save it at that durable path. Fill or refresh the Destination section and a row for each need in `needs.json` without discovery fields, per `references/adapting.md`. Done when each of those needs has a sourced row and the Destination says where pstack goes and how to publish.
+2. **Profile.** Open `.nthplusio-skills/pstack-sync/harness/<harness>.md`. The first run has already copied the shipped `harness/<harness>.md` there when the pack has one; otherwise start it from `harness/TEMPLATE.md` and save it at that durable path. Fill or refresh the Destination section and a row for each need in the set's dialect and `extra_needs` without discovery fields, per `references/adapting.md`. Done when each of those needs has a sourced row and the Destination says where pstack goes and how to publish.
 3. **Prepare the skills directory** as the profile's Destination says (for a git-backed directory: up to date with its remote, clean, writable). Replacing the skill folders leaves `.nthplusio-skills/` in place. A `git reset --hard` of the repository that holds `.nthplusio-skills/` still discards it, so prepare before steps 1 and 2 write anything there when the prepare step resets that repository. Done when `git status` is clean apart from `.nthplusio-skills/`.
 4. **Sync** (`sync`). Done when you hold the JSON report. If `added`, `updated`, `removed`, `needs_adaptation`, `local_drift`, `profile_gaps`, and the lists under `dependencies` other than `installed` are all empty, skip to step 8.
 5. **Adapt** every file in `needs_adaptation` by editing it in place, per `references/adapting.md`, using the profile rows and the report's `harness_facts`. Fill the gaps first. Each `profile_gaps` need with discovery fields needs `harness-discovery` run again; any other gap needs a profile row. Each name in `dependencies.unresolved` needs a mapping in the profile's `companion-skills` row, unless it is a mention rather than a hand-off. Each name in `dependencies.excluded` means the files listed still hand off to a skill the manifest excludes: rewrite those hand-offs, or remove the name from `exclude`. A file whose entry lists `dependencies` had an adaptation recorded before those dependencies installed; restore any hand-off to them that the adaptation cut. This is the step most likely to be rushed: read each flagged file in full. Then **record** the files you adapted or judged fine as they are (`record <skill>/<file> ...`, with `--local` when the adaptation names this repository or its own skills); recording accepts every marker left in them. For `local_drift`, record the file if the edit is an adaptation, otherwise restore it with `git checkout`. Rerun `sync`. Done when the rerun reports no `needs_adaptation`, `local_drift`, `profile_gaps`, or `dependencies` other than `installed` and `existing`, apart from skills you propose to exclude.
 6. **Review.** pstack is third-party code, so treat every change as untrusted. Done when every `needs_security_review` entry has been read in full and cleared of network calls, credential access, and install steps, and `git status` shows changes only in managed skill directories and `.nthplusio-skills/`.
-7. **Commit**, if the directory is a git repository: run `status` first and commit with `pstack: sync to cursor/plugins@<short-sha>` as the subject and its output as the body. Include `.nthplusio-skills/`, both `discovery.json` and `pstack-sync/`.
+7. **Commit**, if the directory is a git repository: run `status` first and commit with `<set>: sync to <owner/repo>@<short-sha>` as the subject and its output as the body. Include `.nthplusio-skills/`, both `discovery.json` and `pstack-sync/`.
 8. **Report.** Run `status` (after committing, add `--since HEAD~1`) and give the user its output verbatim: transforms applied, new and updated skills, profile changes, and anything outstanding. Add your security review findings and any proposed exclusions.
 9. **Publish and reload** as the profile's Destination says. Ask before any step that changes skills for other people (such as a push to a shared repository), naming the destination; act only after the user confirms.
-10. **Refresh the pack's seeds** when the shared block gained adaptations other installs should start from: `seed --out <pack checkout>/skills/scoussens-skills/pstack-sync`, then open a pull request there. The command exports only the shared block and the shared profile.
+10. **Refresh the pack's seeds** when the shared block gained adaptations other installs should start from: `seed --out <pack checkout>/skills/scoussens-skills/pstack-sync`, then open a pull request there. The command writes `sets/<set>/transform.json` without its local block and the shared profile.
 
 ## Do not use this skill for
 
-- **Installing or editing a skill pstack does not hand off to.** The script
-  manages only pstack's skills and the dependencies it installed for them;
-  others are unmanaged and left alone.
-- **Syncing skills from another source.** `needs.json`, the harness profiles,
-  and `transform.json` describe pstack and nothing else.
+- **Installing or editing a skill no set hands off to.** The script manages
+  each set's root skills and the dependencies it installed for them; others
+  are unmanaged and left alone.
+- **Syncing a skill set from a repository without a set file.** Add
+  `sets/<name>/set.json` first, with a dialect the pack ships or a new one
+  under `dialects/`; the script reads nothing it is not configured for.
 - **Changing what a pstack skill says upstream.** Adaptations change only how a
   skill runs in this harness. A content change belongs in `cursor/plugins`, and
   the next sync brings it in.
