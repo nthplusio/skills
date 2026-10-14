@@ -5,17 +5,17 @@ description: >-
   sessions, subagents, monitoring and wake-ups, skill loading, instruction files,
   structured questions, model choice, and HTML publishing destinations — plus the
   repository's ticket conventions, and saves sourced observations keyed by
-  harness name. Load this when orchestration-setup or pstack-sync needs
+  harness name. Load this when pstack-sync, dashboard, or another skill needs
   discovery, or when the user names /harness-discovery to refresh facts. Do not
-  run it as the first step of an orchestration.
+  run it as the first step of a task that only needs one saved fact.
 ---
 
 # Harness discovery
 
-Save observed facts for any skill that needs them: `orchestration-setup` and
-`orchestration-run`, `pstack-sync`, and skills that publish HTML. A caller loaded
-this skill, or the user named `/harness-discovery`. Discovery describes what
-works; each caller decides what to use. Do not start an orchestration from here.
+Save observed facts for any skill that needs them: `pstack-sync`, `dashboard`,
+and skills that publish HTML. A caller loaded this skill, or the user named
+`/harness-discovery`. Discovery describes what works; each caller decides what
+to use. Do not start the caller's work from here.
 
 ## 1. Identify the harness and read saved discovery
 
