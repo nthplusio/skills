@@ -11,8 +11,9 @@ Runs the `orchestrate` set's spawn, wait, and handoff loop on Amp orb threads th
 | `agent-runtime/scripts/core/runtime.ts` | Facade with the Cursor SDK's static `Agent` shape, built over the runtime, so the ported files keep upstream's call sites; also the operator gates (`measurementGate`, `checkRepoUrlAgainstOrigin`) and the id checks (`requireThreadId`, `resolveSelfAgentId`). Listed in the `agent-runtime` port, so the sync installs it beside the port files. |
 | `agent-runtime/scripts/core/andon-file.ts` | `FileAndonSource`: the stop signal read from `<workspace>/andon.json` when the root planner has no Slack kickoff. Also a port-added file. |
 | `agent-runtime/scripts/{core/agent-manager,cli/task,cli/inspect,cli/forensics,tools/nudge-root,tools/probe-models}.ts` | The `agent-runtime` port: upstream files with their SDK calls routed through the facade. |
+| `agent-runtime/scripts/tools/dashboard.ts` | Port-added: writes a `dashboard` skill status record from a run workspace and renders it. See Dashboard. |
 | `models/scripts/models.ts` | The `models` port: upstream's catalog shape over Amp modes. |
-| `__tests__/` | `bun test` against a fake `amp` on `PATH`: the runtime (`agent-runtime.test.ts`), the facade's `Agent.create`, `send`, `wait` round trip and its id checks (`runtime.test.ts`), the operator gates and the `selfAgentId` guard (`gates.test.ts`), and `models --check` through the port's `tools/probe-models.ts` (`probe-models.test.ts`; upstream's test of that tool calls the SDK signature and is ignored by the set). |
+| `__tests__/` | `bun test` against a fake `amp` on `PATH`: the runtime (`agent-runtime.test.ts`), the facade's `Agent.create`, `send`, `wait` round trip and its id checks (`runtime.test.ts`), the operator gates and the `selfAgentId` guard (`gates.test.ts`), and `models --check` through the port's `tools/probe-models.ts` (`probe-models.test.ts`; upstream's test of that tool calls the SDK signature and is ignored by the set), and the dashboard producer against a fixture workspace and the real renderer (`dashboard.test.ts`). |
 
 The sync installs each port file at its path under `<skills>/orchestrate/scripts/`; `runtime.ts` finds `agent-runtime.ts` and `models.ts` at `<skills>/pstack-sync/adapters/amp/` beside it, or under the newest `pstack-sync@<hash>/adapters/amp/` sibling in Amp's skill cache, where each skill is installed as `<name>@<hash>` (or in the pack layout, or where `ORCHESTRATE_AMP_RUNTIME_DIR` points).
 
@@ -48,6 +49,32 @@ The `amp` CLI's login (`amp login` once on the machine that runs the loop) or an
 
 Upstream raises Andon through Slack: the root polls the kickoff message for `:rotating_light:`, and `andon raise` / `andon clear` post to Slack, the only `AndonSource` upstream ships. On Amp a root planner whose plan has a Slack kickoff keeps that behaviour. A root planner without one polls `<workspace>/andon.json` instead (`FileAndonSource`): writing `{"reason": "<why>", "raisedBy": "<who>"}` there raises Andon, deleting the file clears it, and the poller writes the cached state children read through git as before. `andon raise` and `andon clear` live in `cli/andon.ts`, which is not a port file, so they still need Slack; see Follow-ups.
 
+## Dashboard
+
+`tools/dashboard.ts` turns a run workspace into the one-page status view the `dashboard` skill renders, for the people following the run who do not read `state.json`:
+
+```bash
+bun scripts/tools/dashboard.ts <workspace> [--out <html>] [--hosted] [--status-only]
+```
+
+It reads `<workspace>/plan.json`, `state.json`, `handoffs/` and `attention.log`, writes `<workspace>/status.json` as a schema 2 record of the skill's `references/status-contract.md`, and runs the skill's `scripts/render_dashboard.py` on it, to `--out` (default `<workspace>/dashboard.html`). The renderer's `PASS: rendered <path>` line is the success output; when it rejects the record, the tool prints the renderer's stderr and exits 1, leaving `status.json` in place and any earlier page untouched. `--status-only` writes the record and skips the render; `--hosted` passes the renderer's hosted link check and leaves local handoff links out of the record, keeping the handoff lines as literal output.
+
+The record, per the contract and the producers table in the skill's `SKILL.md`:
+
+| Record field | Source |
+| --- | --- |
+| `run_id`, `title`, `goal` | `rootSlug` plus `plan.selfAgentId` when it is a thread id; `plan.summary`, else the `rootSlug`; `plan.goal`. |
+| `tasks[]` | One row per task in `state.json`, in order. `id` is the task name, `title` the first sentence of its `scopedGoal`. |
+| `owner` | The task's thread: `id` is `agentId` (`unassigned-<task>` before a spawn), `label` the task name, `href` from `agentUrl`, `state` from the task status: `pending` → `waiting`, `running` → `active`, `handed-off` → `complete`, `error` → `blocked`, `cancelled` and `pruned` → `closed`. `location` is the branch; `handoff` and `last_checked_at` come from the handoff file and `lastUpdate`. |
+| `work` | From the handoff: `Status success` and a verifier's verified verdicts → `delivered`; `partial` and `verifier-failed` → `needs_decision`; `blocked` and `verifier-blocked` → `blocked`; no Status line → `unknown`. A running task is `working`, an unspawned one `ready` or `waiting` on its `dependsOn`, an `error` row `blocked`, `cancelled` and `pruned` rows `cancelled`. |
+| `milestones` | `defined` from the plan entry; `pr_readiness` and `code_publication` from the handoff and its `## Branch` line (neither is requested for a verifier, whose verdict is its `verification` stage; an `openPR` task without a `prNumber` stays pending); `verification` from `state.json`'s `verification` or a planned verifier; `deployment` and `business_acceptance` not requested, because the loop stops at the branch. |
+| `evidence[]` | One entry per handoff file: its Status, Verification and Branch lines as the note and literal output, the file as the link, `passed` for success and verified verdicts, `failed` for blocked, error and `verifier-failed`, `interrupted` for `verifier-blocked`, `observed` otherwise. |
+| `decisions[]` | An uncleared `state.andon` is the one decision, routed to the root planner thread. `plan.json` carries no other decision field. |
+| `history[]` | The last 50 `attention.log` lines, or `state.attention` when the log is missing. |
+| `updated_at`, `contract_version`, `presentation` | Now; the renderer's `--contract-version`; `local` with the page path and the root planner thread as `coordinator_href`. `closed_at` is never set: no plan field says the run is done. |
+
+The dashboard skill is found the way `runtime.ts` finds the adapter: `ORCHESTRATE_DASHBOARD_DIR` when set, else `<skills>/dashboard` beside this skill, else the newest `dashboard@<hash>` sibling in Amp's skill cache, else the pack layout relative to the file. The renderer runs as `python3 -I <dir>/scripts/render_dashboard.py` with an argument array, never a shell line.
+
 ## Settings
 
 All through environment variables, read when the runtime is created.
@@ -63,6 +90,7 @@ All through environment variables, read when the runtime is created.
 | `ORCHESTRATE_AMP_URL` | `https://ampcode.com` | Web origin for `agentUrl`. |
 | `ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS` | `180000` | Wall-time cap for one CLI invocation. |
 | `ORCHESTRATE_WAIT_TIMEOUT_SEC` | `7200` | Longest `wait` or `stream` polls a run that has not ended before returning `error`; the thread is not stopped. |
+| `ORCHESTRATE_DASHBOARD_DIR` | unset | Directory holding the `dashboard` skill (`scripts/render_dashboard.py`) when `tools/dashboard.ts` finds it in neither layout. |
 | `ORCHESTRATE_AMP_RUNTIME_DIR` | unset | Directory holding `agent-runtime.ts` and `models.ts` when neither layout applies. The facade imports code from it, so it is a code-loading setting: only the operator sets it. |
 | `ORCHESTRATE_REPO_URL` | unset | The repository the operator runs the loop for. `plan.repoUrl` must match it; unset means unchecked. See Security. |
 | `ORCHESTRATE_MEASUREMENTS` | unset | `1` lets the loop run planner-authored measurement commands when plan.json also opts in; anything else keeps them off. See Security. |
