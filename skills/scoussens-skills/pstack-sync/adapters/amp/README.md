@@ -10,6 +10,7 @@ Runs the `orchestrate` set's spawn, wait, and handoff loop on Amp orb threads th
 | `models.ts` | `ModelCatalog` of Amp agent modes. |
 | `agent-runtime/scripts/core/runtime.ts` | Facade with the Cursor SDK's static `Agent` shape, built over the runtime, so the ported files keep upstream's call sites; also the operator gates (`measurementGate`, `checkRepoUrlAgainstOrigin`) and the id checks (`requireThreadId`, `resolveSelfAgentId`). Listed in the `agent-runtime` port, so the sync installs it beside the port files. |
 | `agent-runtime/scripts/core/andon-file.ts` | `FileAndonSource`: the stop signal read from `<workspace>/andon.json` when the root planner has no Slack kickoff. Also a port-added file. |
+| `agent-runtime/scripts/core/github-followups.ts` | Port-added shared `GITHUB_FOLLOWUP_NOTE` instruction for root kickoff and PR-opening workers. |
 | `agent-runtime/scripts/{core/agent-manager,cli/task,cli/inspect,cli/forensics,tools/nudge-root,tools/probe-models}.ts` | The `agent-runtime` port: upstream files with their SDK calls routed through the facade. |
 | `agent-runtime/scripts/tools/dashboard.ts` | Port-added: writes a `dashboard` skill status record from a run workspace and renders it. See Dashboard. |
 | `models/scripts/models.ts` | The `models` port: upstream's catalog shape over Amp modes. |
@@ -60,7 +61,7 @@ The root prompt tells the root planner to set `plan.selfAgentId` to the value of
 `kickoff` appends three things to upstream's root prompt, because the planner's first message is what it keeps in view for the whole run, while `references/planner.md` is something it reads once:
 
 - the run tag line (`withRunTagNote` in `cli/task.ts`; see Run hygiene);
-- the CI opt-out (`withCiNote`, the `CI_NOTE` text): the harness tells every thread to subscribe to a pull request's checks before reporting it unless the user opts out, so a planner on a repository without workflows subscribed and reported `No CI checks found` as a finding in the second real run even though the adapted planner.md said not to. The note says the operator opts out on a repository with no workflow under `.github/workflows/`, to write `no CI configured` once in the pull request body, and to pass the same rule to any worker that opens a pull request. The set's `core/prompts.ts` transform puts the same rule in the prompt of a worker with `openPR: true`;
+- the shared GitHub follow-up policy (`GITHUB_FOLLOWUP_NOTE` in `core/github-followups.ts`), appended directly by kickoff and imported by the set's `core/prompts.ts` transform for workers with `openPR: true`. It keeps supported monitoring automatic and expresses the operator's conditional opt-out when monitoring is unavailable. The planner reference points to this policy and carries applicable refusal receipts and explicitly authorized retained receiving targets through existing task briefs. The policy covers no-workflow CI opt-out, scope and permission refusals, uncertain setup outcomes, bounded retries, and workers' archive-on-handoff lifetime; it adds no listener runtime or capability state;
 - the facade's thread-id note (next section), when the prompt names `$AMP_THREAD_ID`.
 
 ## Auth

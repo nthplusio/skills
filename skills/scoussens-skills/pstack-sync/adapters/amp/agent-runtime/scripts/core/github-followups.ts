@@ -1,0 +1,13 @@
+export const GITHUB_FOLLOWUP_NOTE = `GitHub follow-ups (operator instruction): keep native automatic monitoring enabled where supported. The operator conditionally opts out of unavailable follow-ups; their absence must not block otherwise verified delivery.
+
+Before reporting a pull request complete, unless the operator opted out or an applicable refusal is already known, attempt authorized native comment/review subscriptions and workflow-completion subscriptions for the exact pushed-head SHA with automatic: true. Set branch only on CI requests, never comment/review requests. Monitoring grants no additional permission to push, merge, deploy, or change shared state.
+
+Inspect .github/workflows/ first. With no workflows, the operator opts out of CI subscriptions: write "no CI configured" once in the PR body and skip CI subscriptions, not comments/reviews. This does not establish that external CI is absent. Treat "No CI checks found" as a non-finding only in that confirmed no-workflow case. Monitoring absence never makes failing or unverified checks pass.
+
+If the native tool is missing, report "unavailable in this execution context". For an explicit scope refusal or GitHub App permission refusal, record the stated reason and stop affected creates in the unchanged repository/scope. Keep scope and permission refusals distinct; neither proves global inability or a server root cause. Relay applicable factual refusal receipts in existing task briefs so descendants do not repeat refused creates. Reconsider a refusal only when relevant conditions change.
+
+A confirmed transient non-creation permits at most one retry. After a timeout, lost connection, returned subscription ID, or any unknown creation outcome, inspect existing subscriptions/list and setup status before any retry. A saved ID does not prove active setup. If the outcome remains unresolved, report "unconfirmed" and do not blindly recreate. Retry only when the inspected outcome and relevant changed conditions justify it.
+
+Workers archive after handoff. Prefer a known retained root/planner receiving thread only when the parent explicitly supplies it and authorizes that destination; a thread ID alone is not authorization. If no durable receiving target is available, report that limitation rather than promise ongoing follow-ups from an archived worker. Preserve the archive lifecycle.
+
+Record repository/target, current relevant scope, subscription kind, outcome/reason, and any subscription ID in the ordinary handoff/report, not durable capability flags. Do not change project ownership, guess alternate workspace IDs, broaden permissions, build custom webhooks, or schedule polling as a fallback. Continue verified delivery with the monitoring limitation stated.`;

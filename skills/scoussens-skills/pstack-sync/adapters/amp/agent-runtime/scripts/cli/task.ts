@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { Command } from "commander";
 import { createSlackAdapter } from "../adapters/index.ts";
+import { GITHUB_FOLLOWUP_NOTE } from "../core/github-followups.ts";
 import { DEFAULT_MAX_RUNTIME_SEC, runOrchestrateLoop } from "../core/loop.ts";
 import {
   type AgentApi,
@@ -221,17 +222,15 @@ export function registerTaskCommands(program: Command): void {
           });
           // The thread id is known only after send(); until then
           // agent.agentId is `$AMP_THREAD_ID`, which the orb resolves.
-          const prompt = withCiNote(
-            withRunTagNote(
-              buildKickoffPrompt({
-                goal,
-                agentId: agent.agentId,
-                dispatcherFirstName,
-                slackChannel,
-              }),
-              runTag
-            )
-          );
+          const prompt = `${withRunTagNote(
+            buildKickoffPrompt({
+              goal,
+              agentId: agent.agentId,
+              dispatcherFirstName,
+              slackChannel,
+            }),
+            runTag
+          )}\n\n${GITHUB_FOLLOWUP_NOTE}`;
           const run = await agent.send({ text: prompt });
           console.log(
             JSON.stringify({
@@ -684,21 +683,6 @@ export function buildPlannerNudge(args: {
 export function withRunTagNote(prompt: string, runTag: string): string {
   return `${prompt}\n\nRun tag: this run's tag is \`${runTag}\`. Write it into plan.json as \`"runTag": "${runTag}"\` next to \`selfAgentId\`. The loop labels every thread of this run \`run-${runTag}\` and titles them \`${runTag} <task>\`; this thread is \`${runTag} root\`.`;
 }
-
-/**
- * Amp port: the CI opt-out, in the root prompt where the planner reads it.
- * The harness tells every thread to subscribe to a pull request's checks
- * before reporting it, unless the user opts out; `references/planner.md`
- * says not to on a repository without workflows, but the second real run
- * showed a planner subscribing anyway and reporting `No CI checks found`
- * as a finding. The opt-out has to be in the thread's own first message.
- */
-export function withCiNote(prompt: string): string {
-  return `${prompt}\n\n${CI_NOTE}`;
-}
-
-export const CI_NOTE =
-  "CI subscriptions: the operator opts out of CI subscriptions on a repository with no workflow under `.github/workflows/`. Before subscribing this thread to a pull request's checks, look there; when it is empty, write `no CI configured` once in the pull request body, do not subscribe, and treat a `No CI checks found` notice as that absence restated, never as a finding. Give the same instruction to any worker you have open a pull request.";
 
 export function inferKickoffRootSlug(goal: string): string {
   const firstLine = goal.split("\n")[0]?.trim() ?? "";

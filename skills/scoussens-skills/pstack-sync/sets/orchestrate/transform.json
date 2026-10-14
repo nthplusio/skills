@@ -238,7 +238,7 @@
           },
           {
             "find": "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs.\n",
-            "replace": "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs. A repository with no workflow under `.github/workflows/` has no CI: say `no CI configured` once, in the handoff or the pull request body, and do not subscribe to CI on its pull requests; a `No CI checks found for this commit` notice restates that absence and is not a finding.\n"
+            "replace": "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs. Follow the shared `GITHUB_FOLLOWUP_NOTE` policy in `scripts/core/github-followups.ts`, delivered in the root kickoff and PR-opening worker first messages. Relay applicable factual refusal receipts (repository/target, current relevant scope, kind, outcome/reason, and any subscription ID) in existing task briefs. If a known retained root/planner receiving thread is available and authorized, explicitly supply that destination and its authorization in the brief; a thread ID alone is not authorization. Otherwise report the receiving-target limitation under the shared policy.\n"
           },
           {
             "find": "Do not detach `run`. The script is the heartbeat for state, handoffs, Slack mirrors, retry-queue draining, and Andon polling. When it exits, call `tree`. If any task is still `pending` or `running`, run the loop again.\n",
@@ -466,8 +466,12 @@
       "orchestrate/scripts/core/prompts.ts": {
         "transforms": [
           {
+            "find": "import { renderModelCatalog } from \"../models.ts\";\n",
+            "replace": "import { renderModelCatalog } from \"../models.ts\";\nimport { GITHUB_FOLLOWUP_NOTE } from \"./github-followups.ts\";\n"
+          },
+          {
             "find": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using the ManagePullRequest tool. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`\n",
-            "replace": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using \\`gh pr create --draft --base ${prBase}\\`. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration. Subscribe to the pull request's CI only when the repository has a workflow under \\`.github/workflows/\\`; otherwise write \\`no CI configured\\` once in the pull request body, do not subscribe, and never report a \\`No CI checks found\\` notice as a finding.`\n"
+            "replace": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using \\`gh pr create --draft --base ${prBase}\\`. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.\n\n${GITHUB_FOLLOWUP_NOTE}`\n"
           }
         ],
         "accepted": []
