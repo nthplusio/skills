@@ -675,6 +675,74 @@ class DependencyTests(unittest.TestCase):
         self.run_sync("record", "alpha/SKILL.md")
         self.assertTrue((self.skills / "alpha" / "scripts" / "runtime.sh").exists())
 
+    @unittest.skipUnless(shutil.which("bun"), "rendering installed TypeScript prompts requires bun")
+    def test_orchestrate_installs_and_delivers_shared_followups_only_to_pr_workers(self):
+        """Exercise the upstream prDiscipline expression through sync, then execute its installed output."""
+        prompts = r'''import { renderModelCatalog } from "../models.ts";
+export function buildWorkerPrompt(t, ctx) {
+  const prBase = ctx.plan.prBase ?? ctx.plan.baseBranch;
+  const prDiscipline = t.openPR
+    ? `- Keep \`.orchestrate/\` files out of the PR diff — that directory is run-local orchestrator bookkeeping, not the change you're shipping. Leave its state intact in your working tree afterward so the orchestrator's next reconcile loop can keep observing your task.
+- After your branch is pushed, open a draft pull request with base \`${prBase}\` and head set to your current branch using the ManagePullRequest tool. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`
+    : "- Do NOT merge, rebase, or open a PR. The planner owns integration.";
+  return `${t.brief}\n\n${prDiscipline}`;
+}
+'''
+        planner = "- Set `openPR: true` only for independent worker tasks you want shipped as their own draft PRs.\n"
+        upstream_root = "orchestrate/skills/orchestrate"
+        self.upstream({**UPSTREAM,
+                       f"{upstream_root}/scripts/core/prompts.ts": prompts,
+                       f"{upstream_root}/references/planner.md": planner})
+        seed = json.loads((SKILL / "sets" / "orchestrate" / "transform.json").read_text())["amp"]
+        files = seed["files"]
+        planner_transforms = files["orchestrate/references/planner.md"]["transforms"]
+        selected = {"accept": [], "global": [], "files": {
+            "orchestrate/scripts/core/prompts.ts": files["orchestrate/scripts/core/prompts.ts"],
+            "orchestrate/references/planner.md": {
+                "transforms": [entry for entry in planner_transforms if entry["find"] == planner],
+                "accepted": []}}}
+        (self.skills / sync.SELF / "sets" / "orchestrate" / "transform.json").write_text(
+            json.dumps({"test": selected}))
+        for port in ("agent-runtime", "models"):
+            shutil.copytree(SKILL / "adapters" / "amp" / port,
+                            self.skills / sync.SELF / "adapters" / "test" / port)
+        report = self.run_sync("sync", "--set", "orchestrate")
+        self.assertEqual(report["ports_pending"], {})
+        installed = self.skills / "orchestrate"
+        module = "scripts/core/github-followups.ts"
+        self.assertEqual((installed / module).read_text(),
+                         (SKILL / "adapters" / "amp" / "agent-runtime" / module).read_text())
+        installed_planner = (installed / "references" / "planner.md").read_text()
+        self.assertIn("scripts/core/github-followups.ts", installed_planner)
+        self.assertIn("Relay applicable factual refusal receipts", installed_planner)
+        self.assertIn("a thread ID alone is not authorization", installed_planner)
+        runner = r'''
+import { buildWorkerPrompt } from "./scripts/core/prompts.ts";
+import { GITHUB_FOLLOWUP_NOTE } from "./scripts/core/github-followups.ts";
+const brief = "Repository: example/repo; scope: personal project; comments: scope refused; ID: none.";
+const ctx = { plan: { baseBranch: "main", prBase: "integration" } };
+console.log(JSON.stringify({ note: GITHUB_FOLLOWUP_NOTE, brief,
+  prompts: [true, false, undefined].map(openPR => buildWorkerPrompt({ openPR, brief }, ctx)) }));
+'''
+        result = subprocess.run([shutil.which("bun"), "--eval", runner], cwd=installed,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = json.loads(result.stdout)
+        pr_prompt, *non_pr_prompts = rendered["prompts"]
+        self.assertTrue(rendered["note"].startswith("GitHub follow-ups (operator instruction):"))
+        self.assertEqual(pr_prompt.count(rendered["note"]), 1)
+        self.assertIn("gh pr create --draft --base integration", pr_prompt)
+        self.assertNotIn("ManagePullRequest", pr_prompt)
+        self.assertNotIn("${GITHUB_FOLLOWUP_NOTE}", pr_prompt)
+        self.assertIn(rendered["brief"], pr_prompt)
+        for prompt in non_pr_prompts:
+            self.assertNotIn(rendered["note"], prompt)
+            self.assertIn("Do NOT merge, rebase, or open a PR", prompt)
+            self.assertIn(rendered["brief"], prompt)
+        (installed / module).unlink()
+        self.run_sync("sync", "--set", "orchestrate")
+        self.assertTrue((installed / module).is_file())
+
     def test_dialect_and_set_needs_merge(self):
         self.upstream()
         self.run_sync()
@@ -1200,7 +1268,8 @@ class ShippedStateTests(unittest.TestCase):
     def test_orchestrate_port_interfaces_name_what_installed_files_import(self):
         ports = {p["name"]: p["interface"] for p in json.loads((SKILL / "sets" / "orchestrate" / "set.json").read_text())["ports"]}
         for name in ("AgentManager", "RespawnSource", "appendAgentFooter", "registerTaskCommands",
-                     "registerInspectCommands", "registerForensicsCommands", "Run", "SDKAgent", "RunResult"):
+                     "registerInspectCommands", "registerForensicsCommands", "Run", "SDKAgent", "RunResult",
+                     "GITHUB_FOLLOWUP_NOTE"):
             self.assertIn(f"`{name}`", ports["agent-runtime"])
         self.assertIn("`renderModelCatalog`", ports["models"])
 

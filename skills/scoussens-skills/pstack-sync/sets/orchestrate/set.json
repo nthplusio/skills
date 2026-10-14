@@ -36,6 +36,7 @@
         "scripts/cli/task.ts",
         "scripts/core/agent-manager.ts",
         "scripts/core/andon-file.ts",
+        "scripts/core/github-followups.ts",
         "scripts/core/runtime.ts",
         "scripts/package.json",
         "scripts/tools/cleanup.ts",
@@ -44,7 +45,7 @@
         "scripts/tools/nudge-root.ts",
         "scripts/tools/probe-models.ts"
       ],
-      "interface": "Over the harness: spawn, getRun, wait, stream, cancel, list, sendFollowUp, agentUrl. Exports the installed files import from these port files at runtime, which the adapter must keep under these names: `AgentManager` and the type `RespawnSource` from core/agent-manager.ts (cli/util.ts; core/loop.ts imports the type), `appendAgentFooter` from core/agent-manager.ts (cli/andon.ts, cli/comments.ts), `registerTaskCommands`, `registerInspectCommands`, and `registerForensicsCommands` from cli/task.ts, cli/inspect.ts, and cli/forensics.ts (cli/index.ts), and the SDK type names `Run` and `SDKAgent` (schemas.ts) and `RunResult` (core/handoff.ts) from core/runtime.ts, where the set's transforms point the former `@cursor/sdk` imports."
+      "interface": "Over the harness: spawn, getRun, wait, stream, cancel, list, sendFollowUp, agentUrl. Exports the installed files import from these port files at runtime, which the adapter must keep under these names: `AgentManager` and the type `RespawnSource` from core/agent-manager.ts (cli/util.ts; core/loop.ts imports the type), `appendAgentFooter` from core/agent-manager.ts (cli/andon.ts, cli/comments.ts), `registerTaskCommands`, `registerInspectCommands`, and `registerForensicsCommands` from cli/task.ts, cli/inspect.ts, and cli/forensics.ts (cli/index.ts), `GITHUB_FOLLOWUP_NOTE` from core/github-followups.ts (cli/task.ts and core/prompts.ts), and the SDK type names `Run` and `SDKAgent` (schemas.ts) and `RunResult` (core/handoff.ts) from core/runtime.ts, where the set's transforms point the former `@cursor/sdk` imports."
     },
     {
       "name": "models",
