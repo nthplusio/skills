@@ -1,5 +1,5 @@
 {
-  "_doc": "Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields. A need with detect also gets markers sync.py finds from cursor/plugins and the skills directory: unavailable (hand-offs the directory will not have) or agents (subagent definitions named).",
+  "_doc": "Constructs of the Cursor dialect that synced skills may rely on. Every set synced from a Cursor plugin repository shares these rows; a set adds its own under extra_needs in its set.json. Features pstack relies on. Single source of truth for sync.py markers, for the harness-discovery fields that answer a need (read from .nthplusio-skills/discovery.json), and for harness profiles, whose rows are keyed by id and cover the needs without discovery fields. A need with detect also gets markers sync.py finds from cursor/plugins and the skills directory: unavailable (hand-offs the directory will not have) or agents (subagent definitions named).",
   "needs": [
     {
       "id": "skill-locations",
@@ -38,18 +38,6 @@
       ],
       "question": "Which file does this harness load into every session, user-wide and per project?",
       "fallback": "The project's agent instructions file (AGENTS.md or equivalent)."
-    },
-    {
-      "id": "role-model-config",
-      "uses": "setup-pstack writes a role -> model mapping (with a budget) that every session loads; arena, architect, swarm, interrogate, how, why, reflect, poteto-mode, and the implementation playbooks dispatch each role on its configured model.",
-      "cursor": [
-        "~/.cursor/rules/pstack-models.mdc"
-      ],
-      "markers": [
-        "pstack-models"
-      ],
-      "question": "How can this harness persist a per-role model choice that every session reads, and honor it when dispatching that role? If no single feature does both, combine others (persistent-rules to store it, model-selection to honor it).",
-      "fallback": "Only when no combination works: every role uses the parent model; setup-pstack is proposed for exclusion."
     },
     {
       "id": "model-selection",
@@ -182,7 +170,7 @@
     },
     {
       "id": "modes",
-      "uses": "poteto-mode is a Cursor Custom Mode with its own frontmatter (mode, icon, color, reminder).",
+      "uses": "A skill shipped as a Cursor Custom Mode carries its own frontmatter (mode, icon, color, reminder).",
       "cursor": [
         "Custom Modes",
         "frontmatter mode: true, icon, color, reminder"
@@ -209,18 +197,6 @@
       ],
       "question": "Does the harness honor disable-model-invocation (or an equivalent)?",
       "fallback": "Keep the key; if ignored, the skill is simply model-visible."
-    },
-    {
-      "id": "bugbot",
-      "uses": "Triage and wait on Cursor Bugbot PR review comments.",
-      "cursor": [
-        "Bugbot"
-      ],
-      "markers": [
-        "\\b[Bb]ugbot\\b"
-      ],
-      "question": "Does the repository use Bugbot? It is a GitHub app, independent of the agent harness.",
-      "fallback": "Keep as written."
     },
     {
       "id": "cursor-product",
@@ -252,7 +228,7 @@
     {
       "id": "custom-subagents",
       "detect": "agents",
-      "uses": "Named subagent definitions (pstack's poteto-agent and comment-sicko, or any plugin's agents/*.md) that skills dispatch by name. pstack-sync installs each one a synced file names as pstack-agents/<name>.md.",
+      "uses": "Named subagent definitions (a plugin's agents/*.md) that skills dispatch by name. The sync installs each one a synced file names under the set's agents directory as <name>.md.",
       "cursor": [
         "subagent_type: \"poteto-agent\"",
         "pstack/agents/*.md"

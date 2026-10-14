@@ -17,7 +17,8 @@ SCRIPT = SKILL / "scripts" / "sync.py"
 sys.path.insert(0, str(SKILL / "scripts"))
 import sync  # noqa: E402
 
-NEEDS = json.loads((SKILL / "needs.json").read_text())["needs"]
+NEEDS = (json.loads((SKILL / "dialects" / "cursor.json").read_text())["needs"]
+         + json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())["extra_needs"])
 MAPPED = {need["id"] for need in NEEDS if need.get("discovery")}
 
 
@@ -44,7 +45,8 @@ class DiscoveryTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name) / "skills"
         (self.root / "pstack-sync" / "harness").mkdir(parents=True)
-        shutil.copy(SKILL / "needs.json", self.root / "pstack-sync" / "needs.json")
+        shutil.copytree(SKILL / "dialects", self.root / "pstack-sync" / "dialects")
+        shutil.copytree(SKILL / "sets", self.root / "pstack-sync" / "sets")
         self.profile = self.root / "pstack-sync" / "harness" / "amp.md"
         shutil.copy(SKILL / "harness" / "amp.md", self.profile)
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
@@ -160,11 +162,13 @@ class DependencyTests(unittest.TestCase):
         self.tmp = Path(temporary.name)
         self.skills = self.tmp / "skills"
         (self.skills / sync.SELF / "harness").mkdir(parents=True)
-        shutil.copy(SKILL / "needs.json", self.skills / sync.SELF / "needs.json")
+        shutil.copytree(SKILL / "dialects", self.skills / sync.SELF / "dialects")
+        shutil.copytree(SKILL / "sets", self.skills / sync.SELF / "sets")
+        (self.skills / sync.SELF / "sets" / "pstack" / "transform.json").unlink()
         self.profile(PROFILE)
 
     def profile(self, text):
-        durable = self.skills / ".nthplusio-skills" / "pstack-sync" / "harness" / "test.md"
+        durable = self.shared() / "harness" / "test.md"
         path = durable if durable.exists() else self.skills / sync.SELF / "harness" / "test.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
@@ -189,6 +193,9 @@ class DependencyTests(unittest.TestCase):
         return json.loads(result.stdout) if command != "status" else result.stdout
 
     def durable(self):
+        return self.skills / ".nthplusio-skills" / "pstack-sync" / "sets" / "pstack"
+
+    def shared(self):
         return self.skills / ".nthplusio-skills" / "pstack-sync"
 
     def manifest(self, **changes):
@@ -265,7 +272,7 @@ class DependencyTests(unittest.TestCase):
         transforms = {"test": {"accept": [], "global": [], "files": {"alpha/SKILL.md": {
             "transforms": [{"find": ALPHA_DESLOP, "replace": "Strip slop yourself before each commit.\n"}],
             "accepted": []}}}}
-        (self.skills / sync.SELF / "transform.json").write_text(json.dumps(transforms))
+        (self.skills / sync.SELF / "sets" / "pstack" / "transform.json").write_text(json.dumps(transforms))
         report = self.run_sync()
         self.assertEqual(report["needs_adaptation"]["alpha"]["SKILL.md"]["dependencies"], ["deslop", "helper"])
         self.assertNotIn("dependencies", report["needs_adaptation"]["beta"]["SKILL.md"])
@@ -302,9 +309,10 @@ class DependencyTests(unittest.TestCase):
         skill = self.skills / sync.SELF
         shutil.rmtree(skill)
         (skill / "harness").mkdir(parents=True)
-        shutil.copy(SKILL / "needs.json", skill / "needs.json")
+        shutil.copytree(SKILL / "dialects", skill / "dialects")
+        shutil.copytree(SKILL / "sets", skill / "sets")
         shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
-        (skill / "transform.json").write_text("{}\n")
+        (skill / "sets" / "pstack" / "transform.json").write_text("{}\n")
         second = self.run_sync()
         self.assertEqual((second["added"], second["removed"]), ([], []))
         self.assertEqual(second["unchanged_count"], len(first["added"]))
@@ -329,9 +337,9 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("alpha/SKILL.md", block["files"])
         out = self.tmp / "seed"
         report = self.run_sync("seed", "--out", str(out))
-        self.assertEqual(report["seeded"], ["transform.json", "harness/test.md"])
+        self.assertEqual(report["seeded"], ["sets/pstack/transform.json", "harness/test.md"])
         self.assertEqual(report["local_entries_kept_back"], ["alpha/SKILL.md"])
-        seed = json.loads((out / "transform.json").read_text())["test"]
+        seed = json.loads((out / "sets" / "pstack" / "transform.json").read_text())["test"]
         self.assertNotIn("local", seed)
         self.assertNotIn("alpha/SKILL.md", seed["files"])
         self.assertEqual((out / "harness" / "test.md").read_text(), PROFILE)
@@ -350,7 +358,7 @@ class DependencyTests(unittest.TestCase):
         self.run_sync()
         flagged = self.run_sync()["needs_adaptation"]["beta"]["SKILL.md"]["needs"]
         self.assertIn("loop", flagged)
-        local = self.durable() / "harness" / "test.local.md"
+        local = self.shared() / "harness" / "test.local.md"
         local.write_text(PROFILE + "| `loop` | keep | the test harness loops as written | local |\n")
         self.assertNotIn("loop", self.run_sync()["needs_adaptation"]["beta"]["SKILL.md"]["needs"])
         out = self.tmp / "seed"
@@ -364,13 +372,82 @@ class DependencyTests(unittest.TestCase):
         skill = self.skills / sync.SELF
         shutil.rmtree(skill)
         (skill / "harness").mkdir(parents=True)
-        shutil.copy(SKILL / "needs.json", skill / "needs.json")
+        shutil.copytree(SKILL / "dialects", skill / "dialects")
+        shutil.copytree(SKILL / "sets", skill / "sets")
         shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
-        (skill / "transform.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {}}}))
+        (skill / "sets" / "pstack" / "transform.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {}}}))
         report = self.run_sync()
         self.assertEqual(report["local_drift"], [])
         self.assertNotIn("alpha", report["needs_adaptation"])
         self.assertIn("alpha/SKILL.md", self.transforms()["local"]["files"])
+
+    def set_config(self, name, **changes):
+        """Write a second set beside pstack in the test skills directory, from pstack's config."""
+        base = json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())
+        base.pop("_doc", None)
+        cfg = {**base, "agents_dir": f"{name}-agents", "collision_prefix": f"{name}-", "extra_needs": [], **changes}
+        d = self.skills / sync.SELF / "sets" / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "set.json").write_text(json.dumps(cfg))
+        return cfg
+
+    def test_state_moves_under_the_set_directory(self):
+        self.upstream()
+        first = self.run_sync()
+        shared = self.shared()
+        for fn in ("manifest.json", "transform.json", *[p.name for p in self.durable().glob("LICENSE-*")]):
+            shutil.move(str(self.durable() / fn), str(shared / fn))
+        self.durable().rmdir()
+        second = self.run_sync()
+        self.assertEqual(second["unchanged_count"], len(first["added"]))
+        self.assertTrue((self.durable() / "manifest.json").is_file())
+        self.assertFalse((shared / "manifest.json").exists())
+        self.assertEqual(sorted(p.name for p in shared.iterdir()), ["harness", "sets"])
+        self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["set"], "pstack")
+
+    def test_two_sets_share_one_dependency(self):
+        self.upstream()
+        self.set_config("kit", root_plugin="cursor-team-kit", skills_subdir="cursor-team-kit/skills")
+        kit = self.run_sync("sync", "--set", "kit")
+        self.assertEqual(sorted(kit["added"]), ["deslop", "unused", "verify"])
+        report = self.run_sync()
+        self.assertEqual(report["dependencies"]["existing"], ["deslop"], "verify is deslop's own dependency and stays with the set that owns deslop")
+        self.assertNotIn("deslop", report["added"])
+        self.assertTrue((self.skills / ".nthplusio-skills" / "pstack-sync" / "sets" / "kit" / "manifest.json").is_file())
+        self.assertIn("Upstream", self.run_sync("status", "--set", "kit"))
+
+    def test_a_port_installs_its_adapter_and_reports_upstream_changes(self):
+        files = {**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/run.sh": "#!/bin/sh\necho cursor\n"}
+        repo = self.upstream(files)
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ports"] = [{"name": "runner", "skill": "alpha", "files": ["scripts/run.sh"]}]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        pending = self.run_sync()
+        self.assertEqual(pending["ports_pending"], {"runner": ["alpha/scripts/run.sh"]})
+        self.assertFalse((self.skills / "alpha" / "scripts" / "run.sh").exists())
+        adapter = self.skills / sync.SELF / "adapters" / "test" / "runner" / "scripts" / "run.sh"
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text("#!/bin/sh\necho test-harness\n")
+        installed = self.run_sync()
+        self.assertEqual(installed["ports_pending"], {})
+        self.assertEqual((self.skills / "alpha" / "scripts" / "run.sh").read_text(), "#!/bin/sh\necho test-harness\n")
+        self.assertNotIn("alpha/scripts/run.sh", installed["needs_security_review"])
+        (repo / sync.SUBDIR / "alpha" / "scripts" / "run.sh").write_text("#!/bin/sh\necho cursor v2\n")
+        git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run([*git, "commit", "-q", "-am", "port moved"], check=True)
+        stale = self.run_sync()
+        self.assertEqual(stale["stale_ports"], {"runner": ["alpha/scripts/run.sh"]})
+        self.assertEqual((self.skills / "alpha" / "scripts" / "run.sh").read_text(), "#!/bin/sh\necho test-harness\n")
+        self.assertEqual(self.run_sync()["stale_ports"], {})
+
+    def test_dialect_and_set_needs_merge(self):
+        self.upstream()
+        self.run_sync()
+        ids = [n["id"] for n in sync.load_needs(str(self.skills))]
+        dialect = [n["id"] for n in json.loads((SKILL / "dialects" / "cursor.json").read_text())["needs"]]
+        self.assertEqual(ids[:len(dialect)], dialect)
+        self.assertIn("role-model-config", ids)
+        self.assertNotIn("role-model-config", dialect)
 
 
 class HandoffNameTests(unittest.TestCase):

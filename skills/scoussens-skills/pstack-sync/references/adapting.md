@@ -1,12 +1,16 @@
-# Profiling the harness and adapting pstack
+# Profiling the harness and adapting a set
 
-pstack is written for Cursor. Adapting a skill rewrites each Cursor-specific construct into what the **running harness** supports, so the skill does here what it did in Cursor. Nothing about the harness is assumed: you discover it, record it in the harness profile, and adapt from the profile.
+Each set is written for its source harness, Cursor for every set from `cursor/plugins`. Adapting a skill rewrites each source-specific construct into what the **running harness** supports, so the skill does here what it did in Cursor. Nothing about the harness is assumed: you discover it, record it in the harness profile, and adapt from the profile.
 
 ## The needs catalog
 
-`pstack-sync/needs.json` lists every feature pstack relies on, harness-independent: what pstack uses it for, the Cursor constructs, the regex markers the script flags, the question to answer about any harness, the usual fallback, and, for a need harness discovery answers, the discovery fields. It is the single source of truth for markers and for which needs the profile owns.
+`pstack-sync/dialects/<dialect>.json` lists every construct of one source harness that synced skills may rely on, harness-independent: what skills use it for, the source constructs, the regex markers the script flags, the question to answer about any harness, the usual fallback, and, for a need harness discovery answers, the discovery fields. A set adds its own rows, such as pstack's per-role model config, under `extra_needs` in `sets/<set>/set.json`. Together they are the single source of truth for markers and for which needs the profile owns.
 
-A Cursor construct you find that no need covers gets a new need in the catalog (with markers) before you adapt it, so the next sync flags it in every harness.
+A source construct you find that no need covers gets a new need in the dialect (with markers) before you adapt it, so the next sync flags it in every harness and every set of that dialect. A construct only one set uses goes in that set's `extra_needs`.
+
+## Ports
+
+Some upstream files cannot be adapted by editing text, such as a script that calls the source harness's own API. The set names those files as a **port**, one entry in `sets/<set>/set.json` with a name, the upstream skill, and the file paths. The sync installs the adapter under `adapters/<harness>/<port>/<same path>` in place of the upstream files, and reports the port under `ports_pending` until the adapter exists, so the install never carries code that cannot run here. When upstream changes a port's files the report lists the port under `stale_ports`, and the adapter's author decides whether the change reaches the adapter. The adapter is first-party code and is not re-scanned as third-party.
 
 ## The harness profile
 
@@ -29,7 +33,7 @@ A row that names this repository, a skill only this repository has, or a choice 
 
 ## Needs that harness discovery answers
 
-A need that names `discovery` fields in `needs.json` takes its facts from the repository's `.nthplusio-skills/discovery.json`, which `harness-discovery` owns, and has no row in the profile. `sync.py` reads the harness's entry and counts such a need as profiled once every field it names is recorded. The sync report's `harness_facts` gives those facts for each flagged need, and you adapt from them as you would from a row.
+A need that names `discovery` fields in the dialect takes its facts from the repository's `.nthplusio-skills/discovery.json`, which `harness-discovery` owns, and has no row in the profile. `sync.py` reads the harness's entry and counts such a need as profiled once every field it names is recorded. The sync report's `harness_facts` gives those facts for each flagged need, and you adapt from them as you would from a row.
 
 - A `null` field means the harness has no such operation. Rewrite with the catalog fallback, unless a combination of other features does the job.
 - A field not yet recorded, or no entry for the harness, puts the need in `profile_gaps`. Run `harness-discovery` instead of writing the fact into the profile.
