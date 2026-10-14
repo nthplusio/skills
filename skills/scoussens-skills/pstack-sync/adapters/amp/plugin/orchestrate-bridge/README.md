@@ -37,10 +37,25 @@ An Amp plugin that gives the orchestrate loop a way to create threads nested und
 
 ## Where to install it
 
-- **Workspace Plugins repository**, so every orb thread in the workspace has it. That is what the orchestrate run needs: the kickoff thread and every planner thread spawn through it, so the whole run nests under the thread that ran kickoff.
-- **`.amp/plugins/orchestrate-bridge/index.ts`** of one project, for a single repository or a local check.
+Use the Workspace Plugins repository so the kickoff thread and every planner thread can spawn through the bridge. Publish it from the pack with the skills refresh. Discover the writable repository and clone it, or reuse its clone:
 
-`index.ts` imports nothing from the rest of the adapter, so copy the directory as it is. Node built-ins (`node:http`, `node:fs`, `node:crypto`) are available to plugins.
+```bash
+amp plugins repositories
+amp clone workspace-plugins <plugins-clone>
+python3 <pack>/skills/scoussens-skills/pstack-sync/scripts/sync.py publish --pack <pack> --repo <skills-clone> --plugins-repo <plugins-clone> --harness amp --dry-run
+```
+
+The dry run previews both repositories in throwaway worktrees without changing either clone, committing, or pushing. The separate plugins clone records ownership in `.nthplusio-skills/pack-manifest.json`. Publishing replaces or removes only manifest-owned plugins and leaves unmanaged plugins alone.
+
+Review the report and obtain authorization to push both workspace repositories before running:
+
+```bash
+python3 <pack>/skills/scoussens-skills/pstack-sync/scripts/sync.py publish --pack <pack> --repo <skills-clone> --plugins-repo <plugins-clone> --harness amp --push --verify
+```
+
+The command commits changes with each clone's identity and pushes each branch. Verification uses `amp plugins list` to report active plugins, alongside the skill checks. If `amp` is missing from `PATH`, verification reports the limitation. Confirm that `orchestrate-bridge` is active before running the loop.
+
+For one project or a local check, copy this directory to `.amp/plugins/orchestrate-bridge/`, with `index.ts` directly inside it. `index.ts` imports nothing from the rest of the adapter. Node built-ins (`node:http`, `node:fs`, `node:crypto`) are available to plugins.
 
 ## The file it writes
 

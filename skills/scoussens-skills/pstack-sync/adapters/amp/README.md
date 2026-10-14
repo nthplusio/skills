@@ -147,6 +147,28 @@ Three more boundaries the audit of this adapter raised: agent ids from `state.js
 - `list` reports the thread's last-updated time where upstream expected a creation time; kickoff's 30-minute adoption window is measured from that.
 - `run.conversation()` is unsupported; `supports("conversation")` is false.
 
+## Publish the workspace bridge
+
+Use the pack's `publish` command to install `orchestrate-bridge` in the Workspace Plugins repository alongside the skills refresh. Discover the writable destination, reuse its clone if present, and preview both repositories:
+
+```bash
+amp plugins repositories
+amp clone workspace-plugins <plugins-clone>
+python3 <pack>/skills/scoussens-skills/pstack-sync/scripts/sync.py publish --pack <pack> --repo <skills-clone> --plugins-repo <plugins-clone> --harness amp --dry-run
+```
+
+The dry run uses throwaway worktrees and leaves both clones unchanged, without commits or pushes. Review the report before proceeding. The plugins clone has its own `.nthplusio-skills/pack-manifest.json`, which owns replacement and removal of pack plugins and leaves unmanaged plugins alone.
+
+After the user authorizes pushes to both workspace repositories, run:
+
+```bash
+python3 <pack>/skills/scoussens-skills/pstack-sync/scripts/sync.py publish --pack <pack> --repo <skills-clone> --plugins-repo <plugins-clone> --harness amp --push --verify
+```
+
+`publish` commits changes in each clone with that clone's identity and pushes its branch. `--verify` uses `amp plugins list` to report active plugins, alongside the skill checks. If `amp` is missing from `PATH`, verification reports that limitation rather than claiming success. Confirm that `orchestrate-bridge` is active before running the loop.
+
+For a single project or a local check, use the [bridge's local installation instructions](plugin/orchestrate-bridge/README.md#where-to-install-it).
+
 ## Running the loop on Amp
 
 In the installed skill directory (`<skills>/orchestrate`):
