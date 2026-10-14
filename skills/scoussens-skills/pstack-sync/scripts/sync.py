@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync pstack skills from github.com/cursor/plugins (pstack/skills), and the skills and subagent
+"""Sync a managed skill set, pstack by default, from its upstream repository, and the skills and subagent
 definitions they hand off to, into a skills directory.
 
   sync.py sync   --harness NAME [--repo DIR] [--root DIR] [--ref BRANCH] [--dry-run]
@@ -27,28 +27,36 @@ scope provides the name: the referencing skill's own plugin, plus each plugin it
 name an unmanaged skill already has is served by that skill instead.
 
 Shipped with the skill, replaced by a plain copy of the pack:
-  needs.json            features pstack relies on; markers per need (harness-independent),
-                        and the harness-discovery fields that answer a need. A need with
-                        "detect" also gets markers sync.py finds: "unavailable" for each
-                        skill, command, or subagent a file hands off to that the skills
-                        directory will not have; "agents" for each subagent definition named.
+  sets/<set>/set.json   one managed set: upstream repository, root plugin, skills
+                        subdirectory, plugin marker, dialect, agents directory,
+                        collision prefix, extra_needs (rows in the catalog shape), ports.
+  dialects/<dialect>.json
+                        constructs of one source harness; markers per need
+                        (harness-independent), and the harness-discovery fields that
+                        answer a need. A need with "detect" also gets markers sync.py
+                        finds: "unavailable" for each skill, command, or subagent a file
+                        hands off to that the skills directory will not have; "agents"
+                        for each subagent definition named.
+  sets/<set>/transform.json
+                        seed adaptations, copied into durable state on first use.
+  adapters/<harness>/<port>/<file>
+                        this harness's replacement for a port's upstream files.
   harness/TEMPLATE.md   starting profile for a harness the pack does not ship.
   harness/<harness>.md  seed profile, copied into durable state on first use.
-  transform.json        seed adaptations, copied into durable state on first use.
 
 Durable state, beside discovery.json, kept across a pack refresh:
-  .nthplusio-skills/pstack-sync/manifest.json
-                        upstream commit, harness, exclude list (names of pstack skills,
+  .nthplusio-skills/pstack-sync/sets/<set>/manifest.json
+                        set, upstream commit, harness, exclude list (names of pstack skills,
                         dependencies, or subagent definitions); per installed skill: dir,
                         upstream source, tree, transforms hash, per file upstream blob,
                         installed blob, pending adaptation.
-  .nthplusio-skills/pstack-sync/transform.json
+  .nthplusio-skills/pstack-sync/sets/<set>/transform.json
                         per harness: "accept" marker regexes, "global" regex transforms,
                         "files" keyed by "<skill>/<rel>" (upstream skill name, or
                         pstack-agents), and a "local" sub-block of the same shape for
                         entries that belong to this install only (record --local). seed
                         exports every block without its local sub-block.
-  .nthplusio-skills/pstack-sync/LICENSE-<plugin>
+  .nthplusio-skills/pstack-sync/sets/<set>/LICENSE-<plugin>
                         the license of each plugin the installed skills come from.
   .nthplusio-skills/pstack-sync/harness/<harness>.md
                         the harness profile in use: destination, and one row for each
@@ -68,14 +76,52 @@ Harness facts (owned by harness-discovery, not pstack-sync):
 """
 import argparse, difflib, fnmatch, hashlib, json, os, re, shutil, subprocess, sys
 
-UPSTREAM = os.environ.get("PSTACK_SYNC_UPSTREAM", "https://github.com/cursor/plugins")
-ROOT_PLUGIN = "pstack"
-SUBDIR = f"{ROOT_PLUGIN}/skills"
-AGENTS = "pstack-agents"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_REPO = os.path.dirname(os.path.dirname(HERE))
 SELF = "pstack-sync"
-CACHE = os.path.expanduser("~/.cache/pstack-sync/%s.git" % hashlib.sha1(UPSTREAM.encode()).hexdigest()[:12])
+DEFAULT_SET = "pstack"
+SET_DEFAULTS = {"ref": "main", "plugin_marker": ".cursor-plugin/plugin.json", "dialect": "cursor",
+                "agents_dir": None, "collision_prefix": None, "extra_needs": [], "ports": []}
+
+
+def load_set(repo, name):
+    """The set's configuration from <repo>/<SELF>/sets/<name>/set.json, with defaults filled."""
+    path = os.path.join(repo, SELF, "sets", name, "set.json")
+    if not os.path.exists(path):
+        sys.exit(f"error: no set {name!r}: {path} is missing")
+    with open(path) as f:
+        cfg = {**SET_DEFAULTS, **json.load(f)}
+    cfg["name"] = name
+    cfg.setdefault("skills_subdir", f"{cfg['root_plugin']}/skills")
+    cfg["agents_dir"] = cfg["agents_dir"] or f"{name}-agents"
+    cfg["collision_prefix"] = cfg["collision_prefix"] or f"{name}-"
+    return cfg
+
+
+DEFAULT_UPSTREAM = "https://github.com/cursor/plugins"
+
+
+def configure(cfg):
+    """Point the module at one set. PSTACK_SYNC_UPSTREAM stands in for cursor/plugins in tests;
+    a set from another repository keeps its own upstream."""
+    global SET, UPSTREAM, ROOT_PLUGIN, SUBDIR, AGENTS, PREFIX, PLUGIN_MARKER, CACHE
+    SET = cfg
+    override = os.environ.get("PSTACK_SYNC_UPSTREAM")
+    UPSTREAM = override if override and cfg["upstream"] == DEFAULT_UPSTREAM else cfg["upstream"]
+    ROOT_PLUGIN = cfg["root_plugin"]
+    SUBDIR = cfg["skills_subdir"]
+    AGENTS = cfg["agents_dir"]
+    PREFIX = cfg["collision_prefix"]
+    PLUGIN_MARKER = cfg["plugin_marker"]
+    CACHE = os.path.expanduser("~/.cache/pstack-sync/%s.git" % hashlib.sha1(UPSTREAM.encode()).hexdigest()[:12])
+
+
+if os.path.exists(os.path.join(DEFAULT_REPO, SELF, "sets", DEFAULT_SET, "set.json")):
+    configure(load_set(DEFAULT_REPO, DEFAULT_SET))
+else:  # a copy of this script outside the skill directory: pstack's shape until main() configures a set
+    configure({**SET_DEFAULTS, "name": DEFAULT_SET, "upstream": "https://github.com/cursor/plugins",
+               "root_plugin": "pstack", "skills_subdir": "pstack/skills", "agents_dir": "pstack-agents",
+               "collision_prefix": "pstack-"})
 SUPPORT = ("native", "keep", "substitute", "partial", "none")
 STATE_DIR = ".nthplusio-skills"
 MISSING = object()
@@ -103,7 +149,11 @@ def fetch(ref):
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
         subprocess.run(["git", "init", "-q", "--bare", CACHE], check=True)
         git("remote", "add", "origin", UPSTREAM)
-    git("fetch", "-q", "--depth", "1", "origin", ref)
+    try:
+        git("fetch", "-q", "--depth", "1", "origin", ref)
+    except subprocess.CalledProcessError as error:
+        sys.exit(f"error: cannot fetch {ref} from {UPSTREAM} for the {SET['name']} set: "
+                 f"{(error.stderr or b'').decode(errors='replace').strip()}")
     return git("rev-parse", "FETCH_HEAD").decode().strip()
 
 
@@ -124,8 +174,8 @@ def inventory(sha):
     for line in git("ls-tree", "-r", "-t", sha).decode().splitlines():
         meta, path = line.split("\t", 1)
         mode, kind, obj = meta.split()
-        if path.endswith("/.cursor-plugin/plugin.json"):
-            plugins.add(path[:-len("/.cursor-plugin/plugin.json")])
+        if path.endswith("/" + PLUGIN_MARKER):
+            plugins.add(path[:-len("/" + PLUGIN_MARKER)])
         elif m := re.fullmatch(r"(.+?/skills/[^/]+)(?:/(.+))?", path):
             if m.group(2) is None and kind == "tree":
                 trees[m.group(1)] = obj
@@ -230,6 +280,19 @@ def own_agent(key, rel):
     return rel[:-len(".md")] if key == AGENTS else None
 
 
+def port_of(name, rel):
+    """The set's port that owns upstream file rel of skill name, or None."""
+    for port in SET["ports"]:
+        if port.get("skill") == name and rel in port.get("files", []):
+            return port
+    return None
+
+
+def adapter_path(repo, harness, port, rel):
+    """Where this harness's replacement for a port file lives inside the skill directory."""
+    return os.path.join(repo, SELF, "adapters", harness, port["name"], rel)
+
+
 def install_items(roots, found):
     """{key: {"source" or "sources", "plugins", "tree", "files"}} for pstack's skills, their
     dependency skills, and one pstack-agents item holding every subagent definition."""
@@ -274,7 +337,20 @@ def blob_sha(data):
 # ---------- needs and harness profile ----------
 
 def load_needs(repo):
-    return json.load(open(os.path.join(repo, SELF, "needs.json")))["needs"]
+    """The set's dialect catalog plus the set's own rows, in one list."""
+    with open(os.path.join(repo, SELF, "dialects", f"{SET['dialect']}.json")) as f:
+        needs = json.load(f)["needs"]
+    return needs + list(SET["extra_needs"])
+
+
+def compose_profile(shipped, durable):
+    """A seed profile: the shipped file's text above its needs table (links, notes) with the
+    install's table rows. Without a shipped file the durable profile is exported as is."""
+    head = re.match(r"(?s)\A(.*?\n\| Need \|[^\n]*\n\|[ -|]*\|\n)", shipped)
+    if not head:
+        return durable
+    rows = re.findall(r"(?m)^\|\s*`?[\w-]+`?\s*\|\s*(?:%s)\b.*$" % "|".join(SUPPORT), durable)
+    return head.group(1) + ("\n".join(rows) + "\n" if rows else "")
 
 
 def parse_profile(text):
@@ -298,36 +374,43 @@ def discovery_root(repo, root):
 
 
 def durable_dir(repo, root):
-    """Install state beside discovery.json, outside the skill directory a pack refresh replaces."""
+    """Install state beside discovery.json, outside the skill directory a pack refresh replaces.
+    The harness profiles live here; each set's manifest, transforms, and licenses live under
+    sets/<set>/."""
     return os.path.join(discovery_root(repo, root), STATE_DIR, SELF)
 
 
 def adopt_durable(repo, root, harness):
-    """Copy a missing durable file from the skill directory.
+    """Make the durable layout for this set, taking seeds and older layouts across.
 
     manifest.json and LICENSE-* only exist as install state. transform.json and
-    harness/<harness>.md also ship as seeds; the durable copy wins once it exists.
+    harness/<harness>.md also ship as seeds; the durable copy wins once it exists. An
+    install from before sets kept the default set's files directly under the durable
+    directory, or inside the skill directory; both move into sets/<set>/ once.
     """
     dest = durable_dir(repo, root)
+    set_dir = os.path.join(dest, "sets", SET["name"])
     os.makedirs(os.path.join(dest, "harness"), exist_ok=True)
+    os.makedirs(set_dir, exist_ok=True)
     skill = os.path.join(repo, SELF)
+    seed_dir = os.path.join(skill, "sets", SET["name"])
 
-    def take(name, seed, remove_seed=False):
-        target = os.path.join(dest, name)
-        if os.path.exists(target) or not os.path.exists(seed):
+    def take(target, source, move=False):
+        if os.path.exists(target) or not os.path.exists(source):
             return
-        shutil.copy2(seed, target)
-        if remove_seed:
-            os.remove(seed)
+        (shutil.move if move else shutil.copy2)(source, target)
 
-    take("manifest.json", os.path.join(skill, "manifest.json"), remove_seed=True)
-    take("transform.json", os.path.join(skill, "transform.json"))
-    take(os.path.join("harness", f"{harness}.md"), os.path.join(skill, "harness", f"{harness}.md"))
-    if os.path.isdir(skill):
-        for fn in os.listdir(skill):
-            if fn.startswith("LICENSE-"):
-                take(fn, os.path.join(skill, fn), remove_seed=True)
-    return dest
+    older = [dest, skill] if SET["name"] == DEFAULT_SET else []
+    for old in older:
+        take(os.path.join(set_dir, "manifest.json"), os.path.join(old, "manifest.json"), move=True)
+        take(os.path.join(set_dir, "transform.json"), os.path.join(old, "transform.json"), move=(old == dest))
+        if os.path.isdir(old):
+            for fn in os.listdir(old):
+                if fn.startswith("LICENSE-"):
+                    take(os.path.join(set_dir, fn), os.path.join(old, fn), move=True)
+    take(os.path.join(set_dir, "transform.json"), os.path.join(seed_dir, "transform.json"))
+    take(os.path.join(dest, "harness", f"{harness}.md"), os.path.join(skill, "harness", f"{harness}.md"))
+    return dest, set_dir
 
 
 def harness_facts(path, harness, needs):
@@ -486,9 +569,9 @@ class State:
         self.repo = repo
         self.harness = harness
         self.discovery_root = discovery_root(repo, root)
-        self.durable = adopt_durable(repo, root, harness)
-        self.manifest_path = os.path.join(self.durable, "manifest.json")
-        self.transform_path = os.path.join(self.durable, "transform.json")
+        self.durable, self.set_dir = adopt_durable(repo, root, harness)
+        self.manifest_path = os.path.join(self.set_dir, "manifest.json")
+        self.transform_path = os.path.join(self.set_dir, "transform.json")
         self.profile_path = os.path.join(self.durable, "harness", f"{harness}.md")
         self.manifest = load_json(self.manifest_path, {"skills": {}})
         self.transforms = load_json(self.transform_path, {})
@@ -511,7 +594,7 @@ class State:
         self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
         managed_dirs = {v["dir"] for v in self.managed.values()}
         skills = {d for d in os.listdir(repo) if os.path.isfile(os.path.join(repo, d, "SKILL.md"))}
-        self.foreign = skills - managed_dirs - {SELF}
+        self.foreign = skills - managed_dirs - {SELF}  # includes directories other sets manage
         self.handoff_need = next((n["id"] for n in self.needs if n.get("detect") == "unavailable"), None)
         self.command_markers = [p for n in self.needs if n["id"] != self.handoff_need for p in n["markers"]]
         self.inv, self.available = None, set()
@@ -579,8 +662,14 @@ class State:
     def skill_tf_hash(self, name, renames):
         files = {k: v for k, v in self.tf.get("files", {}).items() if k.startswith(name + "/")}
         upstream = sorted(self.inv["skills"]) + sorted(self.inv["agents"]) if self.inv else []
+        adapters = {}
+        for port in SET["ports"]:
+            if port.get("skill") == name:
+                for rel in port.get("files", []):
+                    data = read_installed(adapter_path(self.repo, self.harness, port, rel))
+                    adapters[f"{port['name']}/{rel}"] = blob_sha(data) if data is not None else None
         blob = json.dumps([self.tf.get("global", []), self.tf.get("accept", []), files, renames,
-                           sorted(self.auto_accept), self.needs, sorted(self.available), upstream],
+                           sorted(self.auto_accept), self.needs, sorted(self.available), upstream, adapters],
                           sort_keys=True)
         return hashlib.sha1(blob.encode()).hexdigest()
 
@@ -604,11 +693,11 @@ class State:
             if name in self.managed:
                 targets[name] = self.managed[name]["dir"]
             elif name in self.foreign or name == SELF:
-                targets[name] = f"pstack-{name}"
+                targets[name] = f"{PREFIX}{name}"
             else:
                 targets[name] = name
             if targets[name] in self.foreign:
-                sys.exit(f"error: {name} -> {targets[name]} collides with a non-pstack skill")
+                sys.exit(f"error: {name} -> {targets[name]} collides with a skill outside the {SET['name']} set")
         targets.update({name: name for name in deps})
         if agents:
             if AGENTS not in self.managed and os.path.exists(os.path.join(self.repo, AGENTS)):
@@ -686,7 +775,8 @@ def cmd_sync(a, st):
               "discovery": {"path": st.discovery_path, "harness": st.discovery_key}, "harness_facts": {},
               "added": [], "updated": [], "removed": [], "unchanged_count": 0,
               "renamed_for_collision": renames, "skipped_binary_files": [], "local_drift": [],
-              "needs_security_review": [], "needs_adaptation": {}, "dependencies": {}}
+              "needs_security_review": [], "needs_adaptation": {}, "dependencies": {},
+              "ports_pending": {}, "stale_ports": {}}
     new_skills = {}
     prev_fetched = []
 
@@ -718,6 +808,8 @@ def cmd_sync(a, st):
             for rel, f in entry.get("files", {}).items():
                 if f.get("pending"):
                     flag(target, rel, f["pending"])
+                if f.get("port") and f.get("installed") is None:
+                    report["ports_pending"].setdefault(f["port"], []).append(f"{target}/{rel}")
             continue
 
         blobs = read(obj for _, obj in up["files"].values())
@@ -725,6 +817,31 @@ def cmd_sync(a, st):
         recorded = entry.get("files", {})
         for rel, (mode, obj) in sorted(up["files"].items()):
             key = f"{name}/{rel}"
+            port = port_of(name, rel)
+            if port:
+                path = os.path.join(dst, rel)
+                current = read_installed(path)
+                previous = recorded.get(rel, {}).get("upstream")
+                if previous and previous != obj:
+                    report["stale_ports"].setdefault(port["name"], []).append(f"{target}/{rel}")
+                adapter = read_installed(adapter_path(st.repo, a.harness, port, rel))
+                if adapter is None:
+                    report["ports_pending"].setdefault(port["name"], []).append(f"{target}/{rel}")
+                    if current is not None:
+                        changed = True
+                        if not a.dry_run:
+                            os.remove(path)
+                    files[rel] = {"upstream": obj, "installed": None, "port": port["name"]}
+                    continue
+                if current != adapter:
+                    changed = True
+                    if not a.dry_run:
+                        os.makedirs(os.path.dirname(path), exist_ok=True)
+                        with open(path, "wb") as f:
+                            f.write(adapter)
+                        os.chmod(path, 0o755 if mode == "100755" else 0o644)
+                files[rel] = {"upstream": obj, "installed": blob_sha(adapter), "port": port["name"]}
+                continue
             base = base_render(key, rel, blobs[obj], target, renames, st.tf)
             if base is None:
                 report["skipped_binary_files"].append(f"{target}/{rel}")
@@ -806,14 +923,14 @@ def cmd_sync(a, st):
         plugins = {p for up in ups.values() for p in up["plugins"]} | {ROOT_PLUGIN}
         licenses = {f"LICENSE-{p.replace('/', '-')}": inv["licenses"][p] for p in plugins if p in inv["licenses"]}
         texts = read(licenses.values())
-        state_dir = st.durable
+        state_dir = st.set_dir
         for fn in os.listdir(state_dir):
             if fn.startswith("LICENSE-") and fn not in licenses:
                 os.remove(os.path.join(state_dir, fn))
         for fn, obj in licenses.items():
             with open(os.path.join(state_dir, fn), "wb") as f:
                 f.write(texts[obj])
-        st.manifest = {"upstream": f"{UPSTREAM}/tree/{a.ref}/{SUBDIR}", "commit": sha,
+        st.manifest = {"set": SET["name"], "upstream": f"{UPSTREAM}/tree/{a.ref}/{SUBDIR}", "commit": sha,
                        "harness": a.harness, "exclude": sorted(st.exclude), "skills": new_skills}
         save_json(st.manifest_path, st.manifest)
         save_json(st.transform_path, st.transforms)
@@ -856,6 +973,9 @@ def cmd_record(a, st):
             if picks[name] is not None and rel not in picks[name]:
                 continue
             key = f"{name}/{rel}"
+            if port_of(name, rel):
+                files[rel] = entry.get("files", {}).get(rel, {"upstream": obj, "installed": None, "port": port_of(name, rel)["name"]})
+                continue
             base = base_render(key, rel, blobs[obj], target, renames, st.tf)
             if base is None:
                 continue
@@ -889,11 +1009,16 @@ def cmd_seed(a, st):
     """Write the pack's seeds: every harness block without its local sub-block, and this harness's
     shared profile. Local entries and the local profile never leave the install."""
     os.makedirs(os.path.join(a.out, "harness"), exist_ok=True)
+    os.makedirs(os.path.join(a.out, "sets", SET["name"]), exist_ok=True)
     seed = {h: {k: v for k, v in block.items() if k != "local"} for h, block in st.transforms.items()}
-    save_json(os.path.join(a.out, "transform.json"), seed)
-    written = ["transform.json"]
+    rel = os.path.join("sets", SET["name"], "transform.json")
+    save_json(os.path.join(a.out, rel), seed)
+    written = [rel]
     if st.profile_exists:
-        shutil.copy2(st.profile_path, os.path.join(a.out, "harness", f"{st.harness}.md"))
+        shipped = read_text(os.path.join(st.repo, SELF, "harness", f"{st.harness}.md"))
+        durable = read_text(st.profile_path)
+        with open(os.path.join(a.out, "harness", f"{st.harness}.md"), "w") as f:
+            f.write(compose_profile(shipped, durable))
         written.append(f"harness/{st.harness}.md")
     print(json.dumps({"seeded": written, "out": a.out,
                       "local_entries_kept_back": sorted(st.local["files"])}, indent=2))
@@ -901,9 +1026,16 @@ def cmd_seed(a, st):
 
 def cmd_status(a, st):
     def at_rev(path, default):
+        """The file at --since, also looking where an install before sets kept it."""
         rel = os.path.relpath(path, st.discovery_root)
-        r = subprocess.run(["git", "-C", st.discovery_root, "show", f"{a.since}:{rel}"], capture_output=True, text=True)
-        return r.stdout if r.returncode == 0 else default
+        candidates = [rel]
+        if f"/sets/{SET['name']}/" in f"/{rel}" and SET["name"] == DEFAULT_SET:
+            candidates.append(rel.replace(f"sets/{SET['name']}/", "", 1))
+        for cand in candidates:
+            r = subprocess.run(["git", "-C", st.discovery_root, "show", f"{a.since}:{cand}"], capture_output=True, text=True)
+            if r.returncode == 0:
+                return r.stdout
+        return default
 
     old_m = json.loads(at_rev(st.manifest_path, '{"skills": {}}'))
     old_tf = json.loads(at_rev(st.transform_path, "{}")).get(a.harness, {}).get("files", {})
@@ -974,15 +1106,16 @@ def cmd_status(a, st):
                     bits.append("hands off to newly installed " + ", ".join(p["dependencies"]))
                 pending.append(f"{e['dir']}/{rel}: {', '.join(bits)}")
             cur = read_installed(os.path.join(st.repo, e["dir"], rel))
-            if cur is not None and blob_sha(cur) != f.get("installed"):
+            if cur is not None and blob_sha(cur) != f.get("installed") and not f.get("port"):
                 drift.append(f"{e['dir']}/{rel}")
 
     prof_new = sorted(i for i in st.profile if i not in old_profile)
     prof_changed = sorted(i for i in st.profile if i in old_profile and old_profile[i] != st.profile[i])
 
-    out = [f"# pstack sync status ({a.harness})", ""]
+    out = [f"# {SET['name']} sync status ({a.harness})", ""]
     oc, nc = (old_m.get("commit") or "none")[:7], (st.manifest.get("commit") or "none")[:7]
-    out.append(f"Upstream cursor/plugins: {oc} -> {nc}" if oc != nc else f"Upstream cursor/plugins: {nc} (unchanged)")
+    label = re.sub(r"^https?://github\.com/", "", SET["upstream"].rstrip("/"))
+    out.append(f"Upstream {label}: {oc} -> {nc}" if oc != nc else f"Upstream {label}: {nc} (unchanged)")
     out.append(f"Harness facts: {st.discovery_key or 'none'} in {st.discovery_path}")
     out.append("")
     total = sum(len(v) for v in groups.values())
@@ -1029,7 +1162,8 @@ def main():
         p.add_argument("--harness", required=True, help="agent harness the skills are adapted for, e.g. amp")
         p.add_argument("--repo", default=DEFAULT_REPO)
         p.add_argument("--root", help="repository holding .nthplusio-skills/; defaults to --repo's Git repository")
-    sub.choices["sync"].add_argument("--ref", default="main")
+        p.add_argument("--set", default=DEFAULT_SET, help="the managed skill set, a directory under sets/ (default pstack)")
+    sub.choices["sync"].add_argument("--ref", default=None, help="upstream ref; defaults to the set's ref")
     sub.choices["sync"].add_argument("--dry-run", action="store_true")
     sub.choices["record"].add_argument("skills", nargs="*")
     sub.choices["record"].add_argument("--all", action="store_true")
@@ -1038,6 +1172,9 @@ def main():
     sub.choices["seed"].add_argument("--out", required=True, help="directory to write transform.json and harness/ into")
     sub.choices["status"].add_argument("--since", default="HEAD")
     a = ap.parse_args()
+    configure(load_set(os.path.abspath(a.repo), a.set))
+    if getattr(a, "ref", None) is None and a.cmd == "sync":
+        a.ref = SET["ref"]
     st = State(os.path.abspath(a.repo), a.harness, a.root)
     {"sync": cmd_sync, "record": cmd_record, "status": cmd_status, "seed": cmd_seed}[a.cmd](a, st)
 

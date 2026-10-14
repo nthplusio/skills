@@ -1,6 +1,6 @@
 # Harness profile: amp
 
-How pstack's own needs map onto Amp. Built and maintained per [`../references/adapting.md`](../references/adapting.md); need IDs come from [`../needs.json`](../needs.json). The needs that name discovery fields there take Amp's facts from the repository's `.nthplusio-skills/discovery.json`, so they have no row here. That now includes `modes` (`skills.frontmatter`) and `custom-subagents` (`helpers.definitions`).
+How pstack's own needs map onto Amp. Built and maintained per [`../references/adapting.md`](../references/adapting.md); need IDs come from [`../dialects/cursor.json`](../dialects/cursor.json) and each set's `extra_needs` in `sets/<set>/set.json`. The needs that name discovery fields there take Amp's facts from the repository's `.nthplusio-skills/discovery.json`, so they have no row here. That now includes `modes` (`skills.frontmatter`) and `custom-subagents` (`helpers.definitions`).
 
 ## Destination
 

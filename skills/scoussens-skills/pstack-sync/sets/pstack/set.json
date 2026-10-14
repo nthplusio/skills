@@ -1,0 +1,38 @@
+{
+  "_doc": "One managed skill set. upstream is the Git repository, root_plugin the plugin whose skills are the roots, skills_subdir where they live, plugin_marker the file that marks a plugin directory, dialect the shared needs catalog under dialects/, agents_dir where subagent definitions install, collision_prefix the prefix a root skill takes when an unmanaged skill already has its name, extra_needs the set's own rows in the needs catalog shape, and ports the upstream files a harness replaces as a unit with an adapter under adapters/<harness>/<port>/.",
+  "upstream": "https://github.com/cursor/plugins",
+  "ref": "main",
+  "root_plugin": "pstack",
+  "skills_subdir": "pstack/skills",
+  "plugin_marker": ".cursor-plugin/plugin.json",
+  "dialect": "cursor",
+  "agents_dir": "pstack-agents",
+  "collision_prefix": "pstack-",
+  "extra_needs": [
+    {
+      "id": "role-model-config",
+      "uses": "setup-pstack writes a role -> model mapping (with a budget) that every session loads; arena, architect, swarm, interrogate, how, why, reflect, poteto-mode, and the implementation playbooks dispatch each role on its configured model.",
+      "cursor": [
+        "~/.cursor/rules/pstack-models.mdc"
+      ],
+      "markers": [
+        "pstack-models"
+      ],
+      "question": "How can this harness persist a per-role model choice that every session reads, and honor it when dispatching that role? If no single feature does both, combine others (persistent-rules to store it, model-selection to honor it).",
+      "fallback": "Only when no combination works: every role uses the parent model; setup-pstack is proposed for exclusion."
+    },
+    {
+      "id": "bugbot",
+      "uses": "Triage and wait on Cursor Bugbot PR review comments.",
+      "cursor": [
+        "Bugbot"
+      ],
+      "markers": [
+        "\\b[Bb]ugbot\\b"
+      ],
+      "question": "Does the repository use Bugbot? It is a GitHub app, independent of the agent harness.",
+      "fallback": "Keep as written."
+    }
+  ],
+  "ports": []
+}
