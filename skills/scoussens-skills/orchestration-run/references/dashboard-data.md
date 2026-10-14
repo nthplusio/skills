@@ -209,8 +209,13 @@ Schema 2 adds these fields, and `validate_run.py` enforces them:
   The page shows a retained entry past its `until` date as overdue cleanup.
   `resources` keeps describing file and responsibility areas, not instances.
 - `skill_version` records the skill version this run follows, from
-  `validate_run.py --skill-version`. A different current version is a finding:
-  migrate the record, then save the new version.
+  `validate_run.py --skill-version`; it covers this skill's files and the
+  dashboard contract, stage list, template and renderer the run renders
+  through. `contract_version` records the dashboard contract the record was
+  written against, from the dashboard skill's
+  `render_dashboard.py --contract-version`. `validate_run.py` reports a
+  different current value for either as a note: migrate the record, then save
+  the new versions.
 - `history` entries are at most 800 characters. Unchanged scans add none.
 - `follow_ups` lists work found beyond a task's target stage. Each entry has an
   `id`, `from_task` (an assigned row), `text`, `owner` (the ticket or person

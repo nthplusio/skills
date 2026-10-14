@@ -478,6 +478,8 @@ class DashboardTests(unittest.TestCase):
 
     def test_contract_version_is_printed_and_stamped_on_the_page(self):
         self.assertIn(f"<!-- dashboard contract {CONTRACT_VERSION} -->", render(self.data))
+        # A producer carries the contract it wrote against; the preview carries the current one.
+        self.assertEqual(self.data["contract_version"], CONTRACT_VERSION)
         result = subprocess.run([sys.executable, "-B", str(DASHBOARD / "scripts" / "render_dashboard.py"), "--contract-version"],
                                 capture_output=True, text=True)
         self.assertEqual(result.stdout.strip(), CONTRACT_VERSION)

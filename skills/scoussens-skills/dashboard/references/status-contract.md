@@ -15,9 +15,11 @@ rendering; `orchestration-run` does that with its `validate_run.py`, and its
 
 `contract_version` names this document and the renderer that implements it.
 `python3 scripts/render_dashboard.py --contract-version` prints it, and every
-page carries it in a comment on its second line. A producer compares it with
-the version it wrote against. The machine-readable stage list is
-[`assets/stages.json`](../assets/stages.json).
+page carries it in a comment on its second line. A producer records the
+version it wrote against in the record's own `contract_version` and compares
+it with the current one before rendering; a difference means a field, a value
+set or a default changed since the record was written. The machine-readable
+stage list is [`assets/stages.json`](../assets/stages.json).
 
 ## Contents
 
@@ -59,8 +61,9 @@ Optional, shown on the page when present:
   changes.
 
 Allowed and carried for the producer, not shown: `config_path`,
-`harness_name`, `run_choices`, `skill_version`. The renderer rejects any
-other top-level key by name; keep extra notes in `history`.
+`harness_name`, `run_choices`, `skill_version`, `contract_version`. The
+renderer rejects any other top-level key by name; keep extra notes in
+`history`.
 
 ## Rows
 

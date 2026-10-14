@@ -17,8 +17,8 @@ DASHBOARD = RUNNER.parent / "dashboard"
 PREVIEW = DASHBOARD / "evals" / "dashboard-preview.json"
 sys.path.insert(0, str(RUNNER / "scripts"))
 sys.path.insert(0, str(DASHBOARD / "scripts"))
-from render_dashboard import render
-from validate_run import STAGE_FALLBACK, notes, skill_version, validate
+from render_dashboard import CONTRACT_VERSION, render
+from validate_run import STAGE_FALLBACK, contract_version, notes, skill_version, validate
 
 
 class LifecycleTests(unittest.TestCase):
@@ -220,6 +220,23 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "skill_version must be nonempty"):
             validate(self.data)
 
+    def test_contract_version_is_carried_and_a_mismatch_is_a_note(self):
+        """The record names the dashboard contract it was written against; the renderer accepts the
+        field, the preview carries the current one, and validate_run notes a stale one (audit finding 3)."""
+        self.assertEqual(contract_version(), CONTRACT_VERSION)
+        self.assertEqual(self.data["contract_version"], CONTRACT_VERSION)
+        self.assertEqual(notes(self.data), [])
+        render(self.data)
+        self.data["contract_version"] = "0"
+        validate(self.data)
+        self.assertRegex(notes(self.data)[0], f"written against dashboard contract 0; the current contract is {CONTRACT_VERSION}")
+        self.data["contract_version"] = " "
+        with self.assertRaisesRegex(ValueError, "contract_version must be nonempty"):
+            validate(self.data)
+        del self.data["contract_version"]
+        validate(self.data)
+        self.assertEqual(notes(self.data), [])
+
     def test_history_entries_stay_short(self):
         self.data["history"].append("Scan inspected six owners; all idle and unchanged. " * 20)
         with self.assertRaisesRegex(ValueError, "history entries \\[5\\] exceed 800 characters"):
@@ -397,6 +414,38 @@ class ConfigTests(unittest.TestCase):
                 found = subprocess.run([sys.executable, "-B", "-c", "import state; print(list(state.STAGES))"],
                                        cwd=installed / SETUP.name / "scripts", capture_output=True, text=True)
                 self.assertEqual(json.loads(found.stdout.replace("'", '"')), list(STAGE_FALLBACK), found.stderr)
+
+    def test_a_dashboard_contract_or_template_change_moves_the_skill_version(self):
+        """skill_version covers the dashboard contract the run renders through, as it did when the
+        renderer lived in this skill, so a contract bump or template edit is detectable from any record."""
+        installed = self.root / "installed"
+        for skill in (RUNNER, DASHBOARD):
+            shutil.copytree(skill, installed / skill.name, ignore=shutil.ignore_patterns("__pycache__"))
+        validate_copy = installed / RUNNER.name / "scripts" / "validate_run.py"
+        renderer_copy = installed / DASHBOARD.name / "scripts" / "render_dashboard.py"
+
+        def version(script, flag):
+            result = subprocess.run([sys.executable, "-B", str(script), flag], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip()
+
+        before = version(validate_copy, "--skill-version")
+        self.assertEqual(before, skill_version())
+        renderer_copy.write_text(renderer_copy.read_text().replace(f'CONTRACT_VERSION = "{CONTRACT_VERSION}"',
+                                                                  'CONTRACT_VERSION = "99-test"'))
+        self.assertEqual(version(renderer_copy, "--contract-version"), "99-test")
+        bumped = version(validate_copy, "--skill-version")
+        self.assertNotEqual(bumped, before)
+        template = installed / DASHBOARD.name / "assets" / "dashboard-template.html"
+        template.write_text(template.read_text() + "<!-- layout change -->\n")
+        self.assertNotEqual(version(validate_copy, "--skill-version"), bumped)
+        status = self.root / "status.json"
+        record = json.loads(PREVIEW.read_text())
+        record["skill_version"] = version(validate_copy, "--skill-version")
+        status.write_text(json.dumps(record))
+        result = subprocess.run([sys.executable, "-B", str(validate_copy), str(status)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"NOTE: this record was written against dashboard contract {CONTRACT_VERSION}; the current contract is 99-test", result.stdout)
 
     def test_exact_names_select_asymmetric_capabilities_defaults_and_shared_skills(self):
         amp = self.selected("Amp")

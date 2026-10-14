@@ -60,7 +60,7 @@ GROUPS = {"attention": "Needs attention", "moving": "In progress", "resolved": "
 SCHEMA_VERSIONS = (1, 2)
 V2_FIELDS = {"schema_version", "run_id", "title", "goal", "updated_at", "config_path", "harness_name",
              "notice", "run_choices", "monitoring", "presentation", "decisions", "tasks", "evidence",
-             "history", "approvals", "skill_version", "follow_ups", "closed_at"}
+             "history", "approvals", "skill_version", "contract_version", "follow_ups", "closed_at"}
 APPROVAL_STATES = {"active": "Active", "consumed": "Used", "expired": "Expired", "revoked": "Revoked"}
 RUNTIME_STATES = {"held": "In use", "released": "Released", "retained": "Kept on purpose"}
 CODE_KINDS = {"pushed_branch": "Pushed branch", "bundle": "Git bundle", "patch": "Patch file"}

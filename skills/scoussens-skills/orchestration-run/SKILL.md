@@ -50,14 +50,17 @@ whether a check is needed. Conversation recovery follows the harness's rules.
 If independent owners cannot be assigned and revisited, expose that limitation
 instead of substituting blocking helpers and claiming concurrent ownership.
 
-Record the skill version a run follows in `skill_version`, using
-`python3 <this skill's folder>/scripts/validate_run.py --skill-version`. On
-resume, and whenever this skill reloads mid-run, compare it with the saved
-value; `validate_run.py` reports a difference as a note, and a run that
-should show it on the page copies the note into the record's `notice`. When it differs,
-read what changed in the `dashboard` skill's status contract, in
-[dashboard data](references/dashboard-data.md) and in this file, migrate the
-record, then save the new version and one history line naming the change.
+Record the versions a run follows: `skill_version` from
+`python3 <this skill's folder>/scripts/validate_run.py --skill-version`, which
+covers this skill and the dashboard contract it renders through, and
+`contract_version` from
+`python3 <dashboard skill's folder>/scripts/render_dashboard.py --contract-version`.
+On resume, and whenever this skill reloads mid-run, compare both with the saved
+values; `validate_run.py` reports a difference as a note, and a run that
+should show it on the page copies the note into the record's `notice`. When
+either differs, read what changed in the `dashboard` skill's status contract,
+in [dashboard data](references/dashboard-data.md) and in this file, migrate the
+record, then save both new versions and one history line naming the change.
 Schema 1 records migrate as the
 [run lifecycle](references/dashboard-data.md#run-lifecycle) describes.
 

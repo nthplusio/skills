@@ -3,7 +3,8 @@
 references/dashboard-data.md; never renders, invokes owners or runs checks.
 
   validate_run.py <status.json>    prints every finding and exits 1 when any rule fails
-  validate_run.py --skill-version  prints this skill's version and exits
+  validate_run.py --skill-version  prints this skill's version, which also covers the dashboard
+                                   contract it renders through, and exits
 
 The dashboard skill's renderer checks the record's shape. This script checks what the values
 mean for a coordinated run: proof behind verified stages and delivered work, settled scope before
@@ -20,6 +21,8 @@ import re
 
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
+# The dashboard skill installed beside this one, in the pack or in a flat skills directory.
+DASHBOARD_DIR = SKILL_DIR.parent / "dashboard"
 # Business stage keys from the dashboard skill's status contract (assets/stages.json), read from a
 # sibling skill in the pack or in a skills repository; the literal list is the fallback when the
 # dashboard skill is not installed beside this one.
@@ -50,13 +53,35 @@ CODE_KINDS = ("pushed_branch", "bundle", "patch")
 HISTORY_LIMIT = 800
 
 
+def contract_version():
+    """The dashboard skill's status contract version, read from its renderer beside this skill. None when
+    the dashboard skill is not installed there or the constant cannot be read."""
+    try:
+        source = (DASHBOARD_DIR / "scripts" / "render_dashboard.py").read_text()
+        return re.search(r'^CONTRACT_VERSION = "([^"]+)"$', source, re.MULTILINE)[1]
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+# Dashboard files whose change moves this skill's version: the renderer and template lived in this
+# skill before the dashboard skill existed, and the stage list is the contract's machine-readable part.
+DASHBOARD_FILES = ("assets/stages.json", "assets/dashboard-template.html", "scripts/render_dashboard.py")
+
+
 def skill_version():
-    """Digest of the files a coordinator follows: instructions, references and scripts."""
+    """Digest of what a coordinator follows: this skill's instructions, references and scripts, plus the
+    dashboard contract it renders through, so a contract or template change moves the version."""
     digest = hashlib.sha256()
     for path in sorted(SKILL_DIR.rglob("*")):
         relative = path.relative_to(SKILL_DIR)
         if path.is_file() and relative.parts[0] != "evals" and "__pycache__" not in relative.parts:
             digest.update(str(relative).encode() + b"\0" + path.read_bytes() + b"\0")
+    digest.update(b"dashboard contract\0" + (contract_version() or "").encode() + b"\0")
+    for name in DASHBOARD_FILES:
+        try:
+            digest.update(name.encode() + b"\0" + (DASHBOARD_DIR / name).read_bytes() + b"\0")
+        except OSError:
+            pass
     return digest.hexdigest()[:12]
 
 
@@ -171,6 +196,8 @@ def check_monitoring(data, tasks, limit):
 
 def check_skill_version(data):
     nonempty(data.get("skill_version"), "skill_version")
+    if "contract_version" in data:
+        nonempty(data["contract_version"], "contract_version")
 
 
 def notes(data):
@@ -180,6 +207,10 @@ def notes(data):
     if data.get("skill_version") and data["skill_version"] != skill_version():
         found.append(f"this record was written for orchestration-run {data['skill_version']}; the current version is "
                      f"{skill_version()}. Read what changed, migrate the record and save the new version")
+    recorded, current = data.get("contract_version"), contract_version()
+    if recorded and current and recorded != current:
+        found.append(f"this record was written against dashboard contract {recorded}; the current contract is "
+                     f"{current}. Read what changed in the status contract, migrate the record and save the new version")
     return found
 
 
