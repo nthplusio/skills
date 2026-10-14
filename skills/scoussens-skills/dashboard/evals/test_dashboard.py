@@ -11,10 +11,11 @@ import tempfile
 import unittest
 
 
-RUNNER = Path(__file__).resolve().parent.parent
-SETUP = RUNNER.parent / "orchestration-setup"
-DISCOVERY = RUNNER.parent / "harness-discovery"
-sys.path.insert(0, str(RUNNER / "scripts"))
+DASHBOARD = Path(__file__).resolve().parent.parent
+RUNNER = DASHBOARD.parent / "orchestration-run"
+SETUP = DASHBOARD.parent / "orchestration-setup"
+DISCOVERY = DASHBOARD.parent / "harness-discovery"
+sys.path.insert(0, str(DASHBOARD / "scripts"))
 from render_dashboard import render, skill_version
 
 
@@ -75,7 +76,7 @@ OUT = "Not in scope"
 
 class DashboardTests(unittest.TestCase):
     def setUp(self):
-        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data = json.loads((DASHBOARD / "evals" / "dashboard-preview.json").read_text())
         self.data["skill_version"] = skill_version()
 
     def test_scoped_readiness_and_delivery_are_visibly_distinct(self):
@@ -191,7 +192,7 @@ class DashboardTests(unittest.TestCase):
         del task["milestones"]["deployment"]
         with self.assertRaisesRegex(ValueError, "missing stage deployment"):
             render(self.data)
-        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data = json.loads((DASHBOARD / "evals" / "dashboard-preview.json").read_text())
         self.data["skill_version"] = skill_version()
         for task in self.data["tasks"]:
             for key in ("defined", "researched", "review", "verification"):
@@ -440,7 +441,7 @@ class DashboardTests(unittest.TestCase):
             output.write_text("previous useful dashboard")
             self.data["schema_version"] = 99
             status.write_text(json.dumps(self.data))
-            result = subprocess.run([sys.executable, str(RUNNER / "scripts" / "render_dashboard.py"), str(status), str(output)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(DASHBOARD / "scripts" / "render_dashboard.py"), str(status), str(output)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("unsupported dashboard schema_version", result.stderr)
             self.assertEqual(output.read_text(), "previous useful dashboard")
@@ -450,7 +451,7 @@ class LifecycleTests(unittest.TestCase):
     """Schema 2 rules: publication scope, durable code, runtime, approvals and idle scans."""
 
     def setUp(self):
-        self.data = json.loads((RUNNER / "evals" / "dashboard-preview.json").read_text())
+        self.data = json.loads((DASHBOARD / "evals" / "dashboard-preview.json").read_text())
         self.data["skill_version"] = skill_version()
         self.tasks = {task["id"]: task for task in self.data["tasks"]}
 
@@ -560,7 +561,7 @@ class LifecycleTests(unittest.TestCase):
         del self.data["skill_version"]
         with self.assertRaisesRegex(ValueError, "skill_version must be nonempty"):
             render(self.data)
-        result = subprocess.run([sys.executable, "-B", str(RUNNER / "scripts" / "render_dashboard.py"), "--skill-version"],
+        result = subprocess.run([sys.executable, "-B", str(DASHBOARD / "scripts" / "render_dashboard.py"), "--skill-version"],
                                 capture_output=True, text=True)
         self.assertEqual(result.stdout.strip(), skill_version())
 
@@ -604,7 +605,7 @@ class LifecycleTests(unittest.TestCase):
             threading.Thread(target=server.serve_forever, daemon=True).start()
             try:
                 url = f"http://127.0.0.1:{server.server_port}/index.html"
-                command = [sys.executable, str(RUNNER / "scripts" / "check_served.py"), str(page)]
+                command = [sys.executable, str(DASHBOARD / "scripts" / "check_served.py"), str(page)]
                 self.assertIn("PASS", subprocess.run(command + [url], capture_output=True, text=True).stdout)
                 local = Path(directory) / "local.html"
                 local.write_text("newer render")
