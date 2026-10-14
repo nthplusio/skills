@@ -20,7 +20,7 @@ The sync installs each port file at its path under `<skills>/orchestrate/scripts
 | Interface | Command | Notes |
 | --- | --- | --- |
 | `spawn({name, repoUrl, startingRef, model, prompt})` | `amp -ox --project <repoUrl> --visibility private --no-archive-after-execute --title <name> -l orchestrate [-m <model>]`, prompt on stdin | Returns in about 3 s with the thread URL; the thread id is the agent id, the run id is `m0`. The prompt is prefixed with an instruction to `git fetch origin <startingRef> && git checkout <startingRef>`, because an orb opens the project's default branch. `model: inherit` passes no `-m`. |
-| `getRun(agentId, runId)` | `amp threads export <id>` | Terminal when `meta.lastKnownAgentState.state` is not working or streaming and the last message is an assistant message after the run's start. |
+| `getRun(agentId, runId)` | `amp threads export <id>` | Terminal when `meta.lastKnownAgentState.state` is `idle` and the last message is an assistant message with text after the run's start. `working`, `streaming`, `running_tools`, and any unknown state count as running. |
 | `wait(run)` | `amp threads export <id>`, polled | `finalText` is the last assistant text of the run, verbatim; `branches` is the `## Branch` line of that text, or empty; `durationMs` spans the run's user message to its last assistant message. Every 60 s it also runs `amp threads search "id:<id> archived:true" --json` so a thread archived by another process reads as cancelled. |
 | `stream(run)` | `amp threads export <id>`, polled | Yields assistant text deltas, `tool_use` blocks as `tool_call`, and a final `status`. |
 | `cancel(agentId, runId)` | `amp threads archive <id>` | Archiving is the only stop the CLI offers; the orb may finish its current turn. |

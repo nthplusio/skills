@@ -225,6 +225,15 @@ describe("describeRun", () => {
   test("an idle thread whose last message is still the user's is running", () => {
     expect(describeRun(thread("idle", [{ user: "x" }]), "m0").status).toBe("running");
   });
+  test("only idle ends a run, even when an earlier assistant message carried text", () => {
+    const midTurn: Msg[] = [{ user: "x" }, { assistant: "Looking..." }, { tool: "shell_command" }];
+    for (const state of ["working", "streaming", "running_tools", "unexpected", ""]) {
+      expect(describeRun(thread(state, midTurn), "m0").status).toBe("running");
+    }
+    expect(describeRun(thread("idle", [{ user: "x" }, { assistant: "done" }]), "m0").status).toBe(
+      "finished"
+    );
+  });
   test("a cancelled assistant turn is cancelled, an errored one is error", () => {
     expect(
       describeRun(thread("idle", [{ user: "x" }, { assistant: "", stop: "cancelled" }]), "m0").status

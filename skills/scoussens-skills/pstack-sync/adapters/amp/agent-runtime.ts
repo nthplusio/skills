@@ -216,11 +216,13 @@ export function describeRun(exp: ThreadExport, runId: string): RunDescription {
       return { status: "error", ...base };
     }
   }
-  const busy = state === "working" || state === "streaming" || state === "running";
-  if (!busy && last?.role === "assistant" && lastIndex > start && finalText) {
+  // Only `idle` ends a run. The agent state has been seen as working,
+  // streaming, and running_tools while a turn is in flight, and an unknown
+  // or missing state is treated the same way rather than as finished.
+  if (state === "idle" && last?.role === "assistant" && lastIndex > start && finalText) {
     return { status: "finished", ...base };
   }
-  if (!busy && (state === "error" || state === "failed")) {
+  if (state === "error" || state === "failed") {
     return { status: "error", ...base };
   }
   return { status: "running", ...base };
