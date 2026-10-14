@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ThreadExport } from "../agent-runtime.ts";
+import { GITHUB_FOLLOWUP_NOTE } from "../agent-runtime/scripts/core/github-followups.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER = join(HERE, "..");
@@ -21,8 +22,6 @@ const REPO = "https://github.com/nthplusio/skills";
 
 type KickoffOpts = { repo?: string; ref: string; model: string; force?: boolean; slackChannel?: string; dispatcherName?: string };
 type TaskModule = {
-  CI_NOTE: string;
-  withCiNote(prompt: string): string;
   registerTaskCommands(program: FakeCommand): void;
 };
 type CoreModule = { __resetRuntimeForTests(): void; goalLabel(rootSlug: string): string };
@@ -185,7 +184,7 @@ function spawnPrompt(): string {
 }
 
 describe("the root prompt on Amp", () => {
-  test("carries the run tag line and the CI opt-out after the kickoff prompt", async () => {
+  test("delivers the shared GitHub follow-up policy exactly once after the run tag", async () => {
     const { code, out } = await kickoff("Add a sparkline to the dashboard");
     expect(code).toBe(0);
     expect(out.agentId).toBe(ID);
@@ -194,15 +193,13 @@ describe("the root prompt on Amp", () => {
     const prompt = spawnPrompt();
     expect(prompt).toContain("You are the root planner for: Add a sparkline to the dashboard");
     const tagLine = prompt.indexOf(`Run tag: this run's tag is \`${out.runTag}\``);
-    const ciLine = prompt.indexOf(taskModule.CI_NOTE);
+    const followupLine = prompt.indexOf(GITHUB_FOLLOWUP_NOTE);
     expect(tagLine).toBeGreaterThan(0);
-    expect(ciLine).toBeGreaterThan(tagLine);
-    // The facade's thread-id note is the only thing after it.
-    expect(prompt.slice(ciLine + taskModule.CI_NOTE.length)).toMatch(/^\n\nThread id: `\$AMP_THREAD_ID` in this prompt/);
-    expect(taskModule.CI_NOTE).toContain("opts out of CI subscriptions");
-    expect(taskModule.CI_NOTE).toContain("`.github/workflows/`");
-    expect(taskModule.CI_NOTE).toContain("`No CI checks found`");
-    expect(taskModule.withCiNote("p")).toBe(`p\n\n${taskModule.CI_NOTE}`);
+    expect(followupLine).toBeGreaterThan(tagLine);
+    expect(prompt.split(GITHUB_FOLLOWUP_NOTE)).toHaveLength(2);
+    expect(prompt.slice(followupLine + GITHUB_FOLLOWUP_NOTE.length)).toMatch(/^\n\nThread id: `\$AMP_THREAD_ID` in this prompt/);
+    expect(prompt).toContain("automatic: true");
+    expect(prompt).toContain("conditionally opts out of unavailable follow-ups");
     const spawn = calls().find(c => c[0] === "-ox");
     expect(spawn).toBeDefined();
     expect(spawn?.[spawn.indexOf("--title") + 1]).toBe(`${out.runTag} root`);
