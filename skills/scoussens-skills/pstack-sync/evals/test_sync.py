@@ -522,6 +522,21 @@ class DependencyTests(unittest.TestCase):
         (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
         self.assertIn("verify", self.run_sync()["added"], "dropping the set's exclude un-excludes it")
 
+    def test_record_leaves_ignored_local_files_alone(self):
+        self.upstream({**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/run.sh": "#!/bin/sh\n"})
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ignore"] = ["scripts/node_modules/**"]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        self.run_sync()
+        dep = self.skills / "alpha" / "scripts" / "node_modules" / "dep" / "index.js"
+        dep.parent.mkdir(parents=True)
+        dep.write_text("module.exports = 1;\n")
+        (self.skills / "alpha" / "SKILL.md").write_text(skill("alpha", "Adapted.\n"))
+        self.assertEqual(list(self.run_sync("record", "alpha/SKILL.md")["recorded"]), ["alpha"])
+        self.assertTrue(dep.exists(), "an installed dependency the set ignores survives record and sync")
+        self.assertEqual(self.run_sync()["local_drift"], [])
+        self.assertTrue(dep.exists())
+
     def test_profile_gaps_offer_the_shipped_row(self):
         self.upstream()
         self.run_sync()
@@ -530,6 +545,25 @@ class DependencyTests(unittest.TestCase):
         report = self.run_sync()
         self.assertIn("loop", report["profile_gaps"])
         self.assertTrue(report["profile_gaps_in_seed"]["loop"].startswith("| `loop` | keep |"))
+
+    def test_a_port_may_add_a_file_upstream_lacks(self):
+        self.upstream()
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ports"] = [{"name": "runner", "skill": "alpha", "files": ["scripts/runtime.sh"]}]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        adapter = self.skills / sync.SELF / "adapters" / "test" / "runner" / "scripts" / "runtime.sh"
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text("#!/bin/sh\necho facade\n")
+        report = self.run_sync()
+        self.assertEqual(report["ports_pending"], {})
+        self.assertEqual((self.skills / "alpha" / "scripts" / "runtime.sh").read_text(), "#!/bin/sh\necho facade\n")
+        (self.skills / "alpha" / "scripts" / "runtime.sh").unlink()
+        second = self.run_sync()
+        self.assertTrue((self.skills / "alpha" / "scripts" / "runtime.sh").exists(), "a sync restores a deleted adapter-only file")
+        self.assertEqual(second["updated"], ["alpha"])
+        self.assertEqual(self.run_sync()["unchanged_count"], len(report["added"]))
+        self.run_sync("record", "alpha/SKILL.md")
+        self.assertTrue((self.skills / "alpha" / "scripts" / "runtime.sh").exists())
 
     def test_dialect_and_set_needs_merge(self):
         self.upstream()
@@ -558,6 +592,17 @@ class ShippedStateTests(unittest.TestCase):
     def test_the_amp_profile_has_rows_only_for_needs_without_discovery_fields(self):
         rows = sync.parse_profile((SKILL / "harness" / "amp.md").read_text())
         self.assertEqual(set(rows), {need["id"] for need in NEEDS} - MAPPED)
+
+    def test_the_cursor_sdk_import_specifier_is_a_marker(self):
+        text = 'import type { Run, SDKAgent } from "@cursor/sdk";\n"@cursor/sdk": "^1.0.12"\n'
+        self.assertEqual(sync.needs_in(text, NEEDS).get("cursor-sdk"), ["@cursor/sdk"])
+
+    def test_orchestrate_port_interfaces_name_what_installed_files_import(self):
+        ports = {p["name"]: p["interface"] for p in json.loads((SKILL / "sets" / "orchestrate" / "set.json").read_text())["ports"]}
+        for name in ("AgentManager", "RespawnSource", "appendAgentFooter", "registerTaskCommands",
+                     "registerInspectCommands", "registerForensicsCommands", "Run", "SDKAgent", "RunResult"):
+            self.assertIn(f"`{name}`", ports["agent-runtime"])
+        self.assertIn("`renderModelCatalog`", ports["models"])
 
     def test_every_discovery_field_exists_in_the_discovery_template(self):
         template = json.loads((DISCOVERY_SKILL / "assets" / "discovery.template.json").read_text())

@@ -22,7 +22,7 @@
         "SLACK_CHANNEL_ID"
       ],
       "question": "Does the harness have a team-chat channel the loop can mirror to and read a stop signal from?",
-      "fallback": "Keep the text; Slack is optional and the file-based Andon source works without it."
+      "fallback": "Keep the text; Slack is optional. Say how the harness's adapter carries the stop signal without it (the Amp adapter reads `andon.json` in the root workspace)."
     }
   ],
   "ports": [
@@ -30,14 +30,18 @@
       "name": "agent-runtime",
       "skill": "orchestrate",
       "files": [
-        "scripts/core/agent-manager.ts",
-        "scripts/cli/task.ts",
-        "scripts/cli/inspect.ts",
+        "scripts/bun.lock",
         "scripts/cli/forensics.ts",
+        "scripts/cli/inspect.ts",
+        "scripts/cli/task.ts",
+        "scripts/core/agent-manager.ts",
+        "scripts/core/andon-file.ts",
+        "scripts/core/runtime.ts",
+        "scripts/package.json",
         "scripts/tools/nudge-root.ts",
         "scripts/tools/probe-models.ts"
       ],
-      "interface": "spawn, getRun, wait, stream, cancel, list, sendFollowUp, agentUrl"
+      "interface": "Over the harness: spawn, getRun, wait, stream, cancel, list, sendFollowUp, agentUrl. Exports the installed files import from these port files at runtime, which the adapter must keep under these names: `AgentManager` and the type `RespawnSource` from core/agent-manager.ts (cli/util.ts; core/loop.ts imports the type), `appendAgentFooter` from core/agent-manager.ts (cli/andon.ts, cli/comments.ts), `registerTaskCommands`, `registerInspectCommands`, and `registerForensicsCommands` from cli/task.ts, cli/inspect.ts, and cli/forensics.ts (cli/index.ts), and the SDK type names `Run` and `SDKAgent` (schemas.ts) and `RunResult` (core/handoff.ts) from core/runtime.ts, where the set's transforms point the former `@cursor/sdk` imports."
     },
     {
       "name": "models",
@@ -45,7 +49,7 @@
       "files": [
         "scripts/models.ts"
       ],
-      "interface": "models, probe"
+      "interface": "models, probe. Exports the installed files import at runtime: `renderModelCatalog` from models.ts (core/prompts.ts); the port's own cli/task.ts and tools/probe-models.ts also use `MODEL_CATALOG`, `ModelProfile`, `defaultModelForType`, `isKnownModel`, and `resolveModelSelection`."
     }
   ],
   "exclude": [
@@ -53,6 +57,7 @@
   ],
   "ignore": [
     "scripts/__tests__/*",
-    "scripts/__tests__/**"
+    "scripts/__tests__/**",
+    "scripts/node_modules/**"
   ]
 }

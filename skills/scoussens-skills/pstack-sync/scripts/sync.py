@@ -808,7 +808,12 @@ def cmd_sync(a, st):
         origin = {k: up[k] for k in ("source", "sources") if k in up}
         dst = os.path.join(st.repo, target)
         tfh = st.skill_tf_hash(name, renames)
-        if (not harness_changed and entry.get("tree") == up["tree"]
+        adapters_in_place = all(
+            os.path.exists(os.path.join(dst, rel))
+            for port in SET["ports"] if port.get("skill") == name
+            for rel in port.get("files", [])
+            if os.path.exists(adapter_path(st.repo, a.harness, port, rel)))
+        if (not harness_changed and entry.get("tree") == up["tree"] and adapters_in_place
                 and entry.get("transforms") == tfh and os.path.isdir(dst)):
             report["unchanged_count"] += 1
             new_skills[name] = {**entry, **origin}
@@ -905,11 +910,35 @@ def cmd_sync(a, st):
             if pending:
                 files[rel]["pending"] = pending
 
+        for port in SET["ports"]:  # adapter files a port adds that upstream does not have
+            if port.get("skill") != name:
+                continue
+            for rel in port.get("files", []):
+                if rel in up["files"]:
+                    continue
+                adapter = read_installed(adapter_path(st.repo, a.harness, port, rel))
+                path = os.path.join(dst, rel)
+                if adapter is None:
+                    continue
+                if read_installed(path) != adapter:
+                    changed = True
+                    if not a.dry_run:
+                        os.makedirs(os.path.dirname(path), exist_ok=True)
+                        with open(path, "wb") as f:
+                            f.write(adapter)
+                files[rel] = {"upstream": None, "installed": blob_sha(adapter), "port": port["name"]}
+
+        port_files = {rel for port in SET["ports"] if port.get("skill") == name for rel in port.get("files", [])}
         if os.path.isdir(dst):  # files present locally but gone upstream
             for dp, _, fns in os.walk(dst):
                 for fn in fns:
                     rel = os.path.relpath(os.path.join(dp, fn), dst)
-                    if rel not in up["files"] or any(fnmatch.fnmatch(rel, g) for g in SET["ignore"]):
+                    if rel in port_files:
+                        continue
+                    ignored = any(fnmatch.fnmatch(rel, g) for g in SET["ignore"])
+                    if ignored and rel not in up["files"]:
+                        continue  # a local file the set leaves alone, such as installed dependencies
+                    if rel not in up["files"] or ignored:
                         changed = True
                         if not a.dry_run:
                             os.remove(os.path.join(dp, fn))
@@ -982,7 +1011,8 @@ def cmd_record(a, st):
         dst = os.path.join(st.repo, target)
         blobs = read_blobs(obj for _, obj in up["files"].values())
         extra = [os.path.relpath(os.path.join(dp, fn), dst) for dp, _, fns in os.walk(dst) for fn in fns]
-        extra = [r for r in extra if r not in up["files"]]
+        extra = [r for r in extra if r not in up["files"] and not port_of(name, r)
+                 and not any(fnmatch.fnmatch(r, g) for g in SET["ignore"])]
         if extra:
             sys.exit(f"error: {target} has files not in upstream: {extra}")
         files, counts = dict(entry.get("files", {})), {}
@@ -1016,6 +1046,9 @@ def cmd_record(a, st):
             else:
                 st.pop_file(key)
             files[rel] = {"upstream": obj, "installed": blob_sha(current)}
+        for rel, f in entry.get("files", {}).items():
+            if f.get("port") and rel not in up["files"]:
+                files[rel] = f
         entry.update({"files": files, "transforms": st.skill_tf_hash(name, renames)})
         summary[target] = counts
     st.manifest["skills"] = st.managed
