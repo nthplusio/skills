@@ -22,6 +22,7 @@ import {
   measurementGate,
   resolveRunTag,
   resolveSelfAgentId,
+  ROOT_TASK_TITLE,
   runLabels,
   runTagFor,
   runTitle,
@@ -358,6 +359,7 @@ export class AgentManager {
       // Kickoff labelled the root thread with the plan's tag already; only a
       // fallback tag has to reach the root thread from here.
       if (resolvedTag.source !== "plan") await mgr.labelRootThread();
+      await mgr.titleRootThread();
     }
     // Converge handed-off rows before any verifier respawns against the placeholder.
     for (const handed of mgr.state.tasks) {
@@ -390,6 +392,25 @@ export class AgentManager {
     } catch (err) {
       this.logAttention(
         `root thread ${this.selfAgentId}: labelling run-${this.runTag} failed: ${truncate(errorMessage(err), 200)}`
+      );
+    }
+  }
+
+  /**
+   * Amp port: a root spawned through the bridge keeps Amp's generated title,
+   * because the plugin API cannot set one; the CLI path sets it at spawn.
+   * Rename to `<tag> root` once, so the thread list reads like the workers.
+   * The runtime skips a rename when the title already matches, and a failure
+   * is one attention line.
+   */
+  private async titleRootThread(): Promise<void> {
+    if (!this.isRootPlanner() || !this.selfAgentId) return;
+    try {
+      const rt = await loadRuntime();
+      await rt.rename(this.selfAgentId, runTitle(this.runTag, ROOT_TASK_TITLE));
+    } catch (err) {
+      this.logAttention(
+        `root thread ${this.selfAgentId}: renaming to ${runTitle(this.runTag, ROOT_TASK_TITLE)} failed: ${truncate(errorMessage(err), 200)}`
       );
     }
   }
