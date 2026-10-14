@@ -166,6 +166,21 @@ Run it from the installed skill (`<skills>/orchestrate/scripts`); from the pack 
 
 **Where `ORCHESTRATE_REPO_URL is unset` came from.** The first run logged `repoUrl ... not checked against an origin: ORCHESTRATE_REPO_URL is unset` although the planner had started the loop with `amp orb service start <name> --command 'ORCHESTRATE_REPO_URL=<url> bun .../cli.ts run ...'`. The service runner does deliver a leading assignment: in this orb `amp orb service start rf-env-probe --command 'PROBE_VAR=yes env'` logged `PROBE_VAR=yes` as the first line of the child's environment, and `amp orb service status` shows the unit as `ExecStart=/bin/bash -lc PROBE_VAR=yes env`, so the command is a bash command line and `VAR=value cmd` works as in any shell. Nothing in the loop reads the variable too early either: `checkRepoUrlAgainstOrigin` in `core/runtime.ts` reads `process.env` when it is called, from `AgentManager.load`, not at module load. The line comes from the other direction: `AgentManager.load` runs for every `cli.ts` command that opens the workspace (`tree`, `status`, `inspect`, `kill-tree`, as well as `run`), and each of them writes the attention line when the variable is unset in *its* process. A `tree` run from the planner's own shell without the variable logs the line; later loads that have the variable neither clear it nor log again, because `load` deduplicates attention messages by text. So the doctor's `repo-url-env` line warns about the shell, not the service runner, and there is no `env VAR=value` or `bash -lc` workaround to recommend. Export the variable in the planner's shell once, before any `cli.ts` command.
 
+## Cleanup
+
+`tools/cleanup.ts` tidies what an interrupted or older run left behind: the threads of tasks that finished but were never archived, and the task branches the integration branch already holds. A run in progress does its own hygiene (workers, verifiers, and subplanners are archived when their handoff lands; the root planner stays open), so the tool is for the runs that stopped before that, and for runs made before the adapter did it.
+
+```bash
+bun tools/cleanup.ts <workspace> [--branches] [--repo-path <checkout>] [--integration <branch>] [--dry-run]
+```
+
+| Action | Rule |
+| --- | --- |
+| archive a thread | the task row in `state.json` is terminal (`handed-off`, `error`, `cancelled`, `pruned`), its `agentId` is a thread id that is not `plan.selfAgentId`, and `amp threads search "id:<id> archived:true" --json` does not list it (the check `wait` makes). One `amp threads archive <id>` each, so a rerun archives nothing twice; `--unarchive` is never used. The root planner is never a task row of its own workspace; a row that names its thread is kept open all the same. |
+| delete a branch (`--branches`) | the branch is `orch/<rootSlug>/<task>` of a terminal task row, it has a local ref or an `origin/` ref in the checkout at `--repo-path` (default: the cwd), and every ref it has is an ancestor of the integration branch (`git merge-base --is-ancestor`). Deleted locally with `git branch -D` and on `origin` with `git push origin --delete`, whichever exist. The integration branch itself, a branch with commits the integration branch lacks, and a branch with no ref are kept and say why. |
+
+The integration branch is `--integration`, else `plan.prBase`, else `plan.baseBranch`; its local ref is read when it exists, else `origin/<branch>`, and a branch with neither is an error before anything is deleted. One line per action (`archived thread <id> (<task>)`, `deleted branch <name> (local and origin): contained in <branch>`, `keep ...`, `skip ...`), then one summary line. `--dry-run` prints the same lines with `would` and performs nothing. Exit 0 when every action succeeded, 1 when one failed (the line says what the CLI answered), 2 for a usage or workspace error. The `amp` binary is `ORCHESTRATE_AMP_BIN`, else `amp` on `PATH`; every command runs from an argv array.
+
 ## Follow-ups outside the port
 
 - Add `measurementsEnabled` (boolean, default false) to `PlanObjectSchema` in `schemas.ts`, regenerate `schemas/plan.schema.json`, and mention it in `references/planner.md`.
