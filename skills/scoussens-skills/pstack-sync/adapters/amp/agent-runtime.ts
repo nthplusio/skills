@@ -57,6 +57,8 @@ export interface AmpRuntimeOptions {
   url?: string;
   /** Wall-time cap for one CLI invocation; `ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS`, default 180 s. */
   commandTimeoutMs?: number;
+  /** Longest `wait` or `stream` keeps polling a run that has not ended; `ORCHESTRATE_WAIT_TIMEOUT_SEC`, default 7200 s. */
+  waitTimeoutSec?: number;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 }
@@ -70,6 +72,7 @@ const DEFAULTS = {
   label: "orchestrate",
   url: "https://ampcode.com",
   commandTimeoutMs: 180_000,
+  waitTimeoutSec: 7_200,
 };
 
 export function readRuntimeOptionsFromEnv(
@@ -90,6 +93,7 @@ export function readRuntimeOptionsFromEnv(
     label: env.ORCHESTRATE_AMP_LABEL === undefined ? undefined : env.ORCHESTRATE_AMP_LABEL,
     url: env.ORCHESTRATE_AMP_URL || undefined,
     commandTimeoutMs: num("ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS"),
+    waitTimeoutSec: num("ORCHESTRATE_WAIT_TIMEOUT_SEC"),
   };
 }
 
@@ -182,10 +186,20 @@ export function messageText(message: ExportMessage | undefined): string {
     .join("\n");
 }
 
+/**
+ * Amp inserts user-role messages of its own, such as the
+ * `<integration_hint integration="slack">` block after a prompt. They are not
+ * turns anyone sent, so they do not start a run.
+ */
+function isInjectedUserMessage(message: ExportMessage): boolean {
+  return messageText(message).trimStart().startsWith("<integration_hint");
+}
+
 function isUserTextMessage(message: ExportMessage): boolean {
   return (
     message.role === "user" &&
-    (message.content ?? []).some(b => b.type === "text")
+    (message.content ?? []).some(b => b.type === "text") &&
+    !isInjectedUserMessage(message)
   );
 }
 
@@ -382,56 +396,56 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
   }
 
   /**
-   * Poll exports until `onExport` returns a value. Transient export failures
-   * are tolerated up to `maxConsecutiveFailures` in a row; the thread keeps
-   * running on the server while the local view is dark, so giving up early
-   * would lose a live run.
+   * Yield one export per poll until the caller stops consuming or the
+   * deadline passes. Shared by `wait` and `stream`, so both tolerate up to
+   * `maxConsecutiveFailures` failed exports in a row (the thread keeps running
+   * on the server while the local view is dark), both notice a thread another
+   * process archived, and both stop after `waitTimeoutSec` without a terminal
+   * state: the final item carries `timedOut: true` and the generator ends.
    */
-  async function pollExports<T>(
-    run: RunHandle,
-    onExport: (exp: ThreadExport, failedBefore: boolean) => T | undefined
-  ): Promise<T> {
+  async function* pollExports(
+    run: RunHandle
+  ): AsyncGenerator<{ exp: ThreadExport; timedOut: boolean }, void> {
+    const startedAt = Date.now();
+    const deadlineMs = cfg.waitTimeoutSec * 1000;
     let failures = 0;
-    let lastArchivedCheck = Date.now();
-    let failedBefore = false;
+    let lastArchivedCheck = startedAt;
     while (true) {
-      if (cancelledHere.has(run.agentId)) {
-        const value = onExport(
-          { id: run.agentId, messages: [], meta: { archived: true } },
-          failedBefore
-        );
-        if (value !== undefined) return value;
-      }
       let exp: ThreadExport | null = null;
-      try {
-        exp = await exportThread(run.agentId);
-        failures = 0;
-      } catch (err) {
-        failures++;
-        if (failures >= cfg.maxConsecutiveFailures) {
-          throw new AgentRuntimeError(
-            `amp threads export ${run.agentId} failed ${failures} times in a row: ${errorMessage(err)}`,
-            { isRetryable: true, cause: err }
-          );
+      if (cancelledHere.has(run.agentId)) {
+        exp = { id: run.agentId, messages: [], meta: { archived: true } };
+      } else {
+        try {
+          exp = await exportThread(run.agentId);
+          failures = 0;
+        } catch (err) {
+          failures++;
+          if (failures >= cfg.maxConsecutiveFailures) {
+            throw new AgentRuntimeError(
+              `amp threads export ${run.agentId} failed ${failures} times in a row: ${errorMessage(err)}`,
+              { isRetryable: true, cause: err }
+            );
+          }
         }
-        failedBefore = true;
       }
       if (exp) {
-        if (
-          Date.now() - lastArchivedCheck >= cfg.archivedCheckMs &&
-          describeRun(exp, run.runId).status === "running"
-        ) {
+        const running = describeRun(exp, run.runId).status === "running";
+        if (running && Date.now() - lastArchivedCheck >= cfg.archivedCheckMs) {
           lastArchivedCheck = Date.now();
           if (await isArchivedElsewhere(run.agentId)) {
             exp = { ...exp, meta: { ...(exp.meta ?? {}), archived: true } };
           }
         }
-        const value = onExport(exp, failedBefore);
-        if (value !== undefined) return value;
-        failedBefore = false;
+        const timedOut = running && Date.now() - startedAt >= deadlineMs;
+        yield { exp, timedOut };
+        if (timedOut) return;
       }
       await sleep(cfg.pollMs);
     }
+  }
+
+  function timeoutMessage(run: RunHandle, exp: ThreadExport): string {
+    return `gave up waiting for ${run.agentId} ${run.runId} after ORCHESTRATE_WAIT_TIMEOUT_SEC=${cfg.waitTimeoutSec}s without the thread reaching a terminal state (last agent state: ${agentState(exp) || "unknown"}); it may still be running at ${runtime.agentUrl(run.agentId)}`;
   }
 
   const runtime: AgentRuntime = {
@@ -472,16 +486,13 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     async wait(run: RunHandle): Promise<WaitResult> {
       threadIdArg(run.agentId);
       runIdArg(run.runId);
-      return pollExports(run, exp => {
+      for await (const { exp, timedOut } of pollExports(run)) {
         const d = describeRun(exp, run.runId);
-        if (d.status === "running") return undefined;
-        return {
-          status: d.status,
-          finalText: d.finalText,
-          branches: d.branches,
-          durationMs: d.durationMs,
-        };
-      });
+        const base = { finalText: d.finalText, branches: d.branches, durationMs: d.durationMs };
+        if (d.status !== "running") return { status: d.status, ...base };
+        if (timedOut) return { status: "error", ...base, error: timeoutMessage(run, exp) };
+      }
+      throw new AgentRuntimeError(`polling ${run.agentId} ended without a result`);
     },
 
     async *stream(run: RunHandle): AsyncIterable<StreamEvent> {
@@ -490,63 +501,46 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       // Per message index: the first block not fully yielded and, when that
       // block is text still growing, how much of it went out already.
       const yielded = new Map<number, { next: number; partialLen: number }>();
-      let failures = 0;
-      while (true) {
-        let exp: ThreadExport | null = null;
-        if (cancelledHere.has(run.agentId)) {
-          exp = { id: run.agentId, messages: [], meta: { archived: true } };
-        } else {
-          try {
-            exp = await exportThread(run.agentId);
-            failures = 0;
-          } catch (err) {
-            failures++;
-            if (failures >= cfg.maxConsecutiveFailures) {
-              throw new AgentRuntimeError(
-                `amp threads export ${run.agentId} failed ${failures} times in a row: ${errorMessage(err)}`,
-                { isRetryable: true, cause: err }
-              );
-            }
-          }
-        }
-        if (exp) {
-          const messages = exp.messages ?? [];
-          for (let i = start + 1; i < messages.length; i++) {
-            const m = messages[i];
-            if (m.role !== "assistant") continue;
-            const blocks = m.content ?? [];
-            const seen = yielded.get(i) ?? { next: 0, partialLen: 0 };
-            for (let j = seen.next; j < blocks.length; j++) {
-              const b = blocks[j];
-              const isLast = j === blocks.length - 1;
-              if (b.type === "text" && typeof b.text === "string") {
-                const delta = b.text.slice(j === seen.next ? seen.partialLen : 0);
-                if (delta) yield { type: "assistant", text: delta };
-                if (isLast) {
-                  seen.next = j;
-                  seen.partialLen = b.text.length;
-                  break;
-                }
-              } else if (b.type === "tool_use") {
-                yield {
-                  type: "tool_call",
-                  name: b.name ?? "tool",
-                  callId: b.id ?? "",
-                  status: "started",
-                };
+      for await (const { exp, timedOut } of pollExports(run)) {
+        const messages = exp.messages ?? [];
+        for (let i = start + 1; i < messages.length; i++) {
+          const m = messages[i];
+          if (m.role !== "assistant") continue;
+          const blocks = m.content ?? [];
+          const seen = yielded.get(i) ?? { next: 0, partialLen: 0 };
+          for (let j = seen.next; j < blocks.length; j++) {
+            const b = blocks[j];
+            const isLast = j === blocks.length - 1;
+            if (b.type === "text" && typeof b.text === "string") {
+              const delta = b.text.slice(j === seen.next ? seen.partialLen : 0);
+              if (delta) yield { type: "assistant", text: delta };
+              if (isLast) {
+                seen.next = j;
+                seen.partialLen = b.text.length;
+                break;
               }
-              seen.next = j + 1;
-              seen.partialLen = 0;
+            } else if (b.type === "tool_use") {
+              yield {
+                type: "tool_call",
+                name: b.name ?? "tool",
+                callId: b.id ?? "",
+                status: "started",
+              };
             }
-            yielded.set(i, seen);
+            seen.next = j + 1;
+            seen.partialLen = 0;
           }
-          const d = describeRun(exp, run.runId);
-          if (d.status !== "running") {
-            yield { type: "status", status: d.status };
-            return;
-          }
+          yielded.set(i, seen);
         }
-        await sleep(cfg.pollMs);
+        const d = describeRun(exp, run.runId);
+        if (d.status !== "running") {
+          yield { type: "status", status: d.status };
+          return;
+        }
+        if (timedOut) {
+          yield { type: "status", status: "error", error: timeoutMessage(run, exp) };
+          return;
+        }
       }
     },
 

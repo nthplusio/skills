@@ -60,12 +60,14 @@ export interface WaitResult {
   branches: string[];
   /** Wall time from the run's first user message to its last assistant message. */
   durationMs: number | null;
+  /** Why the status is `error` when the runtime, not the agent, ended the wait (deadline). */
+  error?: string;
 }
 
 export type StreamEvent =
   | { type: "assistant"; text: string }
   | { type: "tool_call"; name: string; callId: string; status: string }
-  | { type: "status"; status: RunStatus };
+  | { type: "status"; status: RunStatus; error?: string };
 
 export interface AgentSummary {
   agentId: string;
@@ -152,7 +154,7 @@ export type SDKMessage =
   | { type: "assistant"; message: { content: ContentBlock[] } }
   | { type: "thinking"; text: string }
   | { type: "tool_call"; name: string; status: string; call_id: string }
-  | { type: "status"; status: string }
+  | { type: "status"; status: string; error?: string }
   | { type: "task"; text?: string };
 
 export type RunOperation = "stream" | "wait" | "cancel" | "conversation";

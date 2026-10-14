@@ -21,12 +21,12 @@ The sync installs each port file at its path under `<skills>/orchestrate/scripts
 | --- | --- | --- |
 | `spawn({name, repoUrl, startingRef, model, prompt})` | `amp -ox --project <repoUrl> --visibility private --no-archive-after-execute --title <name> -l orchestrate [-m <model>]`, prompt on stdin | Returns in about 3 s with the thread URL; the thread id is the agent id, the run id is `m0`. The prompt is prefixed with an instruction to `git fetch origin <startingRef> && git checkout <startingRef>`, because an orb opens the project's default branch. `model: inherit` passes no `-m`. |
 | `getRun(agentId, runId)` | `amp threads export <id>` | Terminal when `meta.lastKnownAgentState.state` is `idle` and the last message is an assistant message with text after the run's start. `working`, `streaming`, `running_tools`, and any unknown state count as running. |
-| `wait(run)` | `amp threads export <id>`, polled | `finalText` is the last assistant text of the run, verbatim; `branches` is the `## Branch` line of that text, or empty; `durationMs` spans the run's user message to its last assistant message. Every 60 s it also runs `amp threads search "id:<id> archived:true" --json` so a thread archived by another process reads as cancelled. |
-| `stream(run)` | `amp threads export <id>`, polled | Yields assistant text deltas, `tool_use` blocks as `tool_call`, and a final `status`. |
+| `wait(run)` | `amp threads export <id>`, polled | `finalText` is the last assistant text of the run, verbatim; `branches` is the `## Branch` line of that text, or empty; `durationMs` spans the run's user message to its last assistant message. Every 60 s it also runs `amp threads search "id:<id> archived:true" --json` so a thread archived by another process reads as cancelled. After `ORCHESTRATE_WAIT_TIMEOUT_SEC` (default 7200) without a terminal state it returns `status: "error"` with an `error` message naming the thread, which may still be running. |
+| `stream(run)` | `amp threads export <id>`, polled | Yields assistant text deltas, `tool_use` blocks as `tool_call`, and a final `status`; shares `wait`'s poller, so it has the same archived check and deadline (the final status is then `error` with the message). |
 | `cancel(agentId, runId)` | `amp threads archive <id>` | Archiving is the only stop the CLI offers; the orb may finish its current turn. |
 | `sendFollowUp(agentId, text)` | `amp threads continue <id> -ox`, text on stdin | The new run id is the message index the text lands at, read from an export just before. A message sent while the thread is working queues behind the current turn. |
 | `list({limit})` | `amp threads list --json --limit <n>` | `title` becomes the agent name, `updated` the timestamp; `kickoff` adopts a running root planner by exact title `<rootSlug>-root`. |
-| `latestRun(agentId)` | `amp threads export <id>` | The last user text message and its status. |
+| `latestRun(agentId)` | `amp threads export <id>` | The last user text message and its status. User-role messages Amp injects itself (text starting `<integration_hint>`) do not count as run starts. |
 | `agentUrl(agentId)` | none | `https://ampcode.com/threads/<id>`; `ORCHESTRATE_AMP_URL` overrides the origin. |
 | `models()` | `amp plugins show-agent-options --json` | `inherit`, `low`, `medium`, `high`, `ultra`, plus any `agentModes`, `modes`, or `pluginModes` the payload names. The CLI does not list plugin modes today, so the five built-ins are what you get. |
 | `probe(model)` | none | True when `model` is in `models()`. Nothing is spawned. |
@@ -50,11 +50,12 @@ All through environment variables, read when the runtime is created.
 | `ORCHESTRATE_AMP_BIN` | `amp` | The CLI binary. Tests point it at a fake. |
 | `ORCHESTRATE_AMP_POLL_MS` | `10000` | Poll interval for `wait` and `stream`. |
 | `ORCHESTRATE_AMP_MAX_EXPORT_FAILURES` | `30` | Consecutive failed exports tolerated before `wait` or `stream` throws; the thread keeps running on the server while the local view is dark. |
-| `ORCHESTRATE_AMP_ARCHIVED_CHECK_MS` | `60000` | How often `wait` checks whether another process archived the thread. |
+| `ORCHESTRATE_AMP_ARCHIVED_CHECK_MS` | `60000` | How often `wait` and `stream` check whether another process archived the thread. |
 | `ORCHESTRATE_AMP_VISIBILITY` | `private` | Thread visibility. |
 | `ORCHESTRATE_AMP_LABEL` | `orchestrate` | Label on every spawned thread; empty disables. |
 | `ORCHESTRATE_AMP_URL` | `https://ampcode.com` | Web origin for `agentUrl`. |
 | `ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS` | `180000` | Wall-time cap for one CLI invocation. |
+| `ORCHESTRATE_WAIT_TIMEOUT_SEC` | `7200` | Longest `wait` or `stream` polls a run that has not ended before returning `error`; the thread is not stopped. |
 | `ORCHESTRATE_AMP_RUNTIME_DIR` | unset | Directory holding `agent-runtime.ts` and `models.ts` when neither layout applies. |
 | `ORCHESTRATE_REPO_URL` | unset | The repository the operator runs the loop for. `plan.repoUrl` must match it; unset means unchecked. See Security. |
 | `ORCHESTRATE_MEASUREMENTS` | unset | `1` lets the loop run planner-authored measurement commands when plan.json also opts in; anything else keeps them off. See Security. |

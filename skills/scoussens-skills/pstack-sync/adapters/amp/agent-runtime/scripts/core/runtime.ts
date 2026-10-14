@@ -387,7 +387,9 @@ class AmpRun implements Run {
           break;
         case "status":
           this.current = event.status;
-          yield { type: "status", status: event.status };
+          yield event.error === undefined
+            ? { type: "status", status: event.status }
+            : { type: "status", status: event.status, error: event.error };
           break;
       }
     }
@@ -403,6 +405,7 @@ class AmpRun implements Run {
       durationMs: result.durationMs,
       git: { branches: result.branches.map(branch => ({ branch })) },
       model: null,
+      ...(result.error === undefined ? {} : { error: result.error }),
     };
   }
 

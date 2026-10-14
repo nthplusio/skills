@@ -222,6 +222,47 @@ describe("wait", () => {
   });
 });
 
+describe("deadline", () => {
+  test("wait ends with status error and a message once ORCHESTRATE_WAIT_TIMEOUT_SEC passes without a terminal state", async () => {
+    serve(ID, 1, thread("working", [{ user: "do the task" }, { assistant: "Still going" }]));
+    const rt = createAmpRuntime({ env, waitTimeoutSec: 0.05 });
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("ORCHESTRATE_WAIT_TIMEOUT_SEC=0.05s");
+    expect(result.error).toContain(`https://ampcode.com/threads/${ID}`);
+    expect(result.error).toContain("last agent state: working");
+    expect(result.finalText).toBe("Still going");
+    expect(exportsOf(ID)).toBeGreaterThan(1);
+  });
+
+  test("the deadline comes from the environment in seconds", async () => {
+    serve(ID, 1, thread("working", [{ user: "go" }]));
+    const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_WAIT_TIMEOUT_SEC: "1" } });
+    const started = Date.now();
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(result.status).toBe("error");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+  });
+
+  test("stream ends with an error status carrying the same message", async () => {
+    serve(ID, 1, thread("working", [{ user: "go" }, { tool: "shell_command" }]));
+    const rt = createAmpRuntime({ env, waitTimeoutSec: 0.05 });
+    const events: StreamEvent[] = [];
+    for await (const event of rt.stream({ agentId: ID, runId: "m0" })) events.push(event);
+    const last = events.at(-1);
+    expect(last?.type).toBe("status");
+    expect(last?.type === "status" && last.status).toBe("error");
+    expect(last?.type === "status" && last.error).toContain("gave up waiting");
+    expect(events.filter(e => e.type === "tool_call")).toHaveLength(1);
+  });
+
+  test("a run that finishes before the deadline is unaffected", async () => {
+    serve(ID, 1, FINISHED);
+    const rt = createAmpRuntime({ env, waitTimeoutSec: 0.05 });
+    expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+  });
+});
+
 describe("describeRun", () => {
   test("an idle thread whose last message is still the user's is running", () => {
     expect(describeRun(thread("idle", [{ user: "x" }]), "m0").status).toBe("running");
@@ -286,6 +327,21 @@ describe("stream", () => {
   });
 });
 
+describe("stream notices a thread archived elsewhere", () => {
+  test("ends with a cancelled status after the archived check", async () => {
+    serve(ID, 1, thread("working", [{ user: "go" }]));
+    writeFileSync(
+      join(dir, `search-${ID}.json`),
+      JSON.stringify([{ id: ID, title: "fixture", updatedAt: "2026-10-14T02:16:45.852Z" }])
+    );
+    const rt = createAmpRuntime({ env, archivedCheckMs: 1 });
+    const events: StreamEvent[] = [];
+    for await (const event of rt.stream({ agentId: ID, runId: "m0" })) events.push(event);
+    expect(events.at(-1)).toEqual({ type: "status", status: "cancelled" });
+    expect(calls().some(c => c[0] === "threads" && c[1] === "search")).toBe(true);
+  });
+});
+
 describe("cancel", () => {
   test("archives the thread and reports the run cancelled afterwards", async () => {
     serve(ID, 1, thread("working", [{ user: "go" }]));
@@ -327,6 +383,20 @@ describe("getRun, latestRun, list, agentUrl", () => {
     );
     const rt = createAmpRuntime({ env });
     expect(await rt.latestRun(ID)).toEqual({ agentId: ID, runId: "m2", status: "finished" });
+  });
+
+  test("latestRun skips the user-role messages Amp injects, such as integration hints", async () => {
+    serve(
+      ID,
+      1,
+      thread("idle", [
+        { user: "do the task" },
+        { user: '<integration_hint integration="slack">\nThe user asked from Slack.\n</integration_hint>' },
+        { assistant: "ROUNDTRIP-OK" },
+      ])
+    );
+    const rt = createAmpRuntime({ env });
+    expect(await rt.latestRun(ID)).toEqual({ agentId: ID, runId: "m0", status: "finished" });
   });
 
   test("list maps thread titles to agent names", async () => {
