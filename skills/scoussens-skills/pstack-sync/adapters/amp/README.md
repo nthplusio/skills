@@ -157,7 +157,7 @@ amp clone workspace-plugins <plugins-clone>
 python3 <pack>/skills/scoussens-skills/pstack-sync/scripts/sync.py publish --pack <pack> --repo <skills-clone> --plugins-repo <plugins-clone> --harness amp --dry-run
 ```
 
-The dry run uses throwaway worktrees and leaves both clones unchanged, without commits or pushes. Review the report before proceeding. The plugins clone has its own `.nthplusio-skills/pack-manifest.json`, which owns replacement and removal of pack plugins and leaves unmanaged plugins alone.
+The dry run uses throwaway worktrees and leaves both clones unchanged, without commits or pushes. Review the report before proceeding. Publishing replaces directories named by the pack, including a same-named plugin installed by hand. The plugins clone has its own `.nthplusio-skills/pack-manifest.json`; only retired plugins named in that manifest are removed. Other plugin directories remain untouched.
 
 After the user authorizes pushes to both workspace repositories, run:
 
