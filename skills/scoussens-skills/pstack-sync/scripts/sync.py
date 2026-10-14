@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync pstack skills from github.com/cursor/plugins (pstack/skills), and the skills and subagent
+"""Sync a managed skill set, pstack by default, from its upstream repository, and the skills and subagent
 definitions they hand off to, into a skills directory.
 
   sync.py sync   --harness NAME [--repo DIR] [--root DIR] [--ref BRANCH] [--dry-run]
@@ -98,11 +98,16 @@ def load_set(repo, name):
     return cfg
 
 
+DEFAULT_UPSTREAM = "https://github.com/cursor/plugins"
+
+
 def configure(cfg):
-    """Point the module at one set. PSTACK_SYNC_UPSTREAM overrides the upstream URL for tests."""
+    """Point the module at one set. PSTACK_SYNC_UPSTREAM stands in for cursor/plugins in tests;
+    a set from another repository keeps its own upstream."""
     global SET, UPSTREAM, ROOT_PLUGIN, SUBDIR, AGENTS, PREFIX, PLUGIN_MARKER, CACHE
     SET = cfg
-    UPSTREAM = os.environ.get("PSTACK_SYNC_UPSTREAM") or cfg["upstream"]
+    override = os.environ.get("PSTACK_SYNC_UPSTREAM")
+    UPSTREAM = override if override and cfg["upstream"] == DEFAULT_UPSTREAM else cfg["upstream"]
     ROOT_PLUGIN = cfg["root_plugin"]
     SUBDIR = cfg["skills_subdir"]
     AGENTS = cfg["agents_dir"]
@@ -144,7 +149,11 @@ def fetch(ref):
         os.makedirs(os.path.dirname(CACHE), exist_ok=True)
         subprocess.run(["git", "init", "-q", "--bare", CACHE], check=True)
         git("remote", "add", "origin", UPSTREAM)
-    git("fetch", "-q", "--depth", "1", "origin", ref)
+    try:
+        git("fetch", "-q", "--depth", "1", "origin", ref)
+    except subprocess.CalledProcessError as error:
+        sys.exit(f"error: cannot fetch {ref} from {UPSTREAM} for the {SET['name']} set: "
+                 f"{(error.stderr or b'').decode(errors='replace').strip()}")
     return git("rev-parse", "FETCH_HEAD").decode().strip()
 
 
@@ -585,22 +594,10 @@ class State:
         self.discovery_key, self.facts = harness_facts(self.discovery_path, harness, self.needs)
         managed_dirs = {v["dir"] for v in self.managed.values()}
         skills = {d for d in os.listdir(repo) if os.path.isfile(os.path.join(repo, d, "SKILL.md"))}
-        self.foreign = (skills | self.other_sets_dirs()) - managed_dirs - {SELF}
+        self.foreign = skills - managed_dirs - {SELF}  # includes directories other sets manage
         self.handoff_need = next((n["id"] for n in self.needs if n.get("detect") == "unavailable"), None)
         self.command_markers = [p for n in self.needs if n["id"] != self.handoff_need for p in n["markers"]]
         self.inv, self.available = None, set()
-
-    def other_sets_dirs(self):
-        """Directories the other sets in this install manage. To this set they are unmanaged
-        skills, so a dependency one set installed shows as existing to another."""
-        sets_dir = os.path.join(self.durable, "sets")
-        dirs = set()
-        for name in os.listdir(sets_dir) if os.path.isdir(sets_dir) else []:
-            if name == SET["name"]:
-                continue
-            manifest = load_json(os.path.join(sets_dir, name, "manifest.json"), {"skills": {}})
-            dirs |= {v["dir"] for v in norm_skills(manifest["skills"]).values()}
-        return dirs
 
     @property
     def tf(self):
@@ -1166,7 +1163,7 @@ def main():
         p.add_argument("--repo", default=DEFAULT_REPO)
         p.add_argument("--root", help="repository holding .nthplusio-skills/; defaults to --repo's Git repository")
         p.add_argument("--set", default=DEFAULT_SET, help="the managed skill set, a directory under sets/ (default pstack)")
-    sub.choices["sync"].add_argument("--ref", default="main")
+    sub.choices["sync"].add_argument("--ref", default=None, help="upstream ref; defaults to the set's ref")
     sub.choices["sync"].add_argument("--dry-run", action="store_true")
     sub.choices["record"].add_argument("skills", nargs="*")
     sub.choices["record"].add_argument("--all", action="store_true")
@@ -1176,6 +1173,8 @@ def main():
     sub.choices["status"].add_argument("--since", default="HEAD")
     a = ap.parse_args()
     configure(load_set(os.path.abspath(a.repo), a.set))
+    if getattr(a, "ref", None) is None and a.cmd == "sync":
+        a.ref = SET["ref"]
     st = State(os.path.abspath(a.repo), a.harness, a.root)
     {"sync": cmd_sync, "record": cmd_record, "status": cmd_status, "seed": cmd_seed}[a.cmd](a, st)
 

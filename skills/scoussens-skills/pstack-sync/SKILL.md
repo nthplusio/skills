@@ -9,8 +9,8 @@ description: >-
   fresh install does not re-adapt. Load this only when the user explicitly asks
   to sync or update pstack — "sync pstack", "update pstack", "pull the latest
   pstack skills", "install pstack for this harness". Do not load it to install
-  or edit one skill pstack does not hand off to, to sync skills from another
-  source, or to change what a pstack skill says upstream; answer those directly
+  or edit one skill no set hands off to, to sync a repository that has no set
+  file, or to change what a synced skill says upstream; answer those directly
   instead.
 ---
 

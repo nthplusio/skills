@@ -435,6 +435,24 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("needs.json", text)
         self.assertIn("| `loop` | keep | loops as written | install |", text)
 
+    def test_a_set_from_another_repository_keeps_its_own_upstream_and_ref(self):
+        self.upstream()
+        self.set_config("elsewhere", upstream="https://example.com/other/plugins", ref="release")
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "sync", "--harness", "test", "--repo", str(self.skills),
+                                 "--set", "elsewhere", "--dry-run"],
+                                env={**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()},
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0, "the fake upstream must not stand in for another repository")
+        self.assertIn("example.com/other/plugins", result.stderr + result.stdout)
+        sys.path.insert(0, str(SKILL / "scripts"))
+        cfg = sync.load_set(str(self.skills), "elsewhere")
+        self.assertEqual((cfg["upstream"], cfg["ref"]), ("https://example.com/other/plugins", "release"))
+        sync.configure(cfg)
+        try:
+            self.assertEqual(sync.UPSTREAM, "https://example.com/other/plugins")
+        finally:
+            sync.configure(sync.load_set(str(SKILL.parent), "pstack"))
+
     def test_two_sets_share_one_dependency(self):
         self.upstream()
         self.set_config("kit", root_plugin="cursor-team-kit", skills_subdir="cursor-team-kit/skills")
