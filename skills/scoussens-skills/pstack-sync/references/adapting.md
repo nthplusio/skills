@@ -58,7 +58,7 @@ When a dependency installs for the first time, each file with a recorded adaptat
 Read every flagged file in full, scripts included; the markers are hints. For each construct, look up its need in the profile and apply the row, or apply the discovered facts the report gives in `harness_facts`. Keep each rewrite **minimal**: change the construct and the words that depend on it, and keep the skill's structure, voice, and intent, so upstream changes replay cleanly.
 
 - A skill that configures a capability (for example `setup-pstack` writing the per-role model config) is rewritten to produce this harness's variant of that configuration, and every skill that reads the configuration is rewritten to read and honor the same variant. The profile row is the contract between them.
-- Only a need at `none` that a skill's whole purpose depends on makes the skill an exclusion candidate: leave it unadapted and propose adding its upstream name to `exclude` in `manifest.json`. Exclusion is the user's call.
+- Only a need at `none` that a skill's whole purpose depends on makes the skill an exclusion candidate: leave it unadapted and propose adding its upstream name to `exclude` in `sets/<set>/manifest.json`. Exclusion is the user's call.
 - A `stale_transforms` entry means upstream rewrote a passage you adapted before. Each entry holds the old edit's full `find` and `replace`, and on the sync that detects the change the file's `upstream_diff` shows what upstream rewrote. Carry the old `replace`'s intent onto the new passage; usually that is the old `replace` plus the upstream change.
 - A row that turns out wrong: correct the profile, then re-adapt every file that used it.
 

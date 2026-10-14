@@ -334,6 +334,16 @@ def load_needs(repo):
     return needs + list(SET["extra_needs"])
 
 
+def compose_profile(shipped, durable):
+    """A seed profile: the shipped file's text above its needs table (links, notes) with the
+    install's table rows. Without a shipped file the durable profile is exported as is."""
+    head = re.match(r"(?s)\A(.*?\n\| Need \|[^\n]*\n\|[ -|]*\|\n)", shipped)
+    if not head:
+        return durable
+    rows = re.findall(r"(?m)^\|\s*`?[\w-]+`?\s*\|\s*(?:%s)\b.*$" % "|".join(SUPPORT), durable)
+    return head.group(1) + ("\n".join(rows) + "\n" if rows else "")
+
+
 def parse_profile(text):
     """{need id: support} from rows like | `subagents` | substitute | ... |"""
     rows = {}
@@ -1008,7 +1018,10 @@ def cmd_seed(a, st):
     save_json(os.path.join(a.out, rel), seed)
     written = [rel]
     if st.profile_exists:
-        shutil.copy2(st.profile_path, os.path.join(a.out, "harness", f"{st.harness}.md"))
+        shipped = read_text(os.path.join(st.repo, SELF, "harness", f"{st.harness}.md"))
+        durable = read_text(st.profile_path)
+        with open(os.path.join(a.out, "harness", f"{st.harness}.md"), "w") as f:
+            f.write(compose_profile(shipped, durable))
         written.append(f"harness/{st.harness}.md")
     print(json.dumps({"seeded": written, "out": a.out,
                       "local_entries_kept_back": sorted(st.local["files"])}, indent=2))
@@ -1016,9 +1029,16 @@ def cmd_seed(a, st):
 
 def cmd_status(a, st):
     def at_rev(path, default):
+        """The file at --since, also looking where an install before sets kept it."""
         rel = os.path.relpath(path, st.discovery_root)
-        r = subprocess.run(["git", "-C", st.discovery_root, "show", f"{a.since}:{rel}"], capture_output=True, text=True)
-        return r.stdout if r.returncode == 0 else default
+        candidates = [rel]
+        if f"/sets/{SET['name']}/" in f"/{rel}" and SET["name"] == DEFAULT_SET:
+            candidates.append(rel.replace(f"sets/{SET['name']}/", "", 1))
+        for cand in candidates:
+            r = subprocess.run(["git", "-C", st.discovery_root, "show", f"{a.since}:{cand}"], capture_output=True, text=True)
+            if r.returncode == 0:
+                return r.stdout
+        return default
 
     old_m = json.loads(at_rev(st.manifest_path, '{"skills": {}}'))
     old_tf = json.loads(at_rev(st.transform_path, "{}")).get(a.harness, {}).get("files", {})
