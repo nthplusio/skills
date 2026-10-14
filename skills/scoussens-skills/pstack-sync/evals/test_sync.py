@@ -531,6 +531,25 @@ class DependencyTests(unittest.TestCase):
         self.assertIn("loop", report["profile_gaps"])
         self.assertTrue(report["profile_gaps_in_seed"]["loop"].startswith("| `loop` | keep |"))
 
+    def test_a_port_may_add_a_file_upstream_lacks(self):
+        self.upstream()
+        cfg = json.loads((self.skills / sync.SELF / "sets" / "pstack" / "set.json").read_text())
+        cfg["ports"] = [{"name": "runner", "skill": "alpha", "files": ["scripts/runtime.sh"]}]
+        (self.skills / sync.SELF / "sets" / "pstack" / "set.json").write_text(json.dumps(cfg))
+        adapter = self.skills / sync.SELF / "adapters" / "test" / "runner" / "scripts" / "runtime.sh"
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text("#!/bin/sh\necho facade\n")
+        report = self.run_sync()
+        self.assertEqual(report["ports_pending"], {})
+        self.assertEqual((self.skills / "alpha" / "scripts" / "runtime.sh").read_text(), "#!/bin/sh\necho facade\n")
+        (self.skills / "alpha" / "scripts" / "runtime.sh").unlink()
+        second = self.run_sync()
+        self.assertTrue((self.skills / "alpha" / "scripts" / "runtime.sh").exists(), "a sync restores a deleted adapter-only file")
+        self.assertEqual(second["updated"], ["alpha"])
+        self.assertEqual(self.run_sync()["unchanged_count"], len(report["added"]))
+        self.run_sync("record", "alpha/SKILL.md")
+        self.assertTrue((self.skills / "alpha" / "scripts" / "runtime.sh").exists())
+
     def test_dialect_and_set_needs_merge(self):
         self.upstream()
         self.run_sync()

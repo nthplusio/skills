@@ -30,10 +30,13 @@
       "name": "agent-runtime",
       "skill": "orchestrate",
       "files": [
-        "scripts/core/agent-manager.ts",
-        "scripts/cli/task.ts",
-        "scripts/cli/inspect.ts",
+        "scripts/bun.lock",
         "scripts/cli/forensics.ts",
+        "scripts/cli/inspect.ts",
+        "scripts/cli/task.ts",
+        "scripts/core/agent-manager.ts",
+        "scripts/core/runtime.ts",
+        "scripts/package.json",
         "scripts/tools/nudge-root.ts",
         "scripts/tools/probe-models.ts"
       ],
@@ -53,6 +56,7 @@
   ],
   "ignore": [
     "scripts/__tests__/*",
-    "scripts/__tests__/**"
+    "scripts/__tests__/**",
+    "scripts/node_modules/**"
   ]
 }

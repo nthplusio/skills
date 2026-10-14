@@ -372,6 +372,10 @@
       "orchestrate/scripts/core/handoff.ts": {
         "transforms": [
           {
+            "find": "import type { RunResult } from \"@cursor/sdk\";\n",
+            "replace": "import type { RunResult } from \"./runtime.ts\";\n"
+          },
+          {
             "find": " * Extract the worker's `## Branch` value. The SDK leaves\n",
             "replace": " * Extract the worker's `## Branch` value. The runtime leaves\n"
           },
@@ -410,6 +414,10 @@
       },
       "orchestrate/scripts/schemas.ts": {
         "transforms": [
+          {
+            "find": "import type { Run, SDKAgent } from \"@cursor/sdk\";\n",
+            "replace": "import type { Run, SDKAgent } from \"./core/runtime.ts\";\n"
+          },
           {
             "find": "    .describe(\"Branch the spawned cloud agent clones from.\"),\n",
             "replace": "    .describe(\"Branch the spawned worker thread clones from.\"),\n"
