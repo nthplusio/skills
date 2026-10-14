@@ -179,10 +179,14 @@ or event.
 
 ## Run lifecycle
 
-Schema 2 adds these fields, and `validate_run.py` enforces them:
+Two scripts check a schema 2 run record, and each owns its rules. The
+dashboard skill's renderer checks the record's shape when it renders: it
+rejects by name an unknown top-level key (so extra notes go in `history`), an
+unknown stage key, a missing required stage, a duplicate owner ID and an
+invalid stage, owner, work, evidence or runtime value. `validate_run.py` runs
+first and checks the rules below:
 
-- Top-level fields are limited to the contract. Put extra notes in `history`
-  rather than a new top-level key.
+- `goal` is present and nonempty, and every task has `milestones`.
 - `run_choices.target_stage` names the last requested [business stage](#business-stages),
   such as `pr_readiness` or `code_publication`.
 - `run_choices.publication_scope` is the run's authorization for code
@@ -205,8 +209,9 @@ Schema 2 adds these fields, and `validate_run.py` enforces them:
 - Each task has `runtime`: an entry for each running or retained instance the
   owner created or holds. Each entry has an `id`, `kind`, `ref`, and `state`:
   `held` (in use), `released`, or `retained`. A retained entry needs a `reason`
-  and an `until` timestamp. A finished owner or resolved row cannot hold runtime.
-  The page shows a retained entry past its `until` date as overdue cleanup.
+  and an `until` timestamp; both scripts check that. A finished owner or
+  resolved row cannot hold runtime. The page shows a retained entry past its
+  `until` date as overdue cleanup.
   `resources` keeps describing file and responsibility areas, not instances.
 - `skill_version` records the skill version this run follows, from
   `validate_run.py --skill-version`; it covers this skill's files and the

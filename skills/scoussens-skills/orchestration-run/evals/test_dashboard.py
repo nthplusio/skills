@@ -169,13 +169,40 @@ class LifecycleTests(unittest.TestCase):
         validate(self.data)
         self.assertIn("Pushed branch <code>origin/ui-101-pinning</code>", render(self.data))
 
-    def test_finishing_needs_runtime_released_or_retained(self):
+    def test_finishing_needs_runtime_released_or_retained_with_reason_and_date(self):
         runtime = self.tasks["SHIP-107"]["runtime"]
         runtime.append({"id": "orb", "kind": "sandbox", "ref": "orb-107", "state": "held"})
         with self.assertRaisesRegex(ValueError, "SHIP-107: release or retain runtime orb"):
             validate(self.data)
-        runtime[-1].update(state="retained", reason="Browser session for the expiry check", until="2026-10-15T12:00:00-05:00")
+        runtime[-1].update(state="retained")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.reason"):
+            validate(self.data)
+        runtime[-1].update(reason="Browser session for the expiry check")
+        with self.assertRaisesRegex(ValueError, "runtime.orb.until needs an ISO 8601 timestamp"):
+            validate(self.data)
+        runtime[-1].update(until="2026-10-15T12:00:00-05:00")
         validate(self.data)
+
+    def test_a_run_record_needs_a_goal_and_milestones_on_every_task(self):
+        """Presence rules the old renderer enforced for run records (audit finding 11)."""
+        del self.tasks["API-102"]["milestones"]
+        with self.assertRaisesRegex(ValueError, "API-102: a run record gives every task its milestones"):
+            validate(self.data)
+        render(self.data)  # the contract tolerates the omission; the run's rule does not
+        self.tasks["API-102"]["milestones"] = None
+        with self.assertRaisesRegex(ValueError, "API-102: a run record gives every task its milestones"):
+            validate(self.data)
+        self.data = json.loads(PREVIEW.read_text())
+        self.data["skill_version"] = skill_version()
+        for goal in ("", None):
+            with self.subTest(goal=goal):
+                self.data["goal"] = goal
+                with self.assertRaisesRegex(ValueError, "goal must be nonempty"):
+                    validate(self.data)
+        del self.data["goal"]
+        with self.assertRaisesRegex(ValueError, "goal must be nonempty"):
+            validate(self.data)
+        render(self.data)
 
     def test_expired_approval_cannot_stay_active(self):
         approval = self.data["approvals"][1]

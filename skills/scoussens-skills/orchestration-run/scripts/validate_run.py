@@ -244,13 +244,19 @@ def check_approvals(approvals, tasks, updated):
 
 
 def check_task_lifecycle(task, scope):
-    """Schema 2 rules for one row: runtime settled before finishing, unpublished code kept, publication
-    inside the run's scope, and a named sign-off for requested acceptance."""
+    """Schema 2 rules for one row: every stage recorded, runtime settled before finishing, unpublished
+    code kept, publication inside the run's scope, and a named sign-off for requested acceptance."""
     key, owner = task["id"], task["owner"]
     finished = owner["state"] in FINISHED_OWNER_STATES or work_status(task)["state"] in RESOLVED
     held = [entry["id"] for entry in task["runtime"] if entry["state"] == "held"]
     if finished and held:
         raise ValueError(f"{key}: release or retain runtime {', '.join(held)} with a reason and date before finishing")
+    for entry in task["runtime"]:
+        if entry["state"] == "retained":
+            nonempty(entry.get("reason"), f"{key}.runtime.{entry['id']}.reason")
+            moment(entry.get("until"), f"{key}.runtime.{entry['id']}.until")
+    if not isinstance(task.get("milestones"), dict):
+        raise ValueError(f"{key}: a run record gives every task its milestones")
     phases = task["milestones"]
     unpublished = phases["pr_readiness"]["state"] == "verified" and phases["code_publication"]["state"] != "verified"
     if owner["state"] in FINISHED_OWNER_STATES and unpublished:
@@ -311,6 +317,7 @@ def findings(data):
         attempt(check_task_proof, task, evidence, decisions)
     if data.get("schema_version", 2) < 2:
         return found
+    attempt(required, "goal")
     limit = attempt(check_run_choices, data)
     attempt(check_monitoring, data, tasks, limit)
     attempt(check_skill_version, data)
