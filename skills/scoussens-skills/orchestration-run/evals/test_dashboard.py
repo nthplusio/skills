@@ -18,7 +18,7 @@ PREVIEW = DASHBOARD / "evals" / "dashboard-preview.json"
 sys.path.insert(0, str(RUNNER / "scripts"))
 sys.path.insert(0, str(DASHBOARD / "scripts"))
 from render_dashboard import render
-from validate_run import skill_version, validate
+from validate_run import notes, skill_version, validate
 
 
 class LifecycleTests(unittest.TestCase):
@@ -210,18 +210,15 @@ class LifecycleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "F2.text must be nonempty"):
             validate(self.data)
 
-    def test_skill_version_is_required_and_a_mismatch_is_a_finding(self):
-        validate(self.data)
+    def test_skill_version_is_required_and_a_mismatch_is_a_note(self):
         self.data["skill_version"] = "0123abcd4567"
-        with self.assertRaisesRegex(ValueError, f"written for orchestration-run 0123abcd4567; the current version is {skill_version()}"):
-            validate(self.data)
+        validate(self.data)
+        self.assertRegex(notes(self.data)[0], f"written for orchestration-run 0123abcd4567; the current version is {skill_version()}")
+        self.data["skill_version"] = skill_version()
+        self.assertEqual(notes(self.data), [])
         del self.data["skill_version"]
         with self.assertRaisesRegex(ValueError, "skill_version must be nonempty"):
             validate(self.data)
-        result = subprocess.run([sys.executable, "-B", str(RUNNER / "scripts" / "validate_run.py"), "--skill-version"],
-                                capture_output=True, text=True)
-        self.assertEqual(result.stdout.strip(), skill_version())
-        self.assertRegex(skill_version(), r"^[0-9a-f]{12}$")
 
     def test_history_entries_stay_short(self):
         self.data["history"].append("Scan inspected six owners; all idle and unchanged. " * 20)

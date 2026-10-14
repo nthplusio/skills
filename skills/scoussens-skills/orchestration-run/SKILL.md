@@ -53,7 +53,8 @@ instead of substituting blocking helpers and claiming concurrent ownership.
 Record the skill version a run follows in `skill_version`, using
 `python3 <this skill's folder>/scripts/validate_run.py --skill-version`. On
 resume, and whenever this skill reloads mid-run, compare it with the saved
-value; `validate_run.py` reports a difference as a finding. When it differs,
+value; `validate_run.py` reports a difference as a note, and a run that
+should show it on the page copies the note into the record's `notice`. When it differs,
 read what changed in the `dashboard` skill's status contract, in
 [dashboard data](references/dashboard-data.md) and in this file, migrate the
 record, then save the new version and one history line naming the change.

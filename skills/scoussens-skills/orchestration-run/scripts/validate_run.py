@@ -168,9 +168,16 @@ def check_monitoring(data, tasks, limit):
 
 def check_skill_version(data):
     nonempty(data.get("skill_version"), "skill_version")
-    if data["skill_version"] != skill_version():
-        raise ValueError(f"this record was written for orchestration-run {data['skill_version']}; the current version is "
-                         f"{skill_version()}. Read what changed, migrate the record and save the new version")
+
+
+def notes(data):
+    """Observations that do not fail the record. A version mismatch is one: the old renderer printed
+    it on the page, and a producer that wants it shown copies it into the record's notice."""
+    found = []
+    if data.get("skill_version") and data["skill_version"] != skill_version():
+        found.append(f"this record was written for orchestration-run {data['skill_version']}; the current version is "
+                     f"{skill_version()}. Read what changed, migrate the record and save the new version")
+    return found
 
 
 def check_history(data):
@@ -307,6 +314,8 @@ def main():
         found = findings(json.loads(args.status.read_text()))
     except (OSError, ValueError) as error:
         parser.exit(1, f"FAIL: {error}\n")
+    for note in notes(json.loads(args.status.read_text())):
+        print(f"NOTE: {note}")
     if found:
         parser.exit(1, "".join(f"FAIL: {line}\n" for line in found))
     print(f"PASS: {args.status} follows the run lifecycle")
