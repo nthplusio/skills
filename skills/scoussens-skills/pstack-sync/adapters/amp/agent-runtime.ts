@@ -17,6 +17,9 @@
  *   getRun, wait  amp threads export <id>, polled; the run is terminal when
  *                 `meta.lastKnownAgentState.state` is idle and the last
  *                 message is an assistant message after the run's start.
+ *                 When that message has no `## Status` or `## Verification`
+ *                 section, wait and stream keep polling for a grace period
+ *                 (`handoffGraceMs`) so a later turn can produce the handoff.
  *   stream        the same export, polled, diffed against what was yielded.
  *   cancel        amp threads archive <id>; the run reads as cancelled
  *   archive       amp threads archive <id>; a finished run still reads as finished
@@ -68,12 +71,22 @@ export interface AmpRuntimeOptions {
   commandTimeoutMs?: number;
   /** Longest `wait` or `stream` keeps polling a run that has not ended; `ORCHESTRATE_WAIT_TIMEOUT_SEC`, default 7200 s. */
   waitTimeoutSec?: number;
+  /**
+   * How long `wait` and `stream` keep polling after a turn ends idle without a
+   * `## Status` or `## Verification` section, so a later turn can produce the
+   * handoff before the run reads as finished; `ORCHESTRATE_AMP_HANDOFF_GRACE_MS`,
+   * default 120 s, `0` disables.
+   */
+  handoffGraceMs?: number;
   /** Where lines that deserve a person's attention go when no run can carry them (a rename or label that failed); default stderr. */
   onAttention?: (line: string) => void;
   /** Working directory for CLI invocations and the second place the bridge file is looked for. */
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 }
+
+/** The grace window's default: long enough for a thread to start and finish one more turn. */
+export const DEFAULT_HANDOFF_GRACE_MS = 120_000;
 
 const DEFAULTS = {
   bin: "amp",
@@ -85,6 +98,7 @@ const DEFAULTS = {
   url: "https://ampcode.com",
   commandTimeoutMs: 180_000,
   waitTimeoutSec: 7_200,
+  handoffGraceMs: DEFAULT_HANDOFF_GRACE_MS,
 };
 
 export function readRuntimeOptionsFromEnv(
@@ -96,6 +110,13 @@ export function readRuntimeOptionsFromEnv(
     const n = Number.parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
+  // Zero is a value here: it turns the grace window off.
+  const nonNegative = (key: string): number | undefined => {
+    const raw = env[key];
+    if (raw === undefined || raw.trim() === "") return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
   return {
     bin: env.ORCHESTRATE_AMP_BIN || undefined,
     pollMs: num("ORCHESTRATE_AMP_POLL_MS"),
@@ -106,6 +127,7 @@ export function readRuntimeOptionsFromEnv(
     url: env.ORCHESTRATE_AMP_URL || undefined,
     commandTimeoutMs: num("ORCHESTRATE_AMP_COMMAND_TIMEOUT_MS"),
     waitTimeoutSec: num("ORCHESTRATE_WAIT_TIMEOUT_SEC"),
+    handoffGraceMs: nonNegative("ORCHESTRATE_AMP_HANDOFF_GRACE_MS"),
   };
 }
 
@@ -282,6 +304,8 @@ export interface RunDescription {
   durationMs: number | null;
   /** Index of the last message considered, for stream cursors. */
   messageCount: number;
+  /** Whether `finalText` carries a handoff section; see `hasHandoffSection`. */
+  hasHandoff: boolean;
 }
 
 export function parseRunId(runId: string): number {
@@ -336,6 +360,15 @@ export function parseBranchLine(body: string): string[] {
   return [raw];
 }
 
+/**
+ * The same test as upstream's `hasStructuredHandoff` in `core/failure-handoff.ts`:
+ * a handoff opens a `## Status` (or, for a verifier, `## Verification`)
+ * section. A turn that ends without one is a progress message, not a handoff.
+ */
+export function hasHandoffSection(body: string): boolean {
+  return /^##\s+(Status|Verification)\s*$/m.test(body);
+}
+
 function agentState(exp: ThreadExport): string {
   return (exp.meta?.lastKnownAgentState?.state ?? "").toLowerCase();
 }
@@ -362,7 +395,13 @@ export function describeRun(exp: ThreadExport, runId: string): RunDescription {
     Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt
       ? endedAt - startedAt
       : null;
-  const base = { finalText, branches, durationMs, messageCount: messages.length };
+  const base = {
+    finalText,
+    branches,
+    durationMs,
+    messageCount: messages.length,
+    hasHandoff: hasHandoffSection(finalText),
+  };
 
   if (exp.meta?.deleted === true) {
     return { status: "cancelled", ...base };
@@ -577,20 +616,59 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
   }
 
   /**
-   * Yield one export per poll until the caller stops consuming or the
-   * deadline passes. Shared by `wait` and `stream`, so both tolerate up to
-   * `maxConsecutiveFailures` failed exports in a row (the thread keeps running
-   * on the server while the local view is dark), both notice a thread another
-   * process archived, and both stop after `waitTimeoutSec` without a terminal
-   * state: the final item carries `timedOut: true` and the generator ends.
+   * Yield one export per poll, with the status the caller should act on,
+   * until the caller stops consuming or the deadline passes. Shared by `wait`
+   * and `stream`, so both tolerate up to `maxConsecutiveFailures` failed
+   * exports in a row (the thread keeps running on the server while the local
+   * view is dark), both notice a thread another process archived, both hold
+   * a finished run without a handoff section for `handoffGraceMs` (the third
+   * real run had a worker end a turn on a progress message and write the
+   * handoff on its next turn, after the loop had already respawned it), and
+   * both stop after `waitTimeoutSec` without a terminal state: the final item
+   * carries `timedOut: true` and the generator ends.
    */
   async function* pollExports(
     run: RunHandle
-  ): AsyncGenerator<{ exp: ThreadExport; timedOut: boolean }, void> {
+  ): AsyncGenerator<{ exp: ThreadExport; status: RunStatus; timedOut: boolean }, void> {
     const startedAt = Date.now();
     const deadlineMs = cfg.waitTimeoutSec * 1000;
     let failures = 0;
     let lastArchivedCheck = startedAt;
+    // When the turn that ended without a handoff section was first seen; null
+    // while the thread is working, so each such turn gets its own window.
+    let graceStartedAt: number | null = null;
+
+    /**
+     * A finished run whose final text has no handoff section stays `running`
+     * for `handoffGraceMs` from the first poll that saw it, then reads as
+     * finished with that text, as before. A thread that resumes a turn in
+     * between clears the clock. An archived thread gets no grace: it cannot
+     * take another turn.
+     */
+    function withHandoffGrace(run: RunHandle, exp: ThreadExport, status: RunStatus): RunStatus {
+      if (status === "running") {
+        graceStartedAt = null;
+        return status;
+      }
+      if (status !== "finished" || cfg.handoffGraceMs <= 0 || exp.meta?.archived === true) {
+        return status;
+      }
+      if (describeRun(exp, run.runId).hasHandoff) return status;
+      const graceSec = Math.round(cfg.handoffGraceMs / 1000);
+      if (graceStartedAt === null) {
+        graceStartedAt = Date.now();
+        attention(
+          `${run.agentId} ${run.runId}: turn ended idle without a \`## Status\` or \`## Verification\` section; polling up to ${graceSec}s more for a later turn to produce the handoff`
+        );
+      }
+      if (Date.now() - graceStartedAt < cfg.handoffGraceMs) return "running";
+      attention(
+        `${run.agentId} ${run.runId}: no handoff section after ${graceSec}s of grace; the run reads as finished with its last text`
+      );
+      graceStartedAt = null;
+      return status;
+    }
+
     while (true) {
       let exp: ThreadExport | null = null;
       if (cancelledHere.has(run.agentId)) {
@@ -611,15 +689,17 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         }
       }
       if (exp) {
-        const running = describeRun(exp, run.runId).status === "running";
-        if (running && Date.now() - lastArchivedCheck >= cfg.archivedCheckMs) {
+        let status = describeRun(exp, run.runId).status;
+        if (status === "running" && Date.now() - lastArchivedCheck >= cfg.archivedCheckMs) {
           lastArchivedCheck = Date.now();
           if (await isArchivedElsewhere(run.agentId)) {
             exp = { ...exp, meta: { ...(exp.meta ?? {}), archived: true } };
+            status = describeRun(exp, run.runId).status;
           }
         }
-        const timedOut = running && Date.now() - startedAt >= deadlineMs;
-        yield { exp, timedOut };
+        status = withHandoffGrace(run, exp, status);
+        const timedOut = status === "running" && Date.now() - startedAt >= deadlineMs;
+        yield { exp, status, timedOut };
         if (timedOut) return;
       }
       await sleep(cfg.pollMs);
@@ -706,10 +786,10 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     async wait(run: RunHandle): Promise<WaitResult> {
       threadIdArg(run.agentId);
       runIdArg(run.runId);
-      for await (const { exp, timedOut } of pollExports(run)) {
+      for await (const { exp, status, timedOut } of pollExports(run)) {
         const d = describeRun(exp, run.runId);
         const base = { finalText: d.finalText, branches: d.branches, durationMs: d.durationMs };
-        if (d.status !== "running") return { status: d.status, ...base };
+        if (status !== "running") return { status, ...base };
         if (timedOut) return { status: "error", ...base, error: timeoutMessage(run, exp) };
       }
       throw new AgentRuntimeError(`polling ${run.agentId} ended without a result`);
@@ -721,7 +801,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       // Per message index: the first block not fully yielded and, when that
       // block is text still growing, how much of it went out already.
       const yielded = new Map<number, { next: number; partialLen: number }>();
-      for await (const { exp, timedOut } of pollExports(run)) {
+      for await (const { exp, status, timedOut } of pollExports(run)) {
         const messages = exp.messages ?? [];
         for (let i = start + 1; i < messages.length; i++) {
           const m = messages[i];
@@ -752,9 +832,8 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
           }
           yielded.set(i, seen);
         }
-        const d = describeRun(exp, run.runId);
-        if (d.status !== "running") {
-          yield { type: "status", status: d.status };
+        if (status !== "running") {
+          yield { type: "status", status };
           return;
         }
         if (timedOut) {

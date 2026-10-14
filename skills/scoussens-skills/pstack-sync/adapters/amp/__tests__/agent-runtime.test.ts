@@ -9,12 +9,15 @@ import { AgentRuntimeError, type StreamEvent } from "../../interface.ts";
 import {
   bridgeCandidates,
   createAmpRuntime,
+  DEFAULT_HANDOFF_GRACE_MS,
   describeRun,
+  hasHandoffSection,
   isLoopbackUrl,
   isThreadId,
   labelArgs,
   parseBranchLine,
   readBridgeFile,
+  readRuntimeOptionsFromEnv,
   type ThreadExport,
   titleFor,
   withStartingRef,
@@ -51,6 +54,8 @@ beforeEach(() => {
     ORCHESTRATE_AMP_MAX_EXPORT_FAILURES: "5",
     ORCHESTRATE_AMP_BRIDGE: "",
     AMP_WORKING_DIRECTORY: "",
+    // Off unless a test turns it on: most fixtures end on a plain reply.
+    ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0",
   };
 });
 
@@ -539,6 +544,106 @@ describe("deadline", () => {
     serve(ID, 1, FINISHED);
     const rt = createAmpRuntime({ env, waitTimeoutSec: 0.05 });
     expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+  });
+});
+
+describe("handoff grace", () => {
+  const PROGRESS = "Tests pass; pushing the branch next and will hand off after.";
+  const midTurn: Msg[] = [{ user: "do the task" }, { assistant: PROGRESS }, { tool: "shell_command", id: "TU-2" }];
+  const handedOff: Msg[] = [...midTurn, { toolResult: true }, { assistant: "## Status\nsuccess\n\n## Branch\n`orch/demo/task-a`" }];
+
+  test("holds a finished run without a handoff section until a later turn produces one", async () => {
+    serve(ID, 1, thread("working", [{ user: "do the task" }]));
+    serve(ID, 2, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    serve(ID, 3, thread("running_tools", midTurn));
+    serve(ID, 4, thread("idle", handedOff));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 2_000, onAttention: sink.onAttention });
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(result.status).toBe("finished");
+    expect(result.finalText.startsWith("## Status\nsuccess")).toBe(true);
+    expect(result.branches).toEqual(["orch/demo/task-a"]);
+    expect(exportsOf(ID)).toBe(4);
+    expect(sink.lines).toHaveLength(1);
+    expect(sink.lines[0]).toContain(`${ID} m0: turn ended idle without a \`## Status\``);
+    expect(sink.lines[0]).toContain("polling up to 2s more");
+  });
+
+  test("returns finished with the last text once the grace expires, and says so", async () => {
+    serve(ID, 1, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 60, onAttention: sink.onAttention });
+    const started = Date.now();
+    const result = await rt.wait({ agentId: ID, runId: "m0" });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(55);
+    expect(result.status).toBe("finished");
+    expect(result.finalText).toBe(PROGRESS);
+    expect(exportsOf(ID)).toBeGreaterThan(1);
+    expect(sink.lines).toHaveLength(2);
+    expect(sink.lines[1]).toContain(`${ID} m0: no handoff section after 0s of grace`);
+  });
+
+  test("stream keeps yielding through the window and ends with the handoff turn's status", async () => {
+    serve(ID, 1, thread("idle", [{ user: "do the task" }, { assistant: PROGRESS }]));
+    serve(ID, 2, thread("working", midTurn));
+    serve(ID, 3, thread("idle", handedOff));
+    const rt = createAmpRuntime({ env, handoffGraceMs: 2_000, onAttention: () => {} });
+    const events: StreamEvent[] = [];
+    for await (const event of rt.stream({ agentId: ID, runId: "m0" })) events.push(event);
+    const text = events
+      .filter((e): e is Extract<StreamEvent, { type: "assistant" }> => e.type === "assistant")
+      .map(e => e.text)
+      .join("");
+    expect(text).toBe(`${PROGRESS}## Status\nsuccess\n\n## Branch\n\`orch/demo/task-a\``);
+    expect(events.filter(e => e.type === "tool_call")).toHaveLength(1);
+    expect(events.at(-1)).toEqual({ type: "status", status: "finished" });
+    expect(exportsOf(ID)).toBe(3);
+  });
+
+  test("a verifier's ## Verification section is a handoff too", async () => {
+    serve(ID, 1, thread("idle", [{ user: "verify" }, { assistant: "## Verification\nverified\n\n## Notes\n- ok" }]));
+    const sink = attentionSink();
+    const rt = createAmpRuntime({ env, handoffGraceMs: 60_000, onAttention: sink.onAttention });
+    expect((await rt.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+    expect(exportsOf(ID)).toBe(1);
+    expect(sink.lines).toEqual([]);
+    expect(hasHandoffSection("## Status\nsuccess")).toBe(true);
+    expect(hasHandoffSection("##  Verification  \nverified")).toBe(true);
+    expect(hasHandoffSection("Status: success\n### Status\ndone")).toBe(false);
+    expect(hasHandoffSection("")).toBe(false);
+  });
+
+  test("no grace for an archived, cancelled, or errored run, or when the window is 0", async () => {
+    const sink = attentionSink();
+    const cases: [string, ThreadExport, string][] = [
+      ["archived", thread("idle", [{ user: "x" }, { assistant: PROGRESS }], { archived: true }), "finished"],
+      ["cancelled", thread("idle", [{ user: "x" }, { assistant: PROGRESS, stop: "cancelled" }]), "cancelled"],
+      ["errored", thread("idle", [{ user: "x" }, { assistant: PROGRESS, stop: "error" }]), "error"],
+    ];
+    for (const [label, exp, status] of cases) {
+      rmSync(join(dir, `count-${ID}`), { force: true });
+      serve(ID, 1, exp);
+      const rt = createAmpRuntime({ env, handoffGraceMs: 60_000, onAttention: sink.onAttention });
+      expect([label, (await rt.wait({ agentId: ID, runId: "m0" })).status]).toEqual([label, status]);
+    }
+    rmSync(join(dir, `count-${ID}`), { force: true });
+    serve(ID, 1, thread("idle", [{ user: "x" }, { assistant: PROGRESS }]));
+    const off = createAmpRuntime({
+      env: { ...env, ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0" },
+      onAttention: sink.onAttention,
+    });
+    expect((await off.wait({ agentId: ID, runId: "m0" })).status).toBe("finished");
+    expect(exportsOf(ID)).toBe(4);
+    expect(sink.lines).toEqual([]);
+  });
+
+  test("the window comes from ORCHESTRATE_AMP_HANDOFF_GRACE_MS and defaults to two minutes", () => {
+    expect(DEFAULT_HANDOFF_GRACE_MS).toBe(120_000);
+    expect(readRuntimeOptionsFromEnv({}).handoffGraceMs).toBeUndefined();
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "0" }).handoffGraceMs).toBe(0);
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "30000" }).handoffGraceMs).toBe(30_000);
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "-1" }).handoffGraceMs).toBeUndefined();
+    expect(readRuntimeOptionsFromEnv({ ORCHESTRATE_AMP_HANDOFF_GRACE_MS: "soon" }).handoffGraceMs).toBeUndefined();
   });
 });
 
