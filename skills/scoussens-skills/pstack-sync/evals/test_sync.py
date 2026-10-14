@@ -1,5 +1,6 @@
 """Run with python3 -B -m unittest discover -s <this directory> -v."""
 
+import datetime
 import importlib.util
 import json
 import os
@@ -154,6 +155,32 @@ UPSTREAM = {
 PROFILE = "# Harness profile: test\n\n| Need | Support | test equivalent | Source |\n| --- | --- | --- | --- |\n"
 
 
+def git_repo(path, *files_then_message):
+    """A git repository at path with an identity; files written and committed when given."""
+    subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
+    for key, value in (("user.name", "t"), ("user.email", "t@example.com")):
+        subprocess.run(["git", "-C", str(path), "config", key, value], check=True)
+    return path
+
+
+def commit_all(path, message):
+    subprocess.run(["git", "-C", str(path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(path), "commit", "-q", "-m", message], check=True)
+    return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def build_upstream(tmp, files=UPSTREAM):
+    """A small cursor/plugins at tmp/plugins, fetched over file:// by the tests."""
+    repo = tmp / "plugins"
+    shutil.rmtree(repo, ignore_errors=True)
+    for path, text in files.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text)
+    git_repo(repo)
+    commit_all(repo, "plugins")
+    return repo
+
+
 class DependencyTests(unittest.TestCase):
     """sync against a small cursor/plugins built in a temporary directory and fetched over file://."""
 
@@ -175,16 +202,7 @@ class DependencyTests(unittest.TestCase):
         path.write_text(text)
 
     def upstream(self, files=UPSTREAM):
-        repo = self.tmp / "plugins"
-        shutil.rmtree(repo, ignore_errors=True)
-        for path, text in files.items():
-            (repo / path).parent.mkdir(parents=True, exist_ok=True)
-            (repo / path).write_text(text)
-        git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
-        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
-        subprocess.run([*git, "add", "-A"], check=True)
-        subprocess.run([*git, "commit", "-q", "-m", "plugins"], check=True)
-        return repo
+        return build_upstream(self.tmp, files)
 
     def run_sync(self, command="sync", *args):
         env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()}
@@ -573,6 +591,215 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(ids[:len(dialect)], dialect)
         self.assertIn("role-model-config", ids)
         self.assertNotIn("role-model-config", dialect)
+
+
+class PublishTests(unittest.TestCase):
+    """publish from a temporary pack checkout into a temporary workspace repository."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.tmp = Path(temporary.name)
+        build_upstream(self.tmp)
+        self.pack = self.make_pack()
+        self.ws = self.make_workspace()
+
+    def make_pack(self):
+        """Two skills and pstack-sync with the pstack and kit sets, a tracked .gitignore, and
+        untracked scratch the copy must not pick up."""
+        pack = self.tmp / "pack"
+        skills = pack / "skills" / "scoussens-skills"
+        (skills / "one").mkdir(parents=True)
+        (skills / "one" / "SKILL.md").write_text(skill("one", "One."))
+        (skills / "two" / "scripts").mkdir(parents=True)
+        (skills / "two" / "SKILL.md").write_text(skill("two", "Two."))
+        (skills / "two" / "scripts" / "run.sh").write_text("#!/bin/sh\necho two\n")
+        (skills / "two" / "scripts" / "run.sh").chmod(0o755)
+        me = skills / sync.SELF
+        (me / "harness").mkdir(parents=True)
+        (me / "SKILL.md").write_text(skill(sync.SELF, "Sync."))
+        shutil.copytree(SKILL / "dialects", me / "dialects")
+        (me / "sets" / "pstack").mkdir(parents=True)
+        base = json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())
+        base.pop("_doc", None)
+        (me / "sets" / "pstack" / "set.json").write_text(json.dumps(base))
+        (me / "sets" / "kit").mkdir()
+        (me / "sets" / "kit" / "set.json").write_text(json.dumps({
+            **base, "root_plugin": "cursor-team-kit", "skills_subdir": "cursor-team-kit/skills",
+            "agents_dir": "kit-agents", "collision_prefix": "kit-", "extra_needs": []}))
+        (me / "harness" / "test.md").write_text(PROFILE + "| `loop` | keep | the test harness loops as written | seed |\n")
+        (pack / ".gitignore").write_text("node_modules/\n*.log\n")
+        git_repo(pack)
+        subprocess.run(["git", "-C", str(pack), "remote", "add", "origin", "https://github.com/nthplusio/skills.git"], check=True)
+        commit_all(pack, "pack")
+        (skills / "one" / "node_modules" / "dep").mkdir(parents=True)
+        (skills / "one" / "node_modules" / "dep" / "index.js").write_text("module.exports = 1;\n")
+        (skills / "one" / "scratch.txt").write_text("untracked\n")
+        (skills / "one" / "debug.log").write_text("ignored\n")
+        return pack
+
+    def make_workspace(self, manifest_skills=None, extra=()):
+        """A workspace with a stale copy of `one`, a durable profile without the seed's loop row,
+        and optionally a previous pack manifest plus extra skill directories."""
+        ws = self.tmp / "ws"
+        (ws / "one").mkdir(parents=True)
+        (ws / "one" / "SKILL.md").write_text(skill("one", "Old one."))
+        (ws / "one" / "old.md").write_text("gone after the copy\n")
+        profile = ws / ".nthplusio-skills" / sync.SELF / "harness" / "test.md"
+        profile.parent.mkdir(parents=True)
+        profile.write_text(PROFILE)
+        if manifest_skills is not None:
+            (ws / ".nthplusio-skills" / "pack-manifest.json").write_text(json.dumps(
+                {"pack_commit": "0" * 40, "pack_remote": None, "published_at": "2026-01-01T00:00:00+00:00",
+                 "skills": manifest_skills}))
+        for name in extra:
+            (ws / name).mkdir()
+            (ws / name / "SKILL.md").write_text(skill(name, f"{name}."))
+        git_repo(ws)
+        commit_all(ws, "init")
+        return ws
+
+    def publish(self, *args, ok=True):
+        env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()}
+        result = subprocess.run([sys.executable, "-B", str(SCRIPT), "publish", "--harness", "test",
+                                 "--pack", str(self.pack), "--repo", str(self.ws), *args],
+                                env=env, capture_output=True, text=True)
+        if ok:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        return result.returncode, (json.loads(result.stdout) if result.stdout else None), result.stderr
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.ws), *args], capture_output=True, text=True, check=True).stdout
+
+    def test_publish_copies_tracked_files_runs_every_set_and_commits(self):
+        head = self.git("rev-parse", "HEAD").strip()
+        _, report, _ = self.publish()
+        self.assertEqual(report["skills"]["added"], [sync.SELF, "two"])
+        self.assertEqual(report["skills"]["updated"], ["one"])
+        self.assertEqual((self.ws / "one" / "SKILL.md").read_text(), skill("one", "One."))
+        self.assertFalse((self.ws / "one" / "old.md").exists(), "the directory is replaced, not merged")
+        self.assertFalse((self.ws / "one" / "node_modules").exists(), "an untracked node_modules is not copied")
+        self.assertFalse((self.ws / "one" / "scratch.txt").exists(), "untracked scratch is not copied")
+        self.assertFalse((self.ws / "one" / "debug.log").exists(), "a file the pack ignores is not copied")
+        self.assertTrue(os.access(self.ws / "two" / "scripts" / "run.sh", os.X_OK), "the executable bit survives")
+        self.assertEqual(list(report["sets"]), ["kit", "pstack"], "sets run in name order")
+        self.assertEqual(sorted(report["sets"]["kit"]["added"]), ["deslop", "unused", "verify"])
+        self.assertIn("alpha", report["sets"]["pstack"]["added"])
+        self.assertEqual(report["profile_rows_appended"], {"pstack": ["loop"]})
+        self.assertNotIn("loop", report["sets"]["pstack"]["profile_gaps"], "the set is synced again after the row lands")
+        self.assertEqual(report["sets"]["pstack"]["profile_gaps_in_seed"], {}, "nothing the seed offers is left to append")
+        profile = (self.ws / ".nthplusio-skills" / sync.SELF / "harness" / "test.md").read_text()
+        self.assertIn("| `loop` | keep | the test harness loops as written | seed |", profile)
+        self.assertNotIn("loop", report["sets"]["pstack"]["needs_adaptation"].get("beta", {}).get("SKILL.md", {}).get("needs", {}))
+        self.assertIn("pstack: 2 needs adaptation", report["attention"])
+        manifest = json.loads((self.ws / ".nthplusio-skills" / "pack-manifest.json").read_text())
+        pack_head = subprocess.run(["git", "-C", str(self.pack), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(manifest["pack_commit"], pack_head)
+        self.assertEqual(manifest["pack_remote"], "https://github.com/nthplusio/skills.git")
+        self.assertEqual(manifest["skills"], ["one", sync.SELF, "two"])
+        self.assertEqual(manifest, report["manifest"])
+        datetime.datetime.fromisoformat(manifest["published_at"])
+        self.assertEqual(report["committed"], self.git("rev-parse", "HEAD").strip())
+        self.assertNotEqual(report["committed"], head)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        message = self.git("log", "-1", "--format=%B")
+        self.assertTrue(message.startswith(f"Refresh workspace skills from nthplusio/skills@{pack_head[:7]}"), message)
+        self.assertIn("Added: pstack-sync, two\nUpdated: one\nRemoved: none\n", message)
+        self.assertIn("Set kit: cursor/plugins@", message)
+        self.assertIn("Set pstack: cursor/plugins@", message)
+        self.assertIsNone(report["pushed"])
+        _, again, _ = self.publish()
+        self.assertEqual((again["committed"], again["staged_files"], again["skills"]["unchanged_count"]), (None, 0, 3))
+        self.assertEqual(again["profile_rows_appended"], {})
+
+    def test_publish_removes_only_the_retired_skills_the_manifest_names(self):
+        shutil.rmtree(self.ws)
+        self.ws = self.make_workspace(manifest_skills=["gone", "one", sync.SELF, "two"], extra=["gone", "keeper"])
+        _, report, _ = self.publish()
+        self.assertEqual(report["skills"]["removed"], ["gone"])
+        self.assertFalse((self.ws / "gone").exists())
+        self.assertTrue((self.ws / "keeper" / "SKILL.md").exists(), "a directory the manifest does not name stays")
+        self.assertIn("Removed: gone\n", self.git("log", "-1", "--format=%B"))
+        self.assertEqual(json.loads((self.ws / ".nthplusio-skills" / "pack-manifest.json").read_text())["skills"],
+                         ["one", sync.SELF, "two"])
+
+    def test_publish_refuses_a_file_over_two_megabytes(self):
+        big = self.pack / "skills" / "scoussens-skills" / "two" / "assets" / "big.bin"
+        big.parent.mkdir()
+        big.write_bytes(b"0" * (3 * 1024 * 1024))
+        commit_all(self.pack, "big")
+        head = self.git("rev-parse", "HEAD").strip()
+        code, report, err = self.publish(ok=False)
+        self.assertEqual(code, 2, err)
+        self.assertEqual([o["path"] for o in report["refused"]["oversized"]], ["two/assets/big.bin"])
+        self.assertEqual(report["refused"]["node_modules"], [])
+        self.assertIsNone(report["committed"])
+        self.assertIn("two/assets/big.bin", err)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), head, "nothing is committed")
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "", "nothing is left staged")
+
+    def test_publish_refuses_a_node_modules_directory_a_set_would_add(self):
+        build_upstream(self.tmp, {**UPSTREAM, f"{sync.SUBDIR}/alpha/scripts/node_modules/dep/index.js": "module.exports = 1;\n"})
+        head = self.git("rev-parse", "HEAD").strip()
+        code, report, err = self.publish(ok=False)
+        self.assertEqual(code, 2, err)
+        self.assertEqual(report["refused"]["node_modules"], ["alpha/scripts/node_modules/dep/index.js"])
+        self.assertIn("alpha/scripts/node_modules/dep/index.js", err)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), head)
+
+    def test_publish_refuses_a_dirty_workspace(self):
+        (self.ws / "stray.txt").write_text("not committed\n")
+        code, report, err = self.publish(ok=False)
+        self.assertNotEqual(code, 0)
+        self.assertIn("uncommitted changes", err)
+        self.assertIn("stray.txt", err)
+
+    def test_dry_run_reports_the_change_and_leaves_the_repository_untouched(self):
+        head = self.git("rev-parse", "HEAD").strip()
+        _, report, _ = self.publish("--dry-run")
+        self.assertTrue(report["dry_run"])
+        self.assertEqual(report["skills"]["added"], [sync.SELF, "two"])
+        self.assertEqual(report["skills"]["updated"], ["one"])
+        self.assertEqual(list(report["sets"]), ["kit", "pstack"])
+        self.assertEqual(report["profile_rows_appended"], {"pstack": ["loop"]})
+        self.assertGreater(report["staged_files"], 0)
+        self.assertTrue(report["commit_message"].startswith("Refresh workspace skills from nthplusio/skills@"))
+        self.assertEqual(report["manifest"]["skills"], ["one", sync.SELF, "two"])
+        self.assertIsNone(report["committed"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), head)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.assertEqual((self.ws / "one" / "SKILL.md").read_text(), skill("one", "Old one."))
+        self.assertTrue((self.ws / "one" / "old.md").exists())
+        self.assertFalse((self.ws / "two").exists())
+        self.assertFalse((self.ws / ".nthplusio-skills" / "pack-manifest.json").exists())
+        self.assertEqual(len(self.git("worktree", "list").splitlines()), 1, "the throwaway worktree is gone")
+
+    def test_verify_reports_each_skill_or_that_amp_is_absent(self):
+        env_path = self.tmp / "bin"
+        env_path.mkdir()
+        fake = env_path / "amp"
+        fake.write_text("#!/bin/sh\n[ \"$1\" = skill ] && [ \"$2\" = info ] || exit 3\n"
+                        "case \"$3\" in one|deslop) echo \"Skill: $3\";; *) echo \"Skill \\\"$3\\\" not found.\" >&2; exit 1;; esac\n")
+        fake.chmod(0o755)
+        env = {**os.environ, "HOME": str(self.tmp), "PSTACK_SYNC_UPSTREAM": (self.tmp / "plugins").as_uri()}
+        command = [sys.executable, "-B", str(SCRIPT), "publish", "--harness", "test", "--pack", str(self.pack),
+                   "--repo", str(self.ws), "--verify"]
+        result = subprocess.run(command, env={**env, "PATH": f"{env_path}:{env['PATH']}"}, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify = json.loads(result.stdout)["verify"]
+        self.assertEqual(verify["amp"], str(fake))
+        self.assertEqual({n: v["status"] for n, v in verify["skills"].items()},
+                         {"one": "found", "deslop": "found", "alpha": "missing"})
+        self.assertEqual({n: v["source"] for n, v in verify["skills"].items()},
+                         {"one": "pack", "deslop": "kit", "alpha": "pstack"})
+        without = self.tmp / "bin-without-amp"
+        without.mkdir()
+        (without / "git").symlink_to(shutil.which("git"))
+        result = subprocess.run(command, env={**env, "PATH": str(without)}, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify = json.loads(result.stdout)["verify"]
+        self.assertIsNone(verify["amp"])
+        self.assertIn("not on PATH", verify["note"])
 
 
 class HandoffNameTests(unittest.TestCase):
