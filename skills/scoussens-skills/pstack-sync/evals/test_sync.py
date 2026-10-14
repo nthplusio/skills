@@ -1209,6 +1209,30 @@ class PublishTests(unittest.TestCase):
             self.assertEqual(remote_head, summary["committed"])
             self.assertEqual(remote_head, self.git("rev-parse", "HEAD", repo=repo).strip())
 
+    def test_push_lands_on_the_remote_default_branch_when_the_clone_sits_on_another_name(self):
+        # A clone made with `git init` sits on master while the Amp-hosted remote serves main.
+        skills_remote = self.tmp / "ws.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(skills_remote)], check=True)
+        self.git("remote", "add", "origin", str(skills_remote), repo=self.ws)
+        remote = self.tmp / "plugins-main.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
+        subprocess.run(["git", "-C", str(remote), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+        self.git("remote", "add", "origin", str(remote), repo=self.plugins_ws)
+        self.git("branch", "-M", "master", repo=self.plugins_ws)
+        self.git("push", "-q", "origin", "HEAD:main", repo=self.plugins_ws)  # the remote has main, no tracking set
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--push")
+        self.assertEqual(report["plugins"]["pushed"], "main")
+        self.assertEqual(self.git("rev-parse", "refs/heads/main", repo=remote).strip(), report["plugins"]["committed"])
+        self.assertNotIn("master", self.git("branch", "--list", repo=remote))
+        # With an upstream set, that upstream wins over the remote default.
+        self.git("checkout", "-q", "-b", "feature", repo=self.plugins_ws)
+        self.git("push", "-q", "-u", "origin", "feature:topic", repo=self.plugins_ws)
+        (self.plugin_source / "orchestrate-bridge" / "README.md").write_text("changed again\n")
+        commit_all(self.pack, "plugin change")
+        _, report, _ = self.publish("--plugins-repo", str(self.plugins_ws), "--push")
+        self.assertEqual(report["plugins"]["pushed"], "topic")
+        self.assertEqual(self.git("rev-parse", "refs/heads/topic", repo=remote).strip(), report["plugins"]["committed"])
+
     def test_plugin_verification_matches_only_exact_workspace_headers_once(self):
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir()
