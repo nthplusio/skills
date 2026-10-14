@@ -1,0 +1,438 @@
+{
+  "amp": {
+    "accept": [],
+    "global": [],
+    "files": {
+      "orchestrate/SKILL.md": {
+        "transforms": [
+          {
+            "find": "description: Use only when the user explicitly types `/orchestrate <goal>` to decompose a large task, spawn a tree of parallel cloud-agent workers/subplanners/verifiers via the Cursor SDK, and collect structured handoffs; do not invoke autonomously.\n",
+            "replace": "description: Use only when the user explicitly types `/orchestrate <goal>` to decompose a large task, spawn a tree of parallel orb-thread workers/subplanners/verifiers via the Amp agent runtime adapter, and collect structured handoffs; do not invoke autonomously.\n"
+          },
+          {
+            "find": "An explicit `/orchestrate <goal>` fans out a large task across parallel Cursor cloud agents. Workers don't talk to each other; they talk up through structured handoffs. The spawn, wait, and handoff loop lives in `scripts/cli.ts`. The planner writes `plan.json`, the script executes it, and the planner reads handoffs to decide what comes next. Long-running agent loops drift; a script with a JSON state file keeps its footing.\n",
+            "replace": "An explicit `/orchestrate <goal>` fans out a large task across parallel Amp orb threads, each with its own checkout. Workers don't talk to each other; they talk up through structured handoffs. The spawn, wait, and handoff loop lives in `scripts/cli.ts`. The planner writes `plan.json`, the script executes it, and the planner reads handoffs to decide what comes next. Long-running agent loops drift; a script with a JSON state file keeps its footing.\n"
+          },
+          {
+            "find": "**Required reading: the `cursor-sdk` skill ([cursor/plugins/cursor-sdk](https://github.com/cursor/plugins/tree/main/cursor-sdk)).** Spawning, auth, and the error taxonomy live there. Don't reimplement what that skill already documents.\n",
+            "replace": "**Required reading: the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR).** Spawning, auth, and the error taxonomy live there. Don't reimplement what that document already covers.\n"
+          },
+          {
+            "find": "- `CURSOR_API_KEY` must be a personal/user key. Create it from [Cursor Dashboard > Integrations](https://cursor.com/dashboard/integrations), then read `cursor-sdk` Auth before using it.\n",
+            "replace": "- Auth is the `amp` CLI's login; there is no API key variable. The CLI must be signed in before kickoff.\n"
+          },
+          {
+            "find": "2. **Planners don't know who picks up their tasks.** The script routes each task to a cloud agent. The planner's mental model stays at the task level.\n",
+            "replace": "2. **Planners don't know who picks up their tasks.** The script routes each task to a worker thread. The planner's mental model stays at the task level.\n"
+          },
+          {
+            "find": "**Dispatcher.** You're in a local IDE session and the user typed `/orchestrate <goal>`. Your job is to kick off a cloud root planner and return its URL. See `references/dispatcher.md`. One-shot; you are not the planner.\n",
+            "replace": "**Dispatcher.** You are in an Amp thread and the user typed `/orchestrate <goal>`. Your job is to kick off a root planner in its own orb thread and return its URL. See `references/dispatcher.md`. One-shot; you are not the planner.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/empty-error-handoff.md": {
+        "transforms": [
+          {
+            "find": "Cloud run errored before producing a final message.\n",
+            "replace": "Worker thread run errored before producing a final message.\n"
+          },
+          {
+            "find": "agent: https://cursor.com/agents/{{agentId}}\n",
+            "replace": "agent: https://ampcode.com/threads/{{agentId}}\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/failure-handoff.md": {
+        "transforms": [
+          {
+            "find": "Status: error (cloud agent terminated without writing a handoff)\n",
+            "replace": "Status: error (worker thread terminated without writing a handoff)\n"
+          },
+          {
+            "find": "Cloud agent: {{agentId}}\n",
+            "replace": "Worker thread: {{agentId}}\n"
+          },
+          {
+            "find": "SDK error: {{sdkError}}\n",
+            "replace": "Runtime error: {{sdkError}}\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/finished-no-handoff.md": {
+        "transforms": [
+          {
+            "find": "Status: {{resultStatus}} (cloud agent ended cleanly but never wrote a `## Status` handoff)\nCloud agent: {{agentId}}\n",
+            "replace": "Status: {{resultStatus}} (worker thread ended cleanly but never wrote a `## Status` handoff)\nWorker thread: {{agentId}}\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/loop-hygiene.md": {
+        "transforms": [
+          {
+            "find": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground. The Shell default backgrounds the loop and breaks the heartbeat when your turn ends.\n",
+            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground with the shell tool, which blocks until the loop exits. A backgrounded loop breaks the heartbeat when your turn ends.\n"
+          },
+          {
+            "find": "- `unknown`: read the `Last activity` and `SDK error` lines; if no signal, treat as transient and retry as-is; abandon if it fails again.\n",
+            "replace": "- `unknown`: read the `Last activity` and `Runtime error` lines; if no signal, treat as transient and retry as-is; abandon if it fails again.\n"
+          },
+          {
+            "find": "Each retry costs another cloud-agent run; budget your decisions. After 2 retries on the same task, prefer abandon (drop the task from `plan.json`, replan around it) over a 3rd attempt unless you have specific evidence the next retry will succeed. Update `plan.json`, then re-run `bun cli.ts run{{rootFlag}} <workspace>` to continue.\n",
+            "replace": "Each retry costs another orb thread run; budget your decisions. After 2 retries on the same task, prefer abandon (drop the task from `plan.json`, replan around it) over a 3rd attempt unless you have specific evidence the next retry will succeed. Update `plan.json`, then re-run `bun cli.ts run{{rootFlag}} <workspace>` to continue.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/root.md": {
+        "transforms": [
+          {
+            "find": "Your cloud agent id is `{{agentId}}`. Set `plan.selfAgentId` in plan.json to that string so spawns record `parentAgentId` and `kill-tree --agent-id` can target this planner.\n",
+            "replace": "When the goal names tickets (an issue URL or ID), read each ticket and write its ID and title into the `brief` of the task that covers it; with no tickets, build the plan from the goal alone.\n\nYour thread id is `{{agentId}}`. Set `plan.selfAgentId` in plan.json to that string so spawns record `parentAgentId` and `kill-tree --agent-id` can target this planner.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/slack-block.md": {
+        "transforms": [
+          {
+            "find": "- `bun <path-to-orchestrate>/scripts/cli.ts comment \"<note>\" --thread-ts {{threadTs}} --sender {{taskName}}{{agentIdFlag}} --workspace <workspace>`. `--agent-id` adds a footer link back to your cursor.com page.\n",
+            "replace": "- `bun <path-to-orchestrate>/scripts/cli.ts comment \"<note>\" --thread-ts {{threadTs}} --sender {{taskName}}{{agentIdFlag}} --workspace <workspace>`. `--agent-id` adds a footer link back to your ampcode.com thread.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/subplanner.md": {
+        "transforms": [
+          {
+            "find": "**Workspace convention.** Put your orchestrate workspace at `.orchestrate/{{name}}/` and set `plan.rootSlug = \"{{name}}\"`. The parent records your actual cloud-agent branch after handoff; use the branch already checked out and don't create or rename one to match a planned name. Set `plan.repoUrl` to `{{repoUrl}}` so descendants stay in the parent's repo. When `{{andonStateRef}}` and `{{andonStatePath}}` are non-empty, copy them so Andon state stays shared. Omit any field whose placeholder renders empty.\n",
+            "replace": "**Workspace convention.** Put your orchestrate workspace at `.orchestrate/{{name}}/` and set `plan.rootSlug = \"{{name}}\"`. The parent records your actual worker-thread branch after handoff; use the branch already checked out and don't create or rename one to match a planned name. Set `plan.repoUrl` to `{{repoUrl}}` so descendants stay in the parent's repo. When `{{andonStateRef}}` and `{{andonStatePath}}` are non-empty, copy them so Andon state stays shared. Omit any field whose placeholder renders empty.\n"
+          },
+          {
+            "find": "**Lineage.** If `{{selfAgentId}}` is set, put `plan.selfAgentId = \"{{selfAgentId}}\"` in plan.json (SDK does not surface it elsewhere). Details: `references/spawning.md`.\n",
+            "replace": "**Lineage.** If `{{selfAgentId}}` is set, put `plan.selfAgentId = \"{{selfAgentId}}\"` in plan.json (the runtime does not surface it elsewhere). Details: `references/spawning.md`.\n"
+          },
+          {
+            "find": "Model selection: pick `tasks[].model` per task by capability. Available models:\n",
+            "replace": "Model selection: pick `tasks[].model` per task by capability; a value is an Amp agent mode, or `inherit` for the parent's. Available modes:\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/prompts/verifier.md": {
+        "transforms": [
+          {
+            "find": "- Commit verifier artifacts (repro scripts, audit notes, log captures if useful) to the branch already checked out for this cloud agent and push it.\n",
+            "replace": "- Commit verifier artifacts (repro scripts, audit notes, log captures if useful) to the branch already checked out in this worker thread and push it.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/references/dispatcher.md": {
+        "transforms": [
+          {
+            "find": "The dispatcher is one-shot. Take the user's goal, launch a cloud root planner via the CLI, return the URL, stop.\n",
+            "replace": "The dispatcher is one-shot. Take the user's goal, launch a root planner in its own orb thread via the CLI, return the URL, stop.\n"
+          },
+          {
+            "find": "1. Take the user's goal. Ask for clarification only if the goal is missing or ambiguous. The user chose parallel cloud orchestration deliberately; push back only if the task is genuinely trivial.\n",
+            "replace": "1. Take the user's goal. Ask for clarification only if the goal is missing or ambiguous. The user chose parallel orchestration across orb threads deliberately; push back only if the task is genuinely trivial.\n"
+          },
+          {
+            "find": "bun cli.ts kickoff \"<goal>\" [--repo <url>] [--ref main] [--model claude-opus-4-8] [--slack-channel C123] [--dispatcher-name \"Alex\"]\n",
+            "replace": "bun cli.ts kickoff \"<goal>\" [--repo <url>] [--ref main] [--model high] [--slack-channel C123] [--dispatcher-name \"Alex\"]\n"
+          },
+          {
+            "find": "The CLI reads `CURSOR_API_KEY`, auto-detects the repo from `git config --get remote.origin.url`, builds the spawn prompt, spawns via `cursor-sdk`, and prints `{ agentId, runId, status, url, dispatcherFirstName }` JSON. Slack is optional. If `SLACK_BOT_TOKEN` is set, also pass `--slack-channel <id>` or set `SLACK_CHANNEL_ID`; otherwise kickoff fails before spawning. If the token is unset, Slack stays disabled.\n",
+            "replace": "The CLI uses the `amp` CLI's login, auto-detects the repo from `git config --get remote.origin.url`, builds the spawn prompt, spawns an orb thread through the Amp agent runtime adapter, and prints `{ agentId, runId, status, url, dispatcherFirstName }` JSON. Slack is optional. If `SLACK_BOT_TOKEN` is set, also pass `--slack-channel <id>` or set `SLACK_CHANNEL_ID`; otherwise kickoff fails before spawning. If the token is unset, Slack stays disabled.\n"
+          },
+          {
+            "find": "Pass the user's goal through without expanding it. Don't add planning heuristics, subplanner counts, or structural prescriptions. The planner reads the orchestrate skill and decides its own decomposition. Over-prescribing leaks dispatcher context into the planner's window and invalidates the skill as a realistic test of the planner's judgment.\n",
+            "replace": "Pass the user's goal through without expanding it. When the user names tickets (an issue URL or ID), include them in the goal verbatim; the root planner reads each one. Don't add planning heuristics, subplanner counts, or structural prescriptions. The planner reads the orchestrate skill and decides its own decomposition. Over-prescribing leaks dispatcher context into the planner's window and invalidates the skill as a realistic test of the planner's judgment.\n"
+          },
+          {
+            "find": "`CURSOR_API_KEY` must be a user API key, not a team key. Auth sourcing precedence is documented in the `cursor-sdk` skill (https://github.com/cursor/plugins/tree/main/cursor-sdk). Don't bake keychain lookup into the kickoff CLI itself; cloud-agent VMs have no keychain.\n",
+            "replace": "Auth is the `amp` CLI's login; there is no API key variable. The auth check is documented in the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR). Don't bake keychain lookup into the kickoff CLI itself; orb threads have no keychain.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/references/handoffs.md": {
+        "transforms": [
+          {
+            "find": "When a worker dies without writing its own handoff (cap-hit, OOM, tool-error, network drop, uncaught SDK error), the script writes `handoffs/<task>-failure.md` so the planner sees a postmortem instead of silence. The loop then returns exit code 1 with a checkpoint sync so the planner can react immediately.\n",
+            "replace": "When a worker dies without writing its own handoff (cap-hit, OOM, tool-error, network drop, uncaught runtime error), the script writes `handoffs/<task>-failure.md` so the planner sees a postmortem instead of silence. The loop then returns exit code 1 with a checkpoint sync so the planner can react immediately.\n"
+          },
+          {
+            "find": "agentId: bc-...\n",
+            "replace": "agentId: T-...\n"
+          },
+          {
+            "find": "Status: error (cloud agent terminated without writing a handoff)\n",
+            "replace": "Status: error (worker thread terminated without writing a handoff)\n"
+          },
+          {
+            "find": "Cloud agent: bc-...\n",
+            "replace": "Worker thread: T-...\n"
+          },
+          {
+            "find": "Last tool call: <name from SDK stream tail, or (unknown)>\n",
+            "replace": "Last tool call: <name from the runtime's stream tail, or (unknown)>\n"
+          },
+          {
+            "find": "SDK error: <truncated error text>\n",
+            "replace": "Runtime error: <truncated error text>\n"
+          },
+          {
+            "find": "- `oom` when output or SDK error contains `out of memory` / `OOMKilled` / `exit code 137`\n- `network-drop` when the SDK error matches `fetch failed` / `ETIMEDOUT` / `ECONN` / `socket` / `dns` / `disconnect`\n- `tool-error` when the SDK error mentions `tool_use_failed` or `tool-error`\n",
+            "replace": "- `oom` when output or the runtime error contains `out of memory` / `OOMKilled` / `exit code 137`\n- `network-drop` when the runtime error matches `fetch failed` / `ETIMEDOUT` / `ECONN` / `socket` / `dns` / `disconnect`\n- `tool-error` when the runtime error mentions `tool_use_failed` or `tool-error`\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/references/planner.md": {
+        "transforms": [
+          {
+            "find": "1. Load the [cursor-sdk plugin](https://github.com/cursor/plugins/tree/main/cursor-sdk) for auth, spawning, and `CursorAgentError` vs. `RunResult.status === \"error\"`.\n",
+            "replace": "1. Read the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR) for auth, spawning, and the difference between a runtime error and a run that finished with status error.\n"
+          },
+          {
+            "find": "Slack visibility uses `SLACK_BOT_TOKEN`. Required scopes:\n",
+            "replace": "Slack visibility is optional. When `SLACK_BOT_TOKEN` is set, required scopes:\n"
+          },
+          {
+            "find": "\nOn the first `run --root`, the script uses `plan.slackChannel` for the Slack kickoff and writes `plan.slackKickoffRef`. The root plan gets `slackChannel` from `kickoff --slack-channel`, `run --root --slack-channel`, or `SLACK_CHANNEL_ID`. Subplanners inherit both fields so the whole tree mirrors into one thread.\n",
+            "replace": "\nTickets are optional inputs. When the user named tickets (an issue URL or ID), the dispatcher passed them in the goal; read each ticket and write its ID and title into the `brief` of the task that covers it. With no tickets, build the plan from the goal alone.\n\nOn the first `run --root`, the script uses `plan.slackChannel` for the Slack kickoff and writes `plan.slackKickoffRef`. The root plan gets `slackChannel` from `kickoff --slack-channel`, `run --root --slack-channel`, or `SLACK_CHANNEL_ID`. Subplanners inherit both fields so the whole tree mirrors into one thread.\n"
+          },
+          {
+            "find": "- One worker can carry a lot. Workers and verifiers are full cloud agents with hours of runtime: multi-file slices, multi-step refactors, full repro/fix/test cycles all fit in a single spawn. Each spawn costs cloud-agent runtime, Slack noise, and your own coordination overhead. Default to fewer, broader workers; reach for finer granularity only when a slice is genuinely independent or has real contention risk.\n",
+            "replace": "- One worker can carry a lot. Workers and verifiers are full orb threads with hours of runtime: multi-file slices, multi-step refactors, full repro/fix/test cycles all fit in a single spawn. Each spawn costs orb runtime, Slack noise, and your own coordination overhead. Default to fewer, broader workers; reach for finer granularity only when a slice is genuinely independent or has real contention risk.\n"
+          },
+          {
+            "find": "- `RunResult.status === \"error\"` or a blocked handoff is a planner decision: respawn, split, escalate, or drop.\n",
+            "replace": "- A run that finished with status error, or a blocked handoff, is a planner decision: respawn, split, escalate, or drop.\n"
+          },
+          {
+            "find": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n",
+            "replace": "Andon pauses new spawns across the tree. The root polls the Slack kickoff message for `:rotating_light:`; without Slack, the file-based Andon source stands in for the reaction. Children read the cached root state through git via `plan.andonStateRef` and `plan.andonStatePath`.\n"
+          },
+          {
+            "find": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on cloud-agent display titles.\n",
+            "replace": "Use `bun cli.ts tree <workspace>` and `bun cli.ts list <workspace>` for lineage, status, and agent IDs. Do not rely on thread titles.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/references/spawning.md": {
+        "transforms": [
+          {
+            "find": "Contract between `plan.json` entries and the cloud agents the script spawns. Mechanics (auth, `CursorAgentError` vs `RunResult.status === \"error\"`) live in `cursor-sdk/SKILL.md`. Read that first.\n",
+            "replace": "Contract between `plan.json` entries and the orb threads the script spawns. Mechanics (auth, a runtime error vs a run that finished with status error) live in the Amp agent runtime adapter's documentation at `pstack-sync/adapters/amp/README.md` (it arrives with the adapter in a later PR). Read that first.\n"
+          },
+          {
+            "find": "Cloud agents own their working branch. `state.json` starts with a deterministic placeholder (`orch/<rootSlug>/<task-name>`) so pre-spawn state is readable, then replaces it with the branch reported by `Run.git.branches[].branch` after handoff. Kebab-case is enforced (`TASK_NAME_RE` in `orchestrate.ts`) so task names still feed filesystem paths and prompt text without escaping. No auto-managed integration branch. Branches live independently until a merge task consolidates them (see `handoffs.md` → \"Merges are tasks\").\n",
+            "replace": "Worker threads own their working branch. `state.json` starts with a deterministic placeholder (`orch/<rootSlug>/<task-name>`) so pre-spawn state is readable, then replaces it with the branch reported by `Run.git.branches[].branch` after handoff. Kebab-case is enforced (`TASK_NAME_RE` in `orchestrate.ts`) so task names still feed filesystem paths and prompt text without escaping. No auto-managed integration branch. Branches live independently until a merge task consolidates them (see `handoffs.md` → \"Merges are tasks\").\n"
+          },
+          {
+            "find": "Cloud agents are given a `name` at `Agent.create` time so the Cursor agent list (`cursor.com/agents`, IDE agent list) groups a single orchestrate run together and stays readable across dozens of concurrent children.\n",
+            "replace": "Worker threads are given a `name` at the adapter's spawn so the Amp threads list groups a single orchestrate run together and stays readable across dozens of concurrent children.\n"
+          },
+          {
+            "find": "The server caps names at 100 chars and rejects empty/whitespace-only values; the helpers handle both. When `name` is omitted the cloud backend auto-generates one from the first prompt, so this is purely a readability upgrade — dropping a name doesn't change behavior.\n",
+            "replace": "The helpers cap names at 100 chars and reject empty/whitespace-only values. When `name` is omitted the thread generates its own title from the first prompt, so this is purely a readability upgrade — dropping a name doesn't change behavior.\n"
+          },
+          {
+            "find": "| `startingRef` | Which branch the cloud agent clones from | `plan.baseBranch` | `dependsOn` when depending on another task's work |\n",
+            "replace": "| `startingRef` | Which branch the worker thread clones from | `plan.baseBranch` | `dependsOn` when depending on another task's work |\n"
+          },
+          {
+            "find": "The script calls `Agent.create` with two deliberate defaults:\n",
+            "replace": "The script calls the adapter's spawn with two deliberate defaults:\n"
+          },
+          {
+            "find": "- **PRs are opt-in per task.** `autoCreatePR` on the cloud-agent create call mirrors the task's `openPR` flag (default false). The server-side `cloud_agent_pr_control` gate makes that flag a no-op today, so the real mechanism is the worker prompt: when `openPR: true`, the worker is instructed to open a draft PR against `plan.prBase ?? plan.baseBranch` via the ManagePullRequest tool after pushing. Subplanners and verifiers never open PRs; they hand off to their parent. Task-driven PRs give the planner a specific guarantee: this task ships as its own pull request.\n",
+            "replace": "- **PRs are opt-in per task.** The task's `openPR` flag (default false) travels with the spawn, but the Amp runtime opens no PR on its own, so the real mechanism is the worker prompt: when `openPR: true`, the worker is instructed to open a draft PR against `plan.prBase ?? plan.baseBranch` with `gh pr create` after pushing. Subplanners and verifiers never open PRs; they hand off to their parent. Task-driven PRs give the planner a specific guarantee: this task ships as its own pull request.\n"
+          },
+          {
+            "find": "- Commit to the current cloud-agent branch and push. No branch renames, merges, or rebases. Open a draft PR only if the task sets `openPR: true` (workers only; subplanners and verifiers never open PRs).\n",
+            "replace": "- Commit to the current worker-thread branch and push. No branch renames, merges, or rebases. Open a draft PR only if the task sets `openPR: true` (workers only; subplanners and verifiers never open PRs).\n"
+          },
+          {
+            "find": "Subplanner prompts also start with `/orchestrate` so the skill loads automatically when the agent boots.\n",
+            "replace": "Subplanner prompts start with \"You are a subplanner for:\" and tell the agent to read this skill's `SKILL.md`, which is how the skill loads when the thread boots.\n"
+          },
+          {
+            "find": "Cloud-agent VMs may redact environment variable values as a prompt-injection defense, so do not rely on env vars for data multiple agents must share. Use the planner-authored artifact pattern instead: commit a file to the base branch and reference it by path in `scopedGoal` so clones pick it up. Never paste credentials into `scopedGoal`; it is sent to the model provider and may end up in git history when state sync is on.\n",
+            "replace": "Orb threads start from a fresh checkout and do not inherit the planner's environment, so do not rely on env vars for data multiple agents must share. Use the planner-authored artifact pattern instead: commit a file to the base branch and reference it by path in `scopedGoal` so clones pick it up. Never paste credentials into `scopedGoal`; it is sent to the model provider and may end up in git history when state sync is on.\n"
+          },
+          {
+            "find": "After each successful spawn the script persists `agentId`, `runId`, and `parentAgentId` to `state.json`, so a later rerun can re-attach via `Agent.getRun` and read lineage from disk. A row with partial identity (exactly one of `agentId` / `runId`) on restart is marked `error` with an explanatory note. Rename and respawn, or prune.\n",
+            "replace": "After each successful spawn the script persists `agentId`, `runId`, and `parentAgentId` to `state.json`, so a later rerun can re-attach via the adapter's run status and read lineage from disk. A row with partial identity (exactly one of `agentId` / `runId`) on restart is marked `error` with an explanatory note. Rename and respawn, or prune.\n"
+          },
+          {
+            "find": "After every handoff the script reconciles dependent verifiers' `startingRef`. The actual worker branch is sourced from the handoff body's `## Branch` line — the SDK leaves `Run.git.branches[].branch` empty for worker runs, so the body is authoritative. Any verifier whose `verifies` points at the just-handed-off task and whose `startingRef` is still the `orch/<rootSlug>/<task>` placeholder is updated to that real branch. Planner-authored `startingRef` overrides win; each propagation logs to `attention.log`. Load also sweeps over already-handed-off rows so state recovered from disk converges before the next spawn.\n",
+            "replace": "After every handoff the script reconciles dependent verifiers' `startingRef`. The actual worker branch is sourced from the handoff body's `## Branch` line — the runtime leaves `Run.git.branches[].branch` empty for worker runs, so the body is authoritative. Any verifier whose `verifies` points at the just-handed-off task and whose `startingRef` is still the `orch/<rootSlug>/<task>` placeholder is updated to that real branch. Planner-authored `startingRef` overrides win; each propagation logs to `attention.log`. Load also sweeps over already-handed-off rows so state recovered from disk converges before the next spawn.\n"
+          },
+          {
+            "find": "Each `state.tasks[]` row's `parentAgentId` is the spawning planner's cloud agent id from `plan.selfAgentId` at spawn. `kill-tree --agent-id` walks those parent links downward. If the planner never set `selfAgentId`, children get `parentAgentId: null` and that subtree is skipped for a scoped kill; omit `--agent-id` to cancel the whole tree.\n",
+            "replace": "Each `state.tasks[]` row's `parentAgentId` is the spawning planner's thread id from `plan.selfAgentId` at spawn. `kill-tree --agent-id` walks those parent links downward. If the planner never set `selfAgentId`, children get `parentAgentId: null` and that subtree is skipped for a scoped kill; omit `--agent-id` to cancel the whole tree.\n"
+          },
+          {
+            "find": "Spawn templates use the child's id as `{{selfAgentId}}` and the parent's as `{{parentAgentId}}`. The id from `Agent.create` is valid before `send()`; the cloud client sends it at create time and rejects a mismatched server response.\n",
+            "replace": "Spawn templates use the child's id as `{{selfAgentId}}` and the parent's as `{{parentAgentId}}`. The id from the adapter's spawn is valid as soon as spawn returns.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/schemas/plan.schema.json": {
+        "transforms": [
+          {
+            "find": "      \"description\": \"GitHub URL of the repo cloud agents should operate on.\"\n",
+            "replace": "      \"description\": \"GitHub URL of the repo worker threads should operate on.\"\n"
+          },
+          {
+            "find": "      \"description\": \"This planner's cloud agent id.\"\n",
+            "replace": "      \"description\": \"This planner's thread id.\"\n"
+          },
+          {
+            "find": "        \"anyOf\": [\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned cloud agent clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Model id for the spawned cloud agent.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n",
+            "replace": "        \"anyOf\": [\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned worker thread clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Amp agent mode for the spawned worker thread, or `inherit` for the parent's.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n"
+          },
+          {
+            "find": "                \"const\": \"worker\"\n              },\n              \"verifies\": {\n                \"not\": {}\n              }\n            },\n            \"required\": [\n              \"name\",\n              \"scopedGoal\",\n              \"type\"\n            ],\n            \"additionalProperties\": false\n          },\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned cloud agent clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Model id for the spawned cloud agent.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\",\n                            \"pattern\"\n                          ],\n                          \"additionalProperties\": false\n                        }\n                      ],\n                      \"description\": \"How to extract a value from the command's stdout. Defaults to `wc-l` (count non-empty lines).\"\n                    },\n                    \"toleranceFraction\": {\n                      \"type\": \"number\",\n",
+            "replace": "                \"const\": \"worker\"\n              },\n              \"verifies\": {\n                \"not\": {}\n              }\n            },\n            \"required\": [\n              \"name\",\n              \"scopedGoal\",\n              \"type\"\n            ],\n            \"additionalProperties\": false\n          },\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned worker thread clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Amp agent mode for the spawned worker thread, or `inherit` for the parent's.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\",\n                            \"pattern\"\n                          ],\n                          \"additionalProperties\": false\n                        }\n                      ],\n                      \"description\": \"How to extract a value from the command's stdout. Defaults to `wc-l` (count non-empty lines).\"\n                    },\n                    \"toleranceFraction\": {\n                      \"type\": \"number\",\n"
+          },
+          {
+            "find": "                \"const\": \"subplanner\"\n              },\n              \"verifies\": {\n                \"not\": {}\n              }\n            },\n            \"required\": [\n              \"name\",\n              \"scopedGoal\",\n              \"type\"\n            ],\n            \"additionalProperties\": false\n          },\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned cloud agent clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Model id for the spawned cloud agent.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\",\n                            \"pattern\"\n                          ],\n                          \"additionalProperties\": false\n                        }\n                      ],\n                      \"description\": \"How to extract a value from the command's stdout. Defaults to `wc-l` (count non-empty lines).\"\n                    },\n                    \"toleranceFraction\": {\n                      \"type\": \"number\",\n",
+            "replace": "                \"const\": \"subplanner\"\n              },\n              \"verifies\": {\n                \"not\": {}\n              }\n            },\n            \"required\": [\n              \"name\",\n              \"scopedGoal\",\n              \"type\"\n            ],\n            \"additionalProperties\": false\n          },\n          {\n            \"type\": \"object\",\n            \"properties\": {\n              \"name\": {\n                \"type\": \"string\",\n                \"pattern\": \"^[a-z0-9-]+$\",\n                \"description\": \"Kebab-case ASCII. Used in branch and agent-title.\"\n              },\n              \"scopedGoal\": {\n                \"type\": \"string\",\n                \"minLength\": 1,\n                \"description\": \"Outcome for this task; write it as the only steering signal.\"\n              },\n              \"brief\": {\n                \"type\": \"string\",\n                \"description\": \"Markdown spec inlined into the spawn prompt.\"\n              },\n              \"pathsAllowed\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns the task may touch.\"\n              },\n              \"pathsForbidden\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Glob patterns owned by siblings.\"\n              },\n              \"acceptance\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"description\": \"Per-task acceptance checklist.\"\n              },\n              \"verify\": {\n                \"type\": \"string\",\n                \"description\": \"Optional markdown verification plan.\"\n              },\n              \"startingRef\": {\n                \"type\": \"string\",\n                \"description\": \"Branch the spawned worker thread clones from.\"\n              },\n              \"dependsOn\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"string\",\n                  \"pattern\": \"^[a-z0-9-]+$\"\n                },\n                \"description\": \"Task names to wait on before spawning.\"\n              },\n              \"model\": {\n                \"type\": \"string\",\n                \"description\": \"Amp agent mode for the spawned worker thread, or `inherit` for the parent's.\"\n              },\n              \"maxAttempts\": {\n                \"type\": \"integer\",\n                \"minimum\": 1,\n                \"description\": \"Max logical spawn attempts.\"\n              },\n              \"openPR\": {\n                \"type\": \"boolean\",\n                \"description\": \"Open a PR when the task completes.\"\n              },\n              \"measurements\": {\n                \"type\": \"array\",\n                \"items\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"name\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Identifier matched against the worker's `## Measurements` block, e.g. `LOC(packages/ui/src/Settings.tsx)` or `bundle size`. Must match the line prefix verbatim.\"\n                    },\n                    \"command\": {\n                      \"type\": \"string\",\n                      \"minLength\": 1,\n                      \"description\": \"Shell command executed under `bash -c` in a fresh checkout of the worker's branch.\"\n                    },\n                    \"parser\": {\n                      \"anyOf\": [\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"wc-l\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\"\n                          ],\n                          \"additionalProperties\": false\n                        },\n                        {\n                          \"type\": \"object\",\n                          \"properties\": {\n                            \"kind\": {\n                              \"type\": \"string\",\n                              \"const\": \"regex\"\n                            },\n                            \"pattern\": {\n                              \"type\": \"string\",\n                              \"minLength\": 1,\n                              \"description\": \"JavaScript regex applied to stdout. Capture group 1 is the value; if the regex has no capture group, the full match is used.\"\n                            },\n                            \"flags\": {\n                              \"type\": \"string\",\n                              \"pattern\": \"^[gimsuy]*$\",\n                              \"description\": \"RegExp flags (default: empty).\"\n                            }\n                          },\n                          \"required\": [\n                            \"kind\",\n                            \"pattern\"\n                          ],\n                          \"additionalProperties\": false\n                        }\n                      ],\n                      \"description\": \"How to extract a value from the command's stdout. Defaults to `wc-l` (count non-empty lines).\"\n                    },\n                    \"toleranceFraction\": {\n                      \"type\": \"number\",\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/schemas/state.schema.json": {
+        "transforms": [
+          {
+            "find": "            \"description\": \"The cloud run's RunResult.status.\"\n",
+            "replace": "            \"description\": \"The worker run's final status, as the runtime adapter reports it.\"\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/cli/andon.ts": {
+        "transforms": [
+          {
+            "find": "      \"Cloud agent id for the footer link back to cursor.com (omit for operator-issued raises).\"\n",
+            "replace": "      \"Thread id for the footer link back to ampcode.com (omit for operator-issued raises).\"\n"
+          },
+          {
+            "find": "      \"Cloud agent id for the footer link back to cursor.com (omit for operator-issued clears).\"\n",
+            "replace": "      \"Thread id for the footer link back to ampcode.com (omit for operator-issued clears).\"\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/cli/comments.ts": {
+        "transforms": [
+          {
+            "find": "      \"Cloud agent id for the footer link back to cursor.com (omit for operator-issued posts).\"\n",
+            "replace": "      \"Thread id for the footer link back to ampcode.com (omit for operator-issued posts).\"\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/core/failure-handoff.ts": {
+        "transforms": [
+          {
+            "find": "// Cloud workers are capped around ~75 min wall time. The SDK doesn't\n",
+            "replace": "// Upstream's cloud workers were capped around ~75 min wall time. The runtime doesn't\n"
+          },
+          {
+            "find": "// `## Verification`. Either heading proves the cloud agent emitted a\n",
+            "replace": "// `## Verification`. Either heading proves the worker thread emitted a\n"
+          },
+          {
+            "find": "        \"Retry with a leaner model if the current one is memory-heavy\",\n",
+            "replace": "        \"Retry with a leaner agent mode (`model`) if the current one is memory-heavy\",\n"
+          },
+          {
+            "find": "        \"Retry with different model (likely fix for tool-error)\",\n",
+            "replace": "        \"Retry with a different agent mode (`model`) (likely fix for tool-error)\",\n"
+          },
+          {
+            "find": "        \"Retry with different model if the same tool keeps failing\",\n",
+            "replace": "        \"Retry with a different agent mode (`model`) if the same tool keeps failing\",\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/core/handoff.ts": {
+        "transforms": [
+          {
+            "find": " * Extract the worker's `## Branch` value. The SDK leaves\n",
+            "replace": " * Extract the worker's `## Branch` value. The runtime leaves\n"
+          },
+          {
+            "find": " * Precedence used by `waitAndHandoff`: `## Branch` line wins (SDK leaves\n",
+            "replace": " * Precedence used by `waitAndHandoff`: `## Branch` line wins (the runtime leaves\n"
+          },
+          {
+            "find": "  if (pullIndex < 0 || pullIndex + 1 >= parts.length) return null;\n  if (url.hostname === \"review.cursor.com\") {\n",
+            "replace": "  if (pullIndex < 0 || pullIndex + 1 >= parts.length) return null;\n  // Amp workers open PRs with `gh pr create`, so the GitHub URL is the one\n  // that matters; the review.cursor.com shape is upstream's and stays\n  // accepted only so recorded handoffs from upstream runs still parse.\n  if (url.hostname === \"review.cursor.com\") {\n"
+          }
+        ],
+        "accepted": [
+          "RunResult",
+          "cursor.com",
+          "review.cursor.com"
+        ]
+      },
+      "orchestrate/scripts/core/loop.ts": {
+        "transforms": [
+          {
+            "find": " * \"dead\" for anyone tailing stdout or polling with `AwaitShell`.\n",
+            "replace": " * \"dead\" for anyone tailing stdout from the foreground shell tool.\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/core/prompts.ts": {
+        "transforms": [
+          {
+            "find": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using the ManagePullRequest tool. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`\n",
+            "replace": "- After your branch is pushed, open a draft pull request with base \\`${prBase}\\` and head set to your current branch using \\`gh pr create --draft --base ${prBase}\\`. Title and body should summarize your handoff. Do NOT merge, rebase, or close the PR — the planner owns integration.`\n"
+          }
+        ],
+        "accepted": []
+      },
+      "orchestrate/scripts/schemas.ts": {
+        "transforms": [
+          {
+            "find": "    .describe(\"Branch the spawned cloud agent clones from.\"),\n",
+            "replace": "    .describe(\"Branch the spawned worker thread clones from.\"),\n"
+          },
+          {
+            "find": "    .describe(\"Model id for the spawned cloud agent.\"),\n",
+            "replace": "    .describe(\n      \"Amp agent mode for the spawned worker thread, or `inherit` for the parent's.\"\n    ),\n"
+          },
+          {
+            "find": "      .describe(\"GitHub URL of the repo cloud agents should operate on.\"),\n",
+            "replace": "      .describe(\"GitHub URL of the repo worker threads should operate on.\"),\n"
+          },
+          {
+            "find": "      .describe(\"This planner's cloud agent id.\"),\n",
+            "replace": "      .describe(\"This planner's thread id.\"),\n"
+          },
+          {
+            "find": "      \"The cloud run's RunResult.status.\"\n",
+            "replace": "      \"The worker run's final status, as the runtime adapter reports it.\"\n"
+          }
+        ],
+        "accepted": []
+      }
+    }
+  }
+}
