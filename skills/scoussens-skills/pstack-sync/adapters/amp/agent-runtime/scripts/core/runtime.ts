@@ -54,6 +54,30 @@ export type {
 
 export const PENDING_AGENT_ID = "$AMP_THREAD_ID";
 
+// The same shape `agent-runtime.ts` enforces; repeated here because this file
+// cannot import that module statically (its location depends on the layout).
+const THREAD_ID_EXACT_RE = /^T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** True for a whole Amp thread id and nothing else. */
+export function isThreadId(value: unknown): value is string {
+  return typeof value === "string" && THREAD_ID_EXACT_RE.test(value);
+}
+
+/**
+ * Refuse an agent id that is not a whole thread id before it reaches the
+ * runtime, so `--last` or `--help` from state.json or a flag never becomes an
+ * `amp` argument. The error carries the runtime's error name, so callers that
+ * test `isAgentRuntimeError` treat it as a startup failure, not a run result.
+ */
+export function requireThreadId(agentId: unknown, what = "agent id"): string {
+  if (isThreadId(agentId)) return agentId;
+  throw agentIdError(`${what} ${JSON.stringify(agentId)} is not an Amp thread id`);
+}
+
+function agentIdError(message: string): Error & { isRetryable: boolean } {
+  return Object.assign(new Error(message), { name: "AgentRuntimeError", isRetryable: false });
+}
+
 // ---------------------------------------------------------------------------
 // Operator gates. These read the loop's environment, never plan.json alone,
 // because plan.json is written by the root planner (an LLM) and, with
@@ -242,9 +266,11 @@ export function buildAgentApi(rt: AgentRuntime): AgentApi {
       });
     },
     async resume(agentId: string): Promise<SDKAgent> {
+      requireThreadId(agentId);
       return new AmpAgent(rt, { name: "", repoUrl: "", startingRef: "", model: "inherit" }, agentId);
     },
     async getRun(runId: string, opts: GetRunOptions): Promise<Run> {
+      requireThreadId(opts.agentId);
       const snapshot = await rt.getRun(opts.agentId, runId);
       return new AmpRun(rt, opts.agentId, runId, snapshot.status);
     },

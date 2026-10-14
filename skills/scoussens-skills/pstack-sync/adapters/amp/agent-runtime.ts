@@ -94,7 +94,38 @@ export function readRuntimeOptionsFromEnv(
 }
 
 export const THREAD_ID_RE = /T-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const THREAD_ID_EXACT_RE = new RegExp(`^${THREAD_ID_RE.source}$`, "i");
+const RUN_ID_RE = /^m\d+$/;
 const TITLE_MAX_CHARS = 100;
+
+/** True for a whole Amp thread id and nothing else. */
+export function isThreadId(value: string): boolean {
+  return THREAD_ID_EXACT_RE.test(value);
+}
+
+/**
+ * Agent ids come from `state.json`, which is git-synced, and from `--agent-id`
+ * flags, and they land in `amp` argv. Anything that is not a whole thread id
+ * is refused before a process starts, so `--last` or `--help` cannot change
+ * which thread a command touches or what it does.
+ */
+export function threadIdArg(agentId: string): string {
+  if (typeof agentId !== "string" || !isThreadId(agentId)) {
+    throw new AgentRuntimeError(
+      `refusing to pass ${JSON.stringify(agentId)} to amp: not an Amp thread id`
+    );
+  }
+  return agentId;
+}
+
+function runIdArg(runId: string): string {
+  if (typeof runId !== "string" || !RUN_ID_RE.test(runId)) {
+    throw new AgentRuntimeError(
+      `refusing run id ${JSON.stringify(runId)}: the Amp runtime names runs m<message-index>`
+    );
+  }
+  return runId;
+}
 
 // ---------------------------------------------------------------------------
 // Export parsing. Exported for tests and for the port's facade.
@@ -316,7 +347,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
   }
 
   async function exportThread(agentId: string): Promise<ThreadExport> {
-    const result = await amp(["threads", "export", agentId], { timeoutMs: 60_000 });
+    const result = await amp(["threads", "export", threadIdArg(agentId)], { timeoutMs: 60_000 });
     if (result.code !== 0) throw failure(`amp threads export ${agentId}`, result);
     try {
       return JSON.parse(result.stdout) as ThreadExport;
@@ -331,7 +362,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
   async function isArchivedElsewhere(agentId: string): Promise<boolean> {
     try {
       const result = await amp(
-        ["threads", "search", `id:${agentId} archived:true`, "--json"],
+        ["threads", "search", `id:${threadIdArg(agentId)} archived:true`, "--json"],
         { timeoutMs: 60_000 }
       );
       if (result.code !== 0) return false;
@@ -431,12 +462,16 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async getRun(agentId: string, runId: string): Promise<RunSnapshot> {
+      threadIdArg(agentId);
+      runIdArg(runId);
       if (cancelledHere.has(agentId)) return { status: "cancelled" };
       const exp = await exportThread(agentId);
       return { status: describeRun(exp, runId).status };
     },
 
     async wait(run: RunHandle): Promise<WaitResult> {
+      threadIdArg(run.agentId);
+      runIdArg(run.runId);
       return pollExports(run, exp => {
         const d = describeRun(exp, run.runId);
         if (d.status === "running") return undefined;
@@ -450,7 +485,8 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async *stream(run: RunHandle): AsyncIterable<StreamEvent> {
-      const start = parseRunId(run.runId);
+      threadIdArg(run.agentId);
+      const start = parseRunId(runIdArg(run.runId));
       // Per message index: the first block not fully yielded and, when that
       // block is text still growing, how much of it went out already.
       const yielded = new Map<number, { next: number; partialLen: number }>();
@@ -515,7 +551,9 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     },
 
     async cancel(agentId: string, _runId: string): Promise<void> {
-      const result = await amp(["threads", "archive", agentId], { timeoutMs: 60_000 });
+      const result = await amp(["threads", "archive", threadIdArg(agentId)], {
+        timeoutMs: 60_000,
+      });
       if (result.code !== 0) throw failure(`amp threads archive ${agentId}`, result);
       cancelledHere.add(agentId);
     },
@@ -570,7 +608,7 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
     async sendFollowUp(agentId: string, text: string): Promise<{ runId: string }> {
       // The new user message lands at the current message count, so read it
       // first; without it the follow-up's run could not be told from the last.
-      const before = await exportThread(agentId);
+      const before = await exportThread(threadIdArg(agentId));
       const runId = formatRunId((before.messages ?? []).length);
       const result = await amp(["threads", "continue", agentId, "-ox"], { stdin: text });
       if (result.code !== 0) throw failure(`amp threads continue ${agentId}`, result);

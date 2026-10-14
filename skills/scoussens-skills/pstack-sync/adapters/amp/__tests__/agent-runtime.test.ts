@@ -7,6 +7,7 @@ import { AgentRuntimeError, type StreamEvent } from "../../interface.ts";
 import {
   createAmpRuntime,
   describeRun,
+  isThreadId,
   parseBranchLine,
   type ThreadExport,
   withStartingRef,
@@ -356,6 +357,47 @@ describe("getRun, latestRun, list, agentUrl", () => {
     expect(rt.agentUrl(ID)).toContain(ID);
     serve(ID, 1, FINISHED);
     expect((await rt.getRun(ID, "m0")).status).toBe("finished");
+  });
+});
+
+describe("argument injection", () => {
+  test("an agent id that is not a whole thread id never reaches amp argv", async () => {
+    const rt = createAmpRuntime({ env });
+    serve(ID, 1, FINISHED);
+    for (const bad of ["--help", "--last", "-h", `${ID} --last`, `x${ID}`, "", "$AMP_THREAD_ID"]) {
+      const results = await Promise.allSettled([
+        rt.sendFollowUp(bad, "hi"),
+        rt.cancel(bad, "m0"),
+        rt.getRun(bad, "m0"),
+        rt.wait({ agentId: bad, runId: "m0" }),
+        rt.latestRun(bad),
+        (async () => {
+          for await (const _ of rt.stream({ agentId: bad, runId: "m0" })) {
+          }
+        })(),
+      ]);
+      for (const r of results) {
+        expect(r.status).toBe("rejected");
+        expect(r.status === "rejected" && r.reason).toBeInstanceOf(AgentRuntimeError);
+        expect(r.status === "rejected" && r.reason.message).toContain(JSON.stringify(bad));
+      }
+    }
+    expect(calls()).toEqual([]);
+  });
+
+  test("a run id that is not m<index> is refused before any command runs", async () => {
+    const rt = createAmpRuntime({ env });
+    const err = await rt.getRun(ID, "--last").catch(e => e);
+    expect(err).toBeInstanceOf(AgentRuntimeError);
+    expect(err.message).toContain('"--last"');
+    expect(calls()).toEqual([]);
+  });
+
+  test("isThreadId accepts only the full id", () => {
+    expect(isThreadId(ID)).toBe(true);
+    expect(isThreadId(ID.toUpperCase())).toBe(true);
+    expect(isThreadId(`https://ampcode.com/threads/${ID}`)).toBe(false);
+    expect(isThreadId("--last")).toBe(false);
   });
 });
 
