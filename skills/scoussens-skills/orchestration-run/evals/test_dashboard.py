@@ -273,6 +273,16 @@ class InstallTests(unittest.TestCase):
                                  f"copy {copy.name}/{path} from {owner.name}/{path}")
 
 
+    def test_the_runner_names_the_dashboard_skill_for_rendering(self):
+        text = (RUNNER / "SKILL.md").read_text()
+        self.assertIn("validate_run.py", text)
+        self.assertIn("render_dashboard.py", text)
+        self.assertIn("check_served.py", text)
+        self.assertNotIn("<this skill's folder>/scripts/render_dashboard.py", text)
+        self.assertFalse((RUNNER / "scripts" / "render_dashboard.py").exists())
+        self.assertFalse((RUNNER / "assets").exists())
+
+
 class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

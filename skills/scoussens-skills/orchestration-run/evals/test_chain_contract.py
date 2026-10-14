@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[4]
 SKILLS = ROOT / "skills" / "scoussens-skills"
 README = ROOT / "README.md"
-NAMES = ("orchestration-run", "orchestration-setup", "harness-discovery")
+NAMES = ("orchestration-run", "orchestration-setup", "harness-discovery", "dashboard")
 
 
 def description(name):
@@ -65,6 +65,12 @@ class ChainContractTests(unittest.TestCase):
         self.assertIn("pstack-sync", discovery)
         self.assertIn("/harness-discovery", discovery)
         self.assertIn("Do not run it as the first step", discovery)
+        dashboard = descriptions["dashboard"]
+        for trigger in ("dashboard for this run", "status page for these threads", "show me where the subagents are"):
+            self.assertIn(trigger, dashboard)
+        self.assertIn("Any producer", dashboard)
+        self.assertNotIn("orchestration-run", dashboard)
+        self.assertIn("dashboard skill", run)
 
     def test_the_readme_starts_at_the_run(self):
         section = orchestration_section()
@@ -88,6 +94,11 @@ class ChainContractTests(unittest.TestCase):
         for phrase in ("run orchestration-setup", "repair this harness profile with orchestration-setup", "run state.py migrate"):
             self.assertIn(phrase, run)
         self.assertIn("run harness-discovery", bodies["orchestration-setup"])
+        self.assertIn("validate_run.py", run)
+        self.assertIn("<dashboard skill's folder>/scripts/render_dashboard.py", run)
+        self.assertNotIn("<this skill's folder>/scripts/render_dashboard.py", run)
+        self.assertIn("explain-to", bodies["dashboard"])
+        self.assertIn("validate_run.py", bodies["dashboard"])
         self.assertEqual(sum(body.lower().count("load `orchestration-setup`") for body in bodies.values()), 1)
         self.assertEqual(sum(body.lower().count("load `harness-discovery`") for body in bodies.values()), 1)
 
