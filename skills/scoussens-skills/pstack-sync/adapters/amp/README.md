@@ -55,6 +55,14 @@ A thread id exists only after `amp -ox` runs, but upstream builds the prompt bet
 
 The root prompt tells the root planner to set `plan.selfAgentId` to the value of its `AMP_THREAD_ID` variable, and, in the line `kickoff` appends (`withRunTagNote` in `cli/task.ts`), to write the run tag it was given as `plan.runTag` next to it. If the literal `$AMP_THREAD_ID`, an empty string, or anything else that is not a thread id lands in plan.json, the loop treats `selfAgentId` as unset (`resolveSelfAgentId`): one attention line says so, children record `parentAgentId: null`, Slack footers omit the link, and `nudge-root.ts` and `kill-tree --agent-id` refuse the placeholder with the same advice.
 
+## What the root prompt carries on Amp
+
+`kickoff` appends three things to upstream's root prompt, because the planner's first message is what it keeps in view for the whole run, while `references/planner.md` is something it reads once:
+
+- the run tag line (`withRunTagNote` in `cli/task.ts`; see Run hygiene);
+- the CI opt-out (`withCiNote`, the `CI_NOTE` text): the harness tells every thread to subscribe to a pull request's checks before reporting it unless the user opts out, so a planner on a repository without workflows subscribed and reported `No CI checks found` as a finding in the second real run even though the adapted planner.md said not to. The note says the operator opts out on a repository with no workflow under `.github/workflows/`, to write `no CI configured` once in the pull request body, and to pass the same rule to any worker that opens a pull request. The set's `core/prompts.ts` transform puts the same rule in the prompt of a worker with `openPR: true`;
+- the facade's thread-id note (next section), when the prompt names `$AMP_THREAD_ID`.
+
 ## Auth
 
 The `amp` CLI's login (`amp login` once on the machine that runs the loop) or an access token in `AMP_API_KEY`, which orbs set and the CLI honours. A missing login surfaces as an `AgentRuntimeError` (upstream's `CursorAgentError` name) from `kickoff` or `spawn`, exit code 2.
