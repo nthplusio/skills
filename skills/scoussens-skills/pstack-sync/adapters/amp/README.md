@@ -14,7 +14,7 @@ Runs the `orchestrate` set's spawn, wait, and handoff loop on Amp orb threads th
 | `models/scripts/models.ts` | The `models` port: upstream's catalog shape over Amp modes. |
 | `__tests__/` | `bun test` against a fake `amp` on `PATH`: the runtime (`agent-runtime.test.ts`), the facade's `Agent.create`, `send`, `wait` round trip and its id checks (`runtime.test.ts`), the operator gates and the `selfAgentId` guard (`gates.test.ts`), and `models --check` through the port's `tools/probe-models.ts` (`probe-models.test.ts`; upstream's test of that tool calls the SDK signature and is ignored by the set). |
 
-The sync installs each port file at its path under `<skills>/orchestrate/scripts/`; `runtime.ts` finds `agent-runtime.ts` and `models.ts` at `<skills>/pstack-sync/adapters/amp/` beside it (or in the pack layout, or where `ORCHESTRATE_AMP_RUNTIME_DIR` points).
+The sync installs each port file at its path under `<skills>/orchestrate/scripts/`; `runtime.ts` finds `agent-runtime.ts` and `models.ts` at `<skills>/pstack-sync/adapters/amp/` beside it, or under the newest `pstack-sync@<hash>/adapters/amp/` sibling in Amp's skill cache, where each skill is installed as `<name>@<hash>` (or in the pack layout, or where `ORCHESTRATE_AMP_RUNTIME_DIR` points).
 
 ## Operation to command
 
