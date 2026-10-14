@@ -18,7 +18,7 @@ PREVIEW = DASHBOARD / "evals" / "dashboard-preview.json"
 sys.path.insert(0, str(RUNNER / "scripts"))
 sys.path.insert(0, str(DASHBOARD / "scripts"))
 from render_dashboard import render
-from validate_run import notes, skill_version, validate
+from validate_run import STAGE_FALLBACK, notes, skill_version, validate
 
 
 class LifecycleTests(unittest.TestCase):
@@ -373,6 +373,30 @@ class ConfigTests(unittest.TestCase):
         found = subprocess.run([sys.executable, "-B", "-c", "import state; print(list(state.STAGES))"],
                                cwd=alone / "scripts", capture_output=True, text=True)
         self.assertEqual(json.loads(found.stdout.replace("'", '"')), contract, found.stderr)
+
+    def test_a_broken_dashboard_contract_beside_the_skills_does_not_stop_them(self):
+        """A sibling dashboard skill from another version, or a damaged copy, falls back to the literal
+        stage list; check and the version print still run (audit finding 1)."""
+        installed = self.root / "installed"
+        for skill in (SETUP, RUNNER):
+            shutil.copytree(skill, installed / skill.name, ignore=shutil.ignore_patterns("__pycache__"))
+        contract = installed / "dashboard" / "assets" / "stages.json"
+        contract.parent.mkdir(parents=True)
+        for broken in ('{"not": "a list"', '["defined", "researched"]', '[{"label": "No key"}]'):
+            with self.subTest(contract=broken):
+                contract.write_text(broken)
+                result = self.cli(installed / SETUP.name, "check", "orchestration")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(result.stdout, f"PASS: orchestration {self.config_path}\n")
+                result = subprocess.run([sys.executable, "-B", str(installed / RUNNER.name / "scripts" / "validate_run.py"),
+                                         "--skill-version"], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertRegex(result.stdout.strip(), r"^[0-9a-f]{12}$")
+                found = subprocess.run([sys.executable, "-B", "-c", "import state; print(list(state.STAGES))"],
+                                       cwd=installed / SETUP.name / "scripts", capture_output=True, text=True)
+                self.assertEqual(json.loads(found.stdout.replace("'", '"')), list(STAGE_FALLBACK), found.stderr)
 
     def test_exact_names_select_asymmetric_capabilities_defaults_and_shared_skills(self):
         amp = self.selected("Amp")

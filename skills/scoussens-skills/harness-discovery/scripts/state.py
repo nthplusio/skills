@@ -86,11 +86,14 @@ STAGE_FALLBACK = ("defined", "researched", "pr_readiness", "code_publication", "
 
 
 def stage_keys():
-    for candidate in (SKILL_DIR.parent / "dashboard" / "assets" / "stages.json",
-                      SKILL_DIR.parent.parent / "dashboard" / "assets" / "stages.json"):
-        if candidate.is_file():
-            return tuple(item["key"] for item in json.loads(candidate.read_text()))
-    return STAGE_FALLBACK
+    """Stage keys from the dashboard skill installed beside this one, in a pack or a flat skills
+    directory alike. A missing or malformed file falls back to the literal so a broken sibling never
+    stops this script."""
+    contract = SKILL_DIR.parent / "dashboard" / "assets" / "stages.json"
+    try:
+        return tuple(item["key"] for item in json.loads(contract.read_text()))
+    except (OSError, ValueError, KeyError, TypeError):
+        return STAGE_FALLBACK
 
 
 STAGES = stage_keys()
