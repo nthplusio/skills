@@ -110,6 +110,32 @@ which spawns one thread per ready task, waits, and writes `<workspace>/handoffs/
 
 Tests: `bun test` in this directory (`adapters/amp`), against `__tests__/fake-amp/amp`.
 
+## Doctor
+
+`tools/doctor.ts` is the preflight the dispatcher runs before kickoff. The first real runs lost their loop starts to things it now checks: `node_modules` missing in the skill's `scripts/`, the runtime not found in the orb's hashed skill cache, a repository that was not yet an Amp project, and pushes the Amp GitHub App was not allowed to make.
+
+```bash
+bun tools/doctor.ts --repo https://github.com/<owner>/<repo> [--workspace <dir>] [--json]
+```
+
+One line per check, `pass|warn|fail <name>: <what was found> — <fix>`; `--json` prints `{ ok, checks: [{ name, level, found, fix }] }` with the same content. Exit 1 when any check fails, else 0. Every external command runs from an argv array through one runner, so the URL and paths never pass through a shell.
+
+| Check | Looks at | Fix on fail |
+| --- | --- | --- |
+| `dependencies` | `node_modules` beside the scripts' `package.json` | `bun install --frozen-lockfile` in that directory |
+| `runtime` | `resolveRuntimeDir()`: the adapter beside the skill, under the newest `pstack-sync@<hash>` sibling, or in `ORCHESTRATE_AMP_RUNTIME_DIR` | sync pstack-sync beside the skill or set the variable |
+| `amp-cli` | `ORCHESTRATE_AMP_BIN`, else `amp` on `PATH` | install the CLI or set the variable |
+| `amp-auth` | `amp threads list --json --limit 1`, the cheapest call that fails without a login (`Invalid or missing API key. Run 'amp login'`) | `amp login`, or `AMP_API_KEY` |
+| `amp-project` | `amp projects get <repo> --json` (needs `--repo`; warn without it) | `amp projects create <repo> --personal`; kickoff's `No accessible Amp project matches` is this |
+| `push-access` | inside a checkout whose `origin` is the repository (`--workspace`, then the cwd): `git push --dry-run origin HEAD:refs/heads/orchestrate-doctor-probe`; otherwise `gh api repos/<owner>/<repo> --jq .permissions.push`; otherwise warn | grant the pushing identity (in an orb, the Amp GitHub App) write access |
+| `repo-url-env` | `ORCHESTRATE_REPO_URL` equal to `--repo`, ignoring case and a trailing `.git` | set it in the shell that runs `cli.ts`; warn when unset, fail when different |
+| `slack` | `SLACK_BOT_TOKEN` present or absent | information only, always a pass |
+| `plan` | with `--workspace`, `<dir>/plan.json` through `parsePlanJson` from the installed `schemas.ts`, with the adapter's `measurementsEnabled` lifted out first as `AgentManager.load` does; also `plan.repoUrl` against `--repo` | fix the fields the schema names |
+
+Run it from the installed skill (`<skills>/orchestrate/scripts`); from the pack layout `schemas.ts` is absent and the plan check says so.
+
+**Where `ORCHESTRATE_REPO_URL is unset` came from.** The first run logged `repoUrl ... not checked against an origin: ORCHESTRATE_REPO_URL is unset` although the planner had started the loop with `amp orb service start <name> --command 'ORCHESTRATE_REPO_URL=<url> bun .../cli.ts run ...'`. The service runner does deliver a leading assignment: in this orb `amp orb service start rf-env-probe --command 'PROBE_VAR=yes env'` logged `PROBE_VAR=yes` as the first line of the child's environment, and `amp orb service status` shows the unit as `ExecStart=/bin/bash -lc PROBE_VAR=yes env`, so the command is a bash command line and `VAR=value cmd` works as in any shell. Nothing in the loop reads the variable too early either: `checkRepoUrlAgainstOrigin` in `core/runtime.ts` reads `process.env` when it is called, from `AgentManager.load`, not at module load. The line comes from the other direction: `AgentManager.load` runs for every `cli.ts` command that opens the workspace (`tree`, `status`, `inspect`, `kill-tree`, as well as `run`), and each of them writes the attention line when the variable is unset in *its* process. A `tree` run from the planner's own shell without the variable logs the line; later loads that have the variable neither clear it nor log again, because `load` deduplicates attention messages by text. So the doctor's `repo-url-env` line warns about the shell, not the service runner, and there is no `env VAR=value` or `bash -lc` workaround to recommend. Export the variable in the planner's shell once, before any `cli.ts` command.
+
 ## Follow-ups outside the port
 
 - Add `measurementsEnabled` (boolean, default false) to `PlanObjectSchema` in `schemas.ts`, regenerate `schemas/plan.schema.json`, and mention it in `references/planner.md`.
