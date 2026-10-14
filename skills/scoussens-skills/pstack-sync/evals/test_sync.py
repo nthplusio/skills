@@ -405,6 +405,36 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in shared.iterdir()), ["harness", "sets"])
         self.assertEqual(json.loads((self.durable() / "manifest.json").read_text())["set"], "pstack")
 
+    def test_status_keeps_its_baseline_across_the_state_move(self):
+        self.upstream()
+        first = self.run_sync()
+        git = ["git", "-C", str(self.skills), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "init", "-q", str(self.skills)], check=True)
+        shared = self.shared()
+        for fn in ("manifest.json", "transform.json", *[p.name for p in self.durable().glob("LICENSE-*")]):
+            shutil.move(str(self.durable() / fn), str(shared / fn))
+        self.durable().rmdir()
+        subprocess.run([*git, "add", "-A"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "before sets"], check=True)
+        self.run_sync()
+        status = self.run_sync("status")
+        self.assertIn(f"Upstream cursor/plugins: {first['upstream_commit'][:7]} (unchanged)", status)
+        self.assertIn("0 files touched", status)
+
+    def test_seed_takes_the_header_from_the_pack_and_the_rows_from_the_install(self):
+        self.upstream()
+        self.run_sync()
+        seed_profile = self.skills / sync.SELF / "harness" / "test.md"
+        seed_profile.write_text("# Harness profile: test\n\nSee [the catalog](../dialects/cursor.json).\n\n" + PROFILE.split("\n\n", 1)[1])
+        durable = self.shared() / "harness" / "test.md"
+        durable.write_text("# Old header\n\nSee [the catalog](../needs.json).\n\n| Need | Support | test equivalent | Source |\n| --- | --- | --- | --- |\n| `loop` | keep | loops as written | install |\n")
+        out = self.tmp / "seed"
+        self.run_sync("seed", "--out", str(out))
+        text = (out / "harness" / "test.md").read_text()
+        self.assertIn("../dialects/cursor.json", text)
+        self.assertNotIn("needs.json", text)
+        self.assertIn("| `loop` | keep | loops as written | install |", text)
+
     def test_two_sets_share_one_dependency(self):
         self.upstream()
         self.set_config("kit", root_plugin="cursor-team-kit", skills_subdir="cursor-team-kit/skills")
