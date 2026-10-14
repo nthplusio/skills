@@ -1304,6 +1304,21 @@ def run_git(cwd, *args, check=True):
     return r.stdout
 
 
+def push_target(work, local_branch):
+    """The remote branch `--push` updates: the local branch's upstream when it has one, else the
+    remote's default branch, else the local branch's own name. A clone made with `git init` sits
+    on `master` while the Amp-hosted remote serves `main`; pushing the local name there created a
+    stray branch nothing reads."""
+    upstream = run_git(work, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", check=False).strip()
+    if upstream.startswith("origin/"):
+        return upstream[len("origin/"):]
+    symref = run_git(work, "ls-remote", "--symref", "origin", "HEAD", check=False)
+    m = re.search(r"ref: refs/heads/(\S+)\s+HEAD", symref)
+    if m:
+        return m.group(1)
+    return local_branch
+
+
 def pack_label(remote):
     """owner/repo from a GitHub remote, for the commit subject; else the remote as written."""
     m = re.match(r"^(?:https?://github\.com/|git@github\.com:)([^/]+/[^/]+?)(?:\.git)?/?$", remote or "")
@@ -1542,8 +1557,9 @@ def publish_plugins_into(work, pack, prefix, files, a, report):
     run_git(work, "commit", "-q", "-m", f"Refresh workspace plugins from {label}@{report['pack']['short']}")
     plugins["committed"] = run_git(work, "rev-parse", "HEAD").strip()
     if a.push:
-        run_git(work, "push", "origin", plugins["branch"])
-        plugins["pushed"] = plugins["branch"]
+        target = push_target(work, plugins["branch"])
+        run_git(work, "push", "origin", f"HEAD:{target}")
+        plugins["pushed"] = target
 
 
 def publish_into(work, pack, a, report):
@@ -1641,8 +1657,9 @@ def publish_into(work, pack, a, report):
                    capture_output=True, text=True, check=True)
     report["committed"] = run_git(work, "rev-parse", "HEAD").strip()
     if a.push:
-        run_git(work, "push", "origin", report["repo"]["branch"])
-        report["pushed"] = report["repo"]["branch"]
+        target = push_target(work, report["repo"]["branch"])
+        run_git(work, "push", "origin", f"HEAD:{target}")
+        report["pushed"] = target
 
 
 def cmd_publish(a):
