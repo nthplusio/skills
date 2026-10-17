@@ -70,9 +70,11 @@ Each entry in `tasks` is one row: a ticket, a subagent, a child thread, or
 whatever unit the producer tracks.
 
 Required: `id`, `title`, and `owner` with `id`, `label` and `state`. The
-`owner.id` is the actual harness handle of the agent that owns the row, and
-it belongs to exactly one row; the renderer rejects a second row with the
-same owner, including a closed one.
+`owner.id` is the actual harness handle of the agent that owns the row.
+One owner may own multiple tasks, including closed tasks. Keep one row per
+task with a unique work `id`; do not invent owner handles to distinguish rows.
+Each task has one accountable writer; a shared owner does not combine its
+tasks or authorize other writers to update that task's record.
 
 Optional, with what the page shows when the field is absent:
 
@@ -168,6 +170,34 @@ is not `not_requested`, and the **current** stage is the first requested
 stage that is not `verified`. A row whose requested stages are all verified
 reads "<target> ✓, Reached this run's target". A cancelled or deferred row
 reads "Stopped after <last verified stage>" or "Stopped before starting".
+
+### Amp orchestration publication receipt
+
+The Amp producer reads this optional handoff section. Its first nonempty
+line must be a JSON object (no Markdown code fence):
+
+```text
+## Publication receipt
+{"repo":"https://github.com/example/project","remote_ref":"refs/heads/orch/task","observed_commit_sha":"0123456789abcdef0123456789abcdef01234567"}
+```
+
+`repo` is an HTTPS repository URL with a nonempty path and no credentials,
+query or fragment. `remote_ref` is a fully qualified `refs/heads/` or
+`refs/tags/` ref; its suffix starts with a letter, number or underscore and
+uses only letters, numbers, underscores, dots, slashes and hyphens. Empty
+components, `..`, dot-prefixed components, and components ending in `.` or
+`.lock` are invalid. `observed_commit_sha` is the exact nonzero 40- or
+64-hex commit ID observed at that remote ref, not a short SHA or branch name.
+The producer must observe the remote ref after publication and ensure it
+matches the intended code before writing the receipt. The dashboard parses
+the receipt; it does not query Git or independently authenticate the claim.
+
+Without a valid receipt, code publication stays pending, even with a Branch
+line, PR number or successful handoff. A requested PR without a recorded PR
+number also remains pending. Verifiers do not request code publication.
+Publication proves neither merge nor deployment nor business acceptance.
+Unit tests and type checks are limited evidence for their stated scope,
+not user acceptance; the Amp producer leaves business acceptance not requested.
 
 ## Evidence
 

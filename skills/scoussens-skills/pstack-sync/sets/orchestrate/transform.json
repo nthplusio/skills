@@ -75,7 +75,7 @@
         "transforms": [
           {
             "find": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground. The Shell default backgrounds the loop and breaks the heartbeat when your turn ends.\n",
-            "replace": "- Run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground with the shell tool, which blocks until the command exits or the tool's own timeout ends it: pass `--max-runtime-sec` smaller than that timeout and rerun the same command whenever it exits with code 100. Never start the loop as an orb service (`amp orb service start`) or in the background: it outlives your turn, and nothing wakes you when its last task finishes.\n"
+            "replace": "- In standalone scripted mode, run `bun cli.ts run{{rootFlag}} <workspace>` in the foreground with `--max-runtime-sec` set to a bounded interval. A shell wait timeout leaves the process running; follow its process handle until it exits. Rerun only after exit code 100. Native mode uses native tools and the receipt recorder instead of this loop.\n"
           },
           {
             "find": "- `unknown`: read the `Last activity` and `SDK error` lines; if no signal, treat as transient and retry as-is; abandon if it fails again.\n",

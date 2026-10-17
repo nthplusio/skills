@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { Command } from "commander";
 import { createSlackAdapter } from "../adapters/index.ts";
 import { GITHUB_FOLLOWUP_NOTE } from "../core/github-followups.ts";
@@ -99,6 +100,9 @@ export function registerTaskCommands(program: Command): void {
           exitOnAllDone?: boolean;
         }
       ) => {
+        if (["native.json", "native.transaction.json", "native.lock"].some(name => existsSync(join(resolve(workspace), name)))) {
+          throw new Error("native-owned workspace refuses scripted load/run; use the native execution recorder");
+        }
         const maxRuntimeSec = parsePositiveIntegerOrBail({
           value: opts.maxRuntimeSec,
           flag: "--max-runtime-sec",

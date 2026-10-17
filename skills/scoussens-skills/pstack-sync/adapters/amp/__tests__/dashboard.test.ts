@@ -181,7 +181,7 @@ afterAll(() => {
 describe("parseHandoff", () => {
   test("reads the Status, Verification and Branch sections of a worker handoff", () => {
     const parsed = parseHandoff("/x/handoffs/api.md", "## Status\nsuccess\n\n## Branch\n`orch/a/b`\n\n## Verification\nlive-ui-verified\n");
-    expect(parsed).toEqual({ path: "/x/handoffs/api.md", status: "success", verification: "live-ui-verified", branch: "orch/a/b" });
+    expect(parsed).toEqual({ path: "/x/handoffs/api.md", status: "success", verification: "live-ui-verified", branch: "orch/a/b", publication: null });
   });
 
   test("reads the Status: and Branch: lines of a failure handoff, not the traceability comment", () => {
@@ -195,7 +195,7 @@ describe("parseHandoff", () => {
   });
 
   test("a body without the sections yields nulls", () => {
-    expect(parseHandoff("/x/h.md", "I ran out of context.\n")).toEqual({ path: "/x/h.md", status: null, verification: null, branch: null });
+    expect(parseHandoff("/x/h.md", "I ran out of context.\n")).toEqual({ path: "/x/h.md", status: null, verification: null, branch: null, publication: null });
   });
 });
 
@@ -231,18 +231,54 @@ describe("buildStatusRecord", () => {
     expect(record.tasks[2].blocker).toContain("tool-error");
   });
 
-  test("stages follow the handoff: implemented and submitted when handed off on a branch, verification from state.json", () => {
+  test("a branch-only handoff is implemented but unpublished, verification from state.json", () => {
     const record = buildStatusRecord(readWorkspace(workspace), { now, contractVersion: "2", outPath: join(workspace, "dashboard.html") });
     const [api, page, readme] = record.tasks;
     expect(api.milestones.pr_readiness?.state).toBe("verified");
-    expect(api.milestones.code_publication?.state).toBe("verified");
-    expect(api.milestones.code_publication?.note).toContain("orch/index-sparklines/api");
+    expect(api.milestones.code_publication?.state).toBe("pending");
+    expect(api.milestones.code_publication?.note).toContain("No valid publication receipt");
     expect(api.milestones.verification?.state).toBe("verified");
     expect(api.milestones.deployment?.state).toBe("not_requested");
     expect(page.milestones.pr_readiness?.state).toBe("pending");
     expect(page.milestones.code_publication?.state).toBe("pending");
     expect(readme.milestones.pr_readiness?.state).toBe("blocked");
-    expect(readme.milestones.code_publication?.state).toBe("blocked");
+    expect(readme.milestones.code_publication?.state).toBe("pending");
+  });
+
+  test("an explicit exact-code receipt is retained as publication evidence", () => {
+    const snapshot = readWorkspace(workspace);
+    const receipt = { repo: "https://github.com/example/playgrounds", remote_ref: "refs/heads/orch/index-sparklines/api", observed_commit_sha: "0123456789abcdef0123456789abcdef01234567" };
+    snapshot.handoffs.set("api", parseHandoff("/x/handoffs/api.md", `## Status\nsuccess\n## Publication receipt\n${JSON.stringify(receipt)}\n`));
+    const record = buildStatusRecord(snapshot, { now, contractVersion: "2", outPath: join(workspace, "dashboard.html") });
+    expect(record.tasks[0].milestones.code_publication?.state).toBe("verified");
+    for (const value of Object.values(receipt)) {
+      expect(record.tasks[0].milestones.code_publication?.note).toContain(value);
+      expect(record.evidence[0].output).toContain(value);
+    }
+    expect(record.tasks[0].milestones.business_acceptance?.state).toBe("not_requested");
+  });
+
+  test("invalid receipts never establish publication", () => {
+    const receipt = { repo: "https://github.com/example/playgrounds", remote_ref: "refs/heads/api", observed_commit_sha: "a".repeat(40) };
+    for (const invalid of ["not JSON", "null", "{}", JSON.stringify({ ...receipt, observed_commit_sha: "abc123" }), JSON.stringify({ ...receipt, observed_commit_sha: "0".repeat(40) }), JSON.stringify({ ...receipt, remote_ref: "api" }), JSON.stringify({ ...receipt, repo: "file:///tmp/repo" })]) {
+      const snapshot = readWorkspace(workspace);
+      const handoff = parseHandoff("/x/handoffs/api.md", `## Status\nsuccess\n## Branch\napi\n## Publication receipt\n${invalid}\n`);
+      expect(handoff.publication).toBeNull();
+      snapshot.handoffs.set("api", handoff);
+      const record = buildStatusRecord(snapshot, { now, contractVersion: "2", outPath: join(workspace, "dashboard.html") });
+      expect(record.tasks[0].milestones.code_publication?.state).toBe("pending");
+    }
+  });
+
+  test("unit and typecheck evidence never establishes business acceptance", () => {
+    for (const verdict of ["unit-test-verified", "type-check-only"]) {
+      const snapshot = readWorkspace(workspace);
+      snapshot.handoffs.set("api", parseHandoff("/x/handoffs/api.md", `## Status\nsuccess\n## Verification\n${verdict}\n`));
+      const record = buildStatusRecord(snapshot, { now, contractVersion: "2", outPath: join(workspace, "dashboard.html") });
+      expect(record.evidence[0].assessment).toBe("limited");
+      expect(record.evidence[0].note).toContain(verdict);
+      expect(record.tasks[0].milestones.business_acceptance?.state).toBe("not_requested");
+    }
   });
 
   test("evidence comes from each handoff's status and branch lines and names the file", () => {
@@ -250,7 +286,7 @@ describe("buildStatusRecord", () => {
     expect(record.evidence.map(item => item.id)).toEqual(["handoff-api", "handoff-readme"]);
     const [api, readme] = record.evidence;
     expect(api.result).toBe("passed");
-    expect(api.assessment).toBe("accepted");
+    expect(api.assessment).toBe("limited");
     expect(api.note).toBe("Status: success · Verification: unit-test-verified · Branch: orch/index-sparklines/api");
     expect(api.href).toBe("handoffs/api.md");
     expect(api.output).toContain("File: handoffs/api.md");
@@ -339,6 +375,31 @@ describe("the real renderer", () => {
     expect(html).toContain(`https://ampcode.com/threads/${API_ID}`);
   });
 
+  test("native identities keep logical lineage without inventing Amp thread links", () => {
+    const dir = join(root, "native");
+    writeFixture(dir);
+    writeFileSync(join(dir, "native.json"), JSON.stringify({
+      runId: "portable-run", scope: { reference: "approved-brief.md", revision: "2" },
+      deliveryOwner: { kind: "subagent", harness: "codex", id: ROOT_ID },
+      attempts: [
+        { task: "api", attemptId: "m0", handle: { kind: "subagent", harness: "codex", id: API_ID }, logicalParent: "root-task" },
+        { task: "page", attemptId: "m0", handle: { kind: "thread", harness: "amp", id: PAGE_ID }, logicalParent: "root-task" },
+      ],
+    }));
+    const snapshot = readWorkspace(dir);
+    const record = buildStatusRecord(snapshot, { contractVersion: "test", outPath: join(dir, "dashboard.html") });
+    expect(record.run_id).toBe("portable-run");
+    expect(record.harness_name).toBe("codex");
+    expect(record.presentation.coordinator_href).toBeUndefined();
+    expect(record.tasks[0].owner.id).toBe(`codex:subagent:${API_ID}`);
+    expect(record.tasks[0].owner.href).toBeUndefined();
+    expect(record.tasks[0].owner.activity).toContain("logical parent root-task");
+    expect(record.tasks[1].owner.href).toBe(`https://ampcode.com/threads/${PAGE_ID}`);
+    expect(record.tasks[1].next_action).toContain("native execution");
+    expect(record.decisions).toEqual([]);
+    expect(record.history.join("\n")).toContain("Scope 2: approved-brief.md");
+  });
+
   test("the CLI writes status.json and the page, and exits 1 with the renderer's stderr when the record is rejected", () => {
     const run = Bun.spawnSync(["bun", TOOL, workspace, "--out", join(workspace, "cli.html")], { env: { ...process.env, ORCHESTRATE_DASHBOARD_DIR: "" } });
     expect(run.stderr.toString()).toBe("");
@@ -347,15 +408,28 @@ describe("the real renderer", () => {
     expect(existsSync(join(workspace, "status.json"))).toBe(true);
     expect(existsSync(join(workspace, "cli.html"))).toBe(true);
 
-    // Two rows sharing one thread id is a shape the renderer refuses.
+    // Reusing the actual owner retains both task rows and their answer route.
     const broken = join(root, "broken");
     writeFixture(broken);
     const state = JSON.parse(readFileSync(join(broken, "state.json"), "utf8"));
     state.tasks[1].agentId = API_ID;
     writeFileSync(join(broken, "state.json"), JSON.stringify(state));
+    const shared = Bun.spawnSync(["bun", TOOL, broken]);
+    expect(shared.exitCode).toBe(0);
+    const html = readFileSync(join(broken, "dashboard.html"), "utf8");
+    expect(html).toContain('id="row-api"');
+    expect(html).toContain('id="row-page"');
+    const record = JSON.parse(readFileSync(join(broken, "status.json"), "utf8"));
+    expect(record.tasks[0].owner.id).toBe(API_ID);
+    expect(record.tasks[1].owner.id).toBe(API_ID);
+
+    state.tasks[1].name = "api";
+    writeFileSync(join(broken, "state.json"), JSON.stringify(state));
+    rmSync(join(broken, "handoffs", "api.md"));
+    rmSync(join(broken, "dashboard.html"));
     const rejected = Bun.spawnSync(["bun", TOOL, broken]);
     expect(rejected.exitCode).toBe(1);
-    expect(rejected.stderr.toString()).toContain("FAIL: page: owner");
+    expect(rejected.stderr.toString()).toContain("duplicate ID: api");
     expect(existsSync(join(broken, "status.json"))).toBe(true);
     expect(existsSync(join(broken, "dashboard.html"))).toBe(false);
 
