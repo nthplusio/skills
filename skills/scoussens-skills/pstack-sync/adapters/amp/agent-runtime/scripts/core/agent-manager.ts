@@ -259,6 +259,11 @@ export class AgentManager {
     opts: { slackChannel?: string } = {}
   ): Promise<AgentManager> {
     const workspace = resolve(workspacePath);
+    if (["native.json", "native.transaction.json", "native.lock"].some(name => existsSync(join(workspace, name)))) {
+      throw new PlanValidationError(
+        "native-owned workspace refuses scripted load/run; use the native execution recorder"
+      );
+    }
     mkdirSync(workspace, { recursive: true });
     const planPath = join(workspace, "plan.json");
     if (!existsSync(planPath)) {

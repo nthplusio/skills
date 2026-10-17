@@ -75,6 +75,15 @@ sweep — the position, the work in flight, the environment, the tracker — plu
 which facts decay fastest and how to turn a finding into a check whose failure
 is actionable.
 
+### When handing off executable evidence
+
+Ordinary prose handoffs need no bundle. When a claim depends on runnable code,
+patches, or fixtures, follow the [executable-evidence checklist](references/gathering-state.md#executable-evidence).
+The receiver must be able to replay the exact evidence from a clean extraction,
+offline, without sibling files. A passing run in the sender's checkout is not
+that proof. Keep credentials and runtime leases, including `.il/agent`, out of
+the handoff.
+
 ## The action table
 
 Every remaining piece of work is one row. A row is the unit the receiver picks
@@ -110,6 +119,14 @@ observably true. Prefer something the receiver can run or see.
 of it: it says which unblocked rows can run **at the same time**. Two ready rows
 touching the same file are not parallel work. The dependency column gives the
 order; this column gives the width.
+
+For verification or review rows, name the claim, the smallest decisive check,
+and the stop condition. Once that condition holds, close the row; reopen it
+only for new evidence or a changed dependency, not another broad review pass.
+Preserve failed commands and their output alongside the fix and rerun. Where
+risk warrants exact-head review, bind the verdict and evidence to the full
+reviewed commit hash and patch state. A changed head needs a scoped recheck
+before the verdict applies again.
 
 ## Context is the position, not the game
 

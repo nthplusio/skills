@@ -192,6 +192,9 @@ class DependencyTests(unittest.TestCase):
         (self.skills / sync.SELF / "harness").mkdir(parents=True)
         shutil.copytree(SKILL / "dialects", self.skills / sync.SELF / "dialects")
         shutil.copytree(SKILL / "sets", self.skills / sync.SELF / "sets")
+        shutil.copytree(SKILL / "references", self.skills / sync.SELF / "references")
+        (self.skills / sync.SELF / "scripts").mkdir()
+        shutil.copy(SKILL / "scripts" / "native.ts", self.skills / sync.SELF / "scripts" / "native.ts")
         (self.skills / sync.SELF / "sets" / "pstack" / "transform.json").unlink()
         self.profile(PROFILE)
 
@@ -247,6 +250,84 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual((second["added"], second["updated"], second["removed"]), ([], [], []))
         self.assertEqual(second["unchanged_count"], len(first["added"]))
         self.assertEqual(second["needs_adaptation"], first["needs_adaptation"])
+
+    def test_portable_extension_survives_resync_upstream_update_and_record(self):
+        config = self.skills / sync.SELF / "sets" / "pstack" / "set.json"
+        data = json.loads(config.read_text())
+        data["extensions"] = [{"skill": "alpha", "reference": "references/workflow.md",
+                               "entrypoints": ["SKILL.md"],
+                               "files": {"references/workflow.md": "references/orchestration.md"}}]
+        config.write_text(json.dumps(data))
+        upstream = self.upstream()
+        self.run_sync()
+        installed = self.skills / "alpha" / "SKILL.md"
+        original = installed.read_text()
+        self.assertTrue(original.startswith("---\nname: alpha\n"))
+        self.assertIn("[nthplusio workflow](references/workflow.md)", original)
+        self.assertEqual((self.skills / "alpha/references/workflow.md").read_bytes(),
+                         (SKILL / "references/orchestration.md").read_bytes())
+        self.assertEqual(self.run_sync()["updated"], [])
+        self.run_sync("record", "alpha")
+        self.assertEqual(self.run_sync()["updated"], [])
+        source = upstream / sync.SUBDIR / "alpha/SKILL.md"
+        source.write_text(source.read_text() + "\nA new upstream improvement.\n")
+        commit_all(upstream, "upstream improvement")
+        self.run_sync()
+        self.assertIn("A new upstream improvement.", installed.read_text())
+        self.assertEqual(installed.read_text().count("[nthplusio workflow]"), 1)
+        shared = self.skills / sync.SELF / "references/orchestration.md"
+        shared.write_text(shared.read_text() + "\nA new portable rule.\n")
+        self.run_sync()
+        self.assertIn("A new portable rule.", (self.skills / "alpha/references/workflow.md").read_text())
+        report = self.run_sync("sync", "--harness", "codex")
+        self.assertEqual(report["harness"], "codex")
+        self.assertIn("A new portable rule.", (self.skills / "alpha/references/workflow.md").read_text())
+        self.assertIn("[nthplusio workflow]", installed.read_text())
+
+    def test_extension_drift_is_not_silently_overwritten(self):
+        self.upstream()
+        self.run_sync("sync", "--set", "orchestrate")
+        installed = self.skills / "orchestrate/references/nthplusio-workflow.md"
+        installed.write_text("local change\n")
+        report = self.run_sync("sync", "--set", "orchestrate")
+        self.assertIn("orchestrate/references/nthplusio-workflow.md", report["local_drift"])
+        self.assertEqual(installed.read_text(), "local change\n")
+        self.assertIn("orchestrate/references/nthplusio-workflow.md",
+                      self.run_sync("sync", "--set", "orchestrate")["local_drift"])
+
+    def test_new_extension_does_not_claim_different_unowned_files(self):
+        self.upstream()
+        self.run_sync()
+        installed = self.skills / "alpha/references/workflow.md"
+        installed.parent.mkdir(parents=True)
+        installed.write_text("unowned local content\n")
+        config = self.skills / sync.SELF / "sets/pstack/set.json"
+        data = json.loads(config.read_text())
+        data["extensions"] = [{"skill": "alpha", "reference": "references/workflow.md", "entrypoints": [],
+                               "files": {"references/workflow.md": "references/orchestration.md"}}]
+        config.write_text(json.dumps(data))
+        for _ in range(2):
+            report = self.run_sync()
+            self.assertIn("alpha/references/workflow.md", report["local_drift"])
+            self.assertEqual(installed.read_text(), "unowned local content\n")
+
+    def test_retiring_extensions_preserves_edited_bytes_and_ownership_across_repeated_sync(self):
+        self.upstream()
+        self.run_sync("sync", "--set", "orchestrate")
+        edited = self.skills / "orchestrate/references/nthplusio-workflow.md"
+        unedited = self.skills / "orchestrate/references/native-execution.md"
+        edited.write_text("local extension edit\n")
+        config = self.skills / sync.SELF / "sets/orchestrate/set.json"
+        data = json.loads(config.read_text())
+        data["extensions"][0]["files"] = {"scripts/tools/native.ts": "scripts/native.ts"}
+        config.write_text(json.dumps(data))
+        for _ in range(2):
+            report = self.run_sync("sync", "--set", "orchestrate")
+            self.assertIn("orchestrate/references/nthplusio-workflow.md", report["local_drift"])
+            self.assertEqual(edited.read_text(), "local extension edit\n")
+            self.assertFalse(unedited.exists())
+            manifest = json.loads((self.shared() / "sets/orchestrate/manifest.json").read_text())
+            self.assertTrue(manifest["skills"]["orchestrate"]["files"]["references/nthplusio-workflow.md"]["extension"])
 
     def test_handoffs_without_a_profile_mapping_are_unresolved(self):
         self.upstream()

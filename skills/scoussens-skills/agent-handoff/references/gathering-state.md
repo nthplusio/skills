@@ -51,6 +51,41 @@ a failure that looks like the receiver's own change broke something.
 Name any long-running process the work assumes — a dev server, a database
 container, a tunnel — and how to start it.
 
+### Executable evidence
+
+Use this checklist only when transferring runnable evidence, not for an
+ordinary prose handoff.
+
+1. Include the exact code and patches used, with the base revision and patch
+   application order. Name the claim and scope exclusions so a narrow replay
+   is not mistaken for approval of the whole change.
+2. Include every transitive input: imported helpers, fixtures, schemas,
+   configuration, generated inputs, and local dependencies. Record runtime
+   versions and the inventory of relative paths. An incremental bundle must
+   explicitly name each prerequisite bundle or base revision, its identity,
+   and assembly order; do not label a delta self-contained.
+3. Record the literal expected stdout, stderr, exit status, or artifact content
+   independently of the implementation under test. Record the exact executed
+   command, working directory, observed output, and exit status. Preserve
+   relevant failed runs as well as the successful rerun.
+4. Extract into a new empty directory outside the source checkout. Assemble
+   only declared prerequisites, apply the supplied patches, then replay offline
+   with no sibling files, sender caches, or rescue downloads. Compare with the
+   literal expected result. Missing inputs fail the handoff gate; add them to
+   the package and repeat the same replay rather than silently repairing the
+   receiver's environment. If replay is not possible, mark the claim unverified
+   and name the missing prerequisite.
+5. Transfer files, not authority. Exclude credentials, tokens, secret environment
+   files, and runtime leases such as `.il/agent`. List required credential roles
+   and startup steps instead; the receiver obtains fresh authorization and
+   acquires its own leases. Do not copy a live sender's ownership state.
+
+The tiny regression fixture exercises a helper's missing transitive input and
+the complete package. Run it with
+`python3 -B -m unittest discover -s skills/scoussens-skills/agent-handoff/evals -v`
+from the repository root. It uses only the Python standard library and performs
+no downloads; it is not a general packaging validator or an agent-behavior eval.
+
 ### Tracker
 
 Status, assignee, and blocked-by links. The assignee is how a receiver claims

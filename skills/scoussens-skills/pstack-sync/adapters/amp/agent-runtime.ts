@@ -218,6 +218,7 @@ export interface BridgeFile {
 
 /** Where the bridge file is looked for, in order; the first that exists wins. */
 export function bridgeCandidates(env: NodeJS.ProcessEnv, cwd: string): string[] {
+  if (env.ORCHESTRATE_AMP_BRIDGE === "") return [];
   if (env.ORCHESTRATE_AMP_BRIDGE) return [env.ORCHESTRATE_AMP_BRIDGE];
   const out = [join(cwd, ".orchestrate", "bridge.json")];
   if (env.AMP_WORKING_DIRECTORY) {
@@ -746,9 +747,9 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         ...(args.nodeType ? [nodeTypeLabel(args.nodeType)] : []),
         ...(args.labels ?? []),
       ]);
-      const title = titleFor(
-        args.title ?? (args.runTag ? `${args.runTag} ${args.name}` : args.name)
-      );
+      const requestedTitle = titleFor(args.title ?? args.name);
+      const prefix = args.runTag ? `${args.runTag} ` : "";
+      const title = titleFor(prefix && !requestedTitle.startsWith(prefix) ? prefix + requestedTitle : requestedTitle);
       const mode = args.model && args.model !== "inherit" ? args.model : undefined;
       const prompt = withStartingRef(args.prompt, args.startingRef);
 

@@ -281,14 +281,21 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("interrupted · limited", html)
         self.assertIn("posted reviews: []", html)
 
-    def test_one_owner_cannot_be_assigned_to_two_tickets_even_after_closure(self):
+    def test_one_owner_can_own_distinct_tasks_even_after_closure(self):
         first, second = self.data["tasks"][:2]
         second["owner"]["id"] = first["owner"]["id"]
         for state in ("active", "closed"):
             with self.subTest(first_owner_state=state):
                 first["owner"]["state"] = state
-                with self.assertRaisesRegex(ValueError, "API-102: owner ui-owner is already bound to another ticket"):
-                    render(self.data)
+                page = Page(render(self.data))
+                for task in (first, second):
+                    self.assertIn(f"row-{task['id']}", page.rows)
+                    self.assertEqual(page.contexts[task["id"]]["tasks"][0]["owner"]["id"], first["owner"]["id"])
+
+    def test_work_ids_remain_unique(self):
+        self.data["tasks"][1]["id"] = self.data["tasks"][0]["id"]
+        with self.assertRaisesRegex(ValueError, "duplicate ID: UI-101"):
+            render(self.data)
 
     def test_completed_but_unclosed_owner_is_visible(self):
         self.data["tasks"] = self.data["tasks"][:7]

@@ -102,7 +102,7 @@ SELF = "pstack-sync"
 DEFAULT_SET = "pstack"
 SET_DEFAULTS = {"ref": "main", "plugin_marker": ".cursor-plugin/plugin.json", "dialect": "cursor",
                 "agents_dir": None, "collision_prefix": None, "extra_needs": [], "ports": [],
-                "exclude": [], "ignore": []}
+                "exclude": [], "ignore": [], "extensions": []}
 
 
 def load_set(repo, name):
@@ -515,7 +515,35 @@ def base_render(key, rel, data, target, renames, tf):
     for g in tf.get("global", []):
         if fnmatch.fnmatch(key, g.get("files", "*")):
             text = re.sub(g["pattern"], g["replace"], text)
+    for extension in SET["extensions"]:
+        if key.split("/", 1)[0] != extension["skill"] or rel not in extension.get("entrypoints", []):
+            continue
+        link = os.path.relpath(extension["reference"], os.path.dirname(rel) or ".")
+        pointer = (f"> For multi-agent orchestration, first read the [nthplusio workflow]({link}). "
+                   "It selects execution mode and durable progress tracking; the instructions below apply within that mode.\n\n")
+        offset = text.index("\n---", 3) + 4 if text.startswith("---\n") else 0
+        text = text[:offset] + "\n\n" + pointer + text[offset:].lstrip("\n")
     return text
+
+
+def extension_files(repo, name):
+    """Declared pack additions, independent of the harness and upstream ports."""
+    files = {}
+    for extension in SET["extensions"]:
+        if extension["skill"] != name:
+            continue
+        for target, source in extension["files"].items():
+            for path in (target, source):
+                if os.path.isabs(path) or ".." in path.split("/"):
+                    sys.exit(f"error: extension path must be pack-relative: {path}")
+            if target in files:
+                sys.exit(f"error: duplicate extension target: {name}/{target}")
+            path = os.path.join(repo, SELF, source)
+            data = read_installed(path)
+            if data is None:
+                sys.exit(f"error: missing extension source: {path}")
+            files[target] = data
+    return files
 
 
 def apply_file_transforms(text, transforms):
@@ -697,8 +725,10 @@ class State:
                 for rel in port.get("files", []):
                     data = read_installed(adapter_path(self.repo, self.harness, port, rel))
                     adapters[f"{port['name']}/{rel}"] = blob_sha(data) if data is not None else None
+        extensions = {rel: blob_sha(data) for rel, data in extension_files(self.repo, name).items()}
         blob = json.dumps([self.tf.get("global", []), self.tf.get("accept", []), files, renames,
-                           sorted(self.auto_accept), self.needs, sorted(self.available), upstream, adapters],
+                           sorted(self.auto_accept), self.needs, sorted(self.available), upstream, adapters,
+                           SET["extensions"], extensions],
                           sort_keys=True)
         return hashlib.sha1(blob.encode()).hexdigest()
 
@@ -891,12 +921,19 @@ def cmd_sync(a, st):
         origin = {k: up[k] for k in ("source", "sources") if k in up}
         dst = os.path.join(st.repo, target)
         tfh = st.skill_tf_hash(name, renames)
+        additions = extension_files(st.repo, name)
+        prior_extensions = {rel for rel, f in entry.get("files", {}).items() if f.get("extension")}
+        collisions = (set(additions) | prior_extensions) & set(up["files"])
+        if collisions:
+            sys.exit(f"error: upstream now owns extension paths: {name}: {sorted(collisions)}; reconcile before syncing")
         adapters_in_place = all(
             os.path.exists(os.path.join(dst, rel))
             for port in SET["ports"] if port.get("skill") == name
             for rel in port.get("files", [])
             if os.path.exists(adapter_path(st.repo, a.harness, port, rel)))
-        if (not harness_changed and entry.get("tree") == up["tree"] and adapters_in_place
+        extensions_in_place = all(read_installed(os.path.join(dst, rel)) == data for rel, data in additions.items())
+        if (not harness_changed and entry.get("tree") == up["tree"] and adapters_in_place and extensions_in_place
+                and not (prior_extensions - set(additions))
                 and entry.get("transforms") == tfh and os.path.isdir(dst)):
             report["unchanged_count"] += 1
             new_skills[name] = {**entry, **origin}
@@ -1011,17 +1048,40 @@ def cmd_sync(a, st):
                             f.write(adapter)
                 files[rel] = {"upstream": None, "installed": blob_sha(adapter), "port": port["name"]}
 
+        for rel, data in additions.items():
+            path = os.path.join(dst, rel)
+            current = read_installed(path)
+            previous = recorded.get(rel, {}).get("installed")
+            if current is not None and ((previous and blob_sha(current) != previous)
+                                        or (not previous and current != data)):
+                report["local_drift"].append(f"{target}/{rel}")
+                files[rel] = recorded.get(rel, {"upstream": None, "installed": None, "extension": True})
+                continue
+            if current != data:
+                changed = True
+                report["needs_security_review"].append(f"{target}/{rel}")
+                if not a.dry_run:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "wb") as f:
+                        f.write(data)
+            files[rel] = {"upstream": None, "installed": blob_sha(data), "extension": True}
+
         port_files = {rel for port in SET["ports"] if port.get("skill") == name for rel in port.get("files", [])}
         if os.path.isdir(dst):  # files present locally but gone upstream
             for dp, _, fns in os.walk(dst):
                 for fn in fns:
                     rel = os.path.relpath(os.path.join(dp, fn), dst)
-                    if rel in port_files:
+                    if rel in port_files or rel in additions:
                         continue
                     ignored = any(fnmatch.fnmatch(rel, g) for g in SET["ignore"])
                     if ignored and rel not in up["files"]:
                         continue  # a local file the set leaves alone, such as installed dependencies
                     if rel not in up["files"] or ignored:
+                        previous = recorded.get(rel, {})
+                        if previous.get("extension") and blob_sha(read_installed(os.path.join(dp, fn))) != previous.get("installed"):
+                            report["local_drift"].append(f"{target}/{rel}")
+                            files[rel] = previous
+                            continue
                         changed = True
                         if not a.dry_run:
                             os.remove(os.path.join(dp, fn))
@@ -1096,7 +1156,7 @@ def cmd_record(a, st):
         dst = os.path.join(st.repo, target)
         blobs = read_blobs(obj for _, obj in up["files"].values())
         extra = [os.path.relpath(os.path.join(dp, fn), dst) for dp, _, fns in os.walk(dst) for fn in fns]
-        extra = [r for r in extra if r not in up["files"] and not port_of(name, r)
+        extra = [r for r in extra if r not in up["files"] and not port_of(name, r) and r not in extension_files(st.repo, name)
                  and not any(fnmatch.fnmatch(r, g) for g in SET["ignore"])]
         if extra:
             sys.exit(f"error: {target} has files not in upstream: {extra}")
@@ -1132,7 +1192,7 @@ def cmd_record(a, st):
                 st.pop_file(key)
             files[rel] = {"upstream": obj, "installed": blob_sha(current)}
         for rel, f in entry.get("files", {}).items():
-            if f.get("port") and rel not in up["files"]:
+            if (f.get("port") or f.get("extension")) and rel not in up["files"]:
                 files[rel] = f
         entry.update({"files": files, "transforms": st.skill_tf_hash(name, renames)})
         summary[target] = counts

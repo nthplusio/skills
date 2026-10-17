@@ -8,6 +8,29 @@
   "dialect": "cursor",
   "agents_dir": "orchestrate-agents",
   "collision_prefix": "orchestrate-",
+  "extensions": [
+    {
+      "skill": "orchestrate",
+      "reference": "references/nthplusio-workflow.md",
+      "entrypoints": [
+        "SKILL.md",
+        "references/dispatcher.md",
+        "references/planner.md",
+        "references/spawning.md",
+        "references/handoffs.md",
+        "prompts/root.md",
+        "prompts/subplanner.md",
+        "prompts/worker.md",
+        "prompts/verifier.md",
+        "prompts/loop-hygiene.md"
+      ],
+      "files": {
+        "references/nthplusio-workflow.md": "references/orchestration.md",
+        "references/native-execution.md": "references/native-execution.md",
+        "scripts/tools/native.ts": "scripts/native.ts"
+      }
+    }
+  ],
   "extra_needs": [
     {
       "id": "slack-signal",

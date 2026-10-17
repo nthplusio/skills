@@ -136,6 +136,24 @@ afterEach(() => {
 });
 
 describe("threads", () => {
+  test("native ownership markers refuse cleanup before any command, including dry-run discovery", () => {
+    writeWorkspace([row("done", "handed-off", API_ID), row("active", "running", API_ID)]);
+    const commands: string[] = [];
+    for (const marker of ["native.json", "native.transaction.json", "native.lock"]) {
+      const path = join(workspace, marker);
+      writeFileSync(path, "{}");
+      for (const dryRun of [false, true]) {
+        expect(() => runCleanup({ workspace, env, cwd: root, branches: true, dryRun,
+          run: (command) => { commands.push(command); return { code: 0, stdout: "", stderr: "" }; },
+          log: line => lines.push(line),
+        })).toThrow("native-owned workspace");
+      }
+      rmSync(path);
+    }
+    expect(commands).toEqual([]);
+    expect(calls()).toEqual([]);
+  });
+
   test("archives exactly the terminal non-root tasks that are still open", () => {
     writeWorkspace(fixtureTasks());
     const dropped = "T-01a13ae9-f4e3-7c3d-ae5f-607182930415";

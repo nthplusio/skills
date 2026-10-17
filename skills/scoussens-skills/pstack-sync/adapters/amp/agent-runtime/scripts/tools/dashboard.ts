@@ -58,6 +58,7 @@ export interface StateTaskFile {
   dependsOn: string[];
   status: TaskStatus;
   agentId?: string | null;
+  runId?: string | null;
   handoffPath?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
@@ -92,6 +93,13 @@ export interface Handoff {
   verification: string | null;
   /** `## Branch` value with backticks stripped. */
   branch: string | null;
+  publication: PublicationReceipt | null;
+}
+
+export interface PublicationReceipt {
+  repo: string;
+  remote_ref: string;
+  observed_commit_sha: string;
 }
 
 export interface WorkspaceSnapshot {
@@ -99,6 +107,12 @@ export interface WorkspaceSnapshot {
   plan: PlanFile;
   state: StateFile;
   handoffs: Map<string, Handoff>;
+  native?: {
+    runId: string;
+    deliveryOwner: { kind: string; harness: string; id: string };
+    scope: { reference: string; revision: string };
+    attempts: { task: string; attemptId: string; handle: { kind: string; harness: string; id: string }; logicalParent: string | null }[];
+  };
   /** `attention.log` lines, oldest first. */
   attention: string[];
 }
@@ -193,7 +207,7 @@ export interface StatusRecord {
   goal?: string;
   updated_at: string;
   contract_version: string;
-  harness_name: "amp";
+  harness_name: string;
   presentation: {
     destination: "local";
     local_path: string;
@@ -252,6 +266,23 @@ function statusWord(value: string | null): string | null {
   return word || null;
 }
 
+function publicationReceipt(value: string | null): PublicationReceipt | null {
+  if (!value) return null;
+  try {
+    const receipt: unknown = JSON.parse(value);
+    if (typeof receipt !== "object" || receipt === null || !("repo" in receipt) || !("remote_ref" in receipt) || !("observed_commit_sha" in receipt)) return null;
+    const { repo, remote_ref, observed_commit_sha } = receipt;
+    if (typeof repo !== "string" || typeof remote_ref !== "string" || typeof observed_commit_sha !== "string") return null;
+    const url = new URL(repo);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash || !/^\/[^\s]+$/.test(url.pathname)) return null;
+    if (!/^refs\/(heads|tags)\/[A-Za-z0-9_][A-Za-z0-9_./-]*$/.test(remote_ref) || remote_ref.includes("..") || remote_ref.includes("//") || remote_ref.split("/").some(part => !part || part.startsWith(".") || part.endsWith(".") || part.endsWith(".lock"))) return null;
+    if (!/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(observed_commit_sha) || /^0+$/.test(observed_commit_sha)) return null;
+    return { repo, remote_ref, observed_commit_sha };
+  } catch {
+    return null;
+  }
+}
+
 export function parseHandoff(path: string, text: string): Handoff {
   const lines = text.split(/\r?\n/);
   const body = lines.filter(line => !/^\s*(<!--|-->|task:|branch:|agentId:|runId:|resultStatus:|finishedAt:|failureMode:|terminatedAt:)/.test(line));
@@ -261,6 +292,7 @@ export function parseHandoff(path: string, text: string): Handoff {
     status: statusWord(sectionValue(lines, "Status") ?? labelledValue(body, "Status")),
     verification: statusWord(sectionValue(lines, "Verification")),
     branch: branchRaw === null ? null : branchRaw.replace(/`/g, "").trim() || null,
+    publication: publicationReceipt(sectionValue(body, "Publication receipt")),
   };
 }
 
@@ -292,7 +324,9 @@ export function readWorkspace(workspaceArg: string): WorkspaceSnapshot {
   const attention = existsSync(logPath)
     ? readFileSync(logPath, "utf8").split(/\r?\n/).filter(line => line.trim())
     : (state.attention ?? []).map(entry => `[${entry.at}] ${entry.message}`);
-  return { workspace, plan, state, handoffs, attention };
+  const nativePath = join(workspace, "native.json");
+  const native = existsSync(nativePath) ? readJson<NonNullable<WorkspaceSnapshot["native"]>>(nativePath, "native.json") : undefined;
+  return { workspace, plan, state, handoffs, attention, native };
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +363,7 @@ function describeHandoff(handoff: Handoff): string {
   if (handoff.status) parts.push(`Status: ${handoff.status}`);
   if (handoff.verification) parts.push(`Verification: ${handoff.verification}`);
   if (handoff.branch) parts.push(`Branch: ${handoff.branch}`);
+  if (handoff.publication) parts.push(`Publication: ${handoff.publication.repo} ${handoff.publication.remote_ref} at ${handoff.publication.observed_commit_sha}`);
   return parts.join(" · ") || "No Status or Branch line";
 }
 
@@ -345,7 +380,7 @@ function handoffEvidence(task: StateTaskFile, handoff: Handoff, snapshot: Worksp
   if (verdict === "success" || (verdict !== null && VERIFIED_VERDICTS.has(verdict))) result = "passed";
   else if (verdict === "blocked" || verdict === "error" || verdict === "verifier-failed") result = "failed";
   else if (verdict === "verifier-blocked") result = "interrupted";
-  if (verdict === "partial" || verdict === "verifier-blocked" || verdict === null) assessment = "limited";
+  if (verdict === "partial" || verdict === "verifier-blocked" || verdict === null || handoff.verification === "unit-test-verified" || handoff.verification === "type-check-only") assessment = "limited";
   const file = relative(snapshot.workspace, handoff.path);
   return {
     id: evidenceId(task.name),
@@ -383,6 +418,12 @@ function workFor(task: StateTaskFile, handoff: Handoff | null, unmet: string[]):
       const evidence = handoff ? [evidenceId(task.name)] : [];
       const verdict = handoff?.status ?? handoff?.verification ?? null;
       const branch = handoff?.branch ? ` on ${handoff.branch}` : "";
+      if (task.verification === "verifier-failed" || handoff?.verification === "verifier-failed") {
+        return { state: "needs_decision", summary: "Verification found the change does not work yet.", reason: "Collected verifier verdict: verifier-failed", evidence };
+      }
+      if (task.verification === "verifier-blocked" || handoff?.verification === "verifier-blocked") {
+        return { state: "blocked", summary: "Verification is blocked.", reason: "Collected verifier verdict: verifier-blocked", evidence };
+      }
       if (verdict === "success") {
         return { state: "delivered", summary: `Handed off${branch}.`, reason: `${file}: Status success`, evidence };
       }
@@ -392,10 +433,7 @@ function workFor(task: StateTaskFile, handoff: Handoff | null, unmet: string[]):
       if (verdict === "partial") {
         return { state: "needs_decision", summary: "Partly done; the planner decides whether to retry or follow up.", reason: `${file}: Status partial`, evidence };
       }
-      if (verdict === "verifier-failed") {
-        return { state: "needs_decision", summary: "Verification found the change does not work yet.", reason: `${file}: Verification verifier-failed`, evidence };
-      }
-      if (verdict === "blocked" || verdict === "verifier-blocked") {
+      if (verdict === "blocked") {
         return { state: "blocked", summary: "The worker hit a blocker and stopped.", reason: `${file}: ${handoff?.status ? "Status" : "Verification"} ${verdict}`, evidence };
       }
       return { state: "unknown", summary: "We're confirming how this item ended.", reason: `${file}: no Status or Verification line`, evidence };
@@ -416,7 +454,7 @@ function milestonesFor(
   const proof = handoff ? [evidenceId(task.name)] : [];
   const verdict = handoff?.status ?? handoff?.verification ?? null;
   const delivered = task.status === "handed-off" && (verdict === "success" || (verdict !== null && VERIFIED_VERDICTS.has(verdict)));
-  const stopped = task.status === "error" || verdict === "blocked" || verdict === "verifier-blocked";
+  const stopped = task.status === "error" || verdict === "blocked" || verdict === "verifier-blocked" || verdict === "verifier-failed";
   const implemented: Stage = delivered
     ? stage("verified", `${handoff?.path ? relative(dirname(dirname(handoff.path)), handoff.path) : "handoff"} reports ${verdict}`, proof)
     : stopped
@@ -428,17 +466,16 @@ function milestonesFor(
   let published: Stage;
   if (task.type === "verifier") {
     published = stage("not_requested", "Verifiers commit nothing; the verdict is the deliverable");
-  } else if (delivered && handoff?.branch && !/^\(no branch\)/i.test(handoff.branch)) {
+  } else if (handoff?.publication) {
+    const receipt = handoff.publication;
     const pr = task.prNumber ? `; PR #${task.prNumber}` : planTask?.openPR ? "; openPR requested but no PR number recorded" : "";
     published = planTask?.openPR && !task.prNumber
-      ? stage("pending", `Branch ${handoff.branch} pushed${pr}`, proof)
-      : stage("verified", `Branch ${handoff.branch} pushed${pr}`, proof);
+      ? stage("pending", `Publication receipt: ${receipt.repo} ${receipt.remote_ref} at ${receipt.observed_commit_sha}${pr}`, proof)
+      : stage("verified", `Publication receipt: ${receipt.repo} ${receipt.remote_ref} at ${receipt.observed_commit_sha}${pr}`, proof);
   } else if (delivered) {
-    published = stage("pending", "Handoff names no branch", proof);
-  } else if (stopped) {
-    published = stage("blocked", "Implementation did not finish", proof);
+    published = stage("pending", "No valid publication receipt; a branch name is not proof of publication", proof);
   } else {
-    published = stage("pending", "Not pushed yet");
+    published = stage("pending", "No valid publication receipt");
   }
 
   let verification: Stage;
@@ -503,13 +540,15 @@ function rowFor(task: StateTaskFile, snapshot: WorkspaceSnapshot, outDir: string
   const verifierNames = (snapshot.plan.tasks ?? []).filter(candidate => candidate.type === "verifier" && candidate.verifies === task.name).map(candidate => candidate.name);
   const work = workFor(task, handoff, unmet);
   const hasThread = typeof task.agentId === "string" && task.agentId.length > 0;
+  const native = snapshot.native?.attempts.find(attempt => attempt.task === task.name && attempt.attemptId === task.runId);
   const owner: Row["owner"] = {
-    id: hasThread ? (task.agentId as string) : `unassigned-${task.name}`,
+    id: native ? `${native.handle.harness}:${native.handle.kind}:${native.handle.id}` : task.agentId || `unassigned-${task.name}`,
     label: task.name,
     state: OWNER_STATE[task.status],
   };
-  if (hasThread && isThreadId(task.agentId)) owner.href = agentUrl(task.agentId);
+  if (hasThread && isThreadId(task.agentId) && (!snapshot.native || (native?.handle.kind === "thread" && native.handle.harness === "amp"))) owner.href = agentUrl(task.agentId);
   if (task.status === "running") owner.activity = task.note?.trim() || `Working in its thread since ${task.startedAt ?? "(unknown)"}.`;
+  if (native) owner.activity = `${native.handle.harness} ${native.handle.kind} ${native.handle.id}; attempt ${native.attemptId}; logical parent ${native.logicalParent ?? "(not reported)"}.`;
   if (task.branch) owner.location = task.branch;
   if (handoff) owner.handoff = `${relative(snapshot.workspace, handoff.path)}: ${describeHandoff(handoff)}`;
   const checked = task.lastUpdate ?? task.finishedAt ?? task.startedAt;
@@ -529,7 +568,7 @@ function rowFor(task: StateTaskFile, snapshot: WorkspaceSnapshot, outDir: string
     milestones: milestonesFor(task, planTask, handoff, verifierNames),
     blocked_by: unmet,
     blocker,
-    next_action: nextActionFor(task, work, unmet),
+    next_action: snapshot.native && task.status === "pending" ? "Use native tools after preflight; record the actual dispatch receipt" : snapshot.native && task.status === "running" ? "Collect the native execution result and record its handoff" : nextActionFor(task, work, unmet),
     done_when: planTask?.acceptance?.length ? planTask.acceptance.join("; ") : planTask?.scopedGoal ?? "",
   };
   return { row, evidence: handoff ? handoffEvidence(task, handoff, snapshot, outDir, hosted) : null };
@@ -566,7 +605,10 @@ export function buildStatusRecord(snapshot: WorkspaceSnapshot, options: BuildOpt
   const outDir = dirname(outPath);
   const hosted = options.hosted ?? false;
   const rootSlug = snapshot.state.rootSlug;
-  const rootId = isThreadId(snapshot.plan.selfAgentId) ? snapshot.plan.selfAgentId : null;
+  const delivery = snapshot.native?.deliveryOwner;
+  const rootId = delivery
+    ? delivery.harness === "amp" && delivery.kind === "thread" && isThreadId(delivery.id) ? delivery.id : null
+    : isThreadId(snapshot.plan.selfAgentId) ? snapshot.plan.selfAgentId : null;
   const rows: Row[] = [];
   const evidence: Evidence[] = [];
   for (const task of snapshot.state.tasks) {
@@ -576,11 +618,11 @@ export function buildStatusRecord(snapshot: WorkspaceSnapshot, options: BuildOpt
   }
   const record: StatusRecord = {
     schema_version: 2,
-    run_id: rootId ? `${rootSlug}-${rootId}` : rootSlug,
+    run_id: snapshot.native?.runId ?? (rootId ? `${rootSlug}-${rootId}` : rootSlug),
     title: snapshot.plan.summary?.trim() || rootSlug,
     updated_at: options.now ?? new Date().toISOString(),
     contract_version: options.contractVersion,
-    harness_name: "amp",
+    harness_name: delivery?.harness ?? "amp",
     presentation: {
       destination: "local",
       local_path: outPath,
@@ -589,7 +631,7 @@ export function buildStatusRecord(snapshot: WorkspaceSnapshot, options: BuildOpt
     tasks: rows,
     evidence,
     decisions: decisionsFor(snapshot, rootId),
-    history: snapshot.attention.slice(-50),
+    history: [...snapshot.attention.slice(-50), ...(snapshot.native ? [`Scope ${snapshot.native.scope.revision}: ${snapshot.native.scope.reference}. Native execution; readiness is not a new consent request.`] : [])],
   };
   if (snapshot.plan.goal?.trim()) record.goal = snapshot.plan.goal.trim();
   if (rootId) record.presentation.coordinator_href = agentUrl(rootId);

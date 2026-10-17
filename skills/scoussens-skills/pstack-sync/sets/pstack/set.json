@@ -8,6 +8,16 @@
   "dialect": "cursor",
   "agents_dir": "pstack-agents",
   "collision_prefix": "pstack-",
+  "extensions": [
+    {
+      "skill": "poteto-mode",
+      "reference": "references/nthplusio-workflow.md",
+      "entrypoints": ["playbooks/orchestrate.md"],
+      "files": {
+        "references/nthplusio-workflow.md": "references/orchestration.md"
+      }
+    }
+  ],
   "extra_needs": [
     {
       "id": "role-model-config",

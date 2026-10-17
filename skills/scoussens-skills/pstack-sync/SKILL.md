@@ -24,6 +24,8 @@ A plain copy of this pack replaces `pstack-sync/` and leaves `.nthplusio-skills/
 
 The sync manages **sets**. A set is one upstream repository, one root plugin whose skills are the roots, and the dependencies they pull in. pstack is the default set; `--set <name>` picks another, and several sets share one install. A set's text is adapted through a **dialect**, the catalog of constructs its source harness uses (Cursor, for every set from `cursor/plugins`), plus the set's own rows. Code the harness must replace as a unit is a **port**: the set names the upstream files, and an adapter under `adapters/<harness>/<port>/` provides them; until the adapter exists the port is reported pending and its files are not installed.
 
+Portable workflow additions are **extensions**, declared by the set independently of harness ports. Each extension names a `skill`, a `files` map of installed paths to pack-relative sources, a `reference`, and `entrypoints` that receive a pointer to that reference. Sync preserves upstream text and harness transformations, installs the additions, and records their hashes in the manifest. Upstream claiming an extension's path stops sync for reconciliation. A locally edited extension is reported as drift, not overwritten. Change its pack source rather than recording it as an upstream transform. Read [references/orchestration.md](references/orchestration.md) when changing orchestration policy and [references/native-execution.md](references/native-execution.md) when exercising native lifecycle recording.
+
 Shipped in `pstack-sync/`, replaced on refresh:
 
 - `dialects/<dialect>.json`: the constructs of one source harness, the markers that flag them, and the discovery fields that answer a need. Shared by every set with that dialect.
@@ -78,5 +80,6 @@ Run every script command as `python3 <skills-dir>/pstack-sync/scripts/sync.py <c
   `sets/<name>/set.json` first, with a dialect the pack ships or a new one
   under `dialects/`; the script reads nothing it is not configured for.
 - **Changing what a pstack skill says upstream.** Adaptations change only how a
-  skill runs in this harness. A content change belongs in `cursor/plugins`, and
-  the next sync brings it in.
+  skill runs in this harness. Upstream content fixes can be contributed to
+  `cursor/plugins`. nthplusio workflow additions live in declared portable
+  extensions, not whole-file upstream replacements or Amp-only ports.

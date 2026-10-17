@@ -27,7 +27,7 @@
 // performs nothing. Exit 0 when every action succeeded, 1 when one failed,
 // 2 for a usage or workspace error. Every command runs from an argv array.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isThreadId } from "../core/runtime.ts";
 
@@ -250,7 +250,11 @@ export function runCleanup(opts: CleanupOptions): CleanupReport {
   const dryRun = opts.dryRun === true;
   const bin = env.ORCHESTRATE_AMP_BIN || "amp";
   const verb = dryRun ? "would " : "";
-  const ws = readCleanupWorkspace(resolve(cwd, opts.workspace));
+  const workspace = resolve(cwd, opts.workspace);
+  if (["native.json", "native.transaction.json", "native.lock"].some(file => existsSync(join(workspace, file)))) {
+    throw new Error("native-owned workspace: use native tools to reconcile owners; scripted cleanup is prohibited");
+  }
+  const ws = readCleanupWorkspace(workspace);
   const report: CleanupReport = { threads: [], branches: [], integration: null, archived: 0, deleted: 0, failed: 0, dryRun };
 
   report.threads = planThreads(ws, agentId => isArchived(run, bin, agentId, env));

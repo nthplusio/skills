@@ -232,12 +232,20 @@ describe("spawn", () => {
     expect(readFileSync(join(dir, `labels-${ID}`), "utf8")).toBe("orchestrate\nrun-ab12cd\n");
   });
 
-  test("an explicit title wins over the run tag, and an empty ORCHESTRATE_AMP_LABEL drops the default label", async () => {
+  test("an already tagged title keeps one prefix, and an empty ORCHESTRATE_AMP_LABEL drops the default label", async () => {
     const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_LABEL: "" } });
     await rt.spawn({ ...SPAWN, labels: ["run-ab12cd"], runTag: "ab12cd", title: "ab12cd root" });
     const [spawn, label] = calls();
     expect(spawn[spawn.indexOf("--title") + 1]).toBe("ab12cd root");
     expect(label).toEqual(["threads", "label", ID, "run-ab12cd"]);
+  });
+
+  test("a custom title cannot remove the run identity, including when truncated", async () => {
+    const rt = createAmpRuntime({ env });
+    await rt.spawn({ ...SPAWN, runTag: "ab12cd", title: "Custom " + "x".repeat(120) });
+    const [spawn] = calls();
+    const title = spawn[spawn.indexOf("--title") + 1];
+    expect(title).toBe("ab12cd Custom " + "x".repeat(86));
   });
 
   test("refuses a label outside the CLI's pattern before any command runs", async () => {
@@ -336,11 +344,11 @@ describe("spawn through the bridge", () => {
   test("finds the file under the working directory, then under AMP_WORKING_DIRECTORY", async () => {
     const cwd = join(dir, "cwd");
     const bridge = await startBridge({ path: join(cwd, ".orchestrate", "bridge.json") });
-    const fromCwd = createAmpRuntime({ env, cwd });
+    const fromCwd = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: undefined }, cwd });
     expect((await fromCwd.spawn(SPAWN)).via).toBe("bridge");
     const amp = join(dir, "amp-wd");
     await startBridge({ path: join(amp, ".orchestrate", "bridge.json") });
-    const fromAmp = createAmpRuntime({ env: { ...env, AMP_WORKING_DIRECTORY: amp }, cwd: dir });
+    const fromAmp = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: undefined, AMP_WORKING_DIRECTORY: amp }, cwd: dir });
     expect((await fromAmp.spawn(SPAWN)).via).toBe("bridge");
     expect(bridge.requests).toHaveLength(1);
     expect(bridgeCandidates({ ORCHESTRATE_AMP_BRIDGE: "/x/b.json", AMP_WORKING_DIRECTORY: amp }, cwd)).toEqual([
@@ -351,6 +359,14 @@ describe("spawn through the bridge", () => {
       join(amp, ".orchestrate", "bridge.json"),
     ]);
     expect(bridgeCandidates({}, cwd)).toEqual([join(cwd, ".orchestrate", "bridge.json")]);
+  });
+
+  test("explicitly disabling discovery cannot contact a live bridge in the current directory", async () => {
+    const bridge = await startBridge({ path: join(dir, ".orchestrate", "bridge.json") });
+    const rt = createAmpRuntime({ env, cwd: dir });
+    expect((await rt.spawn(SPAWN)).agentId).toBe(ID);
+    expect(bridge.requests).toHaveLength(0);
+    expect(bridgeCandidates(env, dir)).toEqual([]);
   });
 
   test("falls back to the CLI with a note naming why when the bridge refuses", async () => {

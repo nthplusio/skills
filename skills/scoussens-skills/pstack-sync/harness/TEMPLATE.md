@@ -2,6 +2,10 @@
 
 How pstack's needs map onto <harness>. Built and maintained per [`../references/adapting.md`](../references/adapting.md); need IDs come from [`../dialects/cursor.json`](../dialects/cursor.json) and each set's `extra_needs` in `sets/<set>/set.json`.
 
+## Orchestration naming
+
+Map the portable [run-membership contract](../references/orchestration.md#make-run-membership-visible) to observed tools. Name the launch title/name/description field, inspection and rename operations, and returned handle type for sessions and subagents. Cite their schemas or a verified probe. If a capability is unavailable, record the limitation and use the prefixed task description and brief. Native `preflight.naming` supplies titles; scripted execution retains its existing persisted run tag. Neither platform nesting nor a shared worktree establishes membership.
+
 ## Destination
 
 - **Skills directory**: which of the locations discovery records in `skills.locations` pstack goes into, and how to prepare it. Source:

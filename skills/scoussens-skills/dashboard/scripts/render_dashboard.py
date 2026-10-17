@@ -196,7 +196,6 @@ def check_shape(data, tasks, evidence, decisions):
             raise ValueError(f"{item['id']}: invalid evidence assessment")
         if not item.get("href") and not item.get("output", "").strip():
             raise ValueError(f"{item['id']}: proof needs an artifact link or literal output")
-    owners = set()
     for task in tasks.values():
         key, owner = task["id"], task["owner"]
         nonempty(owner.get("id"), f"{key}: owner needs its actual harness ID; owner.id")
@@ -205,9 +204,6 @@ def check_shape(data, tasks, evidence, decisions):
         activity = owner.get("activity")
         if activity is not None and (not isinstance(activity, str) or not activity.strip()):
             raise ValueError(f"{key}: owner activity must be nonempty text when present")
-        if owner["id"] in owners:
-            raise ValueError(f"{key}: owner {owner['id']} is already bound to another ticket; use that ticket's owner or a separate owner")
-        owners.add(owner["id"])
         code = owner.get("retained_code")
         if code is not None and (not isinstance(code, dict) or code.get("kind") not in CODE_KINDS):
             raise ValueError(f"{key}: retained_code.kind must be one of {', '.join(CODE_KINDS)}")
