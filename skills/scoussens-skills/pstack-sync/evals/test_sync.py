@@ -1366,6 +1366,23 @@ class ShippedStateTests(unittest.TestCase):
         rows = sync.parse_profile((SKILL / "harness" / "amp.md").read_text())
         self.assertEqual(set(rows), {need["id"] for need in NEEDS} - MAPPED)
 
+    def test_amp_help_adaptation_survives_skill_name_collisions(self):
+        entry = json.loads((SKILL / "sets" / "pstack" / "transform.json").read_text())["amp"]["files"]["poteto-help/SKILL.md"]
+        for name in ("teach", "pstack-teach"):
+            with self.subTest(name=name):
+                text = (
+                    "pstack is built for Cursor. Its skills use the Agent Skills format, so other tools can read them. "
+                    f"But most workflow skills, including `/poteto-mode`, `/how`, `/why`, and `/{name}`, "
+                    "spawn Cursor subagents with per-role models, and Custom Modes and `/loop` are Cursor features, "
+                    "so those parts may not work there.\n"
+                )
+                result, _ = sync.apply_file_transforms(text, entry["transforms"])
+                self.assertIn(f"`/{name}`", result)
+                self.assertIn("follow Amp's supported dispatch contract", result)
+                self.assertIn("`Task` has no model parameter", result)
+                self.assertNotIn("Custom Modes", result)
+                self.assertNotIn("`/loop`", result)
+
     def test_the_cursor_sdk_import_specifier_is_a_marker(self):
         text = 'import type { Run, SDKAgent } from "@cursor/sdk";\n"@cursor/sdk": "^1.0.12"\n'
         self.assertEqual(sync.needs_in(text, NEEDS).get("cursor-sdk"), ["@cursor/sdk"])

@@ -8,6 +8,12 @@ The portable [workflow extension](../references/orchestration.md) owns authority
 
 The CLI/bridge mappings below describe the existing standalone scripted adapter, not permission to bypass native-tool restrictions. Select that mode explicitly before kickoff. Its `run` refuses native-owned workspaces. A shell wait timeout leaves a process running; follow its process handle until it exits instead of launching a duplicate loop. Archiving a thread does not stop its active writer.
 
+### Dispatch constraints
+
+Apply the current tool schemas before the role mappings below. `Task` takes a prompt and description, not model, effort, speed, environment, named subagent type, or readonly fields. Put role-file paths and read-only requirements in the prompt. Use it for bounded parallel assignments or useful context isolation. `create_thread` requires separately owned work, a required different environment, or an explicit request; a model preference alone does not justify another thread. Select only configured and available modes, and report unavailable diversity rather than inventing slugs. `oracle` is for an explicit user request or a specific unresolved high-impact question under its tool contract, not a routine review gate. Source: the active Amp `Task`, `create_thread`, and `oracle` tool schemas.
+
+Prefer supported event subscriptions for exposed events. Time-based monitoring uses `building-schedules` only within an explicit scheduling or monitoring request. A wake does not authorize new external actions. Separate orbs exchange exact files and receipt deltas through supported messaging and file-transfer tools, not shared local paths. Source: active Amp subscription, scheduling, and file-transfer tools.
+
 ### Visible run membership
 
 Use the portable [naming contract](../references/orchestration.md#make-run-membership-visible), even when Amp displays agents as siblings. Native `preflight.naming` supplies dispatcher/root/task titles. Pass the title through `create_thread.title` or the prefix through `Task.description`; both fields exist in the native tool schemas. Carry full run identity and dispatcher/state references in the prompt. Use supported thread inspection/rename tools if exposed in the current session; otherwise record that naming could not be inspected or repaired. A blocking Task may expose only its call result, not a durable thread or rename operation. Preserve that distinction in its receipt. Labels are optional and require their own applicable authorization; do not substitute them for the required title/description.
