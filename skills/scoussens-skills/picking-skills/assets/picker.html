@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Skill picker</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --background: light-dark(oklch(98% 0 none), oklch(18% 0 none));
+    --foreground: light-dark(oklch(22% 0 none), oklch(94% 0 none));
+    --card: light-dark(oklch(100% 0 none), oklch(22% 0 none));
+    --muted: light-dark(oklch(94% 0 none), oklch(28% 0 none));
+    --secondary: light-dark(oklch(45% 0 none), oklch(74% 0 none));
+    --border: light-dark(oklch(84% 0 none), oklch(38% 0 none));
+    --link: light-dark(oklch(49% 0.17 255), oklch(77% 0.12 255));
+    --radius: 8px;
+    --gutter: clamp(1rem, 0.6rem + 2vw, 2rem);
+    overflow-wrap: break-word;
+    font-family: system-ui, sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; min-inline-size: 0; }
+  body { margin: 0; padding: var(--gutter); color: var(--foreground); background: var(--background); line-height: 1.5; }
+  h2, p, ul { margin: 0; }
+  button, input, textarea { font: inherit; color: inherit; }
+  input, textarea { font-size: 1rem; }
+  button { touch-action: manipulation; user-select: none; }
+  main { display: grid; gap: 8px; max-inline-size: 48rem; margin-inline: auto; padding: var(--gutter); border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+  .ui-header { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; margin-block-end: 8px; }
+  .heading { flex: 1; min-inline-size: 60%; }
+  .ui-title { font-size: 1.125rem; font-weight: 600; }
+  .ui-sub, .ui-caption, .ui-muted { color: var(--secondary); }
+  .ui-sub, .ui-label { font-size: 0.875rem; }
+  .ui-caption { font-size: 0.75rem; }
+  .ui-mono { font-family: ui-monospace, monospace; }
+  .ui-btn { padding-block: 6px; padding-inline: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); cursor: pointer; }
+  .ui-btn:disabled { opacity: 0.55; cursor: default; }
+  .ui-btn:active:not(:disabled) { background: var(--muted); }
+  .search { display: flex; flex-wrap: wrap; gap: 8px; }
+  .search input { flex: 1; min-inline-size: 50%; inline-size: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  :is(input, textarea, summary, .ui-btn):focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+  .ui-btn, .result { min-block-size: 44px; }
+  .count { font-variant-numeric: tabular-nums; }
+  .results { max-block-size: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-block: 1px solid var(--border); padding-block: 4px; }
+  .results ul { padding: 0; list-style: none; }
+  .result { display: grid; gap: 4px; inline-size: 100%; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: start; cursor: pointer; }
+  .result[aria-pressed="true"] { background: var(--muted); border-color: var(--border); }
+  .result:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+  .result:active { transform: scale(0.98); }
+  .result-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-weight: 500; }
+  .result-source { margin-inline-start: auto; font-weight: 400; }
+  .description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: clip; }
+  .empty { padding: 24px 8px; }
+  .prepared { display: grid; gap: 8px; }
+  .prepared-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .prepared-header button { margin-inline-start: auto; }
+  textarea { inline-size: 100%; field-sizing: content; min-block-size: 3lh; max-block-size: 8lh; resize: none; overflow-y: auto; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  details summary { cursor: pointer; }
+  details summary:active { color: var(--foreground); }
+  details p { max-block-size: 120px; overflow-y: auto; padding-block-start: 8px; text-wrap: pretty; }
+  @media (hover: hover) and (pointer: fine) {
+    .result:hover, .ui-btn:hover:not(:disabled) { background: var(--muted); }
+    summary:hover { color: var(--foreground); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .result { transition: transform 120ms ease-out; }
+  }
+</style>
+</head>
+<body>
+<main aria-label="Skill picker">
+  <header class="ui-header">
+    <div class="heading">
+      <h2 class="ui-title">Find a skill by what it does</h2>
+      <p class="ui-sub">Search, choose a skill, then copy its loading request.</p>
+    </div>
+    <button id="refresh" class="ui-btn" type="button">Refresh</button>
+  </header>
+  <label class="ui-label" for="query">Search names and descriptions</label>
+  <div class="search">
+    <input id="query" type="search" placeholder="Try: writing, code review, mobile…" autocomplete="off" aria-controls="results" aria-describedby="count">
+    <button id="clear" class="ui-btn outline" type="button">Clear</button>
+  </div>
+  <p id="count" class="ui-caption count" role="status" aria-live="polite"></p>
+  <p id="warnings" class="ui-caption" role="alert" hidden></p>
+  <div id="results" class="results" role="region" aria-label="Matching skills">
+    <ul id="list"></ul>
+    <p id="empty" class="empty ui-muted" hidden></p>
+  </div>
+  <section class="prepared" aria-label="Prepared skill request">
+    <div class="prepared-header">
+      <label id="request-label" class="ui-title" for="request">Loading request</label>
+      <button id="copy" class="ui-btn outline" type="button" disabled>Copy request</button>
+    </div>
+    <textarea id="request" rows="3" readonly placeholder="Choose a skill above. Only its name and exact source directory go here; never its contents." aria-describedby="help"></textarea>
+    <details id="details" hidden>
+      <summary id="chosen" class="ui-label"></summary>
+      <p id="full-description" class="ui-label"></p>
+    </details>
+    <p id="help" class="ui-caption" role="status">Paste into Amp’s message box and add your task. Nothing sends automatically.</p>
+  </section>
+  <p class="ui-caption">Refresh updates the list from this orb. Search filters locally as you type.</p>
+</main>
+<script>
+{
+  let catalog = { message: null, query: '' };
+  const labels = { 'global-workspace': 'Workspace', 'global-user': 'Personal', 'global-official': 'Official', 'workspace-agents': 'Project' };
+  let skills = [];
+  let duplicateNames = new Set();
+  const query = document.getElementById('query');
+  const list = document.getElementById('list');
+  const results = document.getElementById('results');
+  const request = document.getElementById('request');
+  const copy = document.getElementById('copy');
+  const help = document.getElementById('help');
+  const refresh = document.getElementById('refresh');
+  const warnings = document.getElementById('warnings');
+  const state = { selected: null, matches: [], loading: true, failed: false };
+  let loadedRequest = false;
+  let generation = 0;
+  const pasteHelp = () => catalog.message !== null
+    ? 'Paste the completed message into Amp and send it when ready.'
+    : 'Paste into Amp’s message box and add your task.';
+  function clearSelection() {
+    state.selected = null;
+    request.value = '';
+    copy.disabled = true;
+    document.getElementById('details').hidden = true;
+  }
+  async function readJSON(path) {
+    const response = await fetch(path, { cache: 'no-store' });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to load the picker. Click Refresh to retry.');
+    return data;
+  }
+  async function load() {
+    const current = ++generation;
+    const previous = state.selected;
+    state.loading = true;
+    state.failed = false;
+    skills = [];
+    clearSelection();
+    warnings.hidden = true;
+    refresh.disabled = true;
+    refresh.textContent = 'Refreshing…';
+    results.setAttribute('aria-busy', 'true');
+    help.textContent = 'Waiting for a fresh skill list.';
+    render();
+    try {
+      if (!loadedRequest) {
+        const id = location.hash.slice(1);
+        const saved = id ? await readJSON('/api/requests/' + encodeURIComponent(id)) : { query: '', message: null };
+        if (current !== generation) return;
+        catalog = saved;
+        query.value = catalog.query;
+        loadedRequest = true;
+        if (catalog.message !== null) {
+          document.querySelector('.ui-sub').textContent = 'Choose a skill to fill <skill> in your message, then copy the completed message.';
+          document.getElementById('request-label').textContent = 'Message to copy';
+          copy.textContent = 'Copy message';
+          request.placeholder = 'Choose a skill above to fill your message and include its exact-source loading instruction.';
+        }
+      }
+      const inventory = await readJSON('/api/skills');
+      if (current !== generation) return;
+      skills = inventory.skills;
+      duplicateNames = new Set(skills.filter((skill, index) => skills.some((other, i) => i !== index && other.name === skill.name)).map(skill => skill.name));
+      state.loading = false;
+      help.textContent = `${pasteHelp()} Nothing sends automatically.`;
+      if (previous) {
+        const selected = skills.find(skill => skill.name === previous.name && skill.directory === previous.directory);
+        if (selected) choose(selected);
+        else help.textContent = 'Your selected source is no longer available. Choose a skill again.';
+      }
+      if (inventory.warnings) {
+        warnings.hidden = false;
+        warnings.textContent = `Amp reported ${inventory.warnings} discovery error(s). The list may be incomplete; run amp skills list for details.`;
+      }
+    } catch (error) {
+      if (current !== generation) return;
+      state.loading = false;
+      state.failed = true;
+      warnings.hidden = false;
+      warnings.textContent = error.message;
+      help.textContent = 'No request can be copied until the picker loads successfully.';
+    } finally {
+      if (current === generation) {
+        refresh.disabled = false;
+        refresh.textContent = 'Refresh';
+        results.setAttribute('aria-busy', 'false');
+        render();
+      }
+    }
+  }
+  function choose(skill) {
+    if (state.loading || state.failed) return;
+    state.selected = skill;
+    request.value = `Use the ${skill.name} skill from ${JSON.stringify(skill.directory)}. Load that exact skill before acting. If you can't load it, tell me and stop. Don't assume its contents or substitute another source.`;
+    if (catalog.message !== null) request.value += '\n\n' + catalog.message.replaceAll('<skill>', () => skill.name);
+    copy.disabled = false;
+    document.getElementById('details').hidden = false;
+    document.getElementById('chosen').textContent = `Full description: ${skill.name}`;
+    document.getElementById('full-description').textContent = skill.description;
+    help.textContent = `Click ${copy.textContent}. ${pasteHelp()}`;
+    for (const button of list.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.directory === skill.directory && button.dataset.name === skill.name));
+  }
+  function render() {
+    const words = query.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    state.matches = skills.filter(skill => words.every(word => `${skill.name} ${skill.description} ${skill.source} ${skill.directory}`.toLowerCase().includes(word)));
+    list.replaceChildren();
+    for (const skill of state.matches) {
+      const item = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'result';
+      button.dataset.directory = skill.directory;
+      button.dataset.name = skill.name;
+      button.setAttribute('aria-pressed', String(state.selected === skill));
+      const title = document.createElement('span');
+      title.className = 'result-title';
+      const name = document.createElement('span');
+      name.textContent = skill.name;
+      const source = document.createElement('span');
+      source.className = 'result-source ui-caption';
+      source.textContent = Object.hasOwn(labels, skill.source) ? labels[skill.source] : skill.source;
+      title.append(name, source);
+      const description = document.createElement('span');
+      description.className = 'description ui-label';
+      description.textContent = skill.description;
+      button.append(title, description);
+      if (duplicateNames.has(skill.name)) {
+        const path = document.createElement('span');
+        path.className = 'ui-caption ui-mono';
+        path.textContent = skill.directory;
+        button.append(path);
+      }
+      button.addEventListener('click', () => choose(skill));
+      item.append(button);
+      list.append(item);
+    }
+    document.getElementById('count').textContent = state.loading ? 'Loading skills…' : state.failed ? 'Skill list unavailable.' : `${state.matches.length} of ${skills.length} skills. Scroll to browse; select a result to read its full description.`;
+    const empty = document.getElementById('empty');
+    empty.hidden = state.matches.length !== 0;
+    empty.textContent = state.loading ? 'Reading this orb’s skill inventory…' : state.failed ? 'Click Refresh to retry.' : skills.length ? 'No matches. Try fewer words or clear the search.' : 'Amp found no skills. Install a skill, then click Refresh.';
+    results.scrollTop = 0;
+  }
+  query.addEventListener('input', render);
+  query.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown') { event.preventDefault(); list.querySelector('button')?.focus(); }
+    if (event.key === 'Enter' && state.matches.length) { event.preventDefault(); choose(state.matches[0]); }
+    if (event.key === 'Escape') { query.value = ''; render(); }
+  });
+  list.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    const buttons = [...list.querySelectorAll('button')];
+    const index = buttons.indexOf(document.activeElement);
+    if (event.key === 'Escape') { event.preventDefault(); query.focus(); }
+    if (event.key === 'ArrowDown') { event.preventDefault(); buttons[Math.min(index + 1, buttons.length - 1)]?.focus(); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); if (index <= 0) query.focus(); else buttons[index - 1].focus(); }
+  });
+  refresh.addEventListener('click', load);
+  document.getElementById('clear').addEventListener('click', () => { query.value = ''; render(); query.focus(); });
+  copy.addEventListener('click', async () => {
+    const text = request.value;
+    let copied = false;
+    try { await navigator.clipboard.writeText(text); copied = true; } catch {}
+    if (request.value !== text) return;
+    if (!copied) {
+      request.focus();
+      request.select();
+      try { copied = document.execCommand('copy'); } catch {}
+    }
+    help.textContent = copied
+      ? `Copied. ${pasteHelp()}`
+      : 'Clipboard access is blocked. The text is selected; use your device’s Copy action.';
+  });
+  load();
+}
+</script>
+</body>
+</html>
