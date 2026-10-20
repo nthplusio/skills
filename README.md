@@ -34,6 +34,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discover what the running harness can do — threads, subagents, monitoring, skills, instruction files, questions, models, and HTML destinations — and the repository's ticket conventions. Save sourced observations by harness name for any skill to read. |
 | [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
 | [`scoussens-skills/optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluate, design, or improve repository-specific CI for trustworthy feedback, runner cost, and maintainability. Preserves merge and release contracts, including when designing a pipeline without run history. |
+| [`scoussens-skills/picking-skills`](skills/scoussens-skills/picking-skills/SKILL.md) | Open a reusable Amp portal with live skill search by name or description. Choose an exact source and copy its loading request, without injecting the skill's contents. |
 | [`scoussens-skills/pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request: a timeline of how it went, a ledger of what each reviewer said and whether it was acted on, and a scored evaluation, published as an HTML artifact. Invoked explicitly. |
 | [`scoussens-skills/pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact, grouped by theme and tied to its tickets, with what the period adds up to. Invoked explicitly. |
 | [`scoussens-skills/pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests oldest first: review each at a depth scaled to its risk, verify every finding at the current head, then approve, unblock, or land it. Invoked explicitly. |
@@ -67,6 +68,43 @@ To add a plugin, put it in `plugins/<name>/` with its
 `.claude-plugin/plugin.json`, add an entry to `.claude-plugin/marketplace.json`,
 and check both with `claude plugin validate .` and
 `claude plugin validate plugins/<name>`.
+
+## Amp skill picker
+
+With `picking-skills` installed, send `/skills` in Amp to get a link to the
+picker. Send `/skills code review` to prefill a search, or ask **Show the skill
+picker**. Search filters as you type across names, descriptions, and source
+paths. Choose a skill, click **Copy request**, then paste into Amp and add your
+task.
+
+To keep your task with the selection, put a literal `<skill>` anywhere in your
+message, for example: `Use <skill> to tighten the wording in README.md.` Send
+it to open the picker before the agent starts the task. Choose a skill and
+click **Copy message**. The result keeps your message, replaces every `<skill>`
+with the same selected name, and prepends the exact-source loading instruction.
+Paste the completed message into Amp and send it. No skill body is included.
+
+The picker is a bundled page served by one supervised service per orb/project.
+Opening the page or clicking **Refresh** reads a fresh `amp skills list --json`
+inventory. Filtering runs in the browser; typing does not invoke the agent.
+The launcher reuses a healthy service and returns only a portal link, keeping
+HTML and the skill list out of the conversation. `/skills` and `<skill>` are
+agent-interpreted triggers after submission, not registered client commands or
+main-textbox autocomplete. Nothing edits the main textbox or sends automatically.
+If clipboard access is blocked, the page selects the text for manual copying.
+Each saved task has its own opaque link and expires after 24 hours. Portal
+access follows the thread's permissions; keep the portal private.
+
+This checkout links the skill into `.agents/skills/`. The launcher, server, and
+page ship together; they need an Amp Linux orb, Node.js 22+, and `flock`, not a
+custom plugin or npm install. Its tests run with `npm run test:skills`.
+
+For cross-orb use, publish the whole package as top-level `picking-skills/` in
+your Amp User or Workspace Skills repository (`amp skills repositories` lists
+destinations). Publishing requires approval; a local `--global` install does
+not distribute across orbs. New threads load published skills automatically;
+reload skills in an existing thread. Every orb discovers its own inventory and
+source directories rather than sharing another orb's paths or portal URL.
 
 ## Layout
 
