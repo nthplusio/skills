@@ -61,6 +61,7 @@ suite("native recorder against an offline installed upstream tree", () => {
     cpSync(join(PACK, "adapters", "amp", "models", "scripts"), scripts, { recursive: true });
     mkdirSync(join(scripts, "tools"), { recursive: true });
     cpSync(join(PACK, "scripts", "native.ts"), join(scripts, "tools", "native.ts"));
+    cpSync(join(PACK, "scripts", "git-work.ts"), join(scripts, "tools", "git-work.ts"));
     symlinkSync(MODULES, join(root, "node_modules"), "dir");
   });
   beforeEach(() => {
@@ -269,5 +270,210 @@ suite("native recorder against an offline installed upstream tree", () => {
     const run = Bun.spawnSync([process.execPath, join(scripts, "cli.ts"), "run", workspace]);
     expect(run.exitCode).toBe(1); expect(run.stderr.toString()).toContain("native-owned workspace refuses scripted load/run");
     expect(tree()).toEqual(before);
+  });
+
+  describe("parallel code with real Git repositories", () => {
+    let repository: string;
+    let base: string;
+    const origin = "https://github.com/example/repo";
+    function git(cwd: string, ...args: string[]) {
+      const result = Bun.spawnSync(["git", "-C", cwd, ...args]);
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      return result.stdout.toString().trim();
+    }
+    function request(action: string, extra = {}) { return { action, expectedRevision: metadata().revision, writer: "recorder", ...extra }; }
+    function act(action: string, extra = {}) { return ok(request(action, extra)); }
+    function prepare(task: string, commit = base, resources: string[] = [], environment = "worktree") {
+      const input = { id: `input-${task}`, task, baseCommit: commit, branch: `lane/${task}`, environment, resources };
+      act("prepare", input);
+      return { id: input.id, repository: origin, baseCommit: commit, branch: input.branch };
+    }
+    function helper(input: unknown) {
+      const path = join(root, "git-request.json"); writeFileSync(path, pretty(input));
+      const result = Bun.spawnSync([process.execPath, join(scripts, "tools", "git-work.ts"), path]);
+      return { code: result.exitCode, out: result.stdout.toString(), error: result.stderr.toString() };
+    }
+    function start(task: string, commit = base) {
+      const assignment = prepare(task, commit);
+      const checkout = join(repository, "..", `work-${task}`);
+      const received = helper({ action: "worktree", repository, checkout, assignment });
+      expect(received.error).toBe(""); expect(received.code).toBe(0);
+      act("received", { receipt: JSON.parse(received.out) });
+      act("dispatch", { receipt: { ...receipt(task, `attempt-${task}`), preparationId: assignment.id } });
+      return checkout;
+    }
+    function commitFile(checkout: string, path: string, value: string) {
+      writeFileSync(join(checkout, path), value);
+      git(checkout, "add", "--all"); git(checkout, "-c", "commit.gpgsign=false", "commit", "-m", `Change ${path}`);
+      return git(checkout, "rev-parse", "HEAD");
+    }
+    function finish(task: string, resultCommit: string) {
+      return act("complete", { attemptId: `attempt-${task}`, resultCommit, receipt: { result: "finished", body: "## Status\nsuccess\n" } });
+    }
+    beforeEach(() => {
+      const directory = mkdtempSync(join(root, "git-case-"));
+      repository = join(directory, "repo"); mkdirSync(repository);
+      git(repository, "init", "-b", "main");
+      git(repository, "config", "user.email", "test@example.invalid"); git(repository, "config", "user.name", "Test");
+      git(repository, "remote", "add", "origin", origin);
+      writeFileSync(join(repository, "left.txt"), "1\n"); writeFileSync(join(repository, "right.txt"), "10\n");
+      git(repository, "add", "."); git(repository, "-c", "commit.gpgsign=false", "commit", "-m", "Baseline");
+      base = git(repository, "rev-parse", "HEAD"); git(repository, "branch", "integration");
+      writeFileSync(join(workspace, "plan.json"), pretty({ rootSlug: "demo", goal: "Parallel code", baseBranch: "main", repoUrl: origin,
+        tasks: [
+          { name: "left", type: "worker", scopedGoal: "Left", pathsAllowed: ["left.txt"] },
+          { name: "right", type: "worker", scopedGoal: "Right", pathsAllowed: ["right.txt"] },
+          { name: "collision", type: "worker", scopedGoal: "Overlap", pathsAllowed: ["left.*"] },
+          { name: "after", type: "worker", scopedGoal: "Dependent", pathsAllowed: ["after.txt"], dependsOn: ["left"] },
+        ] }));
+      ok({ ...init, code: { repository, integrationRef: "refs/heads/integration", checks: [{ command: 'test "$(cat left.txt)" -le "$(cat right.txt)"', timeoutSeconds: 10 }] } });
+    });
+
+    test("reserves disjoint work before launch and blocks overlapping paths, resources, and unknown launches", () => {
+      prepare("left", base, ["shared-test-db"]);
+      expect(cli(request("prepare", { id: "duplicate", task: "left", baseCommit: base, branch: "lane/duplicate", environment: "isolated", resources: [] })).error).toContain("task already reserved");
+      expect(cli(request("prepare", { id: "overlap", task: "collision", baseCommit: base, branch: "lane/collision", environment: "worktree", resources: [] })).error).toContain("write ownership overlaps");
+      expect(cli(request("prepare", { id: "db", task: "right", baseCommit: base, branch: "lane/right", environment: "isolated", resources: ["shared-test-db"] })).error).toContain("resource occupied");
+      start("right");
+      expect(state().tasks.filter((task: { status: string }) => task.status === "running")).toHaveLength(1);
+      expect(ok({ action: "inspect" }).readiness.find((task: { task: string }) => task.task === "after").ready).toBe(false);
+      expect(cli(request("release", { id: "input-right", reason: "retry" })).error).toContain("actual completion");
+      act("release", { id: "input-left", reason: "Confirmed no worker was launched" });
+      prepare("collision");
+    });
+
+    test("integrates independent batches and requires dependent workers to consume the checked integration commit", () => {
+      const left = start("left"), right = start("right");
+      const leftCommit = commitFile(left, "left.txt", "2\n");
+      const rightCommit = commitFile(right, "right.txt", "8\n");
+      finish("left", leftCommit); finish("right", rightCommit);
+      expect(ok({ action: "inspect" }).integrationQueue).toHaveLength(2);
+      const dependent = { id: "input-after", task: "after", baseCommit: base, branch: "lane/after", environment: "worktree", resources: [] };
+      expect(cli(request("prepare", dependent)).error).toContain("awaits integration");
+      const firstRequest = request("integrate", { attemptId: "attempt-left", expectedHead: base });
+      ok(firstRequest);
+      const first = git(repository, "rev-parse", "integration");
+      expect(first).not.toBe(leftCommit);
+      expect(git(repository, "show", "integration:left.txt")).toBe("2");
+      const snapshot = tree(); ok(firstRequest); expect(tree()).toEqual(snapshot);
+      expect(cli(request("prepare", dependent)).error).toContain("required dependency commit");
+      act("integrate", { attemptId: "attempt-right", expectedHead: first });
+      const final = git(repository, "rev-parse", "integration");
+      expect(git(repository, "show", "integration:right.txt")).toBe("8");
+      expect(git(repository, "show", "integration:left.txt")).toBe("2");
+      expect(git(repository, "rev-parse", "main")).toBe(base);
+      start("after", final);
+      expect(state().tasks.find((task: { name: string }) => task.name === "after").startingRef).toBe(final);
+      expect(metadata().integrations.map((item: { checks: { exitCode: number }[] }) => item.checks[0].exitCode)).toEqual([0, 0]);
+    });
+
+    test("rejects out-of-scope renames and semantic conflicts even when Git merges cleanly", () => {
+      const left = start("left"), right = start("right");
+      git(left, "mv", "right.txt", "stolen.txt"); git(left, "-c", "commit.gpgsign=false", "commit", "-m", "Wrong scope");
+      expect(cli(request("complete", { attemptId: "attempt-left", resultCommit: git(left, "rev-parse", "HEAD"), receipt: { result: "finished", body: "## Status\nsuccess\n" } })).error).toContain("out-of-scope change");
+      git(left, "-c", "commit.gpgsign=false", "revert", "--no-edit", "HEAD");
+      const leftCommit = commitFile(left, "left.txt", "5\n"), rightCommit = commitFile(right, "right.txt", "3\n");
+      finish("left", leftCommit); finish("right", rightCommit);
+      act("integrate", { attemptId: "attempt-left", expectedHead: base });
+      const head = git(repository, "rev-parse", "integration");
+      expect(cli(request("integrate", { attemptId: "attempt-right", expectedHead: head })).error).toContain("candidate check failed");
+      expect(git(repository, "rev-parse", "integration")).toBe(head);
+      expect(git(repository, "show", "integration:right.txt")).toBe("10");
+      expect(metadata().integrations).toHaveLength(1);
+      const failures = readdirSync(join(workspace, "integration-failures"));
+      expect(failures).toHaveLength(1);
+      expect(file(`integration-failures/${failures[0]}`)).toContain("candidate check failed");
+    });
+
+    test("requires exact-code review and refuses to move a checked-out or stale integration branch", () => {
+      const plan = JSON.parse(file("plan.json"));
+      plan.tasks.push({ name: "review", type: "verifier", verifies: "left", scopedGoal: "Review left" });
+      writeFileSync(join(workspace, "plan.json"), pretty(plan)); act("reconcile");
+      const left = start("left");
+      const result = commitFile(left, "left.txt", "2\n"); finish("left", result);
+      expect(cli(request("integrate", { attemptId: "attempt-left", expectedHead: base })).error).toContain("unmet dependency: review");
+      expect(cli(request("prepare", { id: "review-old", task: "review", baseCommit: base, branch: "review-old", environment: "worktree", resources: [] })).error).toContain("required dependency commit");
+      start("review", result);
+      act("complete", { attemptId: "attempt-review", resultCommit: result, receipt: { result: "finished", body: "## Verification\nunit-test-verified\n" } });
+      const occupied = join(repository, "..", "integration-checkout");
+      git(repository, "worktree", "add", occupied, "integration");
+      expect(cli(request("integrate", { attemptId: "attempt-left", expectedHead: base })).error).toContain("checked out");
+      git(repository, "worktree", "remove", occupied);
+      expect(cli(request("integrate", { attemptId: "attempt-left", expectedHead: result })).error).toContain("integration ref moved");
+      act("integrate", { attemptId: "attempt-left", expectedHead: base });
+      expect(git(repository, "show", "integration:left.txt")).toBe("2");
+    });
+
+    test("recovers both sides of the ref update without making another merge and refuses unrelated ref movement", () => {
+      const left = start("left"); finish("left", commitFile(left, "left.txt", "4\n"));
+      const req = request("integrate", { attemptId: "attempt-left", expectedHead: base });
+      const beforeState = file("state.json"), beforeMeta = file("native.json");
+      ok(req);
+      const afterState = file("state.json"), afterMeta = file("native.json"), integrated = git(repository, "rev-parse", "integration");
+      const transaction = { version: 1, writer: "recorder", revision: metadata().revision, requestHash: digest(pretty(req)),
+        files: [{ path: "state.json", before: beforeState, after: afterState }, { path: "native.json", before: beforeMeta, after: afterMeta }],
+        refUpdate: { repository, ref: "refs/heads/integration", before: base, after: integrated } };
+      for (const ref of [base, integrated]) {
+        git(repository, "update-ref", "refs/heads/integration", ref);
+        writeFileSync(join(workspace, "state.json"), beforeState); writeFileSync(join(workspace, "native.json"), beforeMeta);
+        writeFileSync(join(workspace, "native.transaction.json"), pretty(transaction));
+        expect(ok({ action: "inspect" }).pendingTransaction).toBe(true);
+        writeFileSync(join(workspace, "andon.json"), pretty({ reason: "security hold" }));
+        if (ref === base) {
+          expect(cli(req).error).toContain("Andon hold blocks pending ref update");
+          expect(git(repository, "rev-parse", "integration")).toBe(base);
+          rmSync(join(workspace, "andon.json"));
+        }
+        ok(req);
+        rmSync(join(workspace, "andon.json"), { force: true });
+        expect(git(repository, "rev-parse", "integration")).toBe(integrated);
+        expect(file("native.json")).toBe(afterMeta);
+      }
+      const unrelated = commitFile(repository, "unrelated.txt", "other\n");
+      git(repository, "update-ref", "refs/heads/integration", unrelated);
+      writeFileSync(join(workspace, "state.json"), beforeState); writeFileSync(join(workspace, "native.json"), beforeMeta);
+      writeFileSync(join(workspace, "native.transaction.json"), pretty(transaction));
+      expect(cli(req).error).toContain("integration ref moved");
+      expect(file("native.json")).toBe(beforeMeta);
+      expect(git(repository, "rev-parse", "integration")).toBe(unrelated);
+    });
+
+    test("unrelated plan additions keep reservations valid but changed task ownership invalidates them", () => {
+      prepare("left", base, [], "isolated");
+      const plan = JSON.parse(file("plan.json"));
+      plan.tasks.push({ name: "extra", type: "worker", scopedGoal: "Independent", pathsAllowed: ["extra.txt"] });
+      writeFileSync(join(workspace, "plan.json"), pretty(plan)); act("reconcile");
+      act("dispatch", { receipt: { ...receipt("left", "attempt-left"), preparationId: "input-left" } });
+      prepare("right");
+      plan.tasks[1].pathsAllowed = ["changed.txt"];
+      writeFileSync(join(workspace, "plan.json"), pretty(plan)); act("reconcile");
+      expect(cli(request("dispatch", { receipt: { ...receipt("right", "attempt-right"), preparationId: "input-right" } })).error).toContain("preparation is stale");
+    });
+
+    test("receives pinned inputs and results across isolated clones using bundles, without pushing", () => {
+      const assignment = prepare("left", base, [], "isolated");
+      const bundle = join(repository, "..", "input.bundle"), remote = join(repository, "..", "isolated");
+      git(repository, "bundle", "create", bundle, "main"); mkdirSync(remote);
+      git(remote, "init", "-b", "unused"); git(remote, "remote", "add", "origin", origin);
+      git(remote, "config", "user.name", "Receiver"); git(remote, "config", "user.email", "receiver@example.invalid");
+      expect(helper({ action: "receive", checkout: remote, assignment }).code).toBe(1);
+      git(remote, "fetch", bundle, "main"); git(remote, "checkout", "-b", assignment.branch, base);
+      writeFileSync(join(remote, "dirty.txt"), "dirty");
+      expect(helper({ action: "receive", checkout: remote, assignment }).error).toContain("uncommitted or untracked");
+      rmSync(join(remote, "dirty.txt"));
+      const received = helper({ action: "receive", checkout: remote, assignment });
+      expect(received.code).toBe(0);
+      act("dispatch", { receipt: { ...receipt("left", "attempt-left", "thread"), preparationId: assignment.id } });
+      expect(cli(request("complete", { attemptId: "attempt-left", resultCommit: base, receipt: { result: "finished", body: "## Status\nsuccess\n" } })).error).toContain("receiver must confirm");
+      act("received", { receipt: JSON.parse(received.out) });
+      const resultCommit = commitFile(remote, "left.txt", "6\n");
+      expect(cli(request("complete", { attemptId: "attempt-left", resultCommit, receipt: { result: "finished", body: "## Status\nsuccess\n" } })).code).toBe(1);
+      const output = join(repository, "..", "output.bundle");
+      git(remote, "bundle", "create", output, assignment.branch);
+      git(repository, "fetch", output, assignment.branch);
+      finish("left", resultCommit); act("integrate", { attemptId: "attempt-left", expectedHead: base });
+      expect(git(repository, "show", "integration:left.txt")).toBe("6");
+      expect(git(remote, "rev-parse", "HEAD")).toBe(resultCommit);
+    });
   });
 });

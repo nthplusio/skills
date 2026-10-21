@@ -195,6 +195,7 @@ class DependencyTests(unittest.TestCase):
         shutil.copytree(SKILL / "references", self.skills / sync.SELF / "references")
         (self.skills / sync.SELF / "scripts").mkdir()
         shutil.copy(SKILL / "scripts" / "native.ts", self.skills / sync.SELF / "scripts" / "native.ts")
+        shutil.copy(SKILL / "scripts" / "git-work.ts", self.skills / sync.SELF / "scripts" / "git-work.ts")
         (self.skills / sync.SELF / "sets" / "pstack" / "transform.json").unlink()
         self.profile(PROFILE)
 

@@ -27,7 +27,8 @@
       "files": {
         "references/nthplusio-workflow.md": "references/orchestration.md",
         "references/native-execution.md": "references/native-execution.md",
-        "scripts/tools/native.ts": "scripts/native.ts"
+        "scripts/tools/native.ts": "scripts/native.ts",
+        "scripts/tools/git-work.ts": "scripts/git-work.ts"
       }
     }
   ],
