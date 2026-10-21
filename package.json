@@ -10,9 +10,10 @@
     "check:private": "node scripts/check-private-terms.mjs",
     "check:builder": "node scripts/check-builder-agrees.mjs",
     "test:skills": "node scripts/test-skills.mjs",
+    "test:amp-plugins": "node --experimental-strip-types --test plugins/amp-skill-picker/tests/*.test.mjs",
     "test:doorbell": "claude plugin validate plugins/doorbell && claude plugin validate plugins/doorbell/skills && claude plugin test plugins/doorbell && node plugins/doorbell/tests/connected-mcp.mjs && tsc -p plugins/doorbell",
     "test:doorbell-grant": "claude plugin validate plugins/doorbell-grant && claude plugin test plugins/doorbell-grant && tsc -p plugins/doorbell-grant",
-    "test:plugins": "claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell && npm run test:doorbell-grant"
+    "test:plugins": "npm run test:amp-plugins && claude plugin validate . && claude plugin test plugins/context-statusline && npm run test:doorbell && npm run test:doorbell-grant"
   },
   "dependencies": {
     "yaml": "^2.9.0"

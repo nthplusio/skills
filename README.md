@@ -71,16 +71,24 @@ and check both with `claude plugin validate .` and
 
 ## Amp skill picker
 
-With `picking-skills` installed, send `/skills` in Amp to get a link to the
-picker. Send `/skills code review` to prefill a search, or ask **Show the skill
-picker**. Search filters as you type across names, descriptions, and source
-paths. Choose a skill, click **Copy request**, then paste into Amp and add your
-task.
+With `picking-skills` installed, send `/skills` in Amp web chat to show the
+live picker inside the conversation. Send `/skills code review` to prefill a
+search, or ask **Show the skill picker**. Search filters as you type across
+names, descriptions, and source paths. Choose a skill, click **Copy**,
+then paste into Amp and add your task. **Details** reveals the full description,
+exact source, and prepared request; search and Copy stay visible in small windows.
+
+The optional [Amp plugin](plugins/amp-skill-picker/README.md) adds
+**Skills: Open picker** to the command palette. It launches the same picker
+without an agent turn and presents a native dialog with an **Open skill
+picker** link. It also detects submitted `/skills` and `<skill>` requests in
+code. Publish the plugin separately to your Amp User or Workspace Plugins
+repository; installing the skill does not install the plugin.
 
 To keep your task with the selection, put a literal `<skill>` anywhere in your
 message, for example: `Use <skill> to tighten the wording in README.md.` Send
-it to open the picker before the agent starts the task. Choose a skill and
-click **Copy message**. The result keeps your message, replaces every `<skill>`
+it to request the picker and defer the task. Choose a skill and
+click **Copy**. The result keeps your message, replaces every `<skill>`
 with the same selected name, and prepends the exact-source loading instruction.
 Paste the completed message into Amp and send it. No skill body is included.
 
@@ -88,9 +96,13 @@ The picker is a bundled page served by one supervised service per orb/project.
 Opening the page or clicking **Refresh** reads a fresh `amp skills list --json`
 inventory. Filtering runs in the browser; typing does not invoke the agent.
 The launcher reuses a healthy service and returns only a portal link, keeping
-HTML and the skill list out of the conversation. `/skills` and `<skill>` are
-agent-interpreted triggers after submission, not registered client commands or
-main-textbox autocomplete. Nothing edits the main textbox or sends automatically.
+HTML and the skill list out of the conversation. Without the plugin, the agent
+interprets `/skills` and `<skill>` after submission. With it, a hook prepares
+the request and instructs the agent to embed the same portal and wait, without
+showing a dialog first. Both chat routes take an agent turn; waiting still
+relies on agent instructions. Clients without inline portals can open the
+portal link. Neither route provides main-textbox autocomplete. Nothing edits
+the textbox or sends automatically.
 If clipboard access is blocked, the page selects the text for manual copying.
 Each saved task has its own opaque link and expires after 24 hours. Portal
 access follows the thread's permissions; keep the portal private.

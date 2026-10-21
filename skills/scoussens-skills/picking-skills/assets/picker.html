@@ -16,52 +16,53 @@
     --border: light-dark(oklch(84% 0 none), oklch(38% 0 none));
     --link: light-dark(oklch(49% 0.17 255), oklch(77% 0.12 255));
     --radius: 8px;
-    --gutter: clamp(1rem, 0.6rem + 2vw, 2rem);
+    --gutter: clamp(0.375rem, 0.25rem + 1vi, 0.75rem);
     overflow-wrap: break-word;
     font-family: system-ui, sans-serif;
   }
   *, *::before, *::after { box-sizing: border-box; min-inline-size: 0; }
-  body { margin: 0; padding: var(--gutter); color: var(--foreground); background: var(--background); line-height: 1.5; }
-  h2, p, ul { margin: 0; }
+  body { margin: 0; padding: var(--gutter); color: var(--foreground); background: var(--background); font-size: 0.875rem; line-height: 1.4; }
+  p, ul { margin: 0; }
   button, input, textarea { font: inherit; color: inherit; }
   input, textarea { font-size: 1rem; }
-  button { touch-action: manipulation; user-select: none; }
-  main { display: grid; gap: 8px; max-inline-size: 48rem; margin-inline: auto; padding: var(--gutter); border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
-  .ui-header { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; margin-block-end: 8px; }
-  .heading { flex: 1; min-inline-size: 60%; }
-  .ui-title { font-size: 1.125rem; font-weight: 600; }
-  .ui-sub, .ui-caption, .ui-muted { color: var(--secondary); }
-  .ui-sub, .ui-label { font-size: 0.875rem; }
+  button { touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  main { display: flex; flex-direction: column; gap: 6px; block-size: min(28rem, calc(100dvh - 2 * var(--gutter))); max-inline-size: 40rem; margin-inline: auto; padding: 8px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 8px); background: var(--card); }
+  .ui-caption, .ui-muted { color: var(--secondary); }
+  .ui-label { font-size: 0.875rem; }
   .ui-caption { font-size: 0.75rem; }
   .ui-mono { font-family: ui-monospace, monospace; }
-  .ui-btn { padding-block: 6px; padding-inline: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); cursor: pointer; }
+  .sr-only { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; overflow: clip; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .ui-btn { flex: none; min-block-size: 44px; padding-block: 6px; padding-inline: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); cursor: pointer; }
   .ui-btn:disabled { opacity: 0.55; cursor: default; }
   .ui-btn:active:not(:disabled) { background: var(--muted); }
-  .search { display: flex; flex-wrap: wrap; gap: 8px; }
-  .search input { flex: 1; min-inline-size: 50%; inline-size: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-  :is(input, textarea, summary, .ui-btn):focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
-  .ui-btn, .result { min-block-size: 44px; }
+  .ui-btn[aria-expanded="true"] { background: var(--muted); }
+  .icon-btn { display: grid; place-items: center; inline-size: 44px; padding: 0; }
+  .icon-btn svg { inline-size: 1.25em; block-size: 1.25em; }
+  .search { display: flex; flex: none; gap: 4px; }
+  .search input { flex: 1; inline-size: 100%; min-block-size: 44px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  :is(input, textarea, .ui-btn, .preview):focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
   .count { font-variant-numeric: tabular-nums; }
-  .results { max-block-size: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-block: 1px solid var(--border); padding-block: 4px; }
+  .results { flex: 1; min-block-size: 44px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border-block: 1px solid var(--border); padding-block: 2px; }
   .results ul { padding: 0; list-style: none; }
-  .result { display: grid; gap: 4px; inline-size: 100%; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: start; cursor: pointer; }
+  .result { display: grid; gap: 1px; inline-size: 100%; min-block-size: 44px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: start; cursor: pointer; }
   .result[aria-pressed="true"] { background: var(--muted); border-color: var(--border); }
   .result:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
-  .result:active { transform: scale(0.98); }
-  .result-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-weight: 500; }
-  .result-source { margin-inline-start: auto; font-weight: 400; }
-  .description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: clip; }
-  .empty { padding: 24px 8px; }
-  .prepared { display: grid; gap: 8px; }
-  .prepared-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .prepared-header button { margin-inline-start: auto; }
-  textarea { inline-size: 100%; field-sizing: content; min-block-size: 3lh; max-block-size: 8lh; resize: none; overflow-y: auto; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
-  details summary { cursor: pointer; }
-  details summary:active { color: var(--foreground); }
-  details p { max-block-size: 120px; overflow-y: auto; padding-block-start: 8px; text-wrap: pretty; }
+  .result:active { transform: scale(0.96); }
+  .result-title { display: flex; align-items: baseline; gap: 8px; font-weight: 500; }
+  .result-name, .selected-name { overflow: clip; white-space: nowrap; text-overflow: ellipsis; }
+  .result-source { flex: none; margin-inline-start: auto; font-size: 0.625rem; font-weight: 400; }
+  .description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: clip; color: var(--secondary); font-size: 0.75rem; }
+  .empty { padding: 12px 6px; }
+  .prepared { display: flex; flex: 0 1 auto; flex-direction: column; gap: 6px; min-block-size: 44px; max-block-size: 60%; }
+  .prepared-header { display: flex; flex: none; align-items: center; gap: 6px; }
+  .selected-name { flex: 1; }
+  .preview { min-block-size: 0; max-block-size: min(30dvh, 10rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); }
+  .preview:not([hidden]) { display: grid; gap: 6px; }
+  .preview p { text-wrap: pretty; }
+  .prepared > p:empty { display: none; }
+  textarea { inline-size: 100%; field-sizing: content; min-block-size: 3lh; max-block-size: 6lh; resize: none; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
   @media (hover: hover) and (pointer: fine) {
     .result:hover, .ui-btn:hover:not(:disabled) { background: var(--muted); }
-    summary:hover { color: var(--foreground); }
   }
   @media (prefers-reduced-motion: no-preference) {
     .result { transition: transform 120ms ease-out; }
@@ -70,17 +71,15 @@
 </head>
 <body>
 <main aria-label="Skill picker">
-  <header class="ui-header">
-    <div class="heading">
-      <h2 class="ui-title">Find a skill by what it does</h2>
-      <p class="ui-sub">Search, choose a skill, then copy its loading request.</p>
-    </div>
-    <button id="refresh" class="ui-btn" type="button">Refresh</button>
-  </header>
-  <label class="ui-label" for="query">Search names and descriptions</label>
+  <h1 class="sr-only">Skill picker</h1>
   <div class="search">
-    <input id="query" type="search" placeholder="Try: writing, code review, mobile…" autocomplete="off" aria-controls="results" aria-describedby="count">
-    <button id="clear" class="ui-btn outline" type="button">Clear</button>
+    <input id="query" type="search" placeholder="Name or description…" aria-label="Search names and descriptions" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" aria-controls="results" aria-describedby="count">
+    <button id="clear" class="ui-btn icon-btn" type="button" aria-label="Clear search" title="Clear search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+    </button>
+    <button id="refresh" class="ui-btn icon-btn" type="button" aria-label="Refresh skill list" title="Refresh skill list">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 6.1a8 8 0 0 1 13 2.5L20 12M4 12l.9 3.4a8 8 0 0 0 13 2.5"/></svg>
+    </button>
   </div>
   <p id="count" class="ui-caption count" role="status" aria-live="polite"></p>
   <p id="warnings" class="ui-caption" role="alert" hidden></p>
@@ -90,17 +89,18 @@
   </div>
   <section class="prepared" aria-label="Prepared skill request">
     <div class="prepared-header">
-      <label id="request-label" class="ui-title" for="request">Loading request</label>
-      <button id="copy" class="ui-btn outline" type="button" disabled>Copy request</button>
+      <span id="selection" class="selected-name ui-muted">Choose a skill</span>
+      <button id="toggle" class="ui-btn" type="button" aria-expanded="false" aria-controls="details" disabled>Details</button>
+      <button id="copy" class="ui-btn" type="button" aria-label="Copy skill loading request" disabled>Copy</button>
     </div>
-    <textarea id="request" rows="3" readonly placeholder="Choose a skill above. Only its name and exact source directory go here; never its contents." aria-describedby="help"></textarea>
-    <details id="details" hidden>
-      <summary id="chosen" class="ui-label"></summary>
+    <div id="details" class="preview" role="region" aria-label="Skill details" tabindex="0" hidden>
       <p id="full-description" class="ui-label"></p>
-    </details>
-    <p id="help" class="ui-caption" role="status">Paste into Amp’s message box and add your task. Nothing sends automatically.</p>
+      <p id="source" class="ui-caption ui-mono"></p>
+      <label id="request-label" class="ui-label" for="request">Loading request</label>
+      <textarea id="request" rows="3" readonly aria-describedby="help"></textarea>
+    </div>
+    <p id="help" class="ui-caption" role="status"></p>
   </section>
-  <p class="ui-caption">Refresh updates the list from this orb. Search filters locally as you type.</p>
 </main>
 <script>
 {
@@ -113,20 +113,27 @@
   const results = document.getElementById('results');
   const request = document.getElementById('request');
   const copy = document.getElementById('copy');
+  const selection = document.getElementById('selection');
+  const details = document.getElementById('details');
+  const toggle = document.getElementById('toggle');
   const help = document.getElementById('help');
   const refresh = document.getElementById('refresh');
   const warnings = document.getElementById('warnings');
   const state = { selected: null, matches: [], loading: true, failed: false };
   let loadedRequest = false;
   let generation = 0;
-  const pasteHelp = () => catalog.message !== null
-    ? 'Paste the completed message into Amp and send it when ready.'
-    : 'Paste into Amp’s message box and add your task.';
+  function showDetails(open) {
+    details.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+  }
   function clearSelection() {
     state.selected = null;
     request.value = '';
     copy.disabled = true;
-    document.getElementById('details').hidden = true;
+    toggle.disabled = true;
+    selection.textContent = 'Choose a skill';
+    selection.removeAttribute('title');
+    showDetails(false);
   }
   async function readJSON(path) {
     const response = await fetch(path, { cache: 'no-store' });
@@ -143,9 +150,9 @@
     clearSelection();
     warnings.hidden = true;
     refresh.disabled = true;
-    refresh.textContent = 'Refreshing…';
+    refresh.setAttribute('aria-label', 'Refreshing skills');
     results.setAttribute('aria-busy', 'true');
-    help.textContent = 'Waiting for a fresh skill list.';
+    help.textContent = '';
     render();
     try {
       if (!loadedRequest) {
@@ -156,10 +163,8 @@
         query.value = catalog.query;
         loadedRequest = true;
         if (catalog.message !== null) {
-          document.querySelector('.ui-sub').textContent = 'Choose a skill to fill <skill> in your message, then copy the completed message.';
-          document.getElementById('request-label').textContent = 'Message to copy';
-          copy.textContent = 'Copy message';
-          request.placeholder = 'Choose a skill above to fill your message and include its exact-source loading instruction.';
+          document.getElementById('request-label').textContent = 'Completed message';
+          copy.setAttribute('aria-label', 'Copy completed message');
         }
       }
       const inventory = await readJSON('/api/skills');
@@ -167,7 +172,6 @@
       skills = inventory.skills;
       duplicateNames = new Set(skills.filter((skill, index) => skills.some((other, i) => i !== index && other.name === skill.name)).map(skill => skill.name));
       state.loading = false;
-      help.textContent = `${pasteHelp()} Nothing sends automatically.`;
       if (previous) {
         const selected = skills.find(skill => skill.name === previous.name && skill.directory === previous.directory);
         if (selected) choose(selected);
@@ -183,11 +187,11 @@
       state.failed = true;
       warnings.hidden = false;
       warnings.textContent = error.message;
-      help.textContent = 'No request can be copied until the picker loads successfully.';
+      help.textContent = 'Copy unavailable until skills load.';
     } finally {
       if (current === generation) {
         refresh.disabled = false;
-        refresh.textContent = 'Refresh';
+        refresh.setAttribute('aria-label', 'Refresh skill list');
         results.setAttribute('aria-busy', 'false');
         render();
       }
@@ -199,10 +203,12 @@
     request.value = `Use the ${skill.name} skill from ${JSON.stringify(skill.directory)}. Load that exact skill before acting. If you can't load it, tell me and stop. Don't assume its contents or substitute another source.`;
     if (catalog.message !== null) request.value += '\n\n' + catalog.message.replaceAll('<skill>', () => skill.name);
     copy.disabled = false;
-    document.getElementById('details').hidden = false;
-    document.getElementById('chosen').textContent = `Full description: ${skill.name}`;
+    toggle.disabled = false;
+    selection.textContent = skill.name;
+    selection.title = skill.name;
     document.getElementById('full-description').textContent = skill.description;
-    help.textContent = `Click ${copy.textContent}. ${pasteHelp()}`;
+    document.getElementById('source').textContent = `${Object.hasOwn(labels, skill.source) ? labels[skill.source] : skill.source} · ${skill.directory}`;
+    help.textContent = '';
     for (const button of list.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.directory === skill.directory && button.dataset.name === skill.name));
   }
   function render() {
@@ -220,7 +226,9 @@
       const title = document.createElement('span');
       title.className = 'result-title';
       const name = document.createElement('span');
+      name.className = 'result-name';
       name.textContent = skill.name;
+      name.title = skill.name;
       const source = document.createElement('span');
       source.className = 'result-source ui-caption';
       source.textContent = Object.hasOwn(labels, skill.source) ? labels[skill.source] : skill.source;
@@ -239,7 +247,7 @@
       item.append(button);
       list.append(item);
     }
-    document.getElementById('count').textContent = state.loading ? 'Loading skills…' : state.failed ? 'Skill list unavailable.' : `${state.matches.length} of ${skills.length} skills. Scroll to browse; select a result to read its full description.`;
+    document.getElementById('count').textContent = state.loading ? 'Loading skills…' : state.failed ? 'Skill list unavailable.' : `${state.matches.length} / ${skills.length} skills`;
     const empty = document.getElementById('empty');
     empty.hidden = state.matches.length !== 0;
     empty.textContent = state.loading ? 'Reading this orb’s skill inventory…' : state.failed ? 'Click Refresh to retry.' : skills.length ? 'No matches. Try fewer words or clear the search.' : 'Amp found no skills. Install a skill, then click Refresh.';
@@ -262,19 +270,23 @@
   });
   refresh.addEventListener('click', load);
   document.getElementById('clear').addEventListener('click', () => { query.value = ''; render(); query.focus(); });
+  toggle.addEventListener('click', () => showDetails(details.hidden));
   copy.addEventListener('click', async () => {
     const text = request.value;
     let copied = false;
     try { await navigator.clipboard.writeText(text); copied = true; } catch {}
     if (request.value !== text) return;
     if (!copied) {
+      const wasHidden = details.hidden;
+      showDetails(true);
       request.focus();
       request.select();
       try { copied = document.execCommand('copy'); } catch {}
+      if (copied && wasHidden) { showDetails(false); copy.focus(); }
     }
     help.textContent = copied
-      ? `Copied. ${pasteHelp()}`
-      : 'Clipboard access is blocked. The text is selected; use your device’s Copy action.';
+      ? 'Copied. Paste into Amp.'
+      : 'Copy blocked. Copy the selected text in Details.';
   });
   load();
 }

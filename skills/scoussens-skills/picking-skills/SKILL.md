@@ -25,6 +25,10 @@ launching the quoted examples.
 
 ## Show the picker
 
+If the skill-picker plugin already provided a portal link for this message,
+use its URL in step 2 and end the turn. Reuse its saved request instead of
+launching another picker.
+
 1. Resolve this skill's directory to an absolute filesystem path. If Amp shows
    a `file://` URI, decode it first. From the current **project** directory,
    run the bundled launcher, substituting that path for `<skill-directory>`:
@@ -53,11 +57,20 @@ launching the quoted examples.
    literal `<skill>` with the same chosen skill name and prepends one
    exact-source loading instruction. All other message text stays unchanged.
 
-2. Return the launcher's Markdown portal link unchanged. Use it as a normal
-   link; the user opens the page to select a skill. The bundled page and server
-   are reusable: no HTML, inventory, generated view, or skill bodies belong in
-   your response. A healthy service is reused; changes to the package restart
-   only this project's picker. Report a launcher error instead of rebuilding it.
+2. Show the live picker inline in Amp web chat. Use the launcher's exact HTTPS
+   URL, including its fragment, and preserve the `amp-portal` title:
+
+   ```markdown
+   ![Skill picker](<exact-URL-from-launcher> "amp-portal")
+   ```
+
+   Emit the image Markdown outside a code fence so Amp embeds the portal.
+   Selection belongs inside the conversation; no opening dialog is needed.
+   For a client without inline portals, use the launcher's normal link instead.
+   The bundled page and server are reusable: no HTML, inventory, generated view,
+   or skill bodies belong in your response. A healthy service is reused;
+   changes to the package restart only this project's picker. Report a launcher
+   error instead of rebuilding it.
 3. End the turn and let the user choose. Selecting or copying inside the page
    does not notify the agent. The user pastes into Amp's message box and sends
    the completed message, or adds a task to a standalone loading request.
@@ -92,7 +105,8 @@ inventories, portal URLs, and exact source paths remain local to that orb.
 - Enter in the search selects its first result. Arrow Down moves into the
   results; arrows navigate them; Escape returns to search. Clear restores all
   results.
-- Selection prepares the exact-source request or completed message. Copy uses
-  the clipboard when permitted, with a selected-text fallback if blocked.
+- Selection prepares the exact-source request or completed message. **Details**
+  reveals the full description, source directory, and prepared text. **Copy**
+  uses the clipboard when permitted, revealing selected text if copying fails.
 - Nothing sends automatically or edits Amp's main textbox. A copied request is
   an instruction to load a skill, not proof that the skill was loaded.
