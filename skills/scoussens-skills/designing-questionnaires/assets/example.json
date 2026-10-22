@@ -1,0 +1,70 @@
+{
+  "id": "export-review",
+  "revision": 1,
+  "title": "Report exports — team review",
+  "intro": "Help define the export requirements. Answer a question or suggest a change.",
+  "notice": "Example only. Names are self-entered. Completed means answered, not implemented.",
+  "setup": {
+    "outcome": "Decide the scope of the first report download.",
+    "out_of_scope": "Delivery dates and implementation assignments.",
+    "readers": "Alex supplies monthly comparison examples. Jordan explains access rules. Both know the reporting workflow; neither needs code details.",
+    "response_budget": "A short choice with one example when needed. Not sure and Someone else should answer are valid replies.",
+    "reviewer": "Reviewing agent; questionnaire owner resumes manual review if delivery fails.",
+    "decision_maker": "Questionnaire owner resolves scope conflicts after checking the evidence.",
+    "escalation": "If evidence conflicts, present both claims to the owner. No response deadline or reminder permission is agreed."
+  },
+  "requirements": [
+    {
+      "id": "report-export",
+      "priority": "High",
+      "title": "Download a report",
+      "text": "Readers need a downloadable report they can share with colleagues.",
+      "details": "Keep the first version focused on one report. Access rules must also apply to downloads.",
+      "questions": [
+        {
+          "id": "export-format", "title": "Which export format?",
+          "prompt": "Alex, is CSV sufficient for the monthly comparison?",
+          "people": ["Alex"], "status": "open",
+          "request": {
+            "recommendation": "Start with CSV; confirm before settling scope.",
+            "why": "A formatted document adds scope to the first version.",
+            "response": "Reply Yes, No, Not sure, or Someone else should answer. If No, give one example CSV cannot support and link a sample if available."
+          },
+          "attention": {"state": "waiting", "next_action": "Alex can confirm CSV or provide an example that needs another format."}
+        },
+        {
+          "id": "export-access", "title": "Who may download?",
+          "prompt": "Jordan, should download access match the report's viewing permissions?",
+          "people": ["Jordan"], "status": "open",
+          "request": {
+            "recommendation": "Use the same access rules as report viewing.",
+            "why": "Downloaded reports can be shared outside the application.",
+            "response": "Reply Yes, No, Not sure, or Someone else should answer. If No, name the exception and link the policy that requires it."
+          },
+          "attention": {"state": "waiting", "next_action": "Jordan can confirm the access rule or identify the policy owner."}
+        }
+      ]
+    },
+    {
+      "id": "export-history",
+      "priority": "Later",
+      "title": "Find previous exports",
+      "text": "Readers may need to retrieve a previous export without generating it again.",
+      "details": "Retention is still a question, not a delivery commitment.",
+      "questions": [
+        {
+          "id": "export-retention", "title": "How long should exports remain?",
+          "prompt": "Which recurring task needs an old export, and how old is it?",
+          "people": [], "status": "open",
+          "request": {
+            "recommendation": "Defer retained downloads until a recurring need is established.",
+            "why": "Retention affects storage and access policy.",
+            "response": "Give one recurring task and the oldest export it needs, or say Not sure. Link a policy if one applies."
+          },
+          "attention": {"state": "waiting", "next_action": "The questionnaire owner needs to identify a respondent who uses previous exports."}
+        }
+      ]
+    }
+  ],
+  "reviews": []
+}

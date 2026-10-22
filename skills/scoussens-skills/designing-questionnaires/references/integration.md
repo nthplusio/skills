@@ -1,0 +1,45 @@
+# Select integrations from discovery
+
+Load `harness-discovery` and resolve its entry for the current harness. Use
+read-only inventories, schemas, authoritative documentation and actual probes
+authorized for this questionnaire. Preserve unrelated discoveries. The table
+below is a checklist for reading that existing report, not a second registry.
+
+| Need | Existing discovery home | Evidence required |
+| --- | --- | --- |
+| Publishing | `artifacts` | Stable URL, update operation, audience/authentication, same-origin API routing; test served updates |
+| Feedback/event delivery | `artifacts[].interaction`, `monitoring.notifications` | Distinguish native review controls from custom forms; prove a saved form triggers the selected route |
+| Agent wake-up | `monitoring.wake`, `owners.message` | A message in the actual reviewer's conversation/queue, not an HTTP acknowledgment; idle/resume behavior and expiration limits |
+| Persistence | `evidence.retain_before_close`, artifact limits | Disk/database lifetime, service restart behavior, backup/export and retention before closure; distinguish durable file from always-on worker |
+| Browser verification | `sources`, `limitations` | Installed browser or harness tool and supported viewport, DOM and recording operations; name untested browsers |
+| Issue tracker | `repository.ticket_sources`, `ticket_template`, `notes` | Actual configured tool/repository and read permissions; lack of configuration is a result, not a reason to invent tickets |
+
+The current schema has no dedicated browser or database capability key; record
+those observations in its existing descriptive fields. Do not fork the schema
+or infer support from a model name. Deployment choices (database path, reviewer
+handle, URL, authorization, secrets) stay in private run configuration, never
+the shared registry.
+
+## Fallbacks
+
+- **Native feedback with real wake-up:** usable if submissions can be preserved,
+  attributed to stable question IDs, and reconciled with page receipts. Adapt
+  native events into the same workflow. Native page review does not wire a
+  custom form automatically.
+- **Durable host plus tested adapter:** use the bundled page/API/outbox. Confirm
+  the gateway serves relative assets and `/api/*` on the same origin.
+- **Persistent feedback but no wake:** show manual-review mode. Name the
+  reviewer and an agreed handoff channel. Ask the person to send the page link
+  and submission ID; the reviewer reads pending rows. Do not invent polling,
+  schedules, or background permissions.
+- **Static-only publishing:** publish read-only requirements and questions,
+  with an explicit existing reply channel. Disable/remove form submission;
+  never claim comments are saved or reviewed. The bundled dynamic host cannot
+  be uploaded unchanged to a static-only host.
+- **No durable storage:** keep the questionnaire and feedback in the existing
+  conversation or a user-approved durable document. Disclose that no live form
+  loop exists. Browser storage is for drafts, not team feedback persistence.
+
+Never select a tracker write as the wake mechanism merely because a tracker
+tool is available. Tracker edits, infrastructure changes, expanded sharing,
+and sending private content to another service need their own authorization.

@@ -135,6 +135,10 @@ and repository ticket conventions or their absence are recorded.
 Merge only the current harness entry and changed repository facts into the saved
 report. Preserve unrelated entries and user edits. Keep the report in the repository
 so later setup can reuse it. Sanitize private context and paths before saving.
+For observations made now, capture `observed_at` from the environment clock with
+`python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat())'`.
+For reused observations, preserve their recorded time. A date from conversation
+context is not a measured observation time.
 A registry entry holds only what is true of the harness itself: no repository
 URL, no local path, no choice a team made. `export` scrubs the repository path;
 you remove the rest before the pull request.
