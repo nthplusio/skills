@@ -3,6 +3,7 @@
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, sans-serif; overflow-wrap: break-word; }
 .layout { display: flex; flex-wrap: wrap; align-items: start; gap: clamp(1.25rem, 3vw, 3rem); max-inline-size: 1200px; margin-inline: auto; padding: clamp(1rem, 3vw, 2rem); }
+.layout > .review-note { flex: 1 0 100%; margin: 0; }
 .sidebar { flex: 1 1 16rem; padding: 1rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 main { flex: 999 1 0; min-inline-size: 60%; padding-block-end: 5rem; }
 @media (min-width: 56rem) { .sidebar { position: sticky; inset-block-start: 1rem; max-block-size: calc(100dvh - 2rem); overflow-y: auto; scrollbar-gutter: stable; } }

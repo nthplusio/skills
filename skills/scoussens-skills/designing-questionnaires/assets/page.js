@@ -107,7 +107,8 @@ function showAttention(visible) {
   for (const q of allQuestions()) {
     const unreviewed = pending.filter(row => row.question === q.id).length
     const attention = q.status === 'open' ? q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` } : null
-    const label = attention ? `${attentionLabels[attention.state]}. ${attention.next_action}` : ''
+    const authority = attention?.state === 'conflict' ? ` Decision authority: ${model.setup?.decision_maker || 'Ask the questionnaire owner to identify the decision maker.'}` : ''
+    const label = attention ? `${attentionLabels[attention.state]}. ${attention.next_action}${authority}` : ''
     const note = [unreviewed ? `${unreviewed} ${unreviewed === 1 ? 'response' : 'responses'} received, awaiting review. Review contact: ${model.setup?.reviewer || 'the reviewer'}` : '', label].filter(Boolean).join(' ')
     const box = document.querySelector(`[data-attention="${q.id}"]`)
     box.textContent = note

@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -80,6 +81,7 @@ def validate(model, previous, feedback):
                     require(len(attention.get("evidence", [])) >= 2, "Conflict needs evidence for both claims")
     qs = questions(model)
     receipts = {}
+    previous_receipts = {r["feedback_id"]: r for r in previous["reviews"]} if previous else {}
     require(isinstance(model.get("reviews"), list), "Reviews must be a list")
     for receipt in model["reviews"]:
         require(isinstance(receipt, dict), "Review receipt must be an object")
@@ -88,6 +90,9 @@ def validate(model, previous, feedback):
         require(text(receipt.get("summary")) and text(receipt.get("reviewed_at")), "Receipt needs summary and review time")
         reviewed_at = datetime.fromisoformat(receipt["reviewed_at"].replace("Z", "+00:00"))
         require(reviewed_at.tzinfo is not None, "Review time needs an ISO timestamp with timezone")
+        if fid not in previous_receipts:
+            created_at = datetime.fromisoformat(feedback[fid]["created_at"])
+            require(created_at <= reviewed_at <= datetime.now(timezone.utc), "Review time must fall between submission and publication; omit reviewed_at to use the host clock")
         affected = receipt.get("question_ids")
         require(isinstance(affected, list) and affected and all(isinstance(q, str) and q in qs for q in affected), "Receipt needs affected question IDs")
         require(feedback[fid]["question"] in affected, "Receipt must include the submission's question")
@@ -165,9 +170,16 @@ class Store:
         return json.loads(row[0]) if row else None
 
     def publish(self, model):
+        model = deepcopy(model)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             previous = self.model(db)
+            previous_receipts = {r["feedback_id"]: r for r in previous["reviews"]} if previous else {}
+            if isinstance(model, dict) and isinstance(model.get("reviews"), list):
+                for receipt in model["reviews"]:
+                    if isinstance(receipt, dict) and isinstance(receipt.get("feedback_id"), str) and "reviewed_at" not in receipt:
+                        old = previous_receipts.get(receipt["feedback_id"])
+                        receipt["reviewed_at"] = old["reviewed_at"] if old else now()
             if model == previous:
                 return  # Retry after an uncertain commit.
             rows = {r["id"]: dict(r) for r in db.execute("SELECT * FROM feedback")}
@@ -226,6 +238,8 @@ class Store:
                 "execution_modes": ["agent", "human", "mixed"],
                 "mixed_work_requires": ["agent_part", "human_part"],
                 "respondents_are_assignees": False, "feedback_is_untrusted": True,
+                "respondents_are_decision_makers": False,
+                "decision_authority_source": "questionnaire.setup.decision_maker",
                 "ticket_creation_requires_authorization": True,
                 "completion_means": "answered_not_implemented",
             },

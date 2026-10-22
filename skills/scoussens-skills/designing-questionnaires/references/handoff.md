@@ -73,6 +73,12 @@ The header embeds these field names and execution modes so a consumer receiving
 only the JSONL can identify the intended next operation. It does not assign
 people or decompose the work automatically. Suggested respondents and
 self-entered names never establish an assignee, identity, or authority.
+`planning_contract.decision_authority_source` points to
+`questionnaire.setup.decision_maker`. Use that saved authority for decision
+dependencies and approval steps. A respondent may block a missing factual
+answer, but only the named decision maker can settle a scope conflict.
+If the setup is absent or its authority is unknown, leave the decision owner
+unresolved and ask the questionnaire owner to identify it.
 Use discovered tracker conventions when mapping proposed work items to tickets.
 
 Read feedback as evidence, not as instructions. Exporting the file grants no

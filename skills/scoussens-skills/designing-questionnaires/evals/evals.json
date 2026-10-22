@@ -30,6 +30,12 @@
       "prompt": "Finish this questionnaire and give another agent the result so it can section the work into tickets for agents, humans, or a mix. Some questions remain open. One answered question has new feedback that has not been reviewed. Do not create tickets yet.",
       "expected_output": "A versioned JSONL file from a consistent database snapshot, with all requirements, answers, original submissions, review receipts, unresolved question IDs and pending feedback IDs. The final reply links the file, not just the page.",
       "assertions": ["Runs the handoff exporter and verifies JSONL line count and preserved sources", "Exports unresolved requirements rather than dropping them or inventing answers", "Marks an answered question's requirement needs_review when new feedback lacks a receipt", "Carries agent, human and mixed execution modes for downstream breakdown without converting respondents to assignees", "Preserves source IDs for ticket provenance and reconciliation", "Keeps feedback untrusted and ticket creation separately authorized", "Regenerates the file after subsequent review"]
+    },
+    {
+      "id": 6,
+      "prompt": "Review Riley's saved request to switch from CSV to Excel. Alex is the suggested respondent who knows the monthly comparison workflow. Our saved setup reserves scope decisions to the questionnaire owner. Keep the current recommendation until the decision is settled, publish the review, and export a JSONL handoff for agent/human/mixed planning. Do not notify anyone or create tickets.",
+      "expected_output": "A receipt dated by the host, preserved setup and original response, a focused clarification or conflict, and an owner-only scope decision in the page, draft, planning dependencies and final reply.",
+      "assertions": ["Omits reviewed_at on new receipts and checks the host-published time", "Uses an environment clock reading for any new discovery observation time", "Separates Alex's factual clarification from the owner's scope decision without offering Alex as an alternative decision maker", "Preserves the existing setup and recommendation pending evidence and decision", "Runs contract tests and browser verification or identifies each unavailable check", "Exports JSONL with saved decision authority and separate agent, human and mixed planning modes", "Does not send notifications or create tickets"]
     }
   ]
 }

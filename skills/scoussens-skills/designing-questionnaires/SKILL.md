@@ -107,12 +107,16 @@ mode passes its gate:
    requirement when supported. Mark a resolved question answered with evidence;
    add a focused follow-up for only the missing information. Reuse the saved
    audience settings. If sources conflict, present both claims and their links
-   to the named decision maker; keep the question open. Use the contract's
+   to `setup.decision_maker`; keep the question open. Preserve that authority
+   in next actions, draft messages, and the final reply. Respondents supply
+   facts; changing the decision maker requires the owner's explicit approval.
+   If authority is missing, ask the owner to identify it. Use the contract's
    attention states to distinguish clarification from a decision. Agreement
    alone does not answer a different question. Reopen explicitly rather than
    quietly overwriting a settled answer.
-3. Add a receipt with the submission ID, review time, affected question IDs,
-   and a short interpretation. A receipt may say “needs clarification”; it
+3. Add a receipt with the submission ID, affected question IDs, and a short
+   interpretation. Omit `reviewed_at` on new receipts; the host records its
+   clock at publication. A receipt may say “needs clarification”; it
    does not imply agreement or completion. Preserve earlier receipts and IDs.
 4. Export the latest model, edit it, increment its revision, and publish to the
    same database and URL. The receipt and new question state publish together.
@@ -132,7 +136,8 @@ python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" publish "$RU
 
 **Done when** the same URL shows the review receipt and supported answer or
 follow-up, who is needed next, and the last review time. The original feedback
-still matches exactly. Readers can correct the visible interpretation. Tracker
+still matches exactly, and every decision ask uses the saved authority.
+Readers can correct the visible interpretation. Tracker
 changes and implementation remain separate authorized work.
 
 ## 5. Verify the loop and report its limits
@@ -140,7 +145,9 @@ changes and implementation remain separate authorized work.
 Run `python3 -B -m unittest discover -s "$SKILL/evals"` for the local contract
 tests. Follow [the browser acceptance procedure](references/verification.md)
 on the selected deployment, including retries, drafts, narrow screens and
-review updates. Inspect captures rather than only saving them.
+review updates. Inspect captures rather than only saving them. This gate also
+applies to a feedback-only turn. If a capability is unavailable, report the
+specific unverified check; publication alone does not complete verification.
 
 Report which harness/adapter was exercised, the page and audience, the actual
 save → wake → review → republish evidence, and any untested lifecycle conditions.

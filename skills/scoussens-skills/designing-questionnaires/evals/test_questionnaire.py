@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 import uuid
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -120,11 +121,32 @@ class QuestionnaireTests(unittest.TestCase):
         with self.store.connect() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM publication").fetchone()[0], 2)
 
+    def test_host_dates_new_receipts_and_preserves_them_on_retry(self):
+        data = self.submission()
+        self.post(data)
+        updated = self.reviewed(data)
+        updated["reviews"][0].pop("reviewed_at")
+        before = datetime.now(timezone.utc)
+        self.store.publish(updated)
+        after = datetime.now(timezone.utc)
+        published = self.store.model()
+        reviewed_at = datetime.fromisoformat(published["reviews"][0]["reviewed_at"])
+        self.assertLessEqual(before, reviewed_at)
+        self.assertLessEqual(reviewed_at, after)
+        self.assertNotIn("reviewed_at", updated["reviews"][0])
+        self.store.publish(updated)
+        self.assertEqual(self.store.model(), published)
+        updated["revision"] = 3
+        self.store.publish(updated)
+        self.assertEqual(self.store.model()["reviews"], published["reviews"])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM publication").fetchone()[0], 3)
+
     def test_invalid_update_does_not_replace_live_revision(self):
         data = self.submission()
         self.post(data)
         updated = self.reviewed(data)
-        for mutation in ("missing evidence", "duplicate ID", "missing original", "missing receipt", "unsafe URL", "lost setup", "incomplete setup", "answered attention", "unknown attention", "no next action", "incomplete ask", "undated review"):
+        for mutation in ("missing evidence", "duplicate ID", "missing original", "missing receipt", "unsafe URL", "lost setup", "incomplete setup", "answered attention", "unknown attention", "no next action", "incomplete ask", "undated review", "future review", "review before feedback"):
             candidate = copy.deepcopy(updated)
             qs = candidate["requirements"][0]["questions"]
             if mutation == "missing evidence": qs[0]["answer"]["evidence"] = []
@@ -139,6 +161,8 @@ class QuestionnaireTests(unittest.TestCase):
             if mutation == "no next action": qs[1]["attention"].pop("next_action")
             if mutation == "incomplete ask": qs[1]["request"].pop("response")
             if mutation == "undated review": candidate["reviews"][0]["reviewed_at"] = "later"
+            if mutation == "future review": candidate["reviews"][0]["reviewed_at"] = (datetime.now(timezone.utc) + timedelta(minutes=35)).isoformat()
+            if mutation == "review before feedback": candidate["reviews"][0]["reviewed_at"] = (datetime.fromisoformat(self.store.feedback()[0]["created_at"]) - timedelta(seconds=1)).isoformat()
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 self.store.publish(candidate)
             self.assertEqual(self.store.model(), self.example)
@@ -183,6 +207,8 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(records[0]["schema_version"], 1)
         self.assertEqual(records[0]["planning_contract"]["execution_modes"], ["agent", "human", "mixed"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_assignees"])
+        self.assertFalse(records[0]["planning_contract"]["respondents_are_decision_makers"])
+        self.assertEqual(records[0]["planning_contract"]["decision_authority_source"], "questionnaire.setup.decision_maker")
         self.assertTrue(records[0]["planning_contract"]["ticket_creation_requires_authorization"])
         self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": ["export-format", "export-access"], "pending_feedback_ids": [data["id"]]})
         self.assertEqual(records[3]["feedback"]["message"], data["message"])

@@ -53,10 +53,14 @@ An answer needs at least one labeled HTTPS evidence link or
 receipt that names the answered question. Evidence links support a claim;
 the validator cannot judge whether the source actually proves it.
 
-Each entry of top-level `reviews` has `feedback_id`, `reviewed_at` (ISO time with timezone),
-`summary`, and `question_ids`. Include the original question plus any affected
-follow-ups. Earlier receipts remain unchanged; publication history preserves
-earlier answers when a later revision explicitly reopens a question.
+Each stored entry of top-level `reviews` has `feedback_id`, `reviewed_at` (ISO
+time with timezone), `summary`, and `question_ids`. Omit `reviewed_at` for a new
+receipt: the host fills it from its clock at publication. If explicitly supplied,
+it must fall between the original submission time and the host's current time.
+Retries with an omitted time reuse the stored timestamp. Include the original
+question plus any affected follow-ups. Earlier receipts remain unchanged,
+including legacy timestamps; publication history preserves earlier answers
+when a later revision explicitly reopens a question.
 The host validates and commits a complete model in one SQLite transaction.
 An invalid update leaves the previous publication available. Concurrent edits
 of the same revision are rejected unless the entire model is identical.

@@ -37,10 +37,13 @@ Use disposable generic data, not copied customer feedback.
    must not create another follow-up or overwrite the original receipt.
    Submit a challenge to the answered question. It stays Completed while its
    response appears awaiting review. In a disposable revision, publish an open
-   conflict with both claims' evidence links and a named decision maker. Confirm
+   conflict with both claims' evidence links and the saved decision maker. Check
+   the question and attention overview display that saved authority, distinct
+   from the suggested respondent. Confirm
    filters also scope the attention counts and next actions. Verify polling
    preserves focus on an unchanged navigation link and any open disclosure.
 6. Inspect at desktop and 390 CSS pixels wide. Check no horizontal overflow,
+   the review-mode notice is visible before scrolling or expanding navigation,
    readable labels, keyboard focus, toggles, open form, empty result, pending
    feedback and completed answer. Capture and inspect representative states;
    record pointer/keyboard interactions if supported. Name the tested engine.

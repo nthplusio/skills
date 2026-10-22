@@ -34,8 +34,12 @@ pending review.
 For an open question, set `attention` to waiting, clarification, or conflict.
 Name the next action and who can supply it. Clarification asks only for the
 missing information. For conflict, explain both claims in requirement details,
-link their sources in `attention.evidence`, and name who has authority to
-choose. If authority is unknown, ask the questionnaire owner to identify it.
+link their sources in `attention.evidence`, and route the choice to
+`setup.decision_maker`. Carry the same authority into draft messages and the
+final reply. If authority is unknown, ask the questionnaire owner to identify it.
+For example, when Alex supplies CSV examples and the owner decides scope,
+ask Alex for the example and the owner for the CSV-versus-PDF decision.
+An "Alex or the owner" decision ask would change the agreed authority.
 
 Use the overview to show pending reviews, next actions, latest interpretation,
 and last review time. Counts must say whether they cover the current filters.
