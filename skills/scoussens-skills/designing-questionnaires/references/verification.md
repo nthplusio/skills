@@ -5,9 +5,14 @@ receiver tests the delivery contract, not a harness's ability to wake an agent.
 Use disposable generic data, not copied customer feedback.
 
 1. Publish the example and open the served page in the installed browser. Expect
-   three open, zero completed. Filter High + Alex: only “Which export format?”
-   remains. High + Anyone gives an explicit empty state. Reset and follow a
-   question link; it opens the targeted question. Open that link in a fresh tab.
+   three open, zero answered, and one selected detail on desktop. Filter High +
+   Alex: only “Which export format?” remains. Add Jordan: both High questions
+   appear. High + Anyone gives an explicit empty state. Global open/answered
+   totals stay fixed while attention counts follow the filters. Search for
+   `JORDAN permissions`: only the access question appears. Remove the search
+   chip and sort by question name. Reset and follow a question link; it opens
+   the targeted question. Open that link in a fresh tab. A deep link to a hidden
+   question or source response clears obstructing filters and reveals it.
    Expand the saved setup and verify the outcome, reader roles, response budget,
    and review policy. Open a question and check its recommendation, consequence,
    and response format without needing the agent conversation.
@@ -26,17 +31,20 @@ Use disposable generic data, not copied customer feedback.
    with a source-feedback link, and adds a named encoding follow-up. The same
    publication includes the response's review receipt. The page offers an
    update without replacing the draft. Load it; the draft and deep links remain.
-   Expect three open, one completed. Confirm original feedback unchanged.
+   Expect three open, one answered. Switch between questions, filter the draft's
+   question out, then return. Its text and open form remain. Confirm original
+   feedback unchanged.
    Remove attention from the answered question and give the follow-up a
    clarification state and a named next action. Verify saved setup unchanged,
    the last review time visible, and pending-review counts cleared by the
    receipt rather than delivery. Follow the latest interpretation to its source.
-5. Filter Completed; inspect the answer and follow its source link. Filter the
+5. Filter Answered; inspect the answer and follow its source link. Filter the
    suggested respondent and priority together. Inspect the new follow-up.
    Submit to the new question without restarting the server. Repeating review
    must not create another follow-up or overwrite the original receipt.
-   Submit a challenge to the answered question. It stays Completed while its
-   response appears awaiting review. In a disposable revision, publish an open
+   Submit a challenge to the answered question. It stays Answered while its
+   response appears awaiting review. Filter Needs review and confirm it includes
+   this answered question. In a disposable revision, publish an open
    conflict with both claims' evidence links and the saved decision maker. Check
    the question and attention overview display that saved authority, distinct
    from the suggested respondent. Confirm
@@ -45,7 +53,10 @@ Use disposable generic data, not copied customer feedback.
 6. Inspect at desktop and 390 CSS pixels wide. Check no horizontal overflow,
    the review-mode notice is visible before scrolling or expanding navigation,
    readable labels, keyboard focus, toggles, open form, empty result, pending
-   feedback and completed answer. Capture and inspect representative states;
+   feedback and answered question. On narrow screens, filters start collapsed;
+   selecting a result opens its detail, and Back to questions restores the list
+   and filters. Verify browser Back and Forward, and focus after following a
+   question or evidence link. Capture and inspect representative states;
    record pointer/keyboard interactions if supported. Name the tested engine.
 7. If tab storage is blocked, verify the update control refuses a destructive
    reload and asks the reader to copy drafts. A denied save must leave text

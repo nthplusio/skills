@@ -9,36 +9,49 @@
 </head>
 <body>
 <noscript>This questionnaire needs JavaScript. Ask the reviewer for a text copy and submit feedback through your agreed review channel.</noscript>
-<div class="layout">
+<main class="layout">
+  <header class="page-header">
+    <div><h1 id="title"></h1><p id="intro"></p></div>
+    <div class="progress"><p><strong id="open-count">0</strong> open · <strong id="answered-count">0</strong> answered</p><progress id="progress" aria-label="Questions answered" max="1" value="0"></progress><span id="progress-label"></span></div>
+  </header>
   <p id="delivery-mode" class="review-note" role="status"></p>
-  <aside class="sidebar" aria-label="Review navigation">
-    <p class="eyebrow">Design questionnaire</p><h2>Team review</h2>
-    <div class="totals" aria-label="Question status">
-      <button data-state="open" aria-pressed="false"><strong id="open-count">0</strong>Open</button>
-      <button data-state="answered" aria-pressed="false"><strong id="answered-count">0</strong>Completed</button>
-    </div>
-    <button class="secondary reset" id="reset">Show all questions</button>
-    <nav class="priority-tabs" id="priorities" aria-label="Priority tabs"></nav>
-    <label>Person<select id="person"><option value="">Everyone</option><option value="__anyone">Anyone</option></select></label>
-    <p class="sidebar-hint">Suggested respondents, not work assignees.</p>
-    <details class="question-index" open><summary>Questions by name</summary><div id="question-nav"></div></details>
-  </aside>
-  <main>
-    <header><h1 id="title"></h1><p id="intro"></p><p id="notice" class="muted"></p></header>
-    <details id="setup" class="scope" hidden><summary>Review purpose and agreed approach</summary><div id="setup-content"></div></details>
-    <p id="filter-status" class="muted" role="status"></p>
-    <div id="update" class="review-note" hidden>Review updated. <button id="reload" class="secondary">Load updated review</button> Unsent drafts are kept in this tab.</div>
-    <p id="load-status" role="status"></p>
-    <section class="card" aria-labelledby="attention-title">
-      <h2 id="attention-title">What needs attention</h2>
-      <p id="attention-counts" role="status"></p>
-      <p id="last-review" class="muted"></p>
-      <details><summary>Next actions and latest interpretation</summary><div id="attention-items"></div><p id="latest-review"></p></details>
+  <div id="update" class="review-note" hidden>Review updated. <button id="reload" class="secondary">Load updated review</button> Unsent drafts are kept in this tab.</div>
+  <p id="load-status" role="status"></p>
+  <section class="attention-overview" aria-label="Attention in these filters">
+    <div id="attention-counts" class="attention-counts" role="status"></div>
+    <p class="muted">Counts follow your filters. A question can appear in more than one count.</p>
+  </section>
+  <div class="workspace" id="workspace" data-view="list">
+    <aside class="filters panel" aria-label="Question filters">
+      <details id="filters-panel" open>
+        <summary>Filters <span id="filter-count">0</span></summary>
+        <div class="filter-controls">
+          <button class="secondary" id="reset">Clear filters</button>
+          <label>Search questions<input id="search" type="search" placeholder="Search" aria-describedby="search-help"></label>
+          <p id="search-help" class="muted">Search question text, context or people.</p>
+          <p class="muted">Choose any within a group. Counts cover all questions.</p>
+          <fieldset><legend>Priority</legend><div id="priorities"></div></fieldset>
+          <fieldset><legend>Who can answer</legend><div id="people"></div></fieldset>
+          <fieldset><legend>Status</legend><div id="statuses"></div></fieldset>
+          <div><h2>Active filters</h2><div id="active-filters"></div></div>
+        </div>
+      </details>
+    </aside>
+    <section class="question-list panel" aria-labelledby="list-title">
+      <header class="list-header"><h2 id="list-title" tabindex="-1">Questions</h2><label>Sort by<select id="sort"><option value="priority">Priority</option><option value="title">Question name</option></select></label></header>
+      <p id="filter-status" class="muted" role="status"></p>
+      <nav aria-label="Questions"><ul id="question-nav"></ul></nav>
+      <div id="empty" hidden><h3>No questions match</h3><p>Remove a filter or try another search.</p><button class="secondary" data-clear>Clear filters</button></div>
     </section>
-    <p id="empty" hidden>No questions match these filters.</p>
-    <div id="requirements"></div>
-    <footer>Completed means answered—not implemented. Feedback does not authorize tracker changes or other actions.</footer>
-  </main>
-</div>
+    <div class="question-detail">
+      <button id="back-to-list" class="secondary">← Back to questions</button>
+      <div id="requirements"></div>
+      <p id="no-selection" class="panel" hidden>Select a question from the list.</p>
+    </div>
+  </div>
+  <details class="scope"><summary>Review history and next actions</summary><p id="last-review" class="muted"></p><div id="attention-items"></div><p id="latest-review"></p></details>
+  <details id="setup" class="scope" hidden><summary>Review purpose and agreed approach</summary><div id="setup-content"></div></details>
+  <footer><p id="notice"></p><p>Answered does not mean implemented. Feedback does not authorize tracker changes or other actions.</p></footer>
+</main>
 </body>
 </html>

@@ -1,7 +1,9 @@
 import copy
 import importlib.util
 import json
+import shutil
 import sqlite3
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -266,6 +268,64 @@ class QuestionnaireTests(unittest.TestCase):
         for bad in ({**self.submission(), "question": "unknown"}, {**self.submission(), "message": ""}):
             with self.assertRaises(HTTPError): self.post(bad)
         self.assertEqual(self.store.feedback(), [])
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_question_navigation_preserves_drafts_and_review_status(self):
+        session = "question-" + uuid.uuid4().hex[:8]
+        command = ["agent-browser", "--session", session, "--json"]
+        self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
+
+        def browser(*args):
+            result = subprocess.run(command + list(args), capture_output=True, text=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            self.assertTrue(response["success"], response)
+            return response["data"].get("result")
+
+        def visible_questions():
+            return browser("eval", '[...document.querySelectorAll("#question-nav li:not([hidden]) a")].map(a => a.hash)')
+
+        browser("open", self.url)
+        browser("set", "viewport", "1280", "900", "2")
+        browser("wait", "#question-nav a")
+        browser("check", '[data-filter="priority"][value="High"]')
+        browser("check", '[data-filter="person"][value="Alex"]')
+        self.assertEqual(visible_questions(), ["#question-export-format"])
+        browser("check", '[data-filter="person"][value="Jordan"]')
+        self.assertEqual(visible_questions(), ["#question-export-format", "#question-export-access"])
+        browser("click", "#reset")
+        browser("click", '#question-nav a[href="#question-export-retention"]')
+        browser("click", "#question-export-retention .feedback summary")
+        browser("fill", "#question-export-retention textarea", "Keep this draft.")
+        browser("fill", "#search", "Alex comparison")
+        self.assertEqual(visible_questions(), ["#question-export-format"])
+        browser("click", "#reset")
+        browser("click", '#question-nav a[href="#question-export-retention"]')
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
+
+        data = self.submission()
+        self.post(data)
+        self.store.publish(self.reviewed(data))
+        browser("wait", "--fn", '!document.querySelector("#update").hidden')
+        browser("click", "#reload")
+        browser("wait", "#question-export-retention textarea")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
+        self.post({**self.submission(), "message": "Does CSV include the headers?"})
+        browser("wait", "--fn", '!document.querySelector("[data-entry=export-format] .pending").hidden')
+        browser("check", '[data-filter="state"][value="pending"]')
+        self.assertEqual(visible_questions(), ["#question-export-format"])
+        self.assertEqual(browser("eval", 'document.querySelector("[data-entry=export-format] .badge").textContent'), "Answered")
+        browser("set", "viewport", "390", "844", "2")
+        browser("scrollintoview", "#back-to-list")
+        browser("click", "#back-to-list")
+        browser("click", '#question-nav a[href="#question-export-format"]')
+        self.assertTrue(browser("eval", 'document.querySelector("#question-export-format").checkVisibility()'))
+        browser("scrollintoview", "#back-to-list")
+        browser("click", "#back-to-list")
+        self.assertTrue(browser("eval", 'document.querySelector("#question-nav").checkVisibility()'))
+        self.assertEqual(visible_questions(), ["#question-export-format"])
+        self.assertFalse(browser("eval", 'document.querySelector("#filters-panel").open'))
+        self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
 
 
 if __name__ == "__main__":

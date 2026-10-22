@@ -54,9 +54,12 @@ gaps, apply [targeted asks](references/asking.md). Each ask names its respondent
 recommendation, consequence, and smallest sufficient response in that reader's
 vocabulary. Keep technical detail expandable.
 
-Keep the template's left sidebar: open/completed counts, priority tabs, named
-question links, and person filter. People are **suggested respondents**, not
-implementation assignees. Completed means **answered**, not implemented.
+Keep the template's question list, selected-question detail, search, and
+priority, respondent, and status filters. Global totals show open and answered
+questions; attention counts follow the filters. People are **suggested
+respondents**, not implementation assignees or decision makers. Answered does
+not mean implemented. On narrow screens, filters collapse and selecting a
+question opens its detail with a return to the list.
 Use generic examples until real content is authorized for the chosen audience.
 
 **Done when** each question can be answered without this conversation: it has

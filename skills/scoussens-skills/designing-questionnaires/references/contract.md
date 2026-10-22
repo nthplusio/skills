@@ -37,7 +37,12 @@ follow-up. These fallbacks do not infer a verified recipient or authority.
 The attention overview follows all active filters. Pending response counts
 derive from saved feedback without a review receipt, even on answered
 questions. Attention counts cover open questions and can overlap with pending
-review. Last review and latest interpretation cover the whole questionnaire.
+review. Global open/answered totals and filter-option counts cover the whole
+questionnaire. Checkboxes match any selected value within a group and all
+selected groups together. Search matches every word across the question,
+prompt, requirement context, and respondent names. Selecting a question keeps
+other forms and drafts mounted. Last review and latest interpretation cover
+the whole questionnaire.
 While an update awaits loading, the page names the displayed question revision;
 feedback receipts continue to refresh without rebuilding forms.
 
