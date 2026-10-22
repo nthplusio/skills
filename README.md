@@ -45,6 +45,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
 | [`scoussens-skills/visualize-spec`](skills/scoussens-skills/visualize-spec/SKILL.md) | Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — with every place the spec is silent marked as a gap, themed to the repository, and opened locally or published where the agent can. Invoked explicitly. |
 | [`scoussens-skills/work-proposal`](skills/scoussens-skills/work-proposal/SKILL.md) | Turn a body of scoped work into a client-ready proposal — effort grounded in the codebase, priced against the agreement that already exists, delivered as a themed Artifact, PDF, or email. Invoked explicitly. |
+| [`scoussens-skills/writing-in-voice`](skills/scoussens-skills/writing-in-voice/SKILL.md) | Draft in a local personal or project voice, learn from corrections with scoped confirmation, and format for Gmail, Outlook, Teams, Slack, text messages, documents, or public posts. Offers an optional versioned interview; personal definitions stay outside this repository. |
 
 ## Claude Code plugins
 
@@ -165,9 +166,17 @@ folders from your skills directory. `harness-discovery` was named
 
 ### Saved state
 
-These skills keep their saved state in `.nthplusio-skills/` at the root of the
-repository they work in. One script, `state.py` in `harness-discovery`, checks
-it and resolves a harness from it.
+The discovery and sync skills keep their saved state in `.nthplusio-skills/`
+at the root of the repository they work in. One script, `state.py` in
+`harness-discovery`, checks it and resolves a harness from it.
+
+`writing-in-voice` keeps personal profiles separately at
+`~/.config/agents/voices/default.md`, outside project and skill repositories.
+An explicitly declared project voice can live at `.agents/voice/profile.md`
+in the consuming project, never in this reusable skill repository. Users manage
+backup, synchronization, and Git tracking themselves; fresh machines and orbs
+need the profile restored separately. The skill ships only generic instructions,
+a versioned questionnaire, formatting references, and synthetic evaluation cases.
 
 | File | Written by | Read by | In Git |
 | --- | --- | --- | --- |
