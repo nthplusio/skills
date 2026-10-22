@@ -1,0 +1,88 @@
+{
+  "skill_name": "writing-in-voice",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "No voice profile exists. Draft a work email in my voice. Learn as we go, not a full interview. Use a disposable home directory for this evaluation and do not send anything.",
+      "expected_output": "A minimal local personal profile and a draft that does not claim to know unprovided preferences.",
+      "assertions": [
+        "Confirms or identifies the personal destination under the disposable home, outside the project and skill package.",
+        "Creates a usage-mode profile with no fabricated confirmed rules or answered questions.",
+        "Does not require the full interview or send the email."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "In a disposable environment, both profiles exist. The personal default prefers casual wording. The declared project profile at .agents/voice/profile.md has scope project and requires formal customer-facing wording. Draft a customer email for the project, then draft another explicitly using my personal default. Do not send.",
+      "expected_output": "Project voice is selected first, then the explicit personal selection wins without merging identities.",
+      "assertions": [
+        "Reads the selected files rather than inventing their contents.",
+        "Uses only the selected profile's rules for each draft and identifies the switch.",
+        "Does not copy the personal voice into the project profile."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "A disposable personal profile has no rule about requests. Revise 'Would it be possible to send the report Friday?' to 'Please send the report Friday.' I have not said whether this should become a rule.",
+      "expected_output": "The draft is corrected and an unsaved rule proposal includes the current and proposed sentences, scope, and a confirmation choice.",
+      "assertions": [
+        "Delivers the corrected sentence before proposing learning.",
+        "Shows the actual old and new wording without changing facts or inventing an existing rule.",
+        "Does not write the candidate rule until approved."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Use a disposable profile. Remember: in Slack, always put a status update's conclusion first. For this email only, omit the greeting. Then read the profile again in a fresh session.",
+      "expected_output": "One durable Slack rule is saved and recoverable; the email exception is not saved as a rule.",
+      "assertions": [
+        "Persists and reads back the Slack-specific rule without another approval request.",
+        "Does not generalize it to all media or save the one-off greeting edit.",
+        "Preserves unrelated profile content and can retrieve the rule from the same local filesystem."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "A mocked Teams message has id m17 and plain-text body 'The review has two steps.\n1. Check release_id.\n2. Confirm the date.' You are authorized to fix its formatting without changing words. The mock supports read and update with an explicit content_type field. Test again with update denied, and again with an uncertain update response but readback showing success.",
+      "expected_output": "An HTML update to the same message with semantic paragraphs, a numbered list, and code styling; no duplicate message in any branch.",
+      "assertions": [
+        "Reads the original, selects HTML explicitly, and updates m17 rather than creating a message.",
+        "Preserves decoded words and verifies the same object's content after the update.",
+        "Does not add a voice rule for a transport repair.",
+        "On denial, provides a corrected draft and reports the limit. On uncertainty, reads state before any retry. Neither branch posts a duplicate."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Prepare the same synthetic content for raw Gmail MIME, Outlook Graph JSON, Slack mrkdwn, and SMS: 'The review has two steps. Check release_id. Confirm the date.' Emphasize 'two steps' where supported. Do not send. Neither email tool promises to add a signature.",
+      "expected_output": "Four destination-appropriate representations with identical facts and no invented signature.",
+      "assertions": [
+        "Gmail uses MIME and base64url raw encoding; Outlook JSON declares HTML or Text consistently with its body.",
+        "Slack uses single-asterisk bold and not HTML or double-asterisk Markdown bold.",
+        "SMS contains plain text without markup and is not split into several sends.",
+        "Does not assume either email API inserts a configured client signature."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "In a disposable setup, the selected personal profile resolves through a symlink into the reusable skill repository. Save my writing samples there. In a separate trial, the selected external profile cannot be read. In another, it has profile_version 99.",
+      "expected_output": "The unsafe destination is refused, inaccessible state is reported, and an unsupported version is preserved.",
+      "assertions": [
+        "Does not write personal data through the symlink or create a repository-local fallback.",
+        "Offers a safe user-level location or session-only drafting, without silently selecting another identity.",
+        "Does not overwrite or migrate the unsupported profile without approval."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "I want the deeper interview for a project voice in a separate disposable project. Ask about my intended impression and how I actually write. I may skip questions. Later, a new questionnaire version appears. Also prepare a public-post draft without a named platform, and format an existing document without rewriting it.",
+      "expected_output": "An optional, progressive interview with private answers, stable question tracking, and conservative document/public-post formatting.",
+      "assertions": [
+        "Separates desired impression from observed habits and confirms inferred rules.",
+        "Stores answers only in the selected project profile, never in the questionnaire, and records answered question IDs honestly.",
+        "Does not force a repeat interview or discard answers when the questionnaire changes.",
+        "Uses platform-neutral public-post text and preserves the document's wording during formatting."
+      ]
+    }
+  ]
+}
