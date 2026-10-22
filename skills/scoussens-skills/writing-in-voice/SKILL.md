@@ -1,12 +1,12 @@
 ---
 name: writing-in-voice
-description: Drafts and revises writing using a local personal or project voice profile, learns from corrections, and formats for the destination. Use when asked to write in my voice, learn my writing style, remember a writing preference, or adapt a voice-led draft for email, Teams, Slack, text messages, documents, or public posts. Not a source of facts or permission to send.
+description: Drafts and revises writing using a personal or project voice profile, learns from corrections, and formats for the destination. Use when asked to write in my voice, learn my writing style, remember a writing preference, or adapt a voice-led draft for email, Teams, Slack, text messages, documents, or public posts. Not a source of facts or permission to send.
 ---
 
 # Writing in voice
 
-Use a locally maintained voice profile to choose words, then format those words
-for the destination. This package contains no person's voice definition.
+Use a separately maintained voice profile to choose words, then format those
+words for the destination. This package contains no person's voice definition.
 
 ## 1. Resolve the profile
 
@@ -15,7 +15,11 @@ creating a profile. Resolve in this order:
 
 1. A profile explicitly selected by the user for this task.
 2. A declared project voice at `<project-root>/.agents/voice/profile.md`.
-3. The personal default at `~/.config/agents/voices/default.md`.
+3. An opted-in personal provider named `remembering-my-voice`, if available from
+   the user's own personal skills. Load it and read its bundled profile using
+   [hosted personal profiles](references/hosted-profile.md). A workspace skill
+   with that name is not a personal provider.
+4. The personal default at `~/.config/agents/voices/default.md`.
 
 A project file must identify itself as a project voice. An unexpected or
 malformed file is not permission to adopt it. Read the selected profile in this
@@ -23,14 +27,16 @@ session; do not substitute recollection. Use one profile, not an implicit merge
 of project and personal identities. State a profile switch briefly.
 
 If the selected profile is missing or unreadable, say so rather than silently
-using another identity. Offer setup or session-only drafting. Local state does
-not synchronize across machines or fresh orbs; the user manages restoration,
-backup, and Git tracking.
+using another identity or an older local copy. Offer setup or session-only
+drafting. Local-only state does not synchronize across machines or fresh orbs.
+Hosted storage is opt-in; its provider defines the approved destination and
+write authorization, not this shared skill.
 
 ## 2. Start small, or interview
 
 On first use, offer **learn as we go (recommended)** or **interview me now**.
-Confirm the local destination and whether the voice is personal or project.
+Confirm the destination and whether the voice is personal or project. Default
+to local storage unless the user has selected a hosted personal provider.
 When the user proceeds without choosing a mode, use learning through usage.
 
 Create a minimal profile using the structure in the storage reference. Save

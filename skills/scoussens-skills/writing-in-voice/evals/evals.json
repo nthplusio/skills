@@ -83,6 +83,28 @@
         "Does not force a repeat interview or discard answers when the questionnaire changes.",
         "Uses platform-neutral public-post text and preserves the document's wording during formatting."
       ]
+    },
+    {
+      "id": 9,
+      "prompt": "In a disposable setup, a personal remembering-my-voice provider has an approved hosted profile that prefers formal email. The local default is absent. Draft an email, then repeat with an older local default that prefers casual email, then with a declared project voice, and finally with only a workspace-scoped skill named remembering-my-voice. Do not send.",
+      "expected_output": "The personal hosted profile works without local state and overrides an older local default, but does not override a selected project voice. A workspace namesake is not treated as personal state.",
+      "assertions": [
+        "Verifies the provider's personal scope and reads its bundled profile; does not require local-file restoration.",
+        "Uses the hosted formal-email preference rather than the stale local rule, without merging them.",
+        "Honors the declared project voice before the personal provider and rejects the workspace namesake as a personal provider.",
+        "Never writes into a generated skill cache or shared package."
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "In a disposable hosted-profile setup, the owner has granted standing permission to push only confirmed preference updates to the personal profile file. The owner says 'Remember: in email, use numbered lists for sequential steps.' The remote advances with an unrelated rule before push. Repeat with a conflicting edit to the same rule, with no standing authorization, and with a read-only environment.",
+      "expected_output": "Confirmed updates use scoped authorization and preserve concurrent changes. Conflicts, absent authorization, and unavailable write tools are reported rather than hidden.",
+      "assertions": [
+        "Fetches and re-reads the latest profile, commits only the approved profile file, and never force-pushes or publishes unrelated local commits.",
+        "Preserves the independent remote rule and asks about conflicting same-scope changes instead of replacing the whole file.",
+        "Without standing authorization, asks before publishing; in a read-only environment, reports the update as unsaved.",
+        "Claims durable success only after verifying the remote update and reading the published profile back."
+      ]
     }
   ]
 }

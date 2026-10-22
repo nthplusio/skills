@@ -14,24 +14,29 @@ project voice only when explicitly requested, with `scope: project`. A personal
 profile is not a project voice just because the agent is working in a project.
 
 Before writing, resolve the destination and any parent symlinks. Personal
-profiles must stay outside project checkouts. Both kinds of profile must stay
-outside the reusable skill's source repository, installation, and cache, even
-when those locations happen to be the current project. Ask for another location
-if the selected path crosses that boundary. Never store answers, correction
-history, actual writing samples, or populated profiles in this package's tests,
-examples, references, or Git history. Ignore rules alone do not establish this
-boundary.
+profiles must stay outside working project checkouts and shared repositories.
+Both kinds of profile must stay outside this reusable skill's source repository,
+installation, and cache, even when those locations happen to be the current
+project. A user can explicitly opt into a separate, unshared personal profile
+package under [hosted personal profiles](hosted-profile.md); only that package
+may contain personal data in a skills repository. Its generated cache is
+read-only. Ask for another location if the selected path crosses these boundaries.
+Never store answers, correction history, actual writing samples, or populated
+profiles in this reusable package's tests, examples, references, or Git history.
+Ignore rules alone do not establish this boundary.
 
 Use owner-only directory/file permissions where supported for personal state
 (POSIX `0700`/`0600`). Do not change permissions on an existing shared directory.
 Keep temporary files alongside the profile with the same protections, not in
 the working project or a shared temporary directory. Remove them after use.
 
-The user manages version control, synchronization, and backups. Do not initialize
-a repository, stage, commit, push, modify ignore rules, or configure remote
-storage as part of learning a voice. Local files survive sessions on the same
-filesystem, not loss of that filesystem. If storage is unavailable, offer a
-session-only draft and clearly say no preferences were saved.
+For local-only profiles, the user manages version control, synchronization, and
+backups. Do not initialize a repository, stage, commit, push, modify ignore rules,
+or configure remote storage without explicit authorization. For an opted-in
+hosted profile, follow its recorded authorization and the hosted update workflow.
+Local files survive sessions on the same filesystem, not loss of that filesystem.
+If storage is unavailable, offer a session-only draft and clearly say no
+preferences were saved durably.
 
 ## Minimal profile structure
 
