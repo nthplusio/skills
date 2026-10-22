@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design questionnaire</title>
+  <link rel="stylesheet" href="/page.css">
+  <script src="/page.js" defer></script>
+</head>
+<body>
+<noscript>This questionnaire needs JavaScript. Ask the reviewer for a text copy and submit feedback through your agreed review channel.</noscript>
+<div class="layout">
+  <aside class="sidebar" aria-label="Review navigation">
+    <p class="eyebrow">Design questionnaire</p><h2>Team review</h2>
+    <div class="totals" aria-label="Question status">
+      <button data-state="open" aria-pressed="false"><strong id="open-count">0</strong>Open</button>
+      <button data-state="answered" aria-pressed="false"><strong id="answered-count">0</strong>Completed</button>
+    </div>
+    <button class="secondary reset" id="reset">Show all questions</button>
+    <nav class="priority-tabs" id="priorities" aria-label="Priority tabs"></nav>
+    <label>Person<select id="person"><option value="">Everyone</option><option value="__anyone">Anyone</option></select></label>
+    <p class="sidebar-hint">Suggested respondents, not work assignees.</p>
+    <details class="question-index" open><summary>Questions by name</summary><div id="question-nav"></div></details>
+  </aside>
+  <main>
+    <header><h1 id="title"></h1><p id="intro"></p><p id="notice" class="muted"></p></header>
+    <details id="setup" class="scope" hidden><summary>Review purpose and agreed approach</summary><div id="setup-content"></div></details>
+    <p id="delivery-mode" class="review-note"></p>
+    <p id="filter-status" class="muted" role="status"></p>
+    <div id="update" class="review-note" hidden>Review updated. <button id="reload" class="secondary">Load updated review</button> Unsent drafts are kept in this tab.</div>
+    <p id="load-status" role="status"></p>
+    <section class="card" aria-labelledby="attention-title">
+      <h2 id="attention-title">What needs attention</h2>
+      <p id="attention-counts" role="status"></p>
+      <p id="last-review" class="muted"></p>
+      <details><summary>Next actions and latest interpretation</summary><div id="attention-items"></div><p id="latest-review"></p></details>
+    </section>
+    <p id="empty" hidden>No questions match these filters.</p>
+    <div id="requirements"></div>
+    <footer>Completed means answered—not implemented. Feedback does not authorize tracker changes or other actions.</footer>
+  </main>
+</div>
+</body>
+</html>

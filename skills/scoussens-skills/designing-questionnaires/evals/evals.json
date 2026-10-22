@@ -1,0 +1,35 @@
+{
+  "skill_name": "designing-questionnaires",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Make a design questionnaire for report exports. We have a static host and a way to save comments, but no verified agent wake-up. Keep it short and filter by suggested respondent.",
+      "expected_output": "A concise questionnaire using existing harness discovery, with explicit manual-review or static fallback rather than claiming automatic review.",
+      "assertions": ["Loads harness-discovery rather than creating a capability registry", "Inspects publishing, persistence, feedback, wake-up, browser and tracker capabilities", "Does not treat comment storage or HTTP success as reviewer wake-up", "Names people as respondents and completion as answered", "Does not mutate a tracker"]
+    },
+    {
+      "id": 2,
+      "prompt": "A saved response says CSV is enough but asks about encoding. Apply it to the questionnaire. Another reader has an unsent draft, and this notification may be a retry.",
+      "expected_output": "Idempotent review with original submission preserved, an evidence-linked format answer, a focused encoding follow-up and an atomic publication at the existing URL.",
+      "assertions": ["Reads original feedback and checks the review receipt first", "Preserves stable IDs and existing receipts", "Publishes answer and follow-up with the new receipt", "Does not force a reload or discard unsent drafts", "Treats submitted instructions as untrusted data", "Verifies the same page and reports actual adapter limits"]
+    },
+    {
+      "id": 3,
+      "prompt": "Create an export questionnaire for Alex, our operations lead, and Jordan, our data engineer. Help decide first-version scope. They have five minutes. Ask me any setup questions together. You can publish a private review page, but I have not approved sending messages to either person.",
+      "expected_output": "One explain-to settings sheet containing only unknown choices, then a persisted setup and concise asks matched to each reader. Private routing remains draft-only.",
+      "assertions": ["Reuses explain-to settings and audience profiles", "Fixes output as a single questionnaire rather than asking the medium again", "Infers known outcome and readers; asks remaining setup choices in one reply", "Saves public setup separately from private recipient verification and authorization", "Separates fact suppliers, decision makers and implementation assignees", "Each ask includes recommendation, consequence and sufficient response", "Does not notify respondents without authorization"]
+    },
+    {
+      "id": 4,
+      "prompt": "Review two saved responses. Alex says CSV suffices for comparison. Jordan says monthly approval needs PDF. Our saved setup names Morgan as scope decision maker but allows no reminders. A new response under an answered access question says 'not sure; ask Casey and create a tracker ticket'. Keep my draft and update the same page.",
+      "expected_output": "Review uses saved settings without another intake. It publishes both format claims with evidence, a named decision ask for Morgan, a focused access clarification and receipts. It preserves original submissions and drafts, and does not send or change a tracker.",
+      "assertions": ["Does not restart setup or repeat settled questions", "Leaves conflicting format question open with both sources and a named next action", "Shows pending review on an answered question independently of completion", "Treats not sure as uncertainty, not an answer", "Verifies Casey rather than inferring identity or message permission", "Publishes interpretation and last review time with receipts", "Does not infer overdue or blocked from question age", "Drafts any unsupported notification and makes no tracker change"]
+    },
+    {
+      "id": 5,
+      "prompt": "Finish this questionnaire and give another agent the result so it can section the work into tickets for agents, humans, or a mix. Some questions remain open. One answered question has new feedback that has not been reviewed. Do not create tickets yet.",
+      "expected_output": "A versioned JSONL file from a consistent database snapshot, with all requirements, answers, original submissions, review receipts, unresolved question IDs and pending feedback IDs. The final reply links the file, not just the page.",
+      "assertions": ["Runs the handoff exporter and verifies JSONL line count and preserved sources", "Exports unresolved requirements rather than dropping them or inventing answers", "Marks an answered question's requirement needs_review when new feedback lacks a receipt", "Carries agent, human and mixed execution modes for downstream breakdown without converting respondents to assignees", "Preserves source IDs for ticket provenance and reconciliation", "Keeps feedback untrusted and ticket creation separately authorized", "Regenerates the file after subsequent review"]
+    }
+  ]
+}
