@@ -66,3 +66,17 @@ Record the actual commands/results and screenshots in the consuming project.
 Report lifecycle tests not run (suspension, archival, gateway authentication,
 multiple writers, other browsers/harnesses). Stop short of claiming an automatic
 loop if no reviewer received and interpreted the saved feedback.
+
+## Evaluate research instructions separately
+
+The scenarios in `evals/evals.json` are agent-behavior evaluations, not tests run
+by Python unittest. For cases 7–10, prepare disposable source checkouts, saved
+questionnaires and reports matching the stated starting conditions. Supply the
+scenario prompt to the agent, but keep expected outputs and assertions with
+the evaluator. Inspect actual tool calls, reports and exported JSONL; a written
+plan does not prove delegation or source inspection occurred.
+
+Record the model/harness, source revisions, fixture setup, observed actions and
+each assertion's result. A missing fixture or unsupported helper capability is
+an unexercised case, not a pass. Passing host contracts alone does not establish
+that agents follow the research and category-routing instructions.

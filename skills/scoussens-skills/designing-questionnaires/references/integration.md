@@ -13,6 +13,7 @@ below is a checklist for reading that existing report, not a second registry.
 | Persistence | `evidence.retain_before_close`, artifact limits | Disk/database lifetime, service restart behavior, backup/export and retention before closure; distinguish durable file from always-on worker |
 | Browser verification | `sources`, `limitations` | Installed browser or harness tool and supported viewport, DOM and recording operations; name untested browsers |
 | Issue tracker | `repository.ticket_sources`, `ticket_template`, `notes` | Actual configured tool/repository and read permissions; lack of configuration is a result, not a reason to invent tickets |
+| Category research | `owners`, `helpers`, `sources`, `limitations` | Code/source access, bounded assignments, actual concurrency, continuation and result collection; shared versus isolated checkouts and how local changes reach a researcher |
 
 The current schema has no dedicated browser or database capability key; record
 those observations in its existing descriptive fields. Do not fork the schema

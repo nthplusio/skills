@@ -1,0 +1,43 @@
+{
+  "category_id": "report-export",
+  "requirement_ids": ["report-export"],
+  "input": {
+    "questionnaire_id": "export-review",
+    "revision": 1,
+    "snapshot_id": null,
+    "draft_sha256": null,
+    "feedback_ids": [],
+    "sources": []
+  },
+  "questions": [
+    {
+      "question_id": "export-format",
+      "gap_kind": "decision",
+      "disposition": null,
+      "basis": "not_researched",
+      "finding": "",
+      "evidence_ids": [],
+      "feedback_ids": [],
+      "proposed_answer": null,
+      "remaining_gap": "",
+      "next_action": ""
+    },
+    {
+      "question_id": "export-access",
+      "gap_kind": "implementation",
+      "disposition": null,
+      "basis": "not_researched",
+      "finding": "",
+      "evidence_ids": [],
+      "feedback_ids": [],
+      "proposed_answer": null,
+      "remaining_gap": "",
+      "next_action": ""
+    }
+  ],
+  "evidence": [],
+  "checks": [],
+  "related_categories": [],
+  "proposed_work": [],
+  "limitations": []
+}
