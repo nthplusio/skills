@@ -15,6 +15,12 @@ const draftKey = () => `questionnaire:${model.id}:drafts`
 const attentionFor = q => q.status === 'answered' ? null : q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` }
 const pendingFor = id => feedback.filter(row => row.question === id && !reviews.some(r => r.feedback_id === row.id)).length
 const filterLabel = (group, value) => group === 'state' ? statusLabels[value] : group === 'person' && value === '__anyone' ? 'Anyone' : value
+const responseKinds = {
+  answer: { choice: 'Answer the question', label: 'Your answer', hint: 'Give the information requested above. You can also say you are not sure.', button: 'Save answer' },
+  change: { choice: 'Suggest a change', label: 'What should change, and why?', hint: 'Describe the change and give an example or evidence.', button: 'Save suggestion' },
+  question: { choice: 'Ask a question', label: 'What needs clarification?', hint: 'Ask what you need to know before you can answer.', button: 'Save question' },
+  agree: { choice: 'Agree with the recommendation', label: 'Anything to add? (optional)', hint: 'You can save your agreement without a note.', button: 'Save agreement' },
+}
 
 function matchesGroup(q, group, value) {
   if (group === 'priority') return q.priority === value
@@ -46,8 +52,9 @@ function render() {
   $('#setup').hidden = !model.setup
   if (model.setup) $('#setup-content').innerHTML = Object.entries({ outcome: 'Outcome', out_of_scope: 'Outside this review', readers: 'Readers', response_budget: 'Response budget', reviewer: 'Review and fallback', decision_maker: 'Decision authority', escalation: 'Escalation' }).map(([key, label]) => `<p><strong>${label}</strong><br>${esc(model.setup[key])}</p>`).join('')
   const options = (group, values) => values.map(value => `<label class="filter-option"><input type="checkbox" data-filter="${group}" value="${esc(value)}"><span>${esc(filterLabel(group, value))}</span><span class="count"></span></label>`).join('')
+  const people = [...new Set(allQuestions().flatMap(q => q.people))].sort()
   $('#priorities').innerHTML = options('priority', [...new Set(model.requirements.map(r => r.priority))])
-  $('#people').innerHTML = options('person', [...new Set(allQuestions().flatMap(q => q.people))].sort().concat('__anyone'))
+  $('#people').innerHTML = options('person', people.concat('__anyone'))
   $('#statuses').innerHTML = options('state', Object.keys(statusLabels))
   $('#question-nav').innerHTML = allQuestions().map(q => {
     const state = attentionFor(q)?.state || 'answered'
@@ -57,34 +64,53 @@ function render() {
     ${r.questions.map(q => `<section class="question" id="question-${q.id}">
       <div class="question-header"><span class="badge" data-tone="${attentionFor(q)?.state || 'answered'}">${statusLabels[attentionFor(q)?.state || 'answered']}</span><span class="badge">${esc(r.priority)} priority</span></div>
       <h2 tabindex="-1">${esc(q.title)}</h2>
-      <dl class="roles"><div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || 'Anyone')}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
-      <div class="context"><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<details class="scope"><summary>Requirement details</summary><p>${esc(r.details)}</p></details>` : ''}</div>
       <p>${esc(q.prompt)}</p>${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
-      ${q.request && q.status === 'open' ? `<p><strong>Recommendation</strong> ${esc(q.request.recommendation)}</p><p><strong>Why it matters</strong> ${esc(q.request.why)}</p><p><strong>How to answer</strong> ${esc(q.request.response)}</p>` : ''}
+      ${q.request && q.status === 'open' ? `<p><strong>Current recommendation</strong> ${esc(q.request.recommendation)}</p>` : ''}
+      <dl class="roles"><div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || 'Anyone')}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
+      ${q.answer ? `<div class="answer"><strong>Answer</strong><p>${esc(q.answer.text)}</p>${q.answer.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</div>` : ''}
+      <form class="feedback" data-question="${q.id}" aria-label="Feedback on ${esc(q.title)}">
+        <fieldset><legend>What would you like to do?</legend>${Object.entries(responseKinds).map(([kind, copy]) => `<label class="response-option"><input type="radio" name="kind" value="${kind}" ${kind === 'answer' ? 'checked' : ''}><span>${esc(kind === 'agree' ? q.answer ? 'Agree with the answer' : q.request ? copy.choice : 'Express agreement' : copy.choice)}</span></label>`).join('')}</fieldset>
+        <label><span data-message-label>Your answer</span><textarea name="message" rows="3" maxlength="3000" aria-describedby="message-hint-${q.id}"></textarea></label>
+        <p class="muted message-hint" id="message-hint-${q.id}"></p>
+        <label>Your name<select name="person" required><option value="">Choose your name</option>${people.map(name => `<option value="person:${esc(name)}">${esc(name)}</option>`).join('')}<option value="other">Other</option></select></label>
+        <label data-other-name hidden>Enter your name<input name="name" maxlength="80" autocomplete="name" disabled></label>
+        <p class="muted">Names are self-reported. You can contribute even if you are not the named respondent.</p>
+        <button type="submit">Save answer</button><p class="status" role="status"></p>
+      </form>
+      <div class="previous-feedback" data-responses="${q.id}"></div>
+      <details class="context"><summary>Requirement details</summary><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<p>${esc(r.details)}</p>` : ''}${q.request ? `<p><strong>Why it matters</strong> ${esc(q.request.why)}</p>` : ''}</details>
       <p class="review-note" data-attention="${q.id}" hidden></p>
       ${q.attention?.evidence ? `<p>${q.attention.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</p>` : ''}
-      ${q.answer ? `<div class="answer"><strong>Answer</strong><p>${esc(q.answer.text)}</p>${q.answer.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</div>` : ''}
-      <details class="feedback"><summary>Add your feedback</summary>
-        <form data-question="${q.id}"><div class="form-row">
-          <label>Your name<input name="name" required maxlength="80" autocomplete="name"></label>
-          <label>Your response<select name="kind"><option value="answer">Answer</option><option value="change">Suggest a change</option><option value="question">Ask a question</option><option value="agree">Agree</option></select></label>
-        </div><label>Feedback on ${esc(q.title)}<textarea name="message" rows="3" maxlength="3000"></textarea></label>
-        <button type="submit">Save feedback</button><p class="status" role="status"></p></form>
-      </details><div data-responses="${q.id}"></div>
+      <p class="muted" data-save-notice></p>
     </section>`).join('')}</article>`).join('')
   for (const form of document.querySelectorAll('form')) {
     const id = form.dataset.question
+    const question = allQuestions().find(q => q.id === id)
     const draft = drafts[id]
     if (draft) {
-      for (const field of ['name', 'kind', 'message']) form.elements[field].value = draft[field] ?? ''
-      if (draft.message || draft.pending) form.closest('.feedback').open = true
+      for (const field of ['kind', 'message']) form.elements[field].value = draft[field] ?? (field === 'kind' ? 'answer' : '')
+      form.elements.person.value = draft.person === 'other' ? 'other' : people.includes(draft.name) ? `person:${draft.name}` : draft.name ? 'other' : ''
+      form.elements.name.value = form.elements.person.value === 'other' ? draft.name ?? '' : draft.otherName ?? ''
     }
+    const updateFields = () => {
+      const kind = form.elements.kind.value
+      const copy = responseKinds[kind]
+      form.querySelector('[data-message-label]').textContent = copy.label
+      form.querySelector('.message-hint').textContent = kind === 'answer' && question.request ? question.request.response : copy.hint
+      form.querySelector('button').textContent = copy.button
+      form.elements.message.required = kind !== 'agree'
+      const other = form.elements.person.value === 'other'
+      form.querySelector('[data-other-name]').hidden = !other
+      form.elements.name.disabled = !other
+      form.elements.name.required = other
+    }
+    const respondent = () => form.elements.person.value === 'other' ? form.elements.name.value : form.elements.person.value.slice('person:'.length)
     const capture = () => {
-      drafts[id] = { ...drafts[id], ...Object.fromEntries(new FormData(form)) }
-      form.elements.message.required = form.elements.kind.value !== 'agree'
+      updateFields()
+      drafts[id] = { ...drafts[id], name: respondent(), person: form.elements.person.value, otherName: form.elements.name.value, kind: form.elements.kind.value, message: form.elements.message.value }
       saveDrafts()
     }
-    form.elements.message.required = form.elements.kind.value !== 'agree'
+    updateFields()
     form.addEventListener('input', capture)
     form.addEventListener('change', capture)
     form.addEventListener('submit', async event => {
@@ -92,7 +118,7 @@ function render() {
       capture()
       const status = form.querySelector('.status')
       const button = form.querySelector('button')
-      const payload = { question: id, name: form.elements.name.value, kind: form.elements.kind.value, message: form.elements.message.value }
+      const payload = { question: id, name: respondent(), kind: form.elements.kind.value, message: form.elements.message.value }
       const fingerprint = JSON.stringify(payload)
       if (drafts[id].pending?.fingerprint !== fingerprint) drafts[id].pending = { fingerprint, id: crypto.randomUUID() }
       const submissionId = drafts[id].pending.id
@@ -199,11 +225,12 @@ function reveal() {
 
 function showFeedback(rows) {
   for (const box of document.querySelectorAll('[data-responses]')) {
-    const content = rows.filter(row => row.question === box.dataset.responses).map(row => {
+    const responses = rows.filter(row => row.question === box.dataset.responses)
+    const content = `<h3>Previous feedback (${responses.length})</h3>` + (responses.length ? responses.map(row => {
       const review = reviews.find(r => r.feedback_id === row.id)
       const state = review ? `Reviewed: ${review.summary}` : row.receipt ? 'Reviewer notified. Pending review.' : `Saved. Pending delivery to reviewer${row.attempts ? ` (${row.attempts} attempts)` : ''}.`
-      return `<div class="response" id="feedback-${row.id}"><strong>${esc(row.name)} · ${esc(row.kind)}</strong><p>${esc(row.message)}</p><small>${esc(row.created_at)} · self-entered name</small><p class="review-note">${esc(state)}</p></div>`
-    }).join('')
+      return `<div class="response" id="feedback-${row.id}"><strong>${esc(row.name)} · ${esc(row.kind)}</strong><p>${esc(row.message)}</p><small>${esc(row.created_at)} · self-reported name</small><p class="review-note">${esc(state)}</p></div>`
+    }).join('') : '<p class="muted">No feedback yet.</p>')
     if (box.innerHTML !== content) box.innerHTML = content
   }
 }
@@ -221,6 +248,7 @@ async function refresh() {
     $('#filters-panel').open = desktop.matches
   }
   $('#delivery-mode').textContent = state.mode === 'automatic' ? 'Automatic review. Feedback is saved before the reviewer is notified. Each response shows its delivery and review receipts.' : 'Manual review. Your feedback is saved here. Send this page to the reviewer to get it reviewed.'
+  for (const notice of document.querySelectorAll('[data-save-notice]')) notice.textContent = state.mode === 'automatic' ? 'Saving adds your feedback to this page and queues it for review. Saving does not mark the question answered.' : 'Saving adds your feedback to this page. Share the page with the reviewer to request review.'
   $('#update').hidden = state.model.revision === model.revision
   showFeedback(state.feedback)
   applyFilters()
