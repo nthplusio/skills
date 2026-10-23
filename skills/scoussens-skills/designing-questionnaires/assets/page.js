@@ -3,16 +3,17 @@ let drafts = {}
 let feedback = []
 let reviews = []
 let selectedId
+let acceptingFeedback = true
 const filters = { priority: new Set(), person: new Set(), state: new Set() }
 const attentionLabels = { waiting: 'Waiting for an answer', clarification: 'Needs more detail', conflict: 'Needs a decision' }
-const statusLabels = { open: 'Open', answered: 'Answered', pending: 'Needs review', ...attentionLabels }
-const symbols = { waiting: '…', clarification: '?', conflict: '!', answered: '✓', pending: '↻' }
+const statusLabels = { open: 'Open', answered: 'Answered', deferred: 'Deferred', pending: 'Needs review', ...attentionLabels }
+const symbols = { waiting: '…', clarification: '?', conflict: '!', answered: '✓', deferred: '–', pending: '↻' }
 const desktop = matchMedia('(min-width: 64rem)')
 const $ = selector => document.querySelector(selector)
 const esc = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
 const allQuestions = () => model.requirements.flatMap(r => r.questions.map(q => ({ ...q, requirement: r.id, priority: r.priority, context: `${r.title} ${r.text} ${r.details || ''}` })))
 const draftKey = () => `questionnaire:${model.id}:drafts`
-const attentionFor = q => q.status === 'answered' ? null : q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` }
+const attentionFor = q => q.status !== 'open' ? null : q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` }
 const pendingFor = id => feedback.filter(row => row.question === id && !reviews.some(r => r.feedback_id === row.id)).length
 const filterLabel = (group, value) => group === 'state' ? statusLabels[value] : group === 'person' && value === '__anyone' ? 'Anyone' : value
 const responseKinds = {
@@ -57,18 +58,20 @@ function render() {
   $('#people').innerHTML = options('person', people.concat('__anyone'))
   $('#statuses').innerHTML = options('state', Object.keys(statusLabels))
   $('#question-nav').innerHTML = allQuestions().map(q => {
-    const state = attentionFor(q)?.state || 'answered'
+    const state = attentionFor(q)?.state || q.status
     return `<li data-entry="${q.id}"><a href="#question-${q.id}" aria-current="false"><span class="symbol" data-tone="${state}" aria-hidden="true">${symbols[state]}</span><span class="question-preview"><strong>${esc(q.title)}</strong><small>Who can answer: ${esc(q.people.join(', ') || 'Anyone')}</small><span class="badge" data-tone="${state}">${statusLabels[state]}</span><small class="pending" hidden></small></span></a></li>`
   }).join('')
   $('#requirements').innerHTML = model.requirements.map(r => `<article class="card" id="requirement-${r.id}">
     ${r.questions.map(q => `<section class="question" id="question-${q.id}">
-      <div class="question-header"><span class="badge" data-tone="${attentionFor(q)?.state || 'answered'}">${statusLabels[attentionFor(q)?.state || 'answered']}</span><span class="badge">${esc(r.priority)} priority</span></div>
+      <div class="question-header"><span class="badge" data-tone="${attentionFor(q)?.state || q.status}">${statusLabels[attentionFor(q)?.state || q.status]}</span><span class="badge">${esc(r.priority)} priority</span></div>
       <h2 tabindex="-1">${esc(q.title)}</h2>
       <p>${esc(q.prompt)}</p>${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
       ${q.request && q.status === 'open' ? `<p><strong>Current recommendation</strong> ${esc(q.request.recommendation)}</p>` : ''}
       <dl class="roles"><div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || 'Anyone')}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
       ${q.answer ? `<div class="answer"><strong>Answer</strong><p>${esc(q.answer.text)}</p>${q.answer.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</div>` : ''}
-      <form class="feedback" data-question="${q.id}" aria-label="Feedback on ${esc(q.title)}">
+      ${q.status === 'deferred' ? `<p class="review-note"><strong>Deferred — not answered.</strong> ${esc(q.deferral)}</p>` : ''}
+      ${model.state === 'closed' && drafts[q.id]?.message ? `<label>Unsent draft (not submitted)<textarea readonly>${esc(drafts[q.id].message)}</textarea></label>` : ''}
+      ${model.state === 'closed' ? '' : `<form class="feedback" data-question="${q.id}" aria-label="Feedback on ${esc(q.title)}">
         <fieldset><legend>What would you like to do?</legend>${Object.entries(responseKinds).map(([kind, copy]) => `<label class="response-option"><input type="radio" name="kind" value="${kind}" ${kind === 'answer' ? 'checked' : ''}><span>${esc(kind === 'agree' ? q.answer ? 'Agree with the answer' : q.request ? copy.choice : 'Express agreement' : copy.choice)}</span></label>`).join('')}</fieldset>
         <label><span data-message-label>Your answer</span><textarea name="message" rows="3" maxlength="3000" aria-describedby="message-hint-${q.id}"></textarea></label>
         <p class="muted message-hint" id="message-hint-${q.id}"></p>
@@ -76,7 +79,7 @@ function render() {
         <label data-other-name hidden>Enter your name<input name="name" maxlength="80" autocomplete="name" disabled></label>
         <p class="muted">Names are self-reported. You can contribute even if you are not the named respondent.</p>
         <button type="submit">Save answer</button><p class="status" role="status"></p>
-      </form>
+      </form>`}
       <div class="previous-feedback" data-responses="${q.id}"></div>
       <details class="context"><summary>Requirement details</summary><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<p>${esc(r.details)}</p>` : ''}${q.request ? `<p><strong>Why it matters</strong> ${esc(q.request.why)}</p>` : ''}</details>
       <p class="review-note" data-attention="${q.id}" hidden></p>
@@ -135,7 +138,7 @@ function render() {
         status.textContent = 'Saved. Pending review; saving does not mark the question answered.'
         await refresh().catch(() => { status.textContent = 'Saved. Review updates are unavailable; reload later to see the receipt.' })
       } catch (error) { status.textContent = `${error.message}. Your text and retry ID are kept.` }
-      finally { button.disabled = false }
+      finally { button.disabled = !acceptingFeedback }
     })
   }
 }
@@ -144,10 +147,10 @@ function applyFilters() {
   const questions = allQuestions()
   const visible = questions.filter(matchesFilters)
   if (!visible.some(q => q.id === selectedId)) selectedId = visible[0]?.id
-  for (const state of ['open', 'answered']) $(`#${state}-count`).textContent = questions.filter(q => q.status === state).length
+  for (const state of ['open', 'answered', 'deferred']) $(`#${state}-count`).textContent = questions.filter(q => q.status === state).length
   $('#progress').max = questions.length || 1
   $('#progress').value = questions.filter(q => q.status === 'answered').length
-  $('#progress-label').textContent = `${Math.round($('#progress').value / $('#progress').max * 100)}%`
+  $('#progress-label').textContent = `${Math.round($('#progress').value / $('#progress').max * 100)}% answered`
   for (const input of document.querySelectorAll('[data-filter]')) {
     input.checked = filters[input.dataset.filter].has(input.value)
     input.parentElement.querySelector('.count').textContent = questions.filter(q => matchesGroup(q, input.dataset.filter, input.value)).length
@@ -241,14 +244,16 @@ async function refresh() {
   const state = await response.json()
   feedback = state.feedback
   reviews = state.model.reviews
+  acceptingFeedback = state.model.state !== 'closed'
   if (!model) {
     model = state.model
     try { drafts = JSON.parse(sessionStorage.getItem(draftKey()) || '{}') } catch { drafts = {} }
     render()
     $('#filters-panel').open = desktop.matches
   }
-  $('#delivery-mode').textContent = state.mode === 'automatic' ? 'Automatic review. Feedback is saved before the reviewer is notified. Each response shows its delivery and review receipts.' : 'Manual review. Your feedback is saved here. Send this page to the reviewer to get it reviewed.'
-  for (const notice of document.querySelectorAll('[data-save-notice]')) notice.textContent = state.mode === 'automatic' ? 'Saving adds your feedback to this page and queues it for review. Saving does not mark the question answered.' : 'Saving adds your feedback to this page. Share the page with the reviewer to request review.'
+  $('#delivery-mode').textContent = !acceptingFeedback ? `Closed. New feedback is disabled. ${state.model.closure.reason} Deferred questions are not answered; existing unreviewed feedback remains marked.` : state.mode === 'automatic' ? 'Automatic review. Feedback is saved before the reviewer is notified. Each response shows its delivery and review receipts.' : 'Manual review. Your feedback is saved here. Send this page to the reviewer to get it reviewed.'
+  if (!acceptingFeedback) for (const button of document.querySelectorAll('form button[type="submit"]')) button.disabled = true
+  for (const notice of document.querySelectorAll('[data-save-notice]')) notice.textContent = !acceptingFeedback ? 'This review is closed. Unsent drafts remain in this tab; copy them before leaving.' : state.mode === 'automatic' ? 'Saving adds your feedback to this page and queues it for review. Saving does not mark the question answered.' : 'Saving adds your feedback to this page. Share the page with the reviewer to request review.'
   $('#update').hidden = state.model.revision === model.revision
   showFeedback(state.feedback)
   applyFilters()

@@ -1,14 +1,17 @@
 import copy
+import hashlib
 import importlib.util
 import json
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -206,13 +209,13 @@ class QuestionnaireTests(unittest.TestCase):
             records = [json.loads(line) for line in stream]
         self.assertEqual(len(records), 4)
         self.assertEqual(records[0]["record_count"], 4)
-        self.assertEqual(records[0]["schema_version"], 1)
+        self.assertEqual(records[0]["schema_version"], 2)
         self.assertEqual(records[0]["planning_contract"]["execution_modes"], ["agent", "human", "mixed"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_assignees"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_decision_makers"])
         self.assertEqual(records[0]["planning_contract"]["decision_authority_source"], "questionnaire.setup.decision_maker")
         self.assertTrue(records[0]["planning_contract"]["ticket_creation_requires_authorization"])
-        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": ["export-format", "export-access"], "pending_feedback_ids": [data["id"]]})
+        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": ["export-format", "export-access"], "deferred_question_ids": [], "pending_feedback_ids": [data["id"]]})
         self.assertEqual(records[3]["feedback"]["message"], data["message"])
         self.assertNotIn(b"private-delivery-location", initial)
         self.store.handoff(output)
@@ -228,8 +231,8 @@ class QuestionnaireTests(unittest.TestCase):
             records = [json.loads(line) for line in stream]
         self.assertEqual(records[0]["questionnaire"]["setup"], self.example["setup"])
         self.assertEqual([r["requirement"] for r in records if r["type"] == "requirement"], updated["requirements"])
-        self.assertEqual(records[1]["planning"], {"status": "needs_answers", "open_question_ids": ["export-access", "export-encoding"], "pending_feedback_ids": []})
-        self.assertEqual(records[2]["planning"], {"status": "ready_for_breakdown", "open_question_ids": [], "pending_feedback_ids": []})
+        self.assertEqual(records[1]["planning"], {"status": "needs_answers", "open_question_ids": ["export-access", "export-encoding"], "deferred_question_ids": [], "pending_feedback_ids": []})
+        self.assertEqual(records[2]["planning"], {"status": "ready_for_breakdown", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": []})
         self.assertEqual([r["review"] for r in records if r["type"] == "review"], updated["reviews"])
         self.assertEqual({k: records[3]["feedback"][k] for k in host.FIELDS}, data)
         previous_snapshot = records[0]["snapshot_id"]
@@ -244,7 +247,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(len(records), 6)
         self.assertNotEqual(records[0]["snapshot_id"], previous_snapshot)
         self.assertEqual(records[0]["questionnaire"]["revision"], 2)
-        self.assertEqual(records[2]["planning"], {"status": "needs_review", "open_question_ids": [], "pending_feedback_ids": [challenge["id"]]})
+        self.assertEqual(records[2]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": [challenge["id"]]})
         self.assertEqual(self.store.model(), updated)
         self.assertEqual(self.store.feedback(), before_export)
 
@@ -256,6 +259,161 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(output.read_text(), '{"previous":"handoff"}\n')
         with self.assertRaises(ValueError): self.store.handoff(self.store.path)
         self.assertEqual(self.store.model(), self.example)
+
+    def completed(self, message):
+        data = {**self.submission(), "message": message}
+        self.post(data)
+        model = self.reviewed(data)
+        for question in host.questions(model).values():
+            question.pop("attention", None)
+            if question["status"] == "open":
+                question.update(status="answered", answer={"text": "Use the documented policy.", "evidence": [{"label": "Policy", "href": "https://example.org/policy"}]})
+        self.store.publish(model)
+
+    def test_html_preserves_embedded_jsonl_and_renders_untrusted_text(self):
+        message = '  Zoë & <review>\n</pre><script>window.injected=true</script>\nKeep $title literally.  '
+        self.completed(message)
+        source, output = self.path / "final.jsonl", self.path / "final.html"
+        self.store.handoff(source)
+        original_feedback = self.store.feedback()
+        command = [sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)]
+
+        class Document(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.embedded, self.visible, self.tags = [], [], []
+                self.in_source = False
+
+            def handle_starttag(self, tag, attrs):
+                self.tags.append((tag, dict(attrs)))
+                if tag == "pre" and dict(attrs).get("id") == "questionnaire-jsonl":
+                    self.in_source = True
+
+            def handle_endtag(self, tag):
+                if tag == "pre": self.in_source = False
+
+            def handle_data(self, text):
+                (self.embedded if self.in_source else self.visible).append(text)
+
+        for ending in (b"\n", b"\r\n"):
+            raw = source.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", ending)
+            source.write_bytes(raw)
+            for repeat in range(2):
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                rendered = output.read_bytes()
+                if repeat: self.assertEqual(rendered, previous)
+                previous = rendered
+            document = Document()
+            document.feed(rendered.decode())
+            self.assertEqual(''.join(document.embedded).encode(), raw)
+            visible = ''.join(document.visible)
+            self.assertIn(message, visible)
+            self.assertIn("CSV is sufficient.", visible)
+            self.assertIn(self.example["setup"]["decision_maker"], visible)
+            self.assertEqual(sum(tag == "script" for tag, _ in document.tags), 1)
+            self.assertFalse(any(tag in ("form", "input", "textarea", "iframe", "img", "link") or "src" in attrs for tag, attrs in document.tags))
+            self.assertEqual(source.read_bytes(), raw)
+        self.assertEqual(self.store.feedback(), original_feedback)
+
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        records[0]["schema_version"] = 1
+        for record in records:
+            if record["type"] == "requirement": record["planning"].pop("deferred_question_ids")
+        records[-1]["review"]["reviewed_at"] = "2000-01-01T00:00:00+00:00"
+        records[0].pop("snapshot_id")
+        records[0]["snapshot_id"] = hashlib.sha256(''.join(json.dumps(r, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + '\n' for r in records).encode()).hexdigest()
+        source.write_text(''.join(json.dumps(row) + '\n' for row in records))
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("2000-01-01T00:00:00+00:00", output.read_text())
+
+        self.store.close()
+        self.store.handoff(source)
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Final snapshot — Closed", output.read_text())
+        self.assertEqual({q["status"] for q in host.questions(self.store.model()).values()}, {"answered"})
+
+    def test_html_rejects_corrupt_handoffs_without_replacing_output(self):
+        source, output = self.path / "final.jsonl", self.path / "final.html"
+        output.write_text("previous snapshot")
+        command = [sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)]
+
+        def rejected(expected):
+            original = source.read_bytes()
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(expected, result.stderr)
+            self.assertEqual(output.read_text(), "previous snapshot")
+            self.assertEqual(source.read_bytes(), original)
+
+        self.completed("CSV works.")
+        self.post(self.submission())
+        self.store.handoff(source)
+
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        records[0]["record_count"] += 1
+        source.write_text(''.join(json.dumps(row) + '\n' for row in records))
+        rejected("record count mismatch")
+        records[0]["record_count"] -= 1
+        records[0]["questionnaire"]["title"] = "Tampered"
+        source.write_text(''.join(json.dumps(row) + '\n' for row in records))
+        rejected("snapshot hash mismatch")
+
+        records = [r for r in records if r["type"] != "feedback" or r["feedback"]["id"] == records[-1]["review"]["feedback_id"]]
+        records[0]["record_count"] = len(records)
+        records[0].pop("snapshot_id")
+        records[0]["snapshot_id"] = hashlib.sha256(''.join(json.dumps(r, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + '\n' for r in records).encode()).hexdigest()
+        source.write_text(''.join(json.dumps(row) + '\n' for row in records))
+        rejected("inconsistent planning readiness")
+
+    def test_current_snapshot_and_close_with_deferrals_preserve_unfinished_work(self):
+        source, output = self.path / "snapshot.jsonl", self.path / "snapshot.html"
+        command = [sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)]
+        data = self.submission()
+        self.post(data)
+        self.store.publish(self.reviewed(data))
+        challenge = {**self.submission(), "message": "Check the CSV headers before accepting this."}
+        self.post(challenge)
+        before_model, before_feedback = self.store.model(), self.store.feedback()
+
+        self.store.handoff(source)
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Current-state snapshot — Open", output.read_text())
+        self.assertIn("Open — not answered", output.read_text())
+        self.assertIn("Unreviewed — no review receipt recorded.", output.read_text())
+        self.assertEqual(self.store.model(), before_model)
+        self.assertEqual(self.store.feedback(), before_feedback)
+
+        with self.assertRaises(ValueError): self.store.close()
+        self.assertEqual(self.store.model(), before_model)
+        result = subprocess.run([sys.executable, "-B", str(SKILL / "scripts/questionnaire.py"), "--db", str(self.store.path), "close", "--defer-unanswered", "Decide access, encoding and retention in the next review."], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        closed = self.store.model()
+        self.store.close("A retry must not replace the closure reason.")
+        self.assertEqual(self.store.model(), closed)
+        self.assertEqual(closed["state"], "closed")
+        self.assertEqual(closed["reviews"], before_model["reviews"])
+        self.assertEqual(closed["setup"], before_model["setup"])
+        self.assertEqual(host.questions(closed)["export-format"], host.questions(before_model)["export-format"])
+        deferred = [q for q in host.questions(closed).values() if q["status"] == "deferred"]
+        self.assertEqual([q["id"] for q in deferred], ["export-access", "export-encoding", "export-retention"])
+        self.assertTrue(all("answer" not in q and q["deferral"] == closed["closure"]["reason"] for q in deferred))
+        self.assertTrue(self.post(challenge)["saved"])
+        with self.assertRaises(HTTPError): self.post(self.submission())
+        self.assertEqual(self.store.feedback(), before_feedback)
+
+        self.store.handoff(source)
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": ["export-access", "export-encoding"], "pending_feedback_ids": [challenge["id"]]})
+        self.assertEqual(records[2]["planning"], {"status": "deferred", "open_question_ids": [], "deferred_question_ids": ["export-retention"], "pending_feedback_ids": []})
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Final snapshot — Closed", output.read_text())
+        self.assertEqual(output.read_text().count("Deferred — not answered"), 3)
+        self.assertIn("Unreviewed — no review receipt recorded.", output.read_text())
 
     def test_public_routes_do_not_expose_database_or_admin_operations(self):
         for path in ("/review.sqlite", "/webhook-url", "/../scripts/questionnaire.py"):
@@ -357,6 +515,20 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(visible_questions(), ["#question-export-format"])
         self.assertFalse(browser("eval", 'document.querySelector("#filters-panel").open'))
         self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
+
+        self.store.close("Carry remaining questions into the next review.")
+        browser("wait", "--text", "Closed. New feedback is disabled.")
+        self.assertTrue(browser("eval", '[...document.querySelectorAll("form button[type=submit]")].every(b => b.disabled)'))
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
+        browser("click", "#reload")
+        browser("wait", "--fn", 'document.querySelector("#deferred-count")?.textContent === "3"')
+        self.assertEqual(browser("eval", 'document.querySelector("#deferred-count").textContent'), "3")
+        self.assertEqual(browser("eval", 'document.querySelectorAll("form").length'), 0)
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
+        browser("set", "viewport", "1280", "900", "2")
+        browser("check", '[data-filter="state"][value="deferred"]')
+        self.assertEqual(visible_questions(), ["#question-export-access", "#question-export-encoding", "#question-export-retention"])
+        self.assertEqual(browser("eval", 'document.querySelector("[data-entry=export-access] .badge").textContent'), "Deferred")
 
 
 if __name__ == "__main__":

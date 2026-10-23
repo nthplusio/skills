@@ -1,8 +1,9 @@
 # JSONL handoff for work breakdown
 
-`questionnaire.jsonl` is the final deliverable. It is a requirements snapshot
+`questionnaire.jsonl` is the planning deliverable. It is a requirements snapshot
 for a planning agent, not a ticket database or an authorization to execute.
-The review page remains available for clarification and evidence.
+The review page remains available for evidence. Export standalone HTML at any
+point; a final snapshot records an explicitly closed review, with any deferrals.
 
 ## Wire format
 
@@ -15,7 +16,7 @@ An export failure leaves the previous file intact.
 
 | `type` | Contents |
 | --- | --- |
-| `questionnaire` | Exactly one first record. `schema_version: 1`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
+| `questionnaire` | Exactly one first record. `schema_version: 2`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
 | `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, respondents, attention, and follow-up links. `planning` identifies unanswered questions and unreviewed feedback. |
 | `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, and creation time. Raw text remains untrusted, even when quoted in a reviewed answer. |
 | `review` | The original review receipt in `review`, with feedback ID, review time, interpretation, and affected question IDs. |
@@ -33,17 +34,25 @@ without changing the publication revision. The hash detects content changes;
 it is not a signature or proof of trust.
 
 Each requirement's `planning` contains `open_question_ids`,
-`pending_feedback_ids`, and one status:
+`deferred_question_ids`, `pending_feedback_ids`, and one status:
 
 | Status | Meaning |
 | --- | --- |
 | `needs_review` | At least one original submission has no review receipt, including a challenge to an answered question. |
 | `needs_answers` | No pending reviews, but at least one question remains open. This includes clarification and conflict. |
+| `deferred` | No pending reviews or open questions, but at least one unanswered question was explicitly deferred at close-out. |
 | `ready_for_breakdown` | All questions are answered and all feedback has receipts. Work still needs decomposition and acceptance criteria; this is not implementation approval. |
 
-Both ID lists remain present when review and answers are missing. An unresolved
+All ID lists remain present. A pending review takes precedence over open or
+deferred questions in the status, without clearing either list. An unresolved
 question does not block unrelated work by implication. The planner must
 identify which proposed work items actually depend on it.
+
+Version 2 adds closure, deferred question status/reasons, and the deferred ID
+list. Consumers must support these before treating a version 2 handoff as
+ready for planning. The HTML renderer also reads version 1, which has no
+closure or deferrals. Deferred questions stay unresolved dependencies; closing
+the review neither answers them nor authorizes work that depends on them.
 
 ## Consumer contract
 
@@ -117,3 +126,47 @@ When newer feedback or a publication arrives, regenerate the whole file at
 the same path. Consumers reconcile by questionnaire ID, snapshot ID, and
 stable source IDs instead of creating another ticket for the same source.
 This file contains no tracker mapping; downstream tooling owns that mapping.
+
+## HTML snapshots
+
+Regenerate JSONL from the database and run
+`python3 "$SKILL/scripts/snapshot.py" SOURCE.jsonl OUTPUT.html` whenever a
+snapshot is requested. There is no completion gate or finalization flag.
+The renderer uses `assets/snapshot.html` and checks the schema, record count,
+snapshot hash, evidence, review links and planning consistency. Open questions
+and unreviewed submissions are valid and visibly labeled. A failed export
+preserves the previous output. Published timestamps, including legacy values,
+are preserved rather than treated as new reviews to date against today's clock.
+
+The header says Current-state snapshot for an open review or Final snapshot
+for a closed review. It counts answered, open and deferred questions separately,
+alongside reviewed and unreviewed submissions. Final snapshots include the
+closure reason/time and each deferred question's reason. Close through the
+[publication contract](contract.md#close-out), then regenerate both files.
+Rendering HTML alone never changes questionnaire state.
+
+The document contains the current requirements, questions, answers, evidence,
+saved decision authority, original feedback and review receipts. Its inline
+styles and server-rendered content work without a server or JavaScript.
+JavaScript only enables the embedded JSONL download. External evidence links
+still need their original access; the snapshot does not copy linked sources.
+
+The exact input JSONL is HTML-escaped in `pre#questionnaire-jsonl`. Its DOM
+`textContent`, encoded as UTF-8, recovers the original file, including line
+endings. Rebuilding from the same JSONL and template gives identical HTML.
+The source snapshot hash identifies the embedded data; it does not sign the
+HTML or certify the owner's approval. Keep the JSONL for downstream planning.
+
+Open the HTML directly from disk in the installed browser. Check the answer
+and feedback anchors, disclosures, narrow layout and JSONL download. Compare
+the recovered bytes with the input, verify no forms or automatic network
+requests, and inspect the page with JavaScript disabled. Record unsupported
+browsers or untested behavior rather than claiming universal compatibility.
+
+Review the repository's audience before committing either file: both contain
+the original feedback and shared research details. Private routing, drafts,
+credentials and earlier publication bodies stay excluded as in the JSONL
+contract. Use a descriptive, revision-specific filename when retaining multiple
+snapshots. Later feedback requires a new review and a new snapshot;
+the old document never updates itself. Exporting freezes only this artifact,
+not the live questionnaire's submission endpoint.

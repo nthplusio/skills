@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <title>$title · $snapshot_label</title>
+  <style>
+    :root { color-scheme: light; --bg: oklch(98% .005 250); --surface: oklch(100% 0 none); --text: oklch(26% .03 255); --muted: oklch(47% .025 255); --border: oklch(88% .015 255); --accent: oklch(47% .16 255); --soft: color-mix(in oklch, var(--accent) 6%, var(--surface)); }
+    * { box-sizing: border-box; min-inline-size: 0; }
+    body { margin: 0; color: var(--text); background: var(--bg); font: 16px/1.6 system-ui, sans-serif; overflow-wrap: anywhere; }
+    main { max-inline-size: 70rem; margin-inline: auto; padding: clamp(1rem, 3vw, 3rem); }
+    h1, h2, h3, h4, h5 { line-height: 1.3; margin-block: 0 .75rem; }
+    h1 { font-size: clamp(1.7rem, 4vw, 2.6rem); }
+    h2 { font-size: 1.4rem; } h3 { font-size: 1.15rem; } h4, h5 { font-size: 1rem; }
+    p { margin-block: .5rem 1rem; }
+    .muted, footer { color: var(--muted); font-size: .85rem; }
+    .badge { display: inline-block; background: var(--soft); color: var(--accent); border-radius: .3rem; padding: .2rem .6rem; font-size: .8rem; margin-block-end: .75rem; }
+    .summary { display: flex; flex-wrap: wrap; gap: .75rem 2rem; padding-block: 1rem; border-block: 1px solid var(--border); margin-block: 1.5rem; }
+    .summary p { margin: 0; }
+    .requirement { border: 1px solid var(--border); background: var(--surface); border-radius: .75rem; padding: clamp(1rem, 3vw, 2rem); margin-block: 1.5rem; }
+    .question { border-block-start: 1px solid var(--border); padding-block-start: 1.5rem; margin-block-start: 1.5rem; }
+    .answer { background: var(--soft); border-inline-start: .25rem solid var(--accent); padding: 1rem; margin-block: 1rem; }
+    .answer > :last-child, .reply > :last-child { margin-block-end: 0; }
+    .reply { border: 1px solid var(--border); border-radius: .5rem; padding: 1rem; margin-block: 1rem; }
+    .review { border-block-start: 1px solid var(--border); padding-block-start: .75rem; }
+    details { margin-block: 1rem; } summary { color: var(--accent); cursor: pointer; padding-block: .5rem; font-weight: 600; }
+    .verbatim, pre { white-space: pre-wrap; }
+    pre { font-size: .75rem; background: var(--surface); padding: 1rem; border: 1px solid var(--border); }
+    dl { display: grid; gap: 1rem; } dt { font-weight: 650; } dd { margin: 0; }
+    a { color: var(--accent); } a:active, summary:active { opacity: .75; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    [id] { scroll-margin-block-start: 1rem; }
+    [hidden] { display: none !important; }
+    @media (hover: hover) and (pointer: fine) { a:hover, summary:hover { color: var(--text); } }
+    @media print {
+      body { background: var(--surface); } main { padding: 0; max-inline-size: none; }
+      nav, #download-jsonl, .embedded-data { display: none; }
+      .requirement { border: 0; padding-inline: 0; } .answer, .reply { break-inside: avoid; }
+      details::details-content { content-visibility: visible; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="badge">$snapshot_label · Read-only</span>
+    <h1>$title</h1>
+    <p>$intro</p>
+    <div class="summary">$counts<p>Reviewed submissions: <strong>$reviewed_count</strong></p><p>Unreviewed submissions: <strong>$pending_count</strong></p><p>Revision <strong>$revision</strong></p></div>
+    <p>This snapshot records the questionnaire at export time. It cannot accept feedback or update itself. Deferred questions remain unanswered.</p>
+    $closure
+    <p class="muted">Questionnaire: $questionnaire_id<br>Source snapshot SHA-256: <code>$snapshot_id</code></p>
+    <a id="download-jsonl" hidden download="questionnaire.jsonl">Download embedded JSONL</a>
+  </header>
+  <nav aria-label="Requirements"><h2>Requirements</h2><ul>$navigation</ul></nav>
+  <details id="review-setup"><summary>Review purpose and decision authority</summary><dl>$setup</dl></details>
+  $sections
+  <footer><p>$notice</p><p>Answered does not mean implemented. This snapshot does not authorize implementation, tracker changes or notifications. Source evidence links may need network access; the document itself does not.</p></footer>
+  <details class="embedded-data"><summary>Embedded source JSONL</summary><p>This is the source used to render this document. Its snapshot hash identifies the data, not a signature or proof of approval.</p><pre id="questionnaire-jsonl">$jsonl</pre></details>
+</main>
+<script>
+  const source = document.getElementById('questionnaire-jsonl').textContent;
+  const download = document.getElementById('download-jsonl');
+  download.href = URL.createObjectURL(new Blob([source], { type: 'application/x-ndjson;charset=utf-8' }));
+  download.hidden = false;
+</script>
+</body>
+</html>

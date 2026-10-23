@@ -11,8 +11,10 @@ with an explanation rather than deleting them.
 
 Requirement fields: `id`, `priority`, `title`, `text`, optional `details`, and
 `questions`. Question fields: `id`, `title`, `prompt`, `people` (respondent
-names, possibly empty), `status` (`open` or `answered`), optional
+names, possibly empty), `status` (`open`, `answered`, or `deferred`), optional
 `follow_up_to` (another question ID), and `answer` only when answered.
+Deferred questions carry a text `deferral` reason and keep their original ask
+and attention context. They are not counted as answered or awaiting a reply.
 
 New questionnaires include a top-level `setup` object. Its text fields are
 `outcome`, `out_of_scope`, `readers`, `response_budget`, `reviewer`,
@@ -69,6 +71,38 @@ when a later revision explicitly reopens a question.
 The host validates and commits a complete model in one SQLite transaction.
 An invalid update leaves the previous publication available. Concurrent edits
 of the same revision are rejected unless the entire model is identical.
+
+## Close-out
+
+Snapshots never close a review. When the owner asks to end it, run:
+
+```bash
+# All questions answered:
+python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" close
+# End an unfinished review, with an owner-approved reason:
+python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" close --defer-unanswered "Carry remaining decisions into the next review."
+```
+
+Close-out publishes `state: closed` and `closure` with `reason` and the host's
+`closed_at` timestamp. An omitted state means open for existing publications.
+The deferral option changes only open questions to `status: deferred`, with
+that reason in `deferral`; answers, sources, setup, feedback and receipts stay
+unchanged. Closing without the option rejects open questions. A repeated close
+leaves the existing closure intact. A concurrent publication requires refreshing
+and retrying; it is never overwritten.
+
+New feedback is rejected after closure; identical retries of already-saved
+submissions still succeed. The live page shows Closed and a Deferred filter.
+An already-open tab keeps drafts while it offers the new revision; after loading,
+unsent text remains available to copy. Unreviewed submissions remain unreviewed,
+including challenges to answered questions. Closing does not fabricate receipts
+or cancel pending delivery. The reviewer may still publish receipts for saved
+feedback while keeping the questionnaire closed.
+
+Regenerate JSONL and HTML after closing. Reopening requires an explicit owner
+request and a new publication: set `state: open`, remove `closure`, and return
+deferred questions to open while removing their `deferral` fields. Publication
+history and earlier snapshots keep the previous closure and reasons.
 
 ## Submission, delivery, and review are different states
 

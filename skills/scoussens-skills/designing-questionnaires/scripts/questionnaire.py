@@ -38,11 +38,29 @@ def questions(model):
     return {q["id"]: q for r in model["requirements"] for q in r["questions"]}
 
 
-def validate(model, previous, feedback):
+def planning(requirement, feedback, reviewed):
+    ids = {q["id"] for q in requirement["questions"]}
+    open_ids = [q["id"] for q in requirement["questions"] if q["status"] == "open"]
+    deferred_ids = [q["id"] for q in requirement["questions"] if q["status"] == "deferred"]
+    pending_ids = [f["id"] for f in feedback if f["question"] in ids and f["id"] not in reviewed]
+    return {
+        "status": "needs_review" if pending_ids else "needs_answers" if open_ids else "deferred" if deferred_ids else "ready_for_breakdown",
+        "open_question_ids": open_ids, "deferred_question_ids": deferred_ids, "pending_feedback_ids": pending_ids,
+    }
+
+
+def validate(model, previous, feedback, *, check_review_times=True):
     require(isinstance(model, dict), "Expected a questionnaire object")
     require(text(model.get("id")) and text(model.get("title")), "ID and title required")
     require(type(model.get("revision")) is int and model["revision"] > 0, "Positive revision required")
     require(all(isinstance(model.get(k), str) for k in ("intro", "notice")), "Intro and notice required")
+    require(model.get("state", "open") in ("open", "closed"), "Questionnaire state must be open or closed")
+    if model.get("state") == "closed":
+        closure = model.get("closure")
+        require(isinstance(closure, dict) and text(closure.get("reason")) and text(closure.get("closed_at")), "Closure needs reason and time")
+        require(datetime.fromisoformat(closure["closed_at"]).tzinfo is not None, "Closure time needs timezone")
+    else:
+        require("closure" not in model, "An open questionnaire cannot have a closure")
     if "setup" in model:
         setup = model["setup"]
         require(isinstance(setup, dict) and all(text(setup.get(k)) for k in (
@@ -64,7 +82,12 @@ def validate(model, previous, feedback):
             ids.add(q["id"])
             require(all(text(q.get(k)) for k in ("title", "prompt")), "Question needs title and prompt")
             require(isinstance(q.get("people"), list) and all(text(p) for p in q["people"]), "People must be respondent names")
-            require(q.get("status") in ("open", "answered"), "Completed means answered")
+            require(q.get("status") in ("open", "answered", "deferred"), "Question must be open, answered or deferred")
+            if q["status"] == "deferred":
+                require(model.get("state") == "closed" and text(q.get("deferral")), "Deferred questions need a closed questionnaire and reason")
+            else:
+                require("deferral" not in q, "Only deferred questions carry a deferral reason")
+            require(model.get("state") != "closed" or q["status"] != "open", "Close by answering or explicitly deferring each open question")
             if "request" in q:
                 request = q["request"]
                 require(isinstance(request, dict) and all(text(request.get(k)) for k in (
@@ -72,7 +95,7 @@ def validate(model, previous, feedback):
                 )), "Targeted ask needs recommendation, consequence and response format")
             if "attention" in q:
                 attention = q["attention"]
-                require(q["status"] == "open", "Answered questions must clear attention; feedback review stays independent")
+                require(q["status"] != "answered", "Answered questions must clear attention; feedback review stays independent")
                 require(isinstance(attention, dict) and attention.get("state") in (
                     "waiting", "clarification", "conflict"
                 ) and text(attention.get("next_action")), "Attention needs a known state and next action")
@@ -90,7 +113,7 @@ def validate(model, previous, feedback):
         require(text(receipt.get("summary")) and text(receipt.get("reviewed_at")), "Receipt needs summary and review time")
         reviewed_at = datetime.fromisoformat(receipt["reviewed_at"].replace("Z", "+00:00"))
         require(reviewed_at.tzinfo is not None, "Review time needs an ISO timestamp with timezone")
-        if fid not in previous_receipts:
+        if check_review_times and fid not in previous_receipts:
             created_at = datetime.fromisoformat(feedback[fid]["created_at"])
             require(created_at <= reviewed_at <= datetime.now(timezone.utc), "Review time must fall between submission and publication; omit reviewed_at to use the host clock")
         affected = receipt.get("question_ids")
@@ -186,6 +209,18 @@ class Store:
             validate(model, previous, rows)
             db.execute("INSERT INTO publication VALUES (?, ?)", (model["revision"], json.dumps(model)))
 
+    def close(self, defer_reason=None):
+        model = self.model()
+        require(model is not None, "Publish a questionnaire before closing it")
+        if model.get("state") == "closed":
+            return
+        unanswered = [q for q in questions(model).values() if q["status"] == "open"]
+        require(not unanswered or text(defer_reason), "Unanswered questions remain; use --defer-unanswered REASON to close with deferrals")
+        for question in unanswered:
+            question.update(status="deferred", deferral=defer_reason)
+        model.update(state="closed", closure={"reason": defer_reason or "Review complete.", "closed_at": now()}, revision=model["revision"] + 1)
+        self.publish(model)
+
     def submit(self, data):
         require(isinstance(data, dict) and set(data) == set(FIELDS), "Complete the feedback form")
         require(all(isinstance(data[k], str) for k in FIELDS), "Feedback fields must be text")
@@ -200,6 +235,7 @@ class Store:
             if previous:
                 require(all(previous[k] == data[k] for k in FIELDS), "Submission ID already saved with different content")
             else:
+                require(self.model(db).get("state") != "closed", "Questionnaire is closed; ask the owner to reopen it")
                 db.execute("INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?)", (*[data[k] for k in FIELDS], now()))
                 db.execute("INSERT INTO delivery (feedback_id) VALUES (?)", (data["id"],))
         return data["id"]
@@ -220,17 +256,11 @@ class Store:
         reviewed = {r["feedback_id"] for r in model["reviews"]}
         records = []
         for requirement in model["requirements"]:
-            ids = {q["id"] for q in requirement["questions"]}
-            open_ids = [q["id"] for q in requirement["questions"] if q["status"] == "open"]
-            pending_ids = [f["id"] for f in feedback if f["question"] in ids and f["id"] not in reviewed]
-            records.append({"type": "requirement", "requirement": requirement, "planning": {
-                "status": "needs_review" if pending_ids else "needs_answers" if open_ids else "ready_for_breakdown",
-                "open_question_ids": open_ids, "pending_feedback_ids": pending_ids,
-            }})
+            records.append({"type": "requirement", "requirement": requirement, "planning": planning(requirement, feedback, reviewed)})
         records.extend({"type": "feedback", "feedback": row} for row in feedback)
         records.extend({"type": "review", "review": receipt} for receipt in model["reviews"])
         header = {
-            "type": "questionnaire", "schema_version": 1, "record_count": len(records) + 1,
+            "type": "questionnaire", "schema_version": 2, "record_count": len(records) + 1,
             "questionnaire": {k: v for k, v in model.items() if k not in ("requirements", "reviews")},
             "planning_contract": {
                 "next_step": "decompose_requirements_into_work_items",
@@ -339,6 +369,8 @@ def main():
     publish.add_argument("model", type=Path)
     sub.add_parser("export")
     sub.add_parser("feedback")
+    close = sub.add_parser("close", help="Close review and stop new feedback; optionally defer unanswered questions")
+    close.add_argument("--defer-unanswered", metavar="REASON")
     handoff = sub.add_parser("handoff", help="Write an atomic JSONL snapshot for ticket planning; creates no tickets")
     handoff.add_argument("output", type=Path)
     ack = sub.add_parser("ack")
@@ -356,6 +388,9 @@ def main():
         print(json.dumps(store.model(), indent=2))
     elif args.action == "feedback":
         print(json.dumps(store.feedback(), indent=2))
+    elif args.action == "close":
+        store.close(args.defer_unanswered)
+        print(f"PASS: questionnaire closed at revision {store.model()['revision']}")
     elif args.action == "handoff":
         header = store.handoff(args.output)
         print(f"PASS: wrote {header['record_count']} JSONL records to {args.output} (snapshot {header['snapshot_id']})")
