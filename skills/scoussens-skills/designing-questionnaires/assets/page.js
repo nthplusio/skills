@@ -2,6 +2,7 @@ let model
 let drafts = {}
 let feedback = []
 let reviews = []
+let pendingProposals = {}
 let selectedId
 let acceptingFeedback = true
 const filters = { priority: new Set(), person: new Set(), state: new Set() }
@@ -17,10 +18,10 @@ const attentionFor = q => q.status !== 'open' ? null : q.attention || { state: q
 const pendingFor = id => feedback.filter(row => row.question === id && !reviews.some(r => r.feedback_id === row.id)).length
 const proposalsFor = q => {
   const acceptance = feedback.find(f => f.id === q.answer?.acceptance_id)
-  return feedback.filter(f => f.question === q.id && ['propose', 'adopt'].includes(f.kind) && (!acceptance || f.created_at > acceptance.created_at))
+  return feedback.filter(f => f.question === q.id && ['propose', 'adopt'].includes(f.kind) && !q.proposal_outcomes?.[f.id] && (!acceptance || f.created_at > acceptance.created_at) && !decisionsFor(f).some(d => d.kind === 'deny' && reviews.some(r => r.feedback_id === d.id)))
 }
-const decisionsFor = proposal => feedback.filter(f => f.context?.proposal_id === proposal.id && ['accept', 'correct'].includes(f.kind))
-const queuedFor = q => proposalsFor(q).filter(p => !decisionsFor(p).some(d => !reviews.some(r => r.feedback_id === d.id)))
+const decisionsFor = proposal => feedback.filter(f => f.context?.proposal_id === proposal.id && ['accept', 'correct', 'deny'].includes(f.kind))
+const queuedFor = q => feedback.filter(f => pendingProposals[q.id]?.includes(f.id))
 const filterLabel = (group, value) => group === 'state' ? statusLabels[value] : group === 'person' && value === '__anyone' ? 'Anyone' : value
 const responseKinds = {
   answer: { choice: 'Answer the question', label: 'Your answer', hint: 'Give the information requested above. You can also say you are not sure.', button: 'Save answer' },
@@ -134,6 +135,7 @@ function render() {
       const status = form.querySelector('.status')
       const button = form.querySelector('button')
       const payload = { question: id, name: respondent(), kind: form.elements.kind.value, message: form.elements.message.value }
+      if (payload.kind === 'propose' && payload.message === question.request?.recommendation) payload.kind = 'adopt'
       if (['propose', 'adopt'].includes(payload.kind)) payload.context = { revision: model.revision }
       const fingerprint = JSON.stringify(payload)
       if (drafts[id].pending?.fingerprint !== fingerprint) drafts[id].pending = { fingerprint, id: crypto.randomUUID() }
@@ -166,6 +168,7 @@ function applyFilters() {
   $('#proposal-count').textContent = questions.reduce((n, q) => n + queuedFor(q).length, 0)
   $('#list-title').textContent = queue ? 'SME review queue' : 'Questions'
   $('#empty h3').textContent = queue ? 'No proposals awaiting your review' : 'No questions match'
+  $('#empty p').textContent = queue ? 'Decisions take effect when saved. Clear the filter to see answers and history.' : 'Remove a filter or try another search.'
   for (const state of ['open', 'answered', 'deferred']) $(`#${state}-count`).textContent = questions.filter(q => q.status === state).length
   $('#progress').max = questions.length || 1
   $('#progress').value = questions.filter(q => q.status === 'answered').length
@@ -251,7 +254,7 @@ function showFeedback(rows) {
     const responses = rows.filter(row => row.question === box.dataset.responses)
     const content = `<h3>Previous feedback (${responses.length})</h3>` + (responses.length ? responses.map(row => {
       const review = reviews.find(r => r.feedback_id === row.id)
-      const state = review ? `Reviewed: ${review.summary}` : row.receipt ? 'Reviewer notified. Pending review.' : `Saved. Pending delivery to reviewer${row.attempts ? ` (${row.attempts} attempts)` : ''}.`
+      const state = review ? `${review.method === 'host_recorded' ? 'Recorded' : 'Reviewed'}: ${review.summary}` : row.receipt ? 'Reviewer notified. Pending review.' : `Saved. Pending delivery to reviewer${row.attempts ? ` (${row.attempts} attempts)` : ''}.`
       const source = row.context?.proposal_id ? `<p><a href="#proposal-${row.context.proposal_id}">Original proposal</a></p>` : row.kind === 'adopt' ? `<p class="muted">Recommendation adopted from revision ${esc(row.context.revision)}</p>` : ''
       return `<div class="response" id="feedback-${row.id}"><strong>${esc(row.name)} · ${esc(row.kind)}</strong><p>${esc(row.message)}</p>${source}<small>${esc(row.created_at)} · self-reported name</small><p class="review-note">${esc(state)}</p></div>`
     }).join('') : '<p class="muted">No feedback yet.</p>')
@@ -270,77 +273,126 @@ function showProposals() {
         card.id = `proposal-${proposal.id}`
         card.className = 'proposal'
         card.dataset.id = proposal.id
-        card.innerHTML = `<strong class="proposal-label"></strong><p class="proposal-text">${esc(proposal.message)}</p><p class="muted">Proposed by ${esc(proposal.name)}${proposal.kind === 'adopt' ? ' · recommendation adopted' : ''} · revision ${esc(proposal.context?.revision ?? 'not recorded')}</p><p class="proposal-state" role="status"></p><div class="proposal-actions"><button type="button" data-decision="accept">Accept and next</button><button type="button" class="secondary" data-correct>Correct proposal</button></div><div class="correction" hidden><label>Corrected answer<textarea maxlength="3000" rows="3"></textarea></label><p class="muted">Accepting saves your corrected wording and keeps the original proposal.</p><div class="proposal-actions"><button type="button" data-decision="correct">Accept corrected answer</button><button type="button" class="secondary" data-cancel>Cancel</button></div></div><p class="status" role="status"></p>`
+        card.innerHTML = `<strong class="proposal-label"></strong><p class="proposal-text">${esc(proposal.message)}</p><p class="muted">Proposed by ${esc(proposal.name)}${proposal.kind === 'adopt' ? ' · recommendation adopted' : ''} · revision ${esc(proposal.context?.revision ?? 'not recorded')}</p><p class="proposal-state" role="status"></p><div class="proposal-actions"><button type="button" data-decision="accept">Accept and next</button><button type="button" class="secondary" data-edit="correct">Correct and accept</button><button type="button" class="secondary" data-edit="deny">Deny proposal</button></div><div class="correction" hidden><label><span data-editor-label>Corrected answer</span><textarea maxlength="3000" rows="3"></textarea></label><p class="muted" data-editor-hint></p><div class="proposal-actions"><button type="button" data-decision="correct" data-editor-submit>Accept corrected answer</button><button type="button" class="secondary" data-cancel>Cancel</button></div></div><div class="replacement review-note" hidden><strong>Replace the current answer?</strong><p data-current-answer></p><p data-replacement-answer></p><div class="proposal-actions"><button type="button" data-confirm-replacement>Confirm replacement</button><button type="button" class="secondary" data-cancel>Cancel</button></div></div><p class="status" role="status"></p>`
         const editor = card.querySelector('.correction')
         editor.hidden = !drafts[key]?.editing
         card.querySelector('textarea').value = drafts[key]?.message ?? proposal.message
         card.querySelector('textarea').addEventListener('input', event => {
-          drafts[key] = { ...drafts[key], editing: true, message: event.target.value }
+          drafts[key] = { ...drafts[key], message: event.target.value }
           saveDrafts()
         })
         box.append(card)
       }
       const resolved = !proposalsFor(q).some(p => p.id === proposal.id)
+      const outcome = q.proposal_outcomes?.[proposal.id]
       const selected = q.answer?.proposal_id === proposal.id
-      const acceptance = feedback.find(f => f.id === q.answer?.acceptance_id)
+      const acceptance = feedback.find(f => f.id === (selected ? q.answer?.acceptance_id : outcome?.decision_id))
       const decisions = decisionsFor(proposal)
-      const pending = decisions.some(d => !reviews.some(r => r.feedback_id === d.id))
+      const denial = decisions.find(d => d.kind === 'deny' && reviews.some(r => r.feedback_id === d.id))
+      const pending = decisions.find(d => !reviews.some(r => r.feedback_id === d.id))
+      if (pending) card.querySelector('.status').textContent = ''
+      const denying = drafts[key]?.editing === 'deny'
+      const recovered = resolved && Boolean(drafts[key]?.editing || drafts[key]?.replacement)
+      card.querySelector('[data-editor-label]').textContent = recovered ? 'Unsent draft (not submitted)' : denying ? 'Feedback (optional)' : 'Corrected answer'
+      card.querySelector('textarea').readOnly = recovered
+      card.querySelector('[data-editor-hint]').textContent = recovered ? 'Another decision settled this proposal. Copy your draft before dismissing it. To suggest different wording, submit a fresh proposal below.' : denying ? 'Deny only this proposal, with or without feedback. Other proposals stay available; this does not answer the question.' : 'Accepting saves your corrected wording and keeps the original proposal.'
+      card.querySelector('[data-editor-submit]').dataset.decision = denying ? 'deny' : 'correct'
+      card.querySelector('[data-editor-submit]').textContent = denying ? 'Deny and next' : 'Accept corrected answer'
+      card.querySelector('[data-editor-submit]').hidden = recovered
+      card.querySelector('.correction [data-cancel]').textContent = recovered ? 'Dismiss draft' : 'Cancel'
+      card.querySelector('.correction').hidden = !recovered && (resolved || Boolean(pending) || !drafts[key]?.editing)
+      card.querySelector('.replacement').hidden = resolved || !drafts[key]?.replacement
+      if (!resolved && drafts[key]?.replacement) {
+        card.querySelector('[data-current-answer]').textContent = `Current answer: ${q.answer?.text || 'No current answer'}`
+        card.querySelector('[data-replacement-answer]').textContent = `New answer: ${drafts[key].replacement.message}`
+        card.querySelector('.correction').hidden = true
+      }
+      card.querySelector('[data-decision="accept"]').textContent = q.answer ? 'Replace current answer' : 'Accept and next'
       card.dataset.tone = resolved ? 'history' : 'proposed'
-      card.querySelector('.proposal-label').textContent = selected ? acceptance.kind === 'correct' ? 'Original proposal · accepted with corrections' : 'Original proposal · accepted unchanged' : resolved ? 'Earlier proposal · not selected' : 'Proposed answer · not settled'
-      card.querySelector('.proposal-state').textContent = selected ? `${acceptance.kind === 'correct' ? 'Corrected and accepted' : 'Accepted'} by ${acceptance.name}. See the accepted answer above.` : resolved ? 'Another proposal was accepted. The original remains in the history.' : pending ? 'Acceptance saved. Awaiting reviewer publication; not settled yet.' : q.status === 'answered' ? 'Challenges the current answer. Review does not silently replace it.' : 'Awaiting SME acceptance or correction.'
-      card.querySelector('.proposal-actions').hidden = resolved || pending || !acceptingFeedback || Boolean(drafts[key]?.editing)
-      for (const button of card.querySelectorAll('[data-decision], [data-correct]')) button.disabled = resolved || pending || !acceptingFeedback
+      card.querySelector('.proposal-label').textContent = denial ? 'Denied proposal' : selected || outcome?.state === 'accepted' ? acceptance.kind === 'correct' ? 'Original proposal · accepted with corrections' : 'Original proposal · accepted unchanged' : pending ? 'Earlier decision · needs reviewer reconciliation' : resolved ? 'Earlier proposal · not selected' : q.answer ? 'Proposed replacement' : 'Proposed answer · awaiting decision'
+      card.querySelector('.proposal-state').textContent = denial ? `Denied by ${denial.name}. ${denial.message.trim() || 'No feedback provided.'}` : selected ? `${acceptance.kind === 'correct' ? 'Corrected and accepted' : 'Accepted'} by ${acceptance.name}. See the accepted answer above.` : outcome?.state === 'accepted' ? `Previously accepted by ${acceptance.name}. The decision is preserved in history.` : resolved ? 'Another proposal was accepted. The original remains in the history.' : pending ? 'This decision predates immediate decisions. The reviewer must reconcile it; it has not been applied automatically.' : q.status === 'answered' ? 'The current answer stays unchanged unless you confirm its replacement.' : 'Awaiting SME acceptance, correction or denial.'
+      card.querySelector('.proposal-actions').hidden = resolved || pending || !acceptingFeedback || Boolean(drafts[key]?.editing || drafts[key]?.replacement)
+      for (const button of card.querySelectorAll('[data-decision], [data-edit]')) button.disabled = resolved || Boolean(pending) || !acceptingFeedback
     }
   }
 }
 
-async function saveDecision(card, kind) {
+async function saveDecision(card, kind, replace = false) {
   const proposal = feedback.find(f => f.id === card.dataset.id)
   const status = card.querySelector('.status')
   const key = `proposal:${proposal.id}`
   const name = $('#reviewer-name').value.trim()
-  if (!name) { status.textContent = 'Enter your name in “Reviewing as” before accepting.'; $('#reviewer-name').focus(); return }
+  if (!name) { status.textContent = 'Enter your name in “Reviewing as” before saving a decision.'; $('#reviewer-name').focus(); return }
   const message = kind === 'accept' ? proposal.message : card.querySelector('textarea').value
-  if (!message.trim()) { status.textContent = 'Enter the corrected answer before accepting.'; card.querySelector('textarea').focus(); return }
+  if (kind !== 'deny' && !message.trim()) { status.textContent = 'Enter the corrected answer before accepting.'; card.querySelector('textarea').focus(); return }
+  const decisionLabel = kind === 'deny' ? 'Denial' : 'Acceptance'
+  const question = allQuestions().find(q => q.id === proposal.question)
+  if (kind !== 'deny' && question.answer && !replace) {
+    drafts[key] = { ...drafts[key], replacement: { kind, message } }
+    saveDrafts()
+    showProposals()
+    card.querySelector('[data-confirm-replacement]').focus()
+    return
+  }
   const payload = { question: proposal.question, name, kind, message, context: { revision: model.revision, proposal_id: proposal.id } }
+  if (replace) payload.context.replace = true
   const fingerprint = JSON.stringify(payload)
   drafts[key] ||= {}
   if (drafts[key].pending?.fingerprint !== fingerprint) drafts[key].pending = { fingerprint, id: crypto.randomUUID() }
   saveDrafts()
   for (const button of card.querySelectorAll('button')) button.disabled = true
-  status.textContent = 'Saving acceptance…'
+  status.textContent = `Saving ${decisionLabel.toLowerCase()}…`
   let saved = false
   try {
     const response = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, id: drafts[key].pending.id }) })
     const result = await response.json()
     if (!response.ok) throw new Error(result.error || 'Save failed')
     saved = true
-    status.textContent = 'Acceptance saved. Pending reviewer publication.'
-    $('#proposal-status').textContent = 'Acceptance saved. The reviewer still needs to publish the settled answer.'
-    await refresh()
+    $('#proposal-status').textContent = kind === 'deny' ? 'Proposal denied. Other proposals and the current answer are unchanged.' : replace ? 'Answer replaced. The previous answer is preserved in history.' : 'Accepted. This question is answered.'
+    await refresh(true)
     delete drafts[key]
     saveDrafts()
-    card.querySelector('.correction').hidden = true
     const next = allQuestions().find(q => queuedFor(q).length && matchesFilters(q))
-    if (next) { history.pushState(null, '', `#question-${next.id}`); reveal() }
-    else { $('#proposal-status').textContent += ' No more proposals in this queue.'; $('#review-queue').focus() }
-  } catch (error) { status.textContent = saved ? 'Acceptance saved, but updates are unavailable. Your retry ID is kept; retrying will not save a duplicate.' : `${error.message}. Your draft and retry ID are kept.` }
+    if (next) {
+      history.pushState(null, '', `#question-${next.id}`)
+      reveal()
+      const nextCard = document.getElementById(`proposal-${queuedFor(next)[0].id}`)
+      nextCard.scrollIntoView({ block: 'nearest' })
+      nextCard.querySelector('button').focus({ preventScroll: true })
+    }
+    else {
+      $('#proposal-status').textContent += ' No more proposals in this queue.'
+      if (filters.state.has('proposed')) { filters.state.delete('proposed'); applyFilters(); history.pushState(null, '', `#question-${proposal.question}`); reveal() }
+      $('#review-queue').focus()
+    }
+  } catch (error) { status.textContent = saved ? `${decisionLabel} saved, but updates are unavailable. Your retry ID is kept; retrying will not save a duplicate.` : `${error.message}. Your draft and retry ID are kept.` }
   finally {
     for (const button of card.querySelectorAll('button')) button.disabled = !acceptingFeedback
     showProposals()
   }
 }
 
-async function refresh() {
+async function refresh(adopt = false) {
   const response = await fetch('/api/state', { cache: 'no-store' })
   if (!response.ok) throw new Error('Could not load review updates')
   const state = await response.json()
+  if (model && state.model.revision < model.revision) return
+  acceptingFeedback = state.model.state !== 'closed'
+  if (model && state.model.revision !== model.revision && !adopt) {
+    $('#update').hidden = false
+    if (!acceptingFeedback) {
+      $('#delivery-mode').textContent = `Closed. New feedback is disabled. ${state.model.closure.reason}`
+      for (const button of document.querySelectorAll('form button[type="submit"], .proposal button')) button.disabled = true
+    }
+    return
+  }
   feedback = state.feedback
   reviews = state.model.reviews
-  acceptingFeedback = state.model.state !== 'closed'
-  if (!model) {
+  pendingProposals = state.pending_proposals
+  const initial = !model
+  if (initial || adopt) {
     model = state.model
-    try { drafts = JSON.parse(sessionStorage.getItem(draftKey()) || '{}') } catch { drafts = {} }
+    if (initial) { try { drafts = JSON.parse(sessionStorage.getItem(draftKey()) || '{}') } catch { drafts = {} } }
     for (const [key, draft] of Object.entries(drafts)) {
       const saved = feedback.find(f => f.id === draft?.pending?.id)
       if (!saved) continue
@@ -355,7 +407,7 @@ async function refresh() {
     render()
     $('#filters-panel').open = desktop.matches
   }
-  $('#delivery-mode').textContent = !acceptingFeedback ? `Closed. New feedback is disabled. ${state.model.closure.reason} Deferred questions are not answered; existing unreviewed feedback remains marked.` : state.mode === 'automatic' ? 'Automatic review. Feedback is saved before the reviewer is notified. Each response shows its delivery and review receipts.' : 'Manual review. Your feedback is saved here. Send this page to the reviewer to get it reviewed.'
+  $('#delivery-mode').textContent = !acceptingFeedback ? `Closed. New feedback is disabled. ${state.model.closure.reason} Deferred questions are not answered; existing unreviewed feedback remains marked.` : `SME decisions take effect immediately. ${state.mode === 'automatic' ? 'Reviewer notifications are automatic.' : 'Share this page with the reviewer for other feedback.'}`
   if (!acceptingFeedback) for (const button of document.querySelectorAll('form button[type="submit"]')) button.disabled = true
   for (const notice of document.querySelectorAll('[data-save-notice]')) notice.textContent = !acceptingFeedback ? 'This review is closed. Unsent drafts remain in this tab; copy them before leaving.' : state.mode === 'automatic' ? 'Saving adds your feedback to this page and queues it for review. Saving does not mark the question answered.' : 'Saving adds your feedback to this page. Share the page with the reviewer to request review.'
   $('#update').hidden = state.model.revision === model.revision
@@ -369,19 +421,20 @@ document.addEventListener('click', event => {
   if (button?.dataset.adopt) {
     const q = allQuestions().find(q => q.id === button.dataset.adopt)
     const form = document.querySelector(`form[data-question="${q.id}"]`)
-    form.elements.kind.value = 'adopt'
+    form.elements.kind.value = 'propose'
     form.elements.message.value = q.request.recommendation
     form.dispatchEvent(new Event('input'))
     form.scrollIntoView({ block: 'center' })
     form.elements.person.focus()
   }
   const card = button?.closest('.proposal')
-  if (card && button.hasAttribute('data-correct')) {
+  if (card && button.dataset.edit) {
     const key = `proposal:${card.dataset.id}`
-    drafts[key] = { ...drafts[key], editing: true, message: card.querySelector('textarea').value }
+    const message = button.dataset.edit === 'deny' ? '' : feedback.find(f => f.id === card.dataset.id).message
+    drafts[key] = { ...drafts[key], editing: button.dataset.edit, message }
+    card.querySelector('textarea').value = message
     saveDrafts()
-    card.querySelector('.correction').hidden = false
-    card.querySelector('.proposal-actions').hidden = true
+    showProposals()
     card.querySelector('textarea').focus()
     card.querySelector('.correction').scrollIntoView({ block: 'nearest' })
   }
@@ -391,7 +444,13 @@ document.addEventListener('click', event => {
     card.querySelector('textarea').value = feedback.find(f => f.id === card.dataset.id).message
     card.querySelector('.correction').hidden = true
     showProposals()
-    card.querySelector('[data-correct]').focus()
+    card.tabIndex = -1
+    const focusTarget = card.querySelector('.proposal-actions').hidden ? card : card.querySelector('[data-edit="correct"]')
+    focusTarget.focus()
+  }
+  if (card && button.hasAttribute('data-confirm-replacement')) {
+    const replacement = drafts[`proposal:${card.dataset.id}`]?.replacement
+    if (replacement) saveDecision(card, replacement.kind, true)
   }
   if (card && button.dataset.decision) saveDecision(card, button.dataset.decision)
   if (button?.dataset.clear !== undefined) clearFilters()
@@ -411,13 +470,19 @@ document.addEventListener('change', event => {
 $('#search').addEventListener('input', applyFilters)
 $('#reviewer-name').addEventListener('input', () => { drafts.reviewerName = $('#reviewer-name').value; saveDrafts() })
 $('#review-queue').addEventListener('click', () => {
-  const wasQueued = filters.state.has('proposed')
-  clearFilters()
-  if (!wasQueued) filters.state.add('proposed')
-  applyFilters()
-  $('#workspace').dataset.view = 'list'
-  $('#list-title').focus()
-})
+    const wasQueued = filters.state.has('proposed')
+    clearFilters()
+    if (!wasQueued) filters.state.add('proposed')
+    applyFilters()
+    const next = allQuestions().find(q => queuedFor(q).length)
+    if (!wasQueued && next) {
+      history.pushState(null, '', `#question-${next.id}`)
+      reveal()
+      const card = document.getElementById(`proposal-${queuedFor(next)[0].id}`)
+      card.scrollIntoView({ block: 'nearest' })
+      card.querySelector('button').focus({ preventScroll: true })
+    } else { $('#workspace').dataset.view = 'list'; $('#list-title').focus() }
+  })
 $('#reset').addEventListener('click', clearFilters)
 $('#sort').addEventListener('change', () => {
   const questions = allQuestions()

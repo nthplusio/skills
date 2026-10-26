@@ -21,6 +21,10 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets"
 FIELDS = ("id", "question", "name", "kind", "message")
 
 
+class DecisionConflict(ValueError):
+    pass
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -38,10 +42,12 @@ def questions(model):
     return {q["id"]: q for r in model["requirements"] for q in r["questions"]}
 
 
-def pending_proposals(question, feedback):
+def pending_proposals(question, feedback, reviewed):
     acceptance = next((f for f in feedback if f["id"] == question.get("answer", {}).get("acceptance_id")), None)
+    denied = {f.get("context", {}).get("proposal_id") for f in feedback if f["kind"] == "deny" and f["id"] in reviewed}
     return [f for f in feedback if f["question"] == question["id"] and f["kind"] in ("propose", "adopt")
-            and (not acceptance or f["created_at"] > acceptance["created_at"])]
+            and f["id"] not in question.get("proposal_outcomes", {})
+            and f["id"] not in denied and (not acceptance or f["created_at"] > acceptance["created_at"])]
 
 
 def planning(requirement, feedback, reviewed):
@@ -49,7 +55,7 @@ def planning(requirement, feedback, reviewed):
     open_ids = [q["id"] for q in requirement["questions"] if q["status"] == "open"]
     deferred_ids = [q["id"] for q in requirement["questions"] if q["status"] == "deferred"]
     pending_ids = [f["id"] for f in feedback if f["question"] in ids and f["id"] not in reviewed]
-    proposal_ids = [f["id"] for q in requirement["questions"] for f in pending_proposals(q, feedback)]
+    proposal_ids = [f["id"] for q in requirement["questions"] for f in pending_proposals(q, feedback, reviewed)]
     return {
         "status": "needs_review" if pending_ids or proposal_ids else "needs_answers" if open_ids else "deferred" if deferred_ids else "ready_for_breakdown",
         "open_question_ids": open_ids, "deferred_question_ids": deferred_ids, "pending_feedback_ids": pending_ids,
@@ -129,6 +135,19 @@ def validate(model, previous, feedback, *, check_review_times=True):
         require(feedback[fid]["question"] in affected, "Receipt must include the submission's question")
         receipts[fid] = receipt
     for q in qs.values():
+        outcomes = q.get("proposal_outcomes", {})
+        require(isinstance(outcomes, dict), "Proposal outcomes must be an object")
+        for pid, outcome in outcomes.items():
+            proposal = feedback.get(pid)
+            require(proposal is not None and proposal["kind"] in ("propose", "adopt") and proposal["question"] == q["id"], "Outcome needs its original proposal")
+            require(isinstance(outcome, dict) and outcome.get("state") in ("accepted", "denied", "not_selected"), "Unknown proposal outcome")
+            decision = feedback.get(outcome.get("decision_id"))
+            require(decision is not None and decision["question"] == q["id"] and decision["id"] in receipts, "Outcome needs its recorded decision")
+            require(decision["kind"] in (("deny",) if outcome["state"] == "denied" else ("accept", "correct")), "Outcome must match its decision")
+            if outcome["state"] != "not_selected":
+                require(decision.get("context", {}).get("proposal_id") == pid, "Outcome must name the decided proposal")
+            else:
+                require(decision.get("context", {}).get("proposal_id") != pid, "Not-selected outcome needs a competing proposal")
         sources = list(q.get("attention", {}).get("evidence", []))
         if q["status"] == "answered":
             answer = q.get("answer")
@@ -139,6 +158,7 @@ def validate(model, previous, feedback, *, check_review_times=True):
                 proposal = feedback.get(answer.get("proposal_id"))
                 acceptance = feedback.get(answer.get("acceptance_id"))
                 require(proposal is not None and proposal["kind"] in ("propose", "adopt") and proposal["question"] == q["id"], "Answer needs its original proposal")
+                require(not any(f["kind"] == "deny" and f.get("context", {}).get("proposal_id") == proposal["id"] and f["id"] in receipts for f in feedback.values()), "A denied proposal cannot become the accepted answer")
                 require(acceptance is not None and acceptance["kind"] in ("accept", "correct") and acceptance["question"] == q["id"]
                         and acceptance.get("context", {}).get("proposal_id") == proposal["id"], "Answer needs acceptance of this proposal")
                 require(answer["text"] == acceptance["message"], "Accepted answer must preserve the accepted wording")
@@ -154,6 +174,7 @@ def validate(model, previous, feedback, *, check_review_times=True):
             if href.startswith("#feedback-"):
                 fid = href.removeprefix("#feedback-")
                 require(fid in receipts and q["id"] in receipts[fid]["question_ids"], "Feedback evidence must be reviewed for this question")
+                require(q["status"] != "answered" or feedback[fid]["kind"] != "deny", "A denial does not answer the question")
                 if q["status"] == "answered" and feedback[fid]["kind"] in ("propose", "adopt", "accept", "correct"):
                     require("acceptance_id" in q["answer"], "A proposal is not an answer; record its explicit acceptance")
             else:
@@ -171,6 +192,9 @@ def validate(model, previous, feedback, *, check_review_times=True):
             require({q["id"] for q in r["questions"]} <= {q["id"] for q in current[r["id"]]["questions"]}, "Preserve question IDs and their requirement")
         for receipt in previous["reviews"]:
             require(receipts.get(receipt["feedback_id"]) == receipt, "Preserve original review receipts")
+        for qid, old in questions(previous).items():
+            for pid, outcome in old.get("proposal_outcomes", {}).items():
+                require(qs[qid].get("proposal_outcomes", {}).get(pid) == outcome, "Preserve original proposal outcomes")
 
 
 class Store:
@@ -247,12 +271,13 @@ class Store:
         require(all(isinstance(data[k], str) for k in FIELDS), "Feedback fields must be text")
         require(str(uuid.UUID(data["id"])) == data["id"], "Use a canonical UUID")
         require(0 < len(data["name"].strip()) <= 80 and len(data["name"]) <= 80, "Enter a name up to 80 characters")
-        require(data["kind"] in ("answer", "change", "question", "agree", "propose", "adopt", "accept", "correct"), "Choose a response type")
-        require(len(data["message"]) <= 3000 and (data["kind"] == "agree" or text(data["message"])), "Enter feedback up to 3000 characters")
+        require(data["kind"] in ("answer", "change", "question", "agree", "propose", "adopt", "accept", "correct", "deny"), "Choose a response type")
+        require(len(data["message"]) <= 3000 and (data["kind"] in ("agree", "deny") or text(data["message"])), "Enter feedback up to 3000 characters")
         context = data.get("context", {})
         require(isinstance(context, dict), "Submission context must be an object")
-        required = {"revision", "proposal_id"} if data["kind"] in ("accept", "correct") else {"revision"} if data["kind"] in ("propose", "adopt") else set()
-        require(set(context) == required, "Include the displayed revision and proposal when required")
+        decision = data["kind"] in ("accept", "correct", "deny")
+        required = {"revision", "proposal_id"} if decision else {"revision"} if data["kind"] in ("propose", "adopt") else set()
+        require(set(context) == required or (data["kind"] in ("accept", "correct") and set(context) == required | {"replace"} and context["replace"] is True), "Include the displayed revision and proposal when required")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             model = self.model(db)
@@ -263,24 +288,70 @@ class Store:
             else:
                 require(model.get("state") != "closed", "Questionnaire is closed; ask the owner to reopen it")
                 if required:
-                    require(type(context.get("revision")) is int and context["revision"] == model["revision"], "Review changed; load the updated review before submitting")
+                    if type(context.get("revision")) is not int or context["revision"] != model["revision"]:
+                        raise DecisionConflict("Review changed; load the updated review before submitting")
                 if data["kind"] == "adopt":
                     require(data["message"] == questions(model)[data["question"]].get("request", {}).get("recommendation"), "Recommendation changed; load the updated review")
-                if data["kind"] in ("accept", "correct"):
-                    rows = [dict(r) for r in db.execute("SELECT * FROM feedback")]
-                    candidates = pending_proposals(questions(model)[data["question"]], rows)
+                if decision:
+                    rows = [{**dict(r), "context": json.loads(r["context"])} for r in db.execute("SELECT * FROM feedback")]
+                    reviewed = {r["feedback_id"] for r in model["reviews"]}
+                    question = questions(model)[data["question"]]
+                    candidates = pending_proposals(question, rows, reviewed)
                     proposal = next((f for f in candidates if f["id"] == context["proposal_id"]), None)
-                    require(proposal is not None, "Proposal is no longer awaiting acceptance; load the updated review")
+                    require(proposal is not None, "Proposal is no longer awaiting a decision; load the updated review")
+                    require(not any(f["kind"] in ("accept", "correct", "deny") and f.get("context", {}).get("proposal_id") == proposal["id"] and f["id"] not in reviewed for f in rows), "A decision is already awaiting review for this proposal")
+                    if data["kind"] != "deny":
+                        require(not any(f["question"] == question["id"] and f["kind"] in ("accept", "correct", "deny") and f["id"] not in reviewed for f in rows), "The reviewer must reconcile earlier decisions on this question before accepting another proposal")
+                    if data["kind"] != "deny" and question["status"] == "answered" and not context.get("replace"):
+                        raise DecisionConflict("Confirm replacement of the current answer before accepting this proposal")
                     if data["kind"] == "accept":
                         require(data["message"] == proposal["message"], "Accept the exact proposal or use the correction editor")
                 db.execute("INSERT INTO feedback (id, question, name, kind, message, created_at, context) VALUES (?, ?, ?, ?, ?, ?, ?)", (*[data[k] for k in FIELDS], now(), json.dumps(context)))
                 db.execute("INSERT INTO delivery (feedback_id) VALUES (?)", (data["id"],))
+                if decision:
+                    updated = deepcopy(model)
+                    question = questions(updated)[data["question"]]
+                    outcomes = question.setdefault("proposal_outcomes", {})
+                    outcomes[proposal["id"]] = {"state": "denied" if data["kind"] == "deny" else "accepted", "decision_id": data["id"]}
+                    if data["kind"] != "deny":
+                        for candidate in candidates:
+                            if candidate["id"] != proposal["id"]:
+                                outcomes[candidate["id"]] = {"state": "not_selected", "decision_id": data["id"]}
+                        question.pop("attention", None)
+                        question.update(status="answered", answer={
+                            "text": data["message"], "proposal_id": proposal["id"], "acceptance_id": data["id"],
+                            "evidence": [{"label": label, "href": "#feedback-" + fid} for label, fid in (
+                                ("Original proposal", proposal["id"]), ("SME correction" if data["kind"] == "correct" else "SME acceptance", data["id"]))],
+                        })
+                    applied = [(proposal["id"], "Original proposal preserved."), (data["id"], "Proposal denied." if data["kind"] == "deny" else "Corrected answer accepted." if data["kind"] == "correct" else "Answer accepted.")]
+                    if data["kind"] != "deny":
+                        applied.extend((c["id"], "Another proposal accepted; this candidate was not selected.") for c in candidates if c["id"] != proposal["id"])
+                    for fid, summary in applied:
+                        if fid not in reviewed:
+                            updated["reviews"].append({"feedback_id": fid, "question_ids": [question["id"]], "summary": summary, "reviewed_at": now(), "method": "host_recorded"})
+                    updated["revision"] += 1
+                    saved = {r["id"]: {**dict(r), "context": json.loads(r["context"])} for r in db.execute("SELECT * FROM feedback")}
+                    validate(updated, model, saved)
+                    db.execute("INSERT INTO publication VALUES (?, ?)", (updated["revision"], json.dumps(updated)))
         return data["id"]
 
-    def feedback(self):
+    def feedback(self, db=None):
+        if db is None:
+            with self.connect() as conn:
+                return self.feedback(conn)
+        return [{**dict(r), "context": json.loads(r["context"])} for r in db.execute("""SELECT f.*, d.attempts, d.receipt, d.delivered_at
+            FROM feedback f JOIN delivery d ON d.feedback_id = f.id ORDER BY f.created_at, f.id""")]
+
+    def state(self):
         with self.connect() as db:
-            return [{**dict(r), "context": json.loads(r["context"])} for r in db.execute("""SELECT f.*, d.attempts, d.receipt, d.delivered_at
-                FROM feedback f JOIN delivery d ON d.feedback_id = f.id ORDER BY f.created_at, f.id""")]
+            db.execute("BEGIN")
+            model, feedback = self.model(db), self.feedback(db)
+        reviewed = {r["feedback_id"] for r in model["reviews"]}
+        pending_decisions = {f.get("context", {}).get("proposal_id") for f in feedback if f["kind"] in ("accept", "correct", "deny") and f["id"] not in reviewed}
+        return {"model": model, "feedback": feedback, "pending_proposals": {
+            q["id"]: [f["id"] for f in pending_proposals(q, feedback, reviewed) if f["id"] not in pending_decisions]
+            for q in questions(model).values()
+        }}
 
     def handoff(self, output):
         output = Path(output)
@@ -297,7 +368,7 @@ class Store:
         records.extend({"type": "feedback", "feedback": row} for row in feedback)
         records.extend({"type": "review", "review": receipt} for receipt in model["reviews"])
         header = {
-            "type": "questionnaire", "schema_version": 3, "record_count": len(records) + 1,
+            "type": "questionnaire", "schema_version": 4, "record_count": len(records) + 1,
             "questionnaire": {k: v for k, v in model.items() if k not in ("requirements", "reviews")},
             "planning_contract": {
                 "next_step": "decompose_requirements_into_work_items",
@@ -373,7 +444,7 @@ def handler(store, mode):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path == "/api/state":
-                self.send(200, {"model": store.model(), "feedback": store.feedback(), "mode": mode})
+                self.send(200, {**store.state(), "mode": mode})
             elif path in ("/", "/page.js", "/page.css"):
                 name, kind = {"/": ("page.html", "text/html; charset=utf-8"), "/page.js": ("page.js", "text/javascript"), "/page.css": ("page.css", "text/css")}[path]
                 self.send(200, (ASSETS / name).read_bytes(), kind)
@@ -392,6 +463,8 @@ def handler(store, mode):
                 require(0 < length <= 16384, "Feedback too long or empty")
                 fid = store.submit(json.loads(self.rfile.read(length)))
                 self.send(200, {"id": fid, "saved": True})
+            except DecisionConflict as error:
+                self.send(409, {"error": str(error)})
             except (ValueError, TypeError, KeyError) as error:
                 self.send(400, {"error": str(error)})
             except sqlite3.Error:

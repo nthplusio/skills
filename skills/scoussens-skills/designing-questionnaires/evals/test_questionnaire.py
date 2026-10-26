@@ -104,15 +104,15 @@ class QuestionnaireTests(unittest.TestCase):
             self.store.publish(wrong)
         correction = {**self.submission(), "name": "Jordan", "kind": "correct", "message": "CSV for comparison; PDF remains outside this release.", "context": {"revision": 2, "proposal_id": proposal["id"]}}
         self.post(correction)
-        self.assertEqual(host.questions(self.store.model())["export-format"]["status"], "open")
+        self.assertEqual(host.questions(self.store.model())["export-format"]["status"], "answered")
         accepted = self.store.model()
-        accepted["revision"] = 3
         question = host.questions(accepted)["export-format"]
-        question.pop("attention")
-        question.update(status="answered", answer={"text": correction["message"], "proposal_id": proposal["id"], "acceptance_id": correction["id"], "evidence": [{"label": label, "href": "#feedback-" + row["id"]} for label, row in (("Original proposal", proposal), ("SME correction", correction))]})
-        accepted["reviews"].append({"feedback_id": correction["id"], "summary": "SME corrected and accepted scope.", "question_ids": ["export-format"]})
+        self.assertEqual(question["answer"]["text"], correction["message"])
+        self.assertEqual((question["answer"]["proposal_id"], question["answer"]["acceptance_id"]), (proposal["id"], correction["id"]))
+        self.assertEqual(accepted["revision"], 3)
         for mutation in ("wording", "proposal", "evidence"):
             bad = copy.deepcopy(accepted)
+            bad["revision"] += 1
             answer = host.questions(bad)["export-format"]["answer"]
             if mutation == "wording": answer["text"] = "PDF only."
             if mutation == "proposal": answer["proposal_id"] = correction["id"]
@@ -146,10 +146,153 @@ class QuestionnaireTests(unittest.TestCase):
         with self.assertRaises(HTTPError): self.post(acceptance)
         acceptance["context"]["revision"] = 2
         self.assertTrue(self.post(acceptance)["saved"])
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"]["text"], proposal["message"])
         self.store.close("Next review.")
+        before_retry = self.store.model()
         self.assertTrue(self.post(acceptance)["saved"])
+        self.assertEqual(self.store.model(), before_retry)
         restored = host.Store(self.store.path).feedback()
         self.assertEqual([(f["kind"], f["message"], f["context"]) for f in restored], [(f["kind"], f["message"], f["context"]) for f in (proposal, acceptance)])
+
+    def test_deny_individual_proposals_with_optional_feedback_preserves_open_question(self):
+        proposals = [{**self.submission(), "kind": "propose", "message": message, "context": {"revision": 1}}
+                     for message in ("PDF only.", "CSV without headers.", "CSV with headers.")]
+        for proposal in proposals:
+            self.post(proposal)
+        denials = [{**self.submission(), "kind": "deny", "message": message,
+                    "context": {"revision": 1, "proposal_id": proposal["id"]}}
+                   for proposal, message in zip(proposals, ("", "Readers need column names."))]
+        for denial in denials:
+            denial["context"]["revision"] = self.store.model()["revision"]
+            self.assertTrue(self.post(denial)["saved"])
+            self.assertTrue(self.post(denial)["saved"])
+        with self.assertRaises(HTTPError):
+            self.post({**self.submission(), "kind": "accept", "message": proposals[0]["message"], "context": {"revision": 1, "proposal_id": proposals[0]["id"]}})
+        source, output = self.path / "denials.jsonl", self.path / "denials.html"
+        self.store.handoff(source)
+        self.assertEqual(host.questions(self.store.model())["export-format"]["status"], "open")
+        self.assertEqual(json.loads(source.read_text().splitlines()[1])["planning"]["pending_proposal_ids"], [proposals[2]["id"]])
+        for proposal in proposals[:2]:
+            with self.assertRaises(HTTPError):
+                self.post({**self.submission(), "kind": "accept", "message": proposal["message"], "context": {"revision": 3, "proposal_id": proposal["id"]}})
+        self.assertTrue(self.post({**self.submission(), "kind": "accept", "message": proposals[2]["message"], "context": {"revision": 3, "proposal_id": proposals[2]["id"]}})["saved"])
+        self.assertTrue(self.post(denials[0])["saved"])
+        result = subprocess.run([sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("No feedback provided.", output.read_text())
+        self.assertIn(denials[1]["message"], output.read_text())
+        self.assertEqual([(row["kind"], row["message"]) for row in self.store.feedback()[:5]], [(row["kind"], row["message"]) for row in proposals + denials])
+        direct = {**self.submission(), "question": "export-access", "message": "Downloads follow viewing permissions."}
+        self.post(direct)
+        updated = self.store.model()
+        updated["revision"] += 1
+        question = host.questions(updated)["export-access"]
+        question.pop("attention")
+        question.update(status="answered", answer={"text": direct["message"], "evidence": [{"label": "Direct answer", "href": "#feedback-" + direct["id"]}]})
+        updated["reviews"].append({"feedback_id": direct["id"], "summary": "Direct answer recorded.", "question_ids": ["export-access"]})
+        self.store.publish(updated)
+        original_answer = copy.deepcopy(host.questions(self.store.model())["export-access"]["answer"])
+        challenge = {**self.submission(), "question": "export-access", "kind": "propose", "context": {"revision": updated["revision"]}}
+        self.post(challenge)
+        denial = {**self.submission(), "question": "export-access", "kind": "deny", "message": "", "context": {"revision": updated["revision"], "proposal_id": challenge["id"]}}
+        self.post(denial)
+        self.store.handoff(source)
+        self.assertEqual(host.questions(self.store.model())["export-access"]["answer"], original_answer)
+        self.assertNotIn(challenge["id"], json.loads(source.read_text().splitlines()[1])["planning"]["pending_proposal_ids"])
+
+    def test_competing_decisions_are_atomic_and_replacement_is_explicit(self):
+        proposals = [{**self.submission(), "kind": "propose", "message": message, "context": {"revision": 1}}
+                     for message in ("CSV with headers.", "PDF only.")]
+        for proposal in proposals: self.post(proposal)
+        decisions = [{**self.submission(), "kind": "accept", "message": p["message"], "context": {"revision": 1, "proposal_id": p["id"]}} for p in proposals]
+        barrier, results = threading.Barrier(2), []
+
+        def decide(decision):
+            barrier.wait()
+            try:
+                self.post(decision)
+                results.append((200, decision))
+            except HTTPError as error:
+                results.append((error.code, decision))
+
+        threads = [threading.Thread(target=decide, args=(d,)) for d in decisions]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertEqual(sorted(code for code, _ in results), [200, 409])
+        winner = next(d for code, d in results if code == 200)
+        state = self.store.state()
+        question = host.questions(state["model"])["export-format"]
+        self.assertEqual(question["answer"]["text"], winner["message"])
+        self.assertEqual(state["pending_proposals"]["export-format"], [])
+        self.assertEqual({p: o["state"] for p, o in question["proposal_outcomes"].items()}, {p["id"]: "accepted" if p["id"] == winner["context"]["proposal_id"] else "not_selected" for p in proposals})
+        self.assertEqual(len(state["feedback"]), 3)
+        self.post(winner)
+        self.assertEqual(self.store.state(), state)
+
+        challenge = {**self.submission(), "kind": "propose", "message": "CSV in UTF-8; PDF as a separate follow-up.", "context": {"revision": 2}}
+        self.post(challenge)
+        replacement = {**self.submission(), "kind": "correct", "message": "CSV in UTF-8 only.", "context": {"revision": 2, "proposal_id": challenge["id"]}}
+        with self.assertRaises(HTTPError) as caught: self.post(replacement)
+        self.assertEqual(caught.exception.code, 409)
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"], question["answer"])
+        replacement["context"]["replace"] = True
+        self.post(replacement)
+        settled = self.store.model()
+        self.assertEqual(host.questions(settled)["export-format"]["answer"]["text"], replacement["message"])
+        with self.store.connect() as db:
+            self.assertEqual([row[0] for row in db.execute("SELECT revision FROM publication ORDER BY revision")], [1, 2, 3])
+            historical = json.loads(db.execute("SELECT model FROM publication WHERE revision=2").fetchone()[0])
+        self.assertEqual(host.questions(historical)["export-format"]["answer"]["text"], winner["message"])
+        reopened = copy.deepcopy(settled)
+        reopened["revision"] += 1
+        q = host.questions(reopened)["export-format"]
+        q.pop("answer")
+        q["status"] = "open"
+        self.store.publish(reopened)
+        self.assertEqual(self.store.state()["pending_proposals"]["export-format"], [])
+        changed_history = self.store.model()
+        changed_history["revision"] += 1
+        host.questions(changed_history)["export-format"]["proposal_outcomes"].clear()
+        with self.assertRaisesRegex(ValueError, "Preserve original proposal outcomes"): self.store.publish(changed_history)
+
+    def test_failed_decision_rolls_back_feedback_delivery_and_publication(self):
+        proposal = {**self.submission(), "kind": "propose", "context": {"revision": 1}}
+        self.post(proposal)
+        before = self.store.state()
+        with self.store.connect() as db:
+            db.execute("CREATE TRIGGER fail_publication BEFORE INSERT ON publication BEGIN SELECT RAISE(ABORT, 'unavailable'); END")
+        decision = {**self.submission(), "kind": "deny", "message": "", "context": {"revision": 1, "proposal_id": proposal["id"]}}
+        with self.assertRaises(HTTPError) as caught: self.post(decision)
+        self.assertEqual(caught.exception.code, 503)
+        self.assertEqual(host.Store(self.store.path).state(), before)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM delivery").fetchone()[0], 1)
+            db.execute("DROP TRIGGER fail_publication")
+        self.post(decision)
+        after = self.store.state()
+        self.assertEqual(after["model"]["revision"], 2)
+        self.assertEqual(after["pending_proposals"]["export-format"], [])
+        self.post(decision)
+        self.assertEqual(host.Store(self.store.path).state(), after)
+
+    def test_upgrade_preserves_legacy_pending_decisions_and_original_tables(self):
+        proposal = {**self.submission(), "kind": "propose", "context": {"revision": 1}}
+        self.post(proposal)
+        legacy = {**self.submission(), "kind": "accept", "context": {"revision": 1, "proposal_id": proposal["id"]}}
+        with self.store.connect() as db:
+            db.execute("INSERT INTO feedback (id,question,name,kind,message,created_at,context) VALUES (?,?,?,?,?,?,?)", (*[legacy[k] for k in host.FIELDS], host.now(), json.dumps(legacy["context"])))
+            db.execute("INSERT INTO delivery (feedback_id,receipt) VALUES (?,?)", (legacy["id"], "legacy-receipt"))
+            before = {table: [tuple(r) for r in db.execute(f"SELECT * FROM {table}")] for table in ("publication", "feedback", "delivery")}
+        with self.store.connect() as db:
+            with sqlite3.connect(self.path / "upgrade.sqlite") as backup: db.backup(backup)
+        upgraded = host.Store(self.path / "upgrade.sqlite")
+        state = upgraded.state()
+        self.assertEqual(state["model"], self.example)
+        self.assertEqual(state["pending_proposals"]["export-format"], [])
+        self.assertEqual(host.questions(state["model"])["export-format"]["status"], "open")
+        self.assertEqual(upgraded.submit(legacy), legacy["id"])
+        with upgraded.connect() as db:
+            self.assertEqual({table: [tuple(r) for r in db.execute(f"SELECT * FROM {table}")] for table in before}, before)
 
     def test_delivery_acceptance_is_not_wake_and_retry_survives_restart(self):
         data = self.submission()
@@ -282,7 +425,7 @@ class QuestionnaireTests(unittest.TestCase):
             records = [json.loads(line) for line in stream]
         self.assertEqual(len(records), 4)
         self.assertEqual(records[0]["record_count"], 4)
-        self.assertEqual(records[0]["schema_version"], 3)
+        self.assertEqual(records[0]["schema_version"], 4)
         self.assertEqual(records[0]["planning_contract"]["execution_modes"], ["agent", "human", "mixed"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_assignees"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_decision_makers"])
@@ -622,6 +765,8 @@ class QuestionnaireTests(unittest.TestCase):
         browser("set", "viewport", "1440", "1000", "2")
         browser("wait", "[data-adopt=export-format]")
         browser("click", "[data-adopt=export-format]")
+        self.assertTrue(browser("eval", 'document.querySelector(\'#question-export-format [name="kind"][value="propose"]\').checked'))
+        self.assertFalse(browser("eval", 'document.querySelector("#question-export-format form textarea").readOnly'))
         browser("select", "#question-export-format form select", "person:Alex")
         browser("scrollintoview", "#question-export-format form button")
         browser("click", "#question-export-format form button")
@@ -629,17 +774,24 @@ class QuestionnaireTests(unittest.TestCase):
         proposal = self.store.feedback()[0]
         self.assertEqual(proposal["kind"], "adopt")
         self.assertEqual(proposal["message"], host.questions(self.example)["export-format"]["request"]["recommendation"])
-        self.post({**self.submission(), "question": "export-access", "kind": "propose", "message": "Downloads follow viewing permissions.", "context": {"revision": 1}})
+        browser("click", '#question-nav a[href="#question-export-access"]')
+        browser("click", "[data-adopt=export-access]")
+        browser("fill", "#question-export-access form textarea", "Downloads follow viewing permissions.")
+        browser("select", "#question-export-access form select", "person:Jordan")
+        browser("scrollintoview", "#question-export-access form button")
+        browser("click", "#question-export-access form button")
         browser("wait", "--fn", 'document.querySelector("#proposal-count").textContent === "2"')
+        self.assertEqual((self.store.feedback()[1]["kind"], self.store.feedback()[1]["message"]), ("propose", "Downloads follow viewing permissions."))
         browser("fill", "#reviewer-name", "Jordan")
         browser("click", "#review-queue")
+        browser("click", '#question-nav a[href="#question-export-format"]')
         card = "#proposal-" + proposal["id"]
-        browser("click", card + " [data-correct]")
+        browser("click", card + ' [data-edit="correct"]')
         self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), proposal["message"])
         browser("fill", card + " textarea", "Discard this edit.")
         browser("click", card + " [data-cancel]")
         self.assertEqual(len(self.store.feedback()), 2)
-        browser("click", card + " [data-correct]")
+        browser("click", card + ' [data-edit="correct"]')
         self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), proposal["message"])
         corrected = "CSV with a header row; PDF is outside this release."
         browser("fill", card + " textarea", corrected)
@@ -666,8 +818,257 @@ class QuestionnaireTests(unittest.TestCase):
         browser("click", '#question-export-access [data-decision="accept"]')
         browser("wait", "--text", "No more proposals in this queue.")
         self.assertEqual(browser("eval", 'document.querySelector("#proposal-count").textContent'), "0")
-        self.assertEqual(browser("eval", 'document.querySelector("#answered-count").textContent'), "0")
+        self.assertIsNone(browser("eval", 'document.querySelector("#publication-queue")'))
+        self.assertEqual(browser("eval", 'document.querySelector("#answered-count").textContent'), "2")
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"]["text"], corrected)
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-access .answer p").textContent'), "Downloads follow viewing permissions.")
         self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
+
+        browser("scrollintoview", "#back-to-list")
+        browser("click", "#back-to-list")
+        browser("scrollintoview", '#question-nav a[href="#question-export-retention"]')
+        browser("click", '#question-nav a[href="#question-export-retention"]')
+        browser("wait", "--fn", 'location.hash === "#question-export-retention"')
+        browser("scrollintoview", "#question-export-retention form textarea")
+        browser("fill", "#question-export-retention form textarea", "Keep this unrelated draft after accepting.")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form textarea").value'), "Keep this unrelated draft after accepting.")
+        challenge = {**self.submission(), "kind": "propose", "message": "CSV with a BOM for legacy spreadsheets.", "context": {"revision": self.store.model()["revision"]}}
+        self.post(challenge)
+        browser("wait", "--fn", 'document.querySelector("#proposal-count").textContent === "1"')
+        browser("scrollintoview", "#review-queue")
+        browser("click", "#review-queue")
+        replacement = "#proposal-" + challenge["id"]
+        self.assertTrue(browser("eval", f'document.querySelector("{replacement}").checkVisibility()'))
+        browser("click", replacement + ' [data-decision="accept"]')
+        browser("wait", replacement + " .replacement:not([hidden])")
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"]["text"], corrected)
+        browser("click", replacement + " .replacement [data-cancel]")
+        browser("click", replacement + ' [data-edit="correct"]')
+        browser("fill", replacement + " textarea", "CSV in UTF-8 without a BOM.")
+        browser("click", replacement + ' [data-decision="correct"]')
+        browser("wait", replacement + " .replacement:not([hidden])")
+        self.assertIn(corrected, browser("eval", f'document.querySelector("{replacement} [data-current-answer]").textContent'))
+        browser("click", replacement + " [data-confirm-replacement]")
+        browser("wait", "--text", "Answer replaced.")
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"]["text"], "CSV in UTF-8 without a BOM.")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form textarea").value'), "Keep this unrelated draft after accepting.")
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_sme_denies_competing_proposals_with_and_without_feedback(self):
+        command = ["agent-browser", "--session", "denial-" + uuid.uuid4().hex[:8], "--json"]
+        self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
+
+        def browser(*args):
+            result = subprocess.run(command + list(args), capture_output=True, text=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            self.assertTrue(response["success"], response)
+            return response["data"].get("result")
+
+        proposals = [{**self.submission(), "kind": "propose", "message": message, "context": {"revision": 1}}
+                     for message in ("PDF only.", "CSV without headers.")]
+        for proposal in proposals: self.post(proposal)
+        browser("open", self.url)
+        browser("set", "viewport", "1280", "900", "2")
+        browser("wait", "#review-queue")
+        browser("fill", "#reviewer-name", "Jordan")
+        browser("click", "#review-queue")
+        first, second = ["#proposal-" + p["id"] for p in proposals]
+        browser("click", first + ' [data-edit="deny"]')
+        browser("fill", first + " textarea", "Discard this reason.")
+        browser("click", first + " [data-cancel]")
+        self.assertEqual(len(self.store.feedback()), 2)
+        browser("click", first + ' [data-edit="deny"]')
+        self.assertEqual(browser("eval", f'document.querySelector("{first} textarea").value'), "")
+        browser("click", first + ' [data-decision="deny"]')
+        browser("wait", "--fn", 'document.querySelector("#proposal-count").textContent === "1"')
+        self.assertEqual(browser("eval", 'document.activeElement.closest(".proposal").id'), second[1:])
+        browser("click", second + ' [data-edit="deny"]')
+        browser("fill", second + " textarea", "Readers need column names.")
+        browser("reload")
+        browser("wait", second + " textarea")
+        self.assertEqual(browser("eval", f'document.querySelector("{second} textarea").value'), "Readers need column names.")
+        browser("click", second + ' [data-decision="deny"]')
+        browser("wait", "--text", "No more proposals in this queue.")
+        self.assertEqual([(f["context"]["proposal_id"], f["message"]) for f in self.store.feedback() if f["kind"] == "deny"], [(proposals[0]["id"], ""), (proposals[1]["id"], "Readers need column names.")])
+        self.assertEqual(browser("eval", f'document.querySelector("{first} .proposal-label").textContent'), "Denied proposal")
+        self.assertIn("No feedback provided.", browser("eval", f'document.querySelector("{first} .proposal-state").textContent'))
+        self.assertEqual(browser("eval", 'document.querySelector("#proposal-count").textContent'), "0")
+        self.assertIsNone(browser("eval", 'document.querySelector("#publication-queue")'))
+        self.assertEqual(browser("eval", 'document.querySelector("#answered-count").textContent'), "0")
+        browser("set", "viewport", "390", "844", "2")
+        self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
+
+    def decision_browser(self):
+        command = ["agent-browser", "--session", "qa-" + uuid.uuid4().hex[:8], "--json"]
+        self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
+
+        def browser(*args):
+            result = subprocess.run(command + list(args), capture_output=True, text=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            self.assertTrue(response["success"], response)
+            return response["data"].get("result")
+
+        browser("open", self.url)
+        browser("set", "viewport", "1280", "900", "2")
+        browser("wait", "#question-nav a")
+        return browser
+
+    def test_legacy_snapshot_versions_do_not_infer_immediate_decisions(self):
+        source, output = self.path / "legacy.jsonl", self.path / "legacy.html"
+        self.post(self.submission())
+        for version in (1, 2, 3):
+            with self.subTest(version=version):
+                if version == 3:
+                    proposal = {**self.submission(), "kind": "propose", "message": "CSV with headers.", "context": {"revision": 1}}
+                    self.post(proposal)
+                    legacy = {**self.submission(), "kind": "accept", "message": proposal["message"],
+                              "context": {"revision": 1, "proposal_id": proposal["id"]}}
+                    with self.store.connect() as db:
+                        db.execute("INSERT INTO feedback (id,question,name,kind,message,created_at,context) VALUES (?,?,?,?,?,?,?)",
+                                   (*[legacy[k] for k in host.FIELDS], host.now(), json.dumps(legacy["context"])))
+                        db.execute("INSERT INTO delivery (feedback_id,receipt) VALUES (?,?)", (legacy["id"], "legacy-delivery"))
+                before = self.store.state()
+                self.store.handoff(source)
+                rows = [json.loads(line) for line in source.read_text().splitlines()]
+                rows[0]["schema_version"] = version
+                for row in rows:
+                    if row["type"] == "requirement":
+                        if version < 3: row["planning"].pop("pending_proposal_ids")
+                        if version == 1: row["planning"].pop("deferred_question_ids")
+                rows[0].pop("snapshot_id")
+                rows[0]["snapshot_id"] = hashlib.sha256(''.join(json.dumps(r, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + '\n' for r in rows).encode()).hexdigest()
+                source.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+                result = subprocess.run([sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Accepted proposal:", output.read_text())
+                self.assertIn("Unreviewed — no review receipt recorded.", output.read_text())
+                if version == 3:
+                    self.assertIn("Proposed answers — not settled", output.read_text())
+                self.assertEqual(self.store.state(), before)
+                self.assertEqual(host.questions(before["model"])["export-format"]["status"], "open")
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_failed_correction_save_keeps_editable_draft_and_retries_once(self):
+        proposal = {**self.submission(), "kind": "propose", "message": "CSV with headers.", "context": {"revision": 1}}
+        self.post(proposal)
+        browser = self.decision_browser()
+        browser("fill", "#reviewer-name", "Alex")
+        browser("click", "#review-queue")
+        card = "#proposal-" + proposal["id"]
+        browser("click", card + ' [data-edit="correct"]')
+        corrected = "CSV in UTF-8 with headers and accented names."
+        browser("fill", card + " textarea", corrected)
+        before = self.store.state()
+        with self.store.connect() as db:
+            db.execute("CREATE TRIGGER fail_publication BEFORE INSERT ON publication BEGIN SELECT RAISE(ABORT, 'unavailable'); END")
+        browser("click", card + ' [data-decision="correct"]')
+        browser("wait", "--text", "Your draft and retry ID are kept.")
+        self.assertEqual(self.store.state(), before)
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), corrected)
+        self.assertFalse(browser("eval", f'document.querySelector(\'{card} [data-decision="correct"]\').disabled'))
+        browser("reload")
+        browser("wait", card + " textarea")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), corrected)
+        self.assertEqual(browser("eval", 'document.querySelector("#reviewer-name").value'), "Alex")
+        with self.store.connect() as db:
+            db.execute("DROP TRIGGER fail_publication")
+        browser("scrollintoview", card + ' [data-decision="correct"]')
+        browser("click", card + ' [data-decision="correct"]')
+        browser("wait", "--text", "Accepted. This question is answered.")
+        state = self.store.state()
+        self.assertEqual(state["model"]["revision"], 2)
+        self.assertEqual(host.questions(state["model"])[proposal["question"]]["answer"]["text"], corrected)
+        self.assertEqual([(f["kind"], f["name"]) for f in state["feedback"]], [("propose", "Alex"), ("correct", "Alex")])
+        self.assertEqual(state["pending_proposals"][proposal["question"]], [])
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_lost_decision_response_retry_preserves_single_effect_and_receipts(self):
+        proposal = {**self.submission(), "kind": "propose", "message": "CSV with headers.", "context": {"revision": 1}}
+        self.post(proposal)
+        browser = self.decision_browser()
+        browser("fill", "#reviewer-name", "Alex")
+        browser("click", "#review-queue")
+        card = "#proposal-" + proposal["id"]
+        browser("eval", """(() => {
+          const realFetch = window.fetch.bind(window);
+          let dropped = false;
+          window.fetch = async (...args) => {
+            const response = await realFetch(...args);
+            if (args[0] === '/api/feedback' && !dropped) {
+              dropped = true;
+              throw new TypeError('Synthetic lost acknowledgement');
+            }
+            return response;
+          };
+        })()""")
+        browser("click", card + ' [data-decision="accept"]')
+        browser("wait", "--text", "Synthetic lost acknowledgement")
+        committed = self.store.state()
+        self.assertEqual(committed["model"]["revision"], 2)
+        self.assertEqual(len(committed["feedback"]), 2)
+        browser("click", card + ' [data-decision="accept"]')
+        browser("wait", "--text", "No more proposals in this queue.")
+        self.assertEqual(self.store.state(), committed)
+        self.assertEqual(browser("eval", 'document.querySelector("#proposal-count").textContent'), "0")
+        self.assertEqual(browser("eval", 'document.querySelector("#answered-count").textContent'), "1")
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_competing_acceptance_keeps_unsent_correction_accessible_after_update(self):
+        proposal = {**self.submission(), "kind": "propose", "message": "CSV with headers.", "context": {"revision": 1}}
+        self.post(proposal)
+        browser = self.decision_browser()
+        browser("fill", "#reviewer-name", "Alex")
+        browser("click", "#review-queue")
+        card = "#proposal-" + proposal["id"]
+        browser("click", card + ' [data-edit="correct"]')
+        corrected = "CSV in UTF-8; preserve accented names for the monthly audit."
+        browser("fill", card + " textarea", corrected)
+        self.post({**self.submission(), "name": "Jordan", "kind": "accept", "message": proposal["message"],
+                   "context": {"revision": 1, "proposal_id": proposal["id"]}})
+        browser("click", card + ' [data-decision="correct"]')
+        browser("wait", "--text", "Review changed; load the updated review")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), corrected)
+        browser("wait", "--fn", '!document.querySelector("#update").hidden')
+        browser("click", "#reload")
+        browser("wait", "#question-export-format .answer")
+        self.assertEqual(len(self.store.feedback()), 2)
+        self.assertEqual(browser("eval", 'document.querySelector("#proposal-count").textContent'), "0")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-format .answer p").textContent'), proposal["message"])
+        self.assertIn(corrected, browser("eval", '[...document.querySelectorAll("textarea")].filter(e => e.checkVisibility()).map(e => e.value)'),
+                      "An unsent conflicting correction must remain visible or copyable after loading the winner's answer.")
+        self.assertTrue(browser("eval", f'document.querySelector("{card} textarea").readOnly'))
+        self.assertFalse(browser("eval", f'document.querySelector("{card} [data-editor-submit]").checkVisibility()'))
+        browser("reload")
+        browser("wait", card + " textarea")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), corrected)
+        browser("set", "viewport", "390", "844", "2")
+        browser("scrollintoview", card + " textarea")
+        self.assertTrue(browser("eval", f'document.querySelector("{card} textarea").checkVisibility()'))
+        self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
+        browser("scrollintoview", card + " .correction [data-cancel]")
+        browser("click", card + " .correction [data-cancel]")
+        self.assertFalse(browser("eval", f'document.querySelector("{card} textarea").checkVisibility()'))
+        self.assertEqual(browser("eval", 'document.activeElement.id'), card[1:])
+        self.assertEqual(len(self.store.feedback()), 2)
+        self.assertEqual(host.questions(self.store.model())[proposal["question"]]["answer"]["text"], proposal["message"])
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_blocked_draft_storage_refuses_update_reload_without_losing_text(self):
+        browser = self.decision_browser()
+        browser("eval", "Storage.prototype.setItem = () => { throw new DOMException('Synthetic denied storage', 'SecurityError') }")
+        browser("fill", "#question-export-format form textarea", "Unsent encoding question; copy before reload.")
+        browser("wait", "--text", "Draft storage is unavailable.")
+        updated = copy.deepcopy(self.example)
+        updated["revision"] = 2
+        self.store.publish(updated)
+        browser("wait", "--fn", '!document.querySelector("#update").hidden')
+        browser("click", "#reload")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-format form textarea").value'), "Unsent encoding question; copy before reload.")
+        self.assertIn("Revision 1", browser("eval", 'document.querySelector("#filter-status").textContent'))
+        self.assertFalse(browser("eval", 'document.querySelector("#update").hidden'))
+        self.assertEqual(self.store.feedback(), [])
 
 
 if __name__ == "__main__":

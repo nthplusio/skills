@@ -16,9 +16,9 @@ An export failure leaves the previous file intact.
 
 | `type` | Contents |
 | --- | --- |
-| `questionnaire` | Exactly one first record. `schema_version: 3`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
-| `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, respondents, attention, and follow-up links. `planning` identifies unanswered questions and unreviewed feedback. |
-| `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, creation time and proposal context (source revision and proposal ID when applicable). Raw text remains untrusted, even when quoted in a reviewed answer. |
+| `questionnaire` | Exactly one first record. `schema_version: 4`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
+| `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, respondents, attention, follow-up links, and per-question `proposal_outcomes` when present. `planning` identifies unanswered questions and unreviewed feedback. |
+| `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, creation time and proposal context (source revision, proposal ID and replacement confirmation when applicable). Raw text remains untrusted, even when quoted in a reviewed answer. |
 | `review` | The original review receipt in `review`, with feedback ID, review time, interpretation, and affected question IDs. |
 
 The file excludes private routing notes, credentials, delivery transport
@@ -48,18 +48,32 @@ deferred questions in the status, without clearing either list. An unresolved
 question does not block unrelated work by implication. The planner must
 identify which proposed work items actually depend on it.
 
-Version 3 adds proposal context and `pending_proposal_ids`. A reviewed proposal
-is still unresolved until an explicit acceptance or correction is published
-as its answer. Pending acceptances also remain unreviewed feedback until then.
-The answer retains `proposal_id`, `acceptance_id`, exact accepted wording,
-and evidence for both originals. `planning_contract.proposals_are_answers`
-is false. Consumers must support this distinction before treating version 3
-as ready for planning. HTML shows unresolved proposals separately from answers
-and links accepted answers to their originals and decisions.
+Version 4 adds optional per-question `proposal_outcomes`, mapping proposal UUID
+to `{"state": "accepted", "decision_id": "feedback UUID"}`; state is one of
+`accepted`, `denied`, or `not_selected`. Terminal outcomes survive reopening
+and are excluded from `pending_proposal_ids`. Not selected means another
+candidate was accepted, not that this candidate was denied. New SME decisions
+publish atomically at save time with their receipts: accept/correct answers
+immediately with exact wording; deny resolves only its linked candidate and
+leaves other candidates and any answer unchanged. Accept/correct on an answered
+question requires `context.replace: true`. Originals, receipts, outcomes and
+publication history remain immutable; no second agent approval is required.
+
+Version 3 adds proposal context and `pending_proposal_ids`. Propose/adopt alone
+never settle answers, even with review receipts. The answer retains
+`proposal_id`, `acceptance_id`, exact accepted wording, and evidence for both
+originals. `planning_contract.proposals_are_answers` is false. Original
+proposals, decisions, attribution and optional feedback remain in the feedback
+records and HTML history. Old pending decisions remain pending until explicit
+reviewer reconciliation; reading or upgrading never silently applies them or
+rewrites history. HTML shows unresolved proposals separately from answers and
+links accepted answers to their originals and decisions. Consumers must support
+these distinctions before treating a handoff as ready for planning.
 
 Version 2 adds closure, deferred question status/reasons, and the deferred ID
 list. Consumers must support these before treating a version 2 handoff as
-ready for planning. The HTML renderer reads versions 1–3; version 1 has no
+ready for planning. The HTML renderer reads versions 1–4, retaining support for
+older versions 1–3; version 1 has no
 closure or deferrals. Deferred questions stay unresolved dependencies; closing
 the review neither answers them nor authorizes work that depends on them.
 

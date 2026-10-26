@@ -32,6 +32,11 @@ Questions can also carry these fields:
   `clarification`, or `conflict`. The next action names who can supply what.
   A conflict needs evidence links for both claims. Answered questions remove
   `attention`; new unreviewed feedback remains visible independently.
+- `proposal_outcomes` is an optional mapping from proposal UUID to
+  `{"state": "accepted", "decision_id": "feedback UUID"}`. State is one of
+  `accepted`, `denied`, or `not_selected`; the decision ID links the SME decision
+  that settled the candidate. Terminal outcomes survive reopening. Preserve
+  stored entries alongside immutable originals, receipts, and history.
 
 Older publications without setup or request fields remain readable. An open
 question without attention defaults to waiting, or clarification if it is a
@@ -108,7 +113,7 @@ history and earlier snapshots keep the previous closure and reasons.
 
 `POST /api/feedback` accepts `id` (canonical UUID), `question`, `name`,
 `kind` (`answer`, `change`, `question`, `agree`, `propose`, `adopt`, `accept`,
-`correct`), `message`, and the proposal `context` described below. Names are
+`correct`, `deny`), `message`, and the proposal `context` described below. Names are
 self-entered, not identity claims. Text is displayed as text, not HTML.
 `GET /api/state` returns the current model, feedback, and review mode.
 
@@ -117,52 +122,83 @@ self-entered, not identity claims. Text is displayed as text, not HTML.
 `propose` saves a candidate. `adopt` saves the exact current recommendation
 as a candidate. Both require `context: {"revision": N}` with the displayed
 publication revision. `accept` saves the exact proposal wording; `correct`
-saves the SME's corrected wording. Both require
-`context: {"revision": N, "proposal_id": "UUID"}`. Other kinds omit context
-or use `{}`. New proposal actions reject stale revisions; identical saved
+saves the SME's corrected wording. `deny` saves a denial with optional feedback
+in `message`, which can be empty. All three decisions require
+`context: {"revision": N, "proposal_id": "UUID"}`. Accept/correct on an
+answered question also requires explicit replacement confirmation, recorded as
+`replace: true` in that context; it is otherwise optional. Other kinds omit
+context or use `{}`. New proposal actions reject stale revisions; identical saved
 retries still succeed after later publications or closure. Editing the
 recommendation before proposing uses `propose`, not `adopt`.
 
-The inline card shows attribution and pending/accepted state. Review proposals
+Use as proposal selects the visible Propose an answer for SME review option
+and prefills an editable answer. Saving the unchanged recommendation records
+`adopt`; saving edited wording records `propose`.
+
+The inline card shows attribution and proposal outcome. Review proposals
 opens an SME queue, clearing unrelated filters. Enter a self-reported name
 once under Reviewing as. Accept and next saves acceptance and moves to the
 next queued question. Correct proposal opens the proposal text in an editor;
 Accept corrected answer saves it, while Cancel discards only the unsaved edit.
 Polling keeps editors mounted; session drafts and retry IDs survive the
 explicit Load updated review action. Competing proposals remain visible,
-with no preselected winner. A pending acceptance leaves the SME queue but
-still needs reviewer publication. Closed reviews disable new decisions.
+with no preselected winner. There is one Review proposals queue, counting only
+unresolved candidates, not a second publication queue. Closed reviews disable
+new decisions. Manual versus automatic agent review does not delay SME decisions.
 
-The reviewer checks the saved decision authority before publishing acceptance.
-Set the question to answered, clear attention, and include `answer.proposal_id`
-and `answer.acceptance_id`, linking the immutable proposal and its `accept` or
-`correct` feedback. Preserve the acceptance's exact message as `answer.text`.
-Both rows need review receipts and labeled `#feedback-ID` evidence links in
-the answer. Merely reviewing a proposal cannot turn it into an answer. The
-host does not enforce distinct people: a proposer may also be a qualified SME,
-and names do not establish authority. Direct answers retain the existing
-review path; do not relabel a proposal to bypass acceptance.
+For each new accept/correct/deny, the host commits the immutable feedback,
+review receipts, outcome updates, and incremented publication in one SQLite
+transaction. Failure leaves the prior publication and candidates unchanged.
+No second agent approval or publication step is required. Accept/correct
+immediately sets the question to answered, clears attention, and supplies
+`answer.proposal_id` and `answer.acceptance_id`, linking the original proposal
+and decision. `answer.text` is the exact accepted or corrected message. Both
+originals have receipts and labeled `#feedback-ID` evidence links. Any existing
+receipt is retained unchanged rather than regenerated. Propose/adopt alone,
+including a reviewer receipt for them, never settle an answer.
 
-Publication of an accepted answer resolves that proposal and competing
-proposals saved before its acceptance. The UI keeps the latter as earlier,
-not-selected proposals. Later proposals remain challenges, without replacing
-the settled answer. Reopening removes the current answer and returns original
-proposals to review. Preserve earlier decisions in feedback and publication
-history. Incomplete or conflicting acceptances stay open with clarification
-or conflict attention; a review receipt alone does not resolve them.
+Deny proposal opens an empty optional-feedback editor. Deny and next confirms
+the denial; Cancel discards the unsaved reason without denying anything.
+Saving immediately marks that proposal denied and excludes it from pending
+proposals. Its original, attribution, denial and
+optional reason remain visible. A denial affects only its linked proposal;
+other candidates and any current answer stay unchanged. If all candidates
+are denied, an unanswered question stays open. Submit a new proposal to try
+again rather than accepting or rewriting terminal history. Concurrent decisions
+cannot settle a candidate twice; an identical retry succeeds.
+
+Acceptance marks the chosen proposal `accepted` and other existing unresolved
+proposals `not_selected`, linked to the same decision. Display Not selected,
+not Denied: those candidates were not individually rejected. Keep prior
+terminal outcomes unchanged. Later proposals are unresolved challenges and
+leave the answer intact. Accepting or correcting a challenge replaces that
+answer only with explicit replacement confirmation. Reopening a question does
+not return terminal proposals to the queue; submit a new candidate instead.
+
+Self-acceptance is allowed. Names are attribution, not authentication or proof
+of authority. Direct answer/change/question/agree feedback retains the existing
+reviewer interpretation path for completeness and conflicts. The agent still
+researches, edits requirements, and routes real conflicts to the saved decision
+maker. It preserves host decisions and receipts instead of reapplying or
+overwriting them; do not relabel a proposal to bypass an SME decision.
 
 Opening an older database adds a `context` column with an empty-object default;
 original feedback fields, outbox rows, receipts and publications are unchanged.
-Back up before upgrading. A fork with proposals already treated as final
-answers needs an explicit policy reconciliation before publishing new reviews;
-do not fabricate acceptance or silently rewrite history to pass validation.
+Back up before upgrading. Old pending decisions are not silently applied.
+The reviewer explicitly reconciles ambiguous old feedback and any fork that
+treated proposals as final answers before publishing new changes. Historical
+data stays untouched; never fabricate acceptance or rewrite old receipts.
 
 The browser creates a submission UUID before sending and retains it for an
 unchanged retry. The server commits the exact original fields and a pending
 outbox row together. Replaying the same UUID and content returns success;
 different content with the same UUID is rejected. Database triggers reject
-feedback updates and deletes. Only trusted local tooling can publish reviews
-or acknowledge delivery; neither is a browser API.
+feedback updates and deletes. General model publication and delivery
+acknowledgment remain trusted local operations, not browser APIs. SME decision
+submission is the bounded browser path that lets the host publish its outcome.
+
+The following delivery states describe ordinary feedback. SME decision receipts
+and outcomes publish during saving, independently of notification delivery.
 
 | State | Evidence | Page wording |
 | --- | --- | --- |

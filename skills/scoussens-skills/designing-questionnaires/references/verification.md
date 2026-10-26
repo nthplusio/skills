@@ -70,7 +70,10 @@ loop if no reviewer received and interpreted the saved feedback.
 ## Proposed-answer scenarios
 
 Use the reference host with disposable data. Save a custom proposal and adopt
-a recommendation on another question. Reload and inspect exact text, source
+a recommendation on another question. Use as proposal must select the visible
+Propose an answer for SME review option and prefill editable text. Verify
+unchanged text saves as adoption and edited wording as a custom proposal.
+Reload and inspect exact text, source
 revision, attribution, pending status and the unchanged answered count.
 Publish a review receipt alone: the proposal must still need SME review in
 the page and JSONL. Reject an attempted answer citing only that proposal.
@@ -84,18 +87,43 @@ stale-tab save must fail without losing its draft or rewriting the proposal.
 
 Accept a corrected answer, then accept the next proposal unchanged. Expect
 one immutable decision per save, correct proposal links, automatic queue
-advance and an explicit empty queue. Neither submission changes the answered
-count before publication. Replay a saved UUID after a publication and closure:
-expect success without duplicates. Self-acceptance is not rejected based on
-name; the reviewer checks authority, not a self-entered name comparison.
+advance and an explicit empty queue. Each save immediately increments the
+publication revision, answers with the exact accepted wording, and publishes
+receipts and terminal outcomes atomically. There is only one Review proposals
+queue and no agent approval step. Check failure leaves the prior publication
+and candidates intact. Replay a saved UUID after a publication and closure:
+expect success without duplicates or another revision. Self-acceptance is
+allowed; a self-entered name is attribution, not authentication.
 
-Publish both receipts and the accepted answer's proposal/acceptance IDs with
-both evidence links. Check accepted wording, green accepted state, provenance
-and cleared proposal readiness in JSONL and offline HTML. Add a new proposal
-against that answer: the settled answer must remain visible with a separate
-unresolved challenge. Inspect desktop and narrow correction/queue states and
-record pointer interaction. Verify old database rows and outbox receipts
-survive the additive context-column migration before upgrading a real run.
+Deny one of several candidates without feedback and another with a reason.
+Cancel first to prove no denial is saved; reload an unsent reason to verify
+draft retention. Check that each decision links only its intended proposal,
+the next candidate remains available, and concurrent decisions cannot settle
+one candidate twice. At save time, both originals and reasons remain visible,
+receipts publish, and denied candidates leave the queue and JSONL pending list.
+They cannot be accepted later. Denying every candidate leaves the question open.
+Denying a challenge must preserve an existing accepted or direct answer.
+
+Inspect host-published proposal/acceptance IDs and both evidence links. Check
+accepted wording, green accepted state, provenance and cleared proposal
+readiness in schema-4 JSONL and offline HTML. Other existing unresolved
+candidates must be Not selected, not denied, linked to that acceptance. Add a
+new proposal against that answer: it remains an unresolved challenge without
+replacing the answer. Attempt accept/correct without replacement confirmation:
+expect rejection with the answer intact. Confirm replacement explicitly and
+verify `context.replace: true`, the new exact answer, and unchanged history.
+Reopen the question: all terminal outcomes survive and stay out of the queue.
+Verify schema-1–3 snapshots still render without inferring new decisions.
+
+Inspect desktop and narrow correction/queue states and record pointer
+interaction. Verify old database rows, outbox receipts, publications and pending
+decisions survive upgrade unchanged; no old decision is silently applied.
+Ambiguous old feedback requires explicit reviewer reconciliation. Run the
+ordinary answer/change/question/agree reviewer path as a control: completeness
+and conflicts still require interpretation. Follow a host decision with agent
+research and a requirement edit; the decision must not be reapplied and its
+receipt must remain unchanged. Route a real conflict to the saved decision
+maker rather than silently rewriting the SME's decision.
 
 ## Evaluate research instructions separately
 

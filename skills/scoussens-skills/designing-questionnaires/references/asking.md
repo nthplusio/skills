@@ -34,31 +34,48 @@ proposal. Preserve the adopted wording and its source revision so later
 recommendation edits cannot change what the SME accepts.
 
 Show the candidate answer, proposer, rationale and evidence together. Label
-it "Proposed answer · not settled" and keep the question open. Publishing
+it "Proposed answer · not settled"; keep an unanswered question open and any
+existing answer intact. Publishing
 a review receipt or allowing answers from any respondent does not accept a
 proposal. Keep pending proposals distinct from unsaved drafts and saved
 submissions awaiting agent review.
 
 Let the SME accept the displayed proposal without retyping, or open a
 prefilled correction editor and explicitly accept the corrected answer.
-Cancelling an edit leaves the proposal unchanged. Preserve the original
-proposal and link the accepted wording to its proposal and acceptance or
-correction evidence. Keep competing proposals visible without preselecting a
-winner. A proposal on a settled question challenges the answer; it does not
-silently overwrite it. Follow the saved decision policy for conflicts.
+Saving accept/correct immediately answers with that exact wording: the host
+publishes the decision, receipts, and outcome atomically, without a second
+agent approval. Cancelling an edit leaves the proposal unchanged. Preserve the
+original proposal and link the answer to its proposal and decision evidence.
+Keep competing proposals visible without preselecting a winner. After acceptance,
+other existing unresolved proposals become Not selected, not denied. A proposal
+on a settled question is a challenge; accepting or correcting it requires
+explicit confirmation to replace the current answer. Keep terminal outcomes
+through reopening. Use one Review proposals queue for unresolved candidates.
+
+Let the SME deny each proposal with optional feedback. Confirm the denial
+before saving, retain the original and decision, and advance to the next
+candidate. Saving the denial takes effect immediately, with no agent publication
+step. Denying one leaves competitors available. Denying every proposal
+leaves an unanswered question open; denying a challenge preserves the current
+answer. Show who denied it and the feedback, or "No feedback provided."
+An engineer can submit a new candidate rather than edit denied history.
 
 Record who can settle proposals in the review policy. A self-entered name or
-an SME label is attribution, not authentication. Verify proposal persistence,
-recommendation adoption, acceptance, correction, cancellation and stale-review
+an SME label is attribution, not authentication; self-acceptance is allowed.
+The agent continues research and requirements edits, preserves host decisions
+and receipts, and routes real conflicts to the saved decision maker. Direct
+answer/change/question/agree feedback still needs reviewer interpretation for
+completeness and conflicts. Verify proposal persistence,
+recommendation adoption, acceptance, correction, denial, cancellation and stale-review
 handling before claiming the host supports this workflow. Exports must retain
-proposals as provisional and keep them out of settled-answer readiness.
+unresolved proposals as provisional and keep them out of settled-answer readiness.
 
 ## Show what needs attention
 
 Question completion and feedback review are independent. Keep the template's
 Open and Completed filters. Show pending review even on an answered question
 when new feedback challenges it. Receipt publication, not delivery, clears
-pending review.
+pending review; SME decision receipts publish in the save transaction.
 
 For an open question, set `attention` to waiting, clarification, or conflict.
 Name the next action and who can supply it. Clarification asks only for the

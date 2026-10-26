@@ -18,9 +18,10 @@
   <div id="update" class="review-note" hidden>Review updated. <button id="reload" class="secondary">Load updated review</button> Unsent drafts are kept in this tab.</div>
   <p id="load-status" role="status"></p>
   <section class="review-toolbar panel" aria-label="Proposal review">
-    <div><strong>Proposed answers</strong><p class="muted">Engineers prepare. Subject-matter experts accept or correct. Names are self-reported.</p></div>
+    <div><strong>Proposed answers</strong><p class="muted">Engineers propose. SMEs accept, correct or deny. Names are self-reported.</p></div>
     <label>Reviewing as<input id="reviewer-name" maxlength="80" autocomplete="name" placeholder="Your name"></label>
     <button id="review-queue" class="secondary" aria-pressed="false">Review proposals <span id="proposal-count">0</span></button>
+    <p class="muted">Accept or correct to record the answer immediately. Deny with or without feedback. No further approval is needed. You may accept your own proposal.</p>
     <p id="proposal-status" class="status" role="status"></p>
   </section>
   <section class="attention-overview" aria-label="Attention in these filters">

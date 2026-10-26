@@ -16,7 +16,7 @@ def read_snapshot(source):
     require(raw.endswith("\n"), "JSONL must end with a newline")
     records = [json.loads(line) for line in raw[:-1].split("\n")]
     header = records[0]
-    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2, 3), "Expected JSONL handoff schema version 1, 2 or 3")
+    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2, 3, 4), "Expected JSONL handoff schema version 1, 2, 3 or 4")
     require(type(header["record_count"]) is int and header["record_count"] == len(records), "JSONL record count mismatch")
     require(all(r["type"] in ("requirement", "feedback", "review") for r in records[1:]), "Unexpected JSONL record type")
     canonical_header = {k: v for k, v in header.items() if k != "snapshot_id"}
@@ -30,13 +30,14 @@ def read_snapshot(source):
     for row in feedback:
         require(all(isinstance(row[k], str) for k in ("id", "question", "name", "kind", "message", "created_at")), "Feedback fields must be text")
     validate(model, None, {f["id"]: f for f in feedback}, check_review_times=False)
+    require(header["schema_version"] >= 4 or not any(q.get("proposal_outcomes") for q in questions(model).values()), "Immediate decisions require schema version 4")
     qs = questions(model)
     require(all(f["question"] in qs for f in feedback), "Feedback names an unknown question")
     for record in records:
         if record["type"] == "requirement":
             expected = planning(record["requirement"], feedback, {r["feedback_id"] for r in reviews})
             if header["schema_version"] < 3:
-                require(not expected.pop("pending_proposal_ids") and not any(f["kind"] in ("propose", "adopt", "accept", "correct") for f in feedback), "Proposals require schema version 3")
+                require(not expected.pop("pending_proposal_ids") and not any(f["kind"] in ("propose", "adopt", "accept", "correct", "deny") for f in feedback), "Proposals require schema version 3")
             if header["schema_version"] == 1:
                 require(not expected.pop("deferred_question_ids") and model.get("state") != "closed", "Closure requires schema version 2")
             require(record["planning"] == expected, "Snapshot has inconsistent planning readiness")
@@ -82,7 +83,7 @@ def write_snapshot(source, output):
                 sections.append(f'<li><a href="{esc(evidence["href"])}" rel="noreferrer">{esc(evidence["label"])}</a></li>')
             sections.append('</ul></div>')
             sections.append(f'<p class="muted">Suggested respondents: {esc(", ".join(question["people"]) or "Not specified")}</p>')
-            proposals = pending_proposals(question, feedback)
+            proposals = pending_proposals(question, feedback, reviews)
             if proposals:
                 sections.append(f'<div class="answer"><h4>Proposed answers — not settled ({len(proposals)})</h4><p>Awaiting SME acceptance or correction. A review receipt alone does not settle a proposal.</p><ul>')
                 for proposal in proposals:
@@ -101,6 +102,12 @@ def write_snapshot(source, output):
             for reply in replies:
                 receipt = reviews.get(reply["id"])
                 sections.append(f'<section class="reply" id="feedback-{esc(reply["id"])}"><h5>{esc(reply["name"])} · {esc(reply["kind"])}</h5><p class="muted">{esc(reply["created_at"])} · self-reported name</p><p class="verbatim">{esc(reply["message"])}</p>')
+                outcome = question.get("proposal_outcomes", {}).get(reply["id"])
+                if outcome:
+                    label = {"accepted": "Accepted", "denied": "Denied", "not_selected": "Not selected"}[outcome["state"]]
+                    sections.append(f'<p>Proposal outcome: {label}. <a href="#feedback-{esc(outcome["decision_id"])}">Decision</a></p>')
+                if reply["kind"] == "deny":
+                    sections.append(f'<p>{"Proposal denied." if receipt else "Earlier denial needs reviewer reconciliation."} {"" if reply["message"].strip() else "No feedback provided."}</p>')
                 context = reply.get("context", {})
                 if context:
                     sections.append(f'<p class="muted">Source revision: {esc(str(context["revision"]))}</p>')
@@ -108,7 +115,8 @@ def write_snapshot(source, output):
                     sections.append(f'<p><a href="#feedback-{esc(context["proposal_id"])}">Original proposal</a></p>')
                 if receipt:
                     affected = ' · '.join(f'<a href="#question-{q}">{esc(qs[q]["title"])}</a>' for q in receipt["question_ids"])
-                    sections.append(f'<div class="review"><strong>Reviewed</strong><p class="verbatim">{esc(receipt["summary"])}</p><p class="muted">{esc(receipt["reviewed_at"])}</p><p>Affects: {affected}</p></div>')
+                    label = "Recorded" if receipt.get("method") == "host_recorded" else "Reviewed"
+                    sections.append(f'<div class="review"><strong>{label}</strong><p class="verbatim">{esc(receipt["summary"])}</p><p class="muted">{esc(receipt["reviewed_at"])}</p><p>Affects: {affected}</p></div>')
                 else:
                     sections.append('<p class="pending">Unreviewed — no review receipt recorded.</p>')
                 sections.append('</section>')

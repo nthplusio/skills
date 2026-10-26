@@ -1,6 +1,7 @@
 # Research before asking
 
-The coordinator owns the requirements, question states, receipts and publication.
+The coordinator owns requirement edits and agent-reviewed publications; the
+host atomically publishes SME decisions and their receipts when saved.
 Researchers supply evidence and proposed changes. Code describes current
 implementation; the saved decision maker determines desired behavior and scope.
 
@@ -110,7 +111,11 @@ An agent's confidence or completion message does not replace these checks.
    not just the selected question. A note about tree authoring submitted under
    preset ownership may affect coverage and hierarchy categories too. If the
    receipt already exists, skip duplicate review; independently stale research
-   can be refreshed without rewriting that receipt.
+   can be refreshed without rewriting that receipt. Never reapply host-saved
+   accept/correct/deny decisions or overwrite their receipts. Direct
+   answer/change/question/agree feedback retains reviewer interpretation for
+   completeness and conflicts. Explicitly reconcile ambiguous old pending
+   decisions; upgrading does not apply them or alter historical data.
 2. Mark affected reports stale. Check source revisions and changes relevant to
    their findings. Reuse still-applicable evidence with its original pin; do not
    relabel untouched reports as freshly inspected. Reuse a researcher only when

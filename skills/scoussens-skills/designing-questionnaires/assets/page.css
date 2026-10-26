@@ -77,7 +77,7 @@ input[type="checkbox"] { inline-size: 1rem; block-size: 1rem; flex: none; accent
 .review-toolbar > div { flex: 1 1 20rem; }
 .review-toolbar p { margin-block: .25rem 0; }
 .review-toolbar label { flex: 0 1 12rem; }
-.review-toolbar .status { flex-basis: 100%; }
+.review-toolbar > p { flex-basis: 100%; }
 #review-queue[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
 .layout:has(#review-queue[aria-pressed="true"]) :is(.recommendation, .feedback) { display: none; }
 .recommendation, .proposal { display: grid; gap: .65rem; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-block: 1rem; }
