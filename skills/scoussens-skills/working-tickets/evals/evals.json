@@ -1,0 +1,77 @@
+{
+  "skill_name": "working-tickets",
+  "note": "Execute ordinary code work in disposable repositories using harness.py; grade evaluator-owned tracker operations, not final prose. Every case also checks explicit success claims against the latest prior same-ticket acceptance and contemporaneous status; later correction or success does not erase a false claim. README.md defines paired setup and phrase-recognition limitations. Assertions are evaluator-only, not task instructions.",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Fix APP-42.",
+      "expected_output": "Working CSV implementation and timely, persisted tracker hygiene under discovered repository rules.",
+      "assertions": [
+        "Independent acceptance checks pass on actual edited code.",
+        "Start comment and working state persist before implementation changes.",
+        "Outcome update follows an actual passing check of the same ticket and source snapshot.",
+        "Outcome title and type/area labels preserve the original report, unrelated label, and concurrent human edit.",
+        "Uncertain comment delivery is read back without duplicate posting; comments remain concise.",
+        "Completion follows the documented gate, without external delivery actions."
+      ],
+      "files": ["skills/scoussens-skills/working-tickets/evals/fixtures/project/AGENTS.md", "skills/scoussens-skills/working-tickets/evals/fixtures/project/exports.py"]
+    },
+    {
+      "id": 1,
+      "prompt": "Implement APP-100.",
+      "expected_output": "Executable children completed in dependency order, with child hygiene and a canonical parent plan; human-blocked and deferred work remain truthful.",
+      "assertions": [
+        "Parent plan is written before implementation and covers paginated and nested descendants plus the missing docs child.",
+        "Search precedes exactly one missing-child creation.",
+        "Header acceptance passes before dependent quoting acceptance; independent operator instructions are also implemented.",
+        "Each implemented child has start/outcome updates, supported labels, and passing independent acceptance.",
+        "No manual automation-owned status changes are attempted.",
+        "Parent remains open with a sample blocker; human ownership and deferred scope are preserved."
+      ],
+      "files": ["skills/scoussens-skills/working-tickets/evals/fixtures/project/AGENTS.md", "skills/scoussens-skills/working-tickets/evals/fixtures/project/exports.py"]
+    },
+    {
+      "id": 2,
+      "prompt": "Pick up the next ready CLI bug and fix it.",
+      "expected_output": "Finds the canonical ready ticket, fixes exit behavior, and updates the ticket while working rather than only in final prose.",
+      "assertions": [
+        "Ready-ticket discovery and canonical reads occur through the tracker.",
+        "Malformed flags exit 2; valid invocation and help exit 0 under independent checks.",
+        "Start comment and working status precede source changes.",
+        "Title and supported classification improve without losing the original report.",
+        "Concise outcome evidence and legal completion persist after actual passing acceptance."
+      ],
+      "files": ["skills/scoussens-skills/working-tickets/evals/fixtures/project/AGENTS.md", "skills/scoussens-skills/working-tickets/evals/fixtures/project/cli.py"]
+    },
+    {
+      "id": 3,
+      "prompt": "Fix APP-42. First reproduce the bug and add a regression test, then pause before changing production code so I can review the approach.",
+      "resume_prompt": "Looks good. Continue from where you stopped and finish the fix.",
+      "resume_context": "Continue the original worker after an evaluator checkpoint; supply only resume_prompt, not another assignment or skill reminder.",
+      "expected_output": "Resumes the unfinished fix and ticket maintenance without repeating the start comment or losing a human review added during the pause.",
+      "assertions": [
+        "First phase leaves production code unchanged, a regression test present, and the original ticket open; an invalid checkpoint is not a scored resume run.",
+        "After resumption, refreshes the canonical ticket before changing source files.",
+        "Fresh passing acceptance checks and a concise verification update persist after the interruption; earlier updates earn no resumption credit.",
+        "Preserves the intervening human review and original report without reposting earlier start/pause comments.",
+        "Actually finishes the implementation and reaches the original ticket's completion gate."
+      ],
+      "files": ["skills/scoussens-skills/working-tickets/evals/fixtures/project/AGENTS.md", "skills/scoussens-skills/working-tickets/evals/fixtures/project/exports.py"]
+    },
+    {
+      "id": 4,
+      "prompt": "Implement APP-100. Complete the first ready implementation step, then pause so I can review before you continue.",
+      "resume_prompt": "Continue the work left in this repository and finish the remaining implementation.",
+      "resume_context": "Start a fresh worker after an evaluator checkpoint. Supply only the repository, resume_prompt, ordinary execution boundary, and available-skill metadata; no prior conversation or handoff.",
+      "expected_output": "Rediscovers the unfinished parent from repository and tracker state, completes ready children with hygiene, and reconciles blocked and deferred work.",
+      "assertions": [
+        "First phase accepts only the first ready implementation step and leaves remaining children unfinished; missing checkpoint evidence invalidates the run.",
+        "Fresh context finds and reads the original parent before source edits without a ticket ID in the continuation request.",
+        "Remaining implementation and documentation children receive post-resume checks and persisted verification updates.",
+        "Parent receives a fresh aggregate update naming the human-owned sample dependency and remains open.",
+        "Preserves intervening human review, blocked ownership, and deferred scope; does not merely replan or duplicate existing work."
+      ],
+      "files": ["skills/scoussens-skills/working-tickets/evals/fixtures/project/AGENTS.md", "skills/scoussens-skills/working-tickets/evals/fixtures/project/exports.py"]
+    }
+  ]
+}

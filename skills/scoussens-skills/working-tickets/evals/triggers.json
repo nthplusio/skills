@@ -1,0 +1,14 @@
+[
+  {"query": "Work issue #42 in the exports repo. The report and acceptance criteria are on the ticket.", "should_trigger": true},
+  {"query": "You have been assigned OPS-218. Start the fix and take it through our review workflow.", "should_trigger": true},
+  {"query": "Pick up the next ready bug from the board and implement it.", "should_trigger": true},
+  {"query": "This is worth tracking. Create a ticket for the CSV bug and work it now.", "should_trigger": true},
+  {"query": "Continue the work on issues/017.md from the previous session.", "should_trigger": true},
+  {"query": "You're responsible for the rollout epic, including all its subtasks. Work them in the right order.", "should_trigger": true},
+  {"query": "The agent has independently selected a ready issue from the backlog and is beginning implementation.", "should_trigger": true},
+  {"query": "What does issue #42 say? Don't change it or start implementation.", "should_trigger": false},
+  {"query": "Draft three possible tickets for this idea; we haven't decided to do the work.", "should_trigger": false},
+  {"query": "Explain how our issue labels and project statuses are configured, without changing anything.", "should_trigger": false},
+  {"query": "Summarize the child tickets under the migration epic for tomorrow's meeting. This is read-only.", "should_trigger": false},
+  {"query": "Design a replacement ticketing standard for discussion, not implementation.", "should_trigger": false}
+]
