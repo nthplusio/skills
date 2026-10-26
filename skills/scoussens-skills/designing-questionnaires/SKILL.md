@@ -69,6 +69,14 @@ not mean implemented. On narrow screens, filters collapse and selecting a
 question opens its detail with a return to the list.
 Use generic examples until real content is authorized for the chosen audience.
 
+When engineers prepare answers for SME review, follow the
+[proposed-answer workflow](references/asking.md#proposed-answers).
+Keep proposals pending until an SME accepts or corrects them. The reference
+host provides inline proposal cards, a review queue, Accept and next, and a
+prefilled correction editor with Cancel. Acceptance saves evidence for the
+reviewer to publish; it does not bypass the saved decision authority. Use
+these controls rather than building a separate interface for each run.
+
 **Done when** each gap has a research disposition with evidence or a specific
 access limit, and only missing human evidence or decisions become respondent
 asks. Keep unverified technical gaps visible with an agent/check next action.
@@ -122,6 +130,8 @@ mode passes its gate:
 2. Route the response by meaning to affected categories, including dependencies
    outside the selected question. Follow [the research review loop](references/research.md#review-new-context)
    to refresh affected evidence and reconcile reports against the latest model.
+   Distinguish an engineering proposal from an SME's acceptance or correction
+   using the [proposed-answer workflow](references/asking.md#proposed-answers).
    Before asking again, test whether the response plus existing evidence already
    answers the actual ask. If not, name the exact missing fact or decision.
    Interpret the response against that evidence. Update the concise

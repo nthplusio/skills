@@ -16,7 +16,7 @@ try {
   const db = new Database(database)
   const ids = [crypto.randomUUID(), crypto.randomUUID()]
   for (const id of ids) {
-    db.query('INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?)').run(id, 'export-format', 'Example', 'answer', 'CSV', '2026-01-01T00:00:00Z')
+    db.query('INSERT INTO feedback (id, question, name, kind, message, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, 'export-format', 'Example', 'answer', 'CSV', '2026-01-01T00:00:00Z')
     db.query('INSERT INTO delivery (feedback_id) VALUES (?)').run(id)
   }
   const reviewInstructions = join(root, 'reviewer.md')

@@ -106,10 +106,56 @@ history and earlier snapshots keep the previous closure and reasons.
 
 ## Submission, delivery, and review are different states
 
-`POST /api/feedback` accepts exactly `id` (canonical UUID), `question`, `name`,
-`kind` (`answer`, `change`, `question`, `agree`), and `message`. Names are
+`POST /api/feedback` accepts `id` (canonical UUID), `question`, `name`,
+`kind` (`answer`, `change`, `question`, `agree`, `propose`, `adopt`, `accept`,
+`correct`), `message`, and the proposal `context` described below. Names are
 self-entered, not identity claims. Text is displayed as text, not HTML.
 `GET /api/state` returns the current model, feedback, and review mode.
+
+### Proposed-answer review
+
+`propose` saves a candidate. `adopt` saves the exact current recommendation
+as a candidate. Both require `context: {"revision": N}` with the displayed
+publication revision. `accept` saves the exact proposal wording; `correct`
+saves the SME's corrected wording. Both require
+`context: {"revision": N, "proposal_id": "UUID"}`. Other kinds omit context
+or use `{}`. New proposal actions reject stale revisions; identical saved
+retries still succeed after later publications or closure. Editing the
+recommendation before proposing uses `propose`, not `adopt`.
+
+The inline card shows attribution and pending/accepted state. Review proposals
+opens an SME queue, clearing unrelated filters. Enter a self-reported name
+once under Reviewing as. Accept and next saves acceptance and moves to the
+next queued question. Correct proposal opens the proposal text in an editor;
+Accept corrected answer saves it, while Cancel discards only the unsaved edit.
+Polling keeps editors mounted; session drafts and retry IDs survive the
+explicit Load updated review action. Competing proposals remain visible,
+with no preselected winner. A pending acceptance leaves the SME queue but
+still needs reviewer publication. Closed reviews disable new decisions.
+
+The reviewer checks the saved decision authority before publishing acceptance.
+Set the question to answered, clear attention, and include `answer.proposal_id`
+and `answer.acceptance_id`, linking the immutable proposal and its `accept` or
+`correct` feedback. Preserve the acceptance's exact message as `answer.text`.
+Both rows need review receipts and labeled `#feedback-ID` evidence links in
+the answer. Merely reviewing a proposal cannot turn it into an answer. The
+host does not enforce distinct people: a proposer may also be a qualified SME,
+and names do not establish authority. Direct answers retain the existing
+review path; do not relabel a proposal to bypass acceptance.
+
+Publication of an accepted answer resolves that proposal and competing
+proposals saved before its acceptance. The UI keeps the latter as earlier,
+not-selected proposals. Later proposals remain challenges, without replacing
+the settled answer. Reopening removes the current answer and returns original
+proposals to review. Preserve earlier decisions in feedback and publication
+history. Incomplete or conflicting acceptances stay open with clarification
+or conflict attention; a review receipt alone does not resolve them.
+
+Opening an older database adds a `context` column with an empty-object default;
+original feedback fields, outbox rows, receipts and publications are unchanged.
+Back up before upgrading. A fork with proposals already treated as final
+answers needs an explicit policy reconciliation before publishing new reviews;
+do not fabricate acceptance or silently rewrite history to pass validation.
 
 The browser creates a submission UUID before sending and retains it for an
 unchanged retry. The server commits the exact original fields and a pending

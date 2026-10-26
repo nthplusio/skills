@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from questionnaire import ASSETS, planning, questions, require, validate
+from questionnaire import ASSETS, pending_proposals, planning, questions, require, validate
 
 
 def read_snapshot(source):
@@ -16,7 +16,7 @@ def read_snapshot(source):
     require(raw.endswith("\n"), "JSONL must end with a newline")
     records = [json.loads(line) for line in raw[:-1].split("\n")]
     header = records[0]
-    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2), "Expected JSONL handoff schema version 1 or 2")
+    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2, 3), "Expected JSONL handoff schema version 1, 2 or 3")
     require(type(header["record_count"]) is int and header["record_count"] == len(records), "JSONL record count mismatch")
     require(all(r["type"] in ("requirement", "feedback", "review") for r in records[1:]), "Unexpected JSONL record type")
     canonical_header = {k: v for k, v in header.items() if k != "snapshot_id"}
@@ -35,6 +35,8 @@ def read_snapshot(source):
     for record in records:
         if record["type"] == "requirement":
             expected = planning(record["requirement"], feedback, {r["feedback_id"] for r in reviews})
+            if header["schema_version"] < 3:
+                require(not expected.pop("pending_proposal_ids") and not any(f["kind"] in ("propose", "adopt", "accept", "correct") for f in feedback), "Proposals require schema version 3")
             if header["schema_version"] == 1:
                 require(not expected.pop("deferred_question_ids") and model.get("state") != "closed", "Closure requires schema version 2")
             require(record["planning"] == expected, "Snapshot has inconsistent planning readiness")
@@ -80,6 +82,15 @@ def write_snapshot(source, output):
                 sections.append(f'<li><a href="{esc(evidence["href"])}" rel="noreferrer">{esc(evidence["label"])}</a></li>')
             sections.append('</ul></div>')
             sections.append(f'<p class="muted">Suggested respondents: {esc(", ".join(question["people"]) or "Not specified")}</p>')
+            proposals = pending_proposals(question, feedback)
+            if proposals:
+                sections.append(f'<div class="answer"><h4>Proposed answers — not settled ({len(proposals)})</h4><p>Awaiting SME acceptance or correction. A review receipt alone does not settle a proposal.</p><ul>')
+                for proposal in proposals:
+                    sections.append(f'<li><a href="#feedback-{esc(proposal["id"])}">{esc(proposal["name"])}</a>: <span class="verbatim">{esc(proposal["message"])}</span></li>')
+                sections.append('</ul></div>')
+            if question.get("answer", {}).get("acceptance_id"):
+                answer = question["answer"]
+                sections.append(f'<p>Accepted proposal: <a href="#feedback-{esc(answer["proposal_id"])}">Original proposal</a> · <a href="#feedback-{esc(answer["acceptance_id"])}">Acceptance or correction</a></p>')
             if question.get("request"):
                 request = question["request"]
                 sections.append(f'<details><summary>Original recommendation and ask</summary><p class="verbatim">{esc(request["recommendation"])}</p><p class="verbatim">{esc(request["why"])}</p><p class="verbatim">{esc(request["response"])}</p></details>')
@@ -90,6 +101,11 @@ def write_snapshot(source, output):
             for reply in replies:
                 receipt = reviews.get(reply["id"])
                 sections.append(f'<section class="reply" id="feedback-{esc(reply["id"])}"><h5>{esc(reply["name"])} · {esc(reply["kind"])}</h5><p class="muted">{esc(reply["created_at"])} · self-reported name</p><p class="verbatim">{esc(reply["message"])}</p>')
+                context = reply.get("context", {})
+                if context:
+                    sections.append(f'<p class="muted">Source revision: {esc(str(context["revision"]))}</p>')
+                if context.get("proposal_id"):
+                    sections.append(f'<p><a href="#feedback-{esc(context["proposal_id"])}">Original proposal</a></p>')
                 if receipt:
                     affected = ' · '.join(f'<a href="#question-{q}">{esc(qs[q]["title"])}</a>' for q in receipt["question_ids"])
                     sections.append(f'<div class="review"><strong>Reviewed</strong><p class="verbatim">{esc(receipt["summary"])}</p><p class="muted">{esc(receipt["reviewed_at"])}</p><p>Affects: {affected}</p></div>')

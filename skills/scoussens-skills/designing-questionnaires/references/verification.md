@@ -67,6 +67,36 @@ Report lifecycle tests not run (suspension, archival, gateway authentication,
 multiple writers, other browsers/harnesses). Stop short of claiming an automatic
 loop if no reviewer received and interpreted the saved feedback.
 
+## Proposed-answer scenarios
+
+Use the reference host with disposable data. Save a custom proposal and adopt
+a recommendation on another question. Reload and inspect exact text, source
+revision, attribution, pending status and the unchanged answered count.
+Publish a review receipt alone: the proposal must still need SME review in
+the page and JSONL. Reject an attempted answer citing only that proposal.
+
+Open Review proposals. Check that unrelated filters clear, all candidates
+remain visible and none is preselected. Enter Reviewing as once. Open Correct
+proposal: the editor starts with the original wording. Change it and cancel;
+expect no saved response and the original text when reopened. Edit again,
+allow polling, then load a new revision: the correction draft survives. A
+stale-tab save must fail without losing its draft or rewriting the proposal.
+
+Accept a corrected answer, then accept the next proposal unchanged. Expect
+one immutable decision per save, correct proposal links, automatic queue
+advance and an explicit empty queue. Neither submission changes the answered
+count before publication. Replay a saved UUID after a publication and closure:
+expect success without duplicates. Self-acceptance is not rejected based on
+name; the reviewer checks authority, not a self-entered name comparison.
+
+Publish both receipts and the accepted answer's proposal/acceptance IDs with
+both evidence links. Check accepted wording, green accepted state, provenance
+and cleared proposal readiness in JSONL and offline HTML. Add a new proposal
+against that answer: the settled answer must remain visible with a separate
+unresolved challenge. Inspect desktop and narrow correction/queue states and
+record pointer interaction. Verify old database rows and outbox receipts
+survive the additive context-column migration before upgrading a real run.
+
 ## Evaluate research instructions separately
 
 The scenarios in `evals/evals.json` are agent-behavior evaluations, not tests run

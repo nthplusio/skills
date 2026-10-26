@@ -38,14 +38,22 @@ def questions(model):
     return {q["id"]: q for r in model["requirements"] for q in r["questions"]}
 
 
+def pending_proposals(question, feedback):
+    acceptance = next((f for f in feedback if f["id"] == question.get("answer", {}).get("acceptance_id")), None)
+    return [f for f in feedback if f["question"] == question["id"] and f["kind"] in ("propose", "adopt")
+            and (not acceptance or f["created_at"] > acceptance["created_at"])]
+
+
 def planning(requirement, feedback, reviewed):
     ids = {q["id"] for q in requirement["questions"]}
     open_ids = [q["id"] for q in requirement["questions"] if q["status"] == "open"]
     deferred_ids = [q["id"] for q in requirement["questions"] if q["status"] == "deferred"]
     pending_ids = [f["id"] for f in feedback if f["question"] in ids and f["id"] not in reviewed]
+    proposal_ids = [f["id"] for q in requirement["questions"] for f in pending_proposals(q, feedback)]
     return {
-        "status": "needs_review" if pending_ids else "needs_answers" if open_ids else "deferred" if deferred_ids else "ready_for_breakdown",
+        "status": "needs_review" if pending_ids or proposal_ids else "needs_answers" if open_ids else "deferred" if deferred_ids else "ready_for_breakdown",
         "open_question_ids": open_ids, "deferred_question_ids": deferred_ids, "pending_feedback_ids": pending_ids,
+        "pending_proposal_ids": proposal_ids,
     }
 
 
@@ -127,6 +135,15 @@ def validate(model, previous, feedback, *, check_review_times=True):
             require(isinstance(answer, dict) and text(answer.get("text")), "Answered question needs an answer")
             evidence = answer.get("evidence")
             require(isinstance(evidence, list) and evidence, "Answered question needs evidence")
+            if "proposal_id" in answer or "acceptance_id" in answer:
+                proposal = feedback.get(answer.get("proposal_id"))
+                acceptance = feedback.get(answer.get("acceptance_id"))
+                require(proposal is not None and proposal["kind"] in ("propose", "adopt") and proposal["question"] == q["id"], "Answer needs its original proposal")
+                require(acceptance is not None and acceptance["kind"] in ("accept", "correct") and acceptance["question"] == q["id"]
+                        and acceptance.get("context", {}).get("proposal_id") == proposal["id"], "Answer needs acceptance of this proposal")
+                require(answer["text"] == acceptance["message"], "Accepted answer must preserve the accepted wording")
+                require(all(fid in receipts and q["id"] in receipts[fid]["question_ids"] for fid in (proposal["id"], acceptance["id"])), "Review both proposal and acceptance")
+                require({"#feedback-" + proposal["id"], "#feedback-" + acceptance["id"]} <= {e.get("href") for e in evidence}, "Cite both proposal and acceptance")
             sources.extend(evidence)
         else:
             require("answer" not in q, "Reopened questions must remove the current answer; history keeps it")
@@ -137,6 +154,8 @@ def validate(model, previous, feedback, *, check_review_times=True):
             if href.startswith("#feedback-"):
                 fid = href.removeprefix("#feedback-")
                 require(fid in receipts and q["id"] in receipts[fid]["question_ids"], "Feedback evidence must be reviewed for this question")
+                if q["status"] == "answered" and feedback[fid]["kind"] in ("propose", "adopt", "accept", "correct"):
+                    require("acceptance_id" in q["answer"], "A proposal is not an answer; record its explicit acceptance")
             else:
                 url = urlsplit(href)
                 require(url.scheme == "https" and bool(url.netloc) and not url.username, "Evidence needs an HTTPS source or saved feedback link")
@@ -172,6 +191,8 @@ class Store:
                 CREATE TRIGGER IF NOT EXISTS immutable_feedback_delete BEFORE DELETE ON feedback
                     BEGIN SELECT RAISE(ABORT, 'feedback is immutable'); END;
             """)
+            if "context" not in {row["name"] for row in db.execute("PRAGMA table_info(feedback)")}:
+                db.execute("ALTER TABLE feedback ADD COLUMN context TEXT NOT NULL DEFAULT '{}'")
         os.chmod(self.path, 0o600)
 
     @contextmanager
@@ -205,7 +226,7 @@ class Store:
                         receipt["reviewed_at"] = old["reviewed_at"] if old else now()
             if model == previous:
                 return  # Retry after an uncertain commit.
-            rows = {r["id"]: dict(r) for r in db.execute("SELECT * FROM feedback")}
+            rows = {r["id"]: {**dict(r), "context": json.loads(r["context"])} for r in db.execute("SELECT * FROM feedback")}
             validate(model, previous, rows)
             db.execute("INSERT INTO publication VALUES (?, ?)", (model["revision"], json.dumps(model)))
 
@@ -222,27 +243,43 @@ class Store:
         self.publish(model)
 
     def submit(self, data):
-        require(isinstance(data, dict) and set(data) == set(FIELDS), "Complete the feedback form")
+        require(isinstance(data, dict) and set(FIELDS) <= set(data) <= set(FIELDS) | {"context"}, "Complete the feedback form")
         require(all(isinstance(data[k], str) for k in FIELDS), "Feedback fields must be text")
         require(str(uuid.UUID(data["id"])) == data["id"], "Use a canonical UUID")
         require(0 < len(data["name"].strip()) <= 80 and len(data["name"]) <= 80, "Enter a name up to 80 characters")
-        require(data["kind"] in ("answer", "change", "question", "agree"), "Choose a response type")
+        require(data["kind"] in ("answer", "change", "question", "agree", "propose", "adopt", "accept", "correct"), "Choose a response type")
         require(len(data["message"]) <= 3000 and (data["kind"] == "agree" or text(data["message"])), "Enter feedback up to 3000 characters")
+        context = data.get("context", {})
+        require(isinstance(context, dict), "Submission context must be an object")
+        required = {"revision", "proposal_id"} if data["kind"] in ("accept", "correct") else {"revision"} if data["kind"] in ("propose", "adopt") else set()
+        require(set(context) == required, "Include the displayed revision and proposal when required")
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            require(data["question"] in questions(self.model(db)), "Choose a question on this page")
+            model = self.model(db)
+            require(data["question"] in questions(model), "Choose a question on this page")
             previous = db.execute("SELECT * FROM feedback WHERE id = ?", (data["id"],)).fetchone()
             if previous:
-                require(all(previous[k] == data[k] for k in FIELDS), "Submission ID already saved with different content")
+                require(all(previous[k] == data[k] for k in FIELDS) and json.loads(previous["context"]) == context, "Submission ID already saved with different content")
             else:
-                require(self.model(db).get("state") != "closed", "Questionnaire is closed; ask the owner to reopen it")
-                db.execute("INSERT INTO feedback VALUES (?, ?, ?, ?, ?, ?)", (*[data[k] for k in FIELDS], now()))
+                require(model.get("state") != "closed", "Questionnaire is closed; ask the owner to reopen it")
+                if required:
+                    require(type(context.get("revision")) is int and context["revision"] == model["revision"], "Review changed; load the updated review before submitting")
+                if data["kind"] == "adopt":
+                    require(data["message"] == questions(model)[data["question"]].get("request", {}).get("recommendation"), "Recommendation changed; load the updated review")
+                if data["kind"] in ("accept", "correct"):
+                    rows = [dict(r) for r in db.execute("SELECT * FROM feedback")]
+                    candidates = pending_proposals(questions(model)[data["question"]], rows)
+                    proposal = next((f for f in candidates if f["id"] == context["proposal_id"]), None)
+                    require(proposal is not None, "Proposal is no longer awaiting acceptance; load the updated review")
+                    if data["kind"] == "accept":
+                        require(data["message"] == proposal["message"], "Accept the exact proposal or use the correction editor")
+                db.execute("INSERT INTO feedback (id, question, name, kind, message, created_at, context) VALUES (?, ?, ?, ?, ?, ?, ?)", (*[data[k] for k in FIELDS], now(), json.dumps(context)))
                 db.execute("INSERT INTO delivery (feedback_id) VALUES (?)", (data["id"],))
         return data["id"]
 
     def feedback(self):
         with self.connect() as db:
-            return [dict(r) for r in db.execute("""SELECT f.*, d.attempts, d.receipt, d.delivered_at
+            return [{**dict(r), "context": json.loads(r["context"])} for r in db.execute("""SELECT f.*, d.attempts, d.receipt, d.delivered_at
                 FROM feedback f JOIN delivery d ON d.feedback_id = f.id ORDER BY f.created_at, f.id""")]
 
     def handoff(self, output):
@@ -252,7 +289,7 @@ class Store:
             db.execute("BEGIN")
             model = self.model(db)
             require(model is not None, "Publish a questionnaire before exporting its handoff")
-            feedback = [dict(row) for row in db.execute("SELECT * FROM feedback ORDER BY created_at, id")]
+            feedback = [{**dict(row), "context": json.loads(row["context"])} for row in db.execute("SELECT * FROM feedback ORDER BY created_at, id")]
         reviewed = {r["feedback_id"] for r in model["reviews"]}
         records = []
         for requirement in model["requirements"]:
@@ -260,7 +297,7 @@ class Store:
         records.extend({"type": "feedback", "feedback": row} for row in feedback)
         records.extend({"type": "review", "review": receipt} for receipt in model["reviews"])
         header = {
-            "type": "questionnaire", "schema_version": 2, "record_count": len(records) + 1,
+            "type": "questionnaire", "schema_version": 3, "record_count": len(records) + 1,
             "questionnaire": {k: v for k, v in model.items() if k not in ("requirements", "reviews")},
             "planning_contract": {
                 "next_step": "decompose_requirements_into_work_items",
@@ -272,6 +309,7 @@ class Store:
                 "decision_authority_source": "questionnaire.setup.decision_maker",
                 "ticket_creation_requires_authorization": True,
                 "completion_means": "answered_not_implemented",
+                "proposals_are_answers": False,
             },
         }
         records.insert(0, header)

@@ -17,6 +17,12 @@
   <p id="delivery-mode" class="review-note" role="status"></p>
   <div id="update" class="review-note" hidden>Review updated. <button id="reload" class="secondary">Load updated review</button> Unsent drafts are kept in this tab.</div>
   <p id="load-status" role="status"></p>
+  <section class="review-toolbar panel" aria-label="Proposal review">
+    <div><strong>Proposed answers</strong><p class="muted">Engineers prepare. Subject-matter experts accept or correct. Names are self-reported.</p></div>
+    <label>Reviewing as<input id="reviewer-name" maxlength="80" autocomplete="name" placeholder="Your name"></label>
+    <button id="review-queue" class="secondary" aria-pressed="false">Review proposals <span id="proposal-count">0</span></button>
+    <p id="proposal-status" class="status" role="status"></p>
+  </section>
   <section class="attention-overview" aria-label="Attention in these filters">
     <div id="attention-counts" class="attention-counts" role="status"></div>
     <p class="muted">Counts follow your filters. A question can appear in more than one count.</p>

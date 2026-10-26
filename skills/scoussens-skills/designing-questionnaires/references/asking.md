@@ -24,6 +24,35 @@ Keep recommendations separate from evidence-linked answers. A response of
 "not sure" leaves the question open. A suggested replacement respondent is
 unverified until checked through the chosen delivery channel.
 
+## Proposed answers
+
+Use this workflow when engineers prepare answers for a subject-matter expert
+(SME) to review. A recommendation is guidance; a proposal is a contributor's
+candidate answer; an accepted answer records an explicit review decision.
+Engineers may write a proposal or adopt the current recommendation as their
+proposal. Preserve the adopted wording and its source revision so later
+recommendation edits cannot change what the SME accepts.
+
+Show the candidate answer, proposer, rationale and evidence together. Label
+it "Proposed answer · not settled" and keep the question open. Publishing
+a review receipt or allowing answers from any respondent does not accept a
+proposal. Keep pending proposals distinct from unsaved drafts and saved
+submissions awaiting agent review.
+
+Let the SME accept the displayed proposal without retyping, or open a
+prefilled correction editor and explicitly accept the corrected answer.
+Cancelling an edit leaves the proposal unchanged. Preserve the original
+proposal and link the accepted wording to its proposal and acceptance or
+correction evidence. Keep competing proposals visible without preselecting a
+winner. A proposal on a settled question challenges the answer; it does not
+silently overwrite it. Follow the saved decision policy for conflicts.
+
+Record who can settle proposals in the review policy. A self-entered name or
+an SME label is attribution, not authentication. Verify proposal persistence,
+recommendation adoption, acceptance, correction, cancellation and stale-review
+handling before claiming the host supports this workflow. Exports must retain
+proposals as provisional and keep them out of settled-answer readiness.
+
 ## Show what needs attention
 
 Question completion and feedback review are independent. Keep the template's

@@ -72,6 +72,25 @@ input[type="checkbox"] { inline-size: 1rem; block-size: 1rem; flex: none; accent
 .context p { font-size: .88rem; }
 .context h3 { color: var(--muted); font-size: .8rem; }
 .answer { background: var(--soft); padding: 1rem; border-radius: 6px; }
+.answer:has(a[href^="#feedback-"]) { border: 1px solid var(--border); }
+.review-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.5rem; }
+.review-toolbar > div { flex: 1 1 20rem; }
+.review-toolbar p { margin-block: .25rem 0; }
+.review-toolbar label { flex: 0 1 12rem; }
+.review-toolbar .status { flex-basis: 100%; }
+#review-queue[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.layout:has(#review-queue[aria-pressed="true"]) :is(.recommendation, .feedback) { display: none; }
+.recommendation, .proposal { display: grid; gap: .65rem; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-block: 1rem; }
+.recommendation { background: var(--soft); }
+.recommendation > *, .proposal > *, .correction > * { margin-block: 0; }
+.proposal[data-tone="proposed"] { background: oklch(98% .025 85); border-color: oklch(80% .09 85); color: var(--text); }
+.answer[data-tone="answered"] { background: oklch(97% .025 165); border-color: oklch(79% .07 165); color: var(--text); }
+.proposal-label { font-size: .9rem; }
+.proposal-text, .answer p { white-space: pre-wrap; }
+.proposal-state { font-size: .85rem; }
+.proposal-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.proposal-actions button { min-block-size: 2.75rem; }
+.correction { display: grid; gap: .75rem; border-block-start: 1px solid var(--border); padding-block-start: 1rem; }
 .scope { margin-block: .5rem; }
 .scope h3 { margin-block-start: 1rem; }
 .feedback { margin-block-start: 1rem; background: var(--soft); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; }

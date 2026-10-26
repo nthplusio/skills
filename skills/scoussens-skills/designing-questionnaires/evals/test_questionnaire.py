@@ -78,6 +78,79 @@ class QuestionnaireTests(unittest.TestCase):
         with self.store.connect() as db, self.assertRaises(sqlite3.IntegrityError):
             db.execute("DELETE FROM feedback")
 
+    def test_proposal_review_requires_acceptance_and_exports_original_and_correction(self):
+        proposal = {**self.submission(), "kind": "adopt", "message": self.example["requirements"][0]["questions"][0]["request"]["recommendation"], "context": {"revision": 1}}
+        self.post(proposal)
+        self.post(proposal)
+        reviewed = copy.deepcopy(self.example)
+        reviewed["revision"] = 2
+        reviewed["reviews"] = [{"feedback_id": proposal["id"], "summary": "Candidate recorded; awaiting SME.", "question_ids": [proposal["question"]]}]
+        self.store.publish(reviewed)
+        source, output = self.path / "proposal.jsonl", self.path / "proposal.html"
+        self.store.handoff(source)
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        self.assertEqual(records[1]["planning"]["status"], "needs_review")
+        self.assertEqual(records[1]["planning"]["pending_proposal_ids"], [proposal["id"]])
+        self.assertEqual(records[1]["planning"]["pending_feedback_ids"], [])
+        command = [sys.executable, "-B", str(SKILL / "scripts/snapshot.py"), str(source), str(output)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Proposed answers — not settled", output.read_text())
+
+        wrong = self.reviewed(proposal)
+        wrong["revision"] = 3
+        wrong["reviews"] = self.store.model()["reviews"]
+        with self.assertRaisesRegex(ValueError, "explicit acceptance"):
+            self.store.publish(wrong)
+        correction = {**self.submission(), "name": "Jordan", "kind": "correct", "message": "CSV for comparison; PDF remains outside this release.", "context": {"revision": 2, "proposal_id": proposal["id"]}}
+        self.post(correction)
+        self.assertEqual(host.questions(self.store.model())["export-format"]["status"], "open")
+        accepted = self.store.model()
+        accepted["revision"] = 3
+        question = host.questions(accepted)["export-format"]
+        question.pop("attention")
+        question.update(status="answered", answer={"text": correction["message"], "proposal_id": proposal["id"], "acceptance_id": correction["id"], "evidence": [{"label": label, "href": "#feedback-" + row["id"]} for label, row in (("Original proposal", proposal), ("SME correction", correction))]})
+        accepted["reviews"].append({"feedback_id": correction["id"], "summary": "SME corrected and accepted scope.", "question_ids": ["export-format"]})
+        for mutation in ("wording", "proposal", "evidence"):
+            bad = copy.deepcopy(accepted)
+            answer = host.questions(bad)["export-format"]["answer"]
+            if mutation == "wording": answer["text"] = "PDF only."
+            if mutation == "proposal": answer["proposal_id"] = correction["id"]
+            if mutation == "evidence": answer["evidence"].pop()
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError): self.store.publish(bad)
+        self.store.publish(accepted)
+        self.assertTrue(self.post(correction)["saved"])
+        self.store.handoff(source)
+        records = [json.loads(line) for line in source.read_text().splitlines()]
+        self.assertEqual(records[1]["planning"]["pending_proposal_ids"], [])
+        originals = [r["feedback"] for r in records if r["type"] == "feedback"]
+        self.assertEqual([(f["message"], f["context"]) for f in originals], [(proposal["message"], proposal["context"]), (correction["message"], correction["context"])])
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Accepted proposal:", output.read_text())
+        challenge = {**self.submission(), "kind": "propose", "message": "Include PDF for audit approval.", "context": {"revision": 3}}
+        self.post(challenge)
+        self.assertEqual(host.questions(self.store.model())["export-format"]["answer"]["text"], correction["message"])
+        self.store.handoff(source)
+        self.assertEqual(json.loads(source.read_text().splitlines()[1])["planning"]["pending_proposal_ids"], [challenge["id"]])
+
+    def test_proposal_context_rejects_stale_or_wrong_acceptance_but_allows_same_person(self):
+        proposal = {**self.submission(), "kind": "propose", "message": "CSV in UTF-8 with a header row.", "context": {"revision": 1}}
+        self.post(proposal)
+        acceptance = {**self.submission(), "kind": "accept", "message": proposal["message"], "context": {"revision": 1, "proposal_id": proposal["id"]}}
+        for bad in ({**acceptance, "message": "CSV without headers."}, {**acceptance, "question": "export-access"}, {**acceptance, "context": {"revision": 1, "proposal_id": str(uuid.uuid4())}}, {**proposal, "id": str(uuid.uuid4()), "kind": "adopt"}):
+            with self.assertRaises(HTTPError): self.post(bad)
+        updated = copy.deepcopy(self.example)
+        updated["revision"] = 2
+        self.store.publish(updated)
+        with self.assertRaises(HTTPError): self.post(acceptance)
+        acceptance["context"]["revision"] = 2
+        self.assertTrue(self.post(acceptance)["saved"])
+        self.store.close("Next review.")
+        self.assertTrue(self.post(acceptance)["saved"])
+        restored = host.Store(self.store.path).feedback()
+        self.assertEqual([(f["kind"], f["message"], f["context"]) for f in restored], [(f["kind"], f["message"], f["context"]) for f in (proposal, acceptance)])
+
     def test_delivery_acceptance_is_not_wake_and_retry_survives_restart(self):
         data = self.submission()
         self.post(data)
@@ -209,13 +282,13 @@ class QuestionnaireTests(unittest.TestCase):
             records = [json.loads(line) for line in stream]
         self.assertEqual(len(records), 4)
         self.assertEqual(records[0]["record_count"], 4)
-        self.assertEqual(records[0]["schema_version"], 2)
+        self.assertEqual(records[0]["schema_version"], 3)
         self.assertEqual(records[0]["planning_contract"]["execution_modes"], ["agent", "human", "mixed"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_assignees"])
         self.assertFalse(records[0]["planning_contract"]["respondents_are_decision_makers"])
         self.assertEqual(records[0]["planning_contract"]["decision_authority_source"], "questionnaire.setup.decision_maker")
         self.assertTrue(records[0]["planning_contract"]["ticket_creation_requires_authorization"])
-        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": ["export-format", "export-access"], "deferred_question_ids": [], "pending_feedback_ids": [data["id"]]})
+        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": ["export-format", "export-access"], "deferred_question_ids": [], "pending_feedback_ids": [data["id"]], "pending_proposal_ids": []})
         self.assertEqual(records[3]["feedback"]["message"], data["message"])
         self.assertNotIn(b"private-delivery-location", initial)
         self.store.handoff(output)
@@ -231,8 +304,8 @@ class QuestionnaireTests(unittest.TestCase):
             records = [json.loads(line) for line in stream]
         self.assertEqual(records[0]["questionnaire"]["setup"], self.example["setup"])
         self.assertEqual([r["requirement"] for r in records if r["type"] == "requirement"], updated["requirements"])
-        self.assertEqual(records[1]["planning"], {"status": "needs_answers", "open_question_ids": ["export-access", "export-encoding"], "deferred_question_ids": [], "pending_feedback_ids": []})
-        self.assertEqual(records[2]["planning"], {"status": "ready_for_breakdown", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": []})
+        self.assertEqual(records[1]["planning"], {"status": "needs_answers", "open_question_ids": ["export-access", "export-encoding"], "deferred_question_ids": [], "pending_feedback_ids": [], "pending_proposal_ids": []})
+        self.assertEqual(records[2]["planning"], {"status": "ready_for_breakdown", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": [], "pending_proposal_ids": []})
         self.assertEqual([r["review"] for r in records if r["type"] == "review"], updated["reviews"])
         self.assertEqual({k: records[3]["feedback"][k] for k in host.FIELDS}, data)
         previous_snapshot = records[0]["snapshot_id"]
@@ -247,7 +320,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(len(records), 6)
         self.assertNotEqual(records[0]["snapshot_id"], previous_snapshot)
         self.assertEqual(records[0]["questionnaire"]["revision"], 2)
-        self.assertEqual(records[2]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": [challenge["id"]]})
+        self.assertEqual(records[2]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": [], "pending_feedback_ids": [challenge["id"]], "pending_proposal_ids": []})
         self.assertEqual(self.store.model(), updated)
         self.assertEqual(self.store.feedback(), before_export)
 
@@ -319,7 +392,9 @@ class QuestionnaireTests(unittest.TestCase):
         records = [json.loads(line) for line in source.read_text().splitlines()]
         records[0]["schema_version"] = 1
         for record in records:
-            if record["type"] == "requirement": record["planning"].pop("deferred_question_ids")
+            if record["type"] == "requirement":
+                record["planning"].pop("deferred_question_ids")
+                record["planning"].pop("pending_proposal_ids")
         records[-1]["review"]["reviewed_at"] = "2000-01-01T00:00:00+00:00"
         records[0].pop("snapshot_id")
         records[0]["snapshot_id"] = hashlib.sha256(''.join(json.dumps(r, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + '\n' for r in records).encode()).hexdigest()
@@ -407,8 +482,8 @@ class QuestionnaireTests(unittest.TestCase):
 
         self.store.handoff(source)
         records = [json.loads(line) for line in source.read_text().splitlines()]
-        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": ["export-access", "export-encoding"], "pending_feedback_ids": [challenge["id"]]})
-        self.assertEqual(records[2]["planning"], {"status": "deferred", "open_question_ids": [], "deferred_question_ids": ["export-retention"], "pending_feedback_ids": []})
+        self.assertEqual(records[1]["planning"], {"status": "needs_review", "open_question_ids": [], "deferred_question_ids": ["export-access", "export-encoding"], "pending_feedback_ids": [challenge["id"]], "pending_proposal_ids": []})
+        self.assertEqual(records[2]["planning"], {"status": "deferred", "open_question_ids": [], "deferred_question_ids": ["export-retention"], "pending_feedback_ids": [], "pending_proposal_ids": []})
         result = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Final snapshot — Closed", output.read_text())
@@ -461,6 +536,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertFalse(browser("eval", f'document.querySelector(\'{form} input[name="name"]\').checkVisibility()'))
         browser("select", form + " select", "other")
         self.assertEqual(browser("eval", f'document.querySelector(\'{form} input[name="name"]\').value'), "Riley")
+        browser("scrollintoview", form + " button")
         browser("click", form + " button")
         browser("wait", "--text", "Saved. Pending review;")
         saved = self.store.feedback()[0]
@@ -498,7 +574,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form").elements.person.value'), "other")
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form").elements.name.value'), "Morgan")
-        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention button").textContent'), "Save suggestion")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form button").textContent'), "Save suggestion")
         self.post({**self.submission(), "message": "Does CSV include the headers?"})
         browser("wait", "--fn", '!document.querySelector("[data-entry=export-format] .pending").hidden')
         browser("check", '[data-filter="state"][value="pending"]')
@@ -529,6 +605,69 @@ class QuestionnaireTests(unittest.TestCase):
         browser("check", '[data-filter="state"][value="deferred"]')
         self.assertEqual(visible_questions(), ["#question-export-access", "#question-export-encoding", "#question-export-retention"])
         self.assertEqual(browser("eval", 'document.querySelector("[data-entry=export-access] .badge").textContent'), "Deferred")
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_sme_queue_adoption_correction_cancel_and_stale_draft(self):
+        command = ["agent-browser", "--session", "proposal-" + uuid.uuid4().hex[:8], "--json"]
+        self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
+
+        def browser(*args):
+            result = subprocess.run(command + list(args), capture_output=True, text=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            self.assertTrue(response["success"], response)
+            return response["data"].get("result")
+
+        browser("open", self.url)
+        browser("set", "viewport", "1440", "1000", "2")
+        browser("wait", "[data-adopt=export-format]")
+        browser("click", "[data-adopt=export-format]")
+        browser("select", "#question-export-format form select", "person:Alex")
+        browser("scrollintoview", "#question-export-format form button")
+        browser("click", "#question-export-format form button")
+        browser("wait", "--text", "Proposal saved.")
+        proposal = self.store.feedback()[0]
+        self.assertEqual(proposal["kind"], "adopt")
+        self.assertEqual(proposal["message"], host.questions(self.example)["export-format"]["request"]["recommendation"])
+        self.post({**self.submission(), "question": "export-access", "kind": "propose", "message": "Downloads follow viewing permissions.", "context": {"revision": 1}})
+        browser("wait", "--fn", 'document.querySelector("#proposal-count").textContent === "2"')
+        browser("fill", "#reviewer-name", "Jordan")
+        browser("click", "#review-queue")
+        card = "#proposal-" + proposal["id"]
+        browser("click", card + " [data-correct]")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), proposal["message"])
+        browser("fill", card + " textarea", "Discard this edit.")
+        browser("click", card + " [data-cancel]")
+        self.assertEqual(len(self.store.feedback()), 2)
+        browser("click", card + " [data-correct]")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), proposal["message"])
+        corrected = "CSV with a header row; PDF is outside this release."
+        browser("fill", card + " textarea", corrected)
+        updated = copy.deepcopy(self.example)
+        updated["revision"] = 2
+        self.store.publish(updated)
+        browser("wait", "--fn", '!document.querySelector("#update").hidden')
+        browser("scrollintoview", card + ' [data-decision="correct"]')
+        browser("click", card + ' [data-decision="correct"]')
+        browser("wait", "--text", "Review changed; load the updated review")
+        self.assertEqual(len(self.store.feedback()), 2)
+        browser("click", "#reload")
+        browser("wait", card + " textarea")
+        self.assertEqual(browser("eval", f'document.querySelector("{card} textarea").value'), corrected)
+        browser("set", "viewport", "390", "844", "2")
+        browser("scrollintoview", "#review-queue")
+        browser("click", "#review-queue")
+        browser("click", '#question-nav a[href="#question-export-format"]')
+        browser("scrollintoview", card + ' [data-decision="correct"]')
+        browser("click", card + ' [data-decision="correct"]')
+        browser("wait", "--fn", 'location.hash === "#question-export-access"')
+        self.assertEqual([(f["kind"], f["message"], f["context"].get("proposal_id")) for f in self.store.feedback() if f["kind"] == "correct"], [("correct", corrected, proposal["id"])])
+        browser("scrollintoview", '#question-export-access [data-decision="accept"]')
+        browser("click", '#question-export-access [data-decision="accept"]')
+        browser("wait", "--text", "No more proposals in this queue.")
+        self.assertEqual(browser("eval", 'document.querySelector("#proposal-count").textContent'), "0")
+        self.assertEqual(browser("eval", 'document.querySelector("#answered-count").textContent'), "0")
+        self.assertTrue(browser("eval", 'document.documentElement.scrollWidth <= innerWidth'))
 
 
 if __name__ == "__main__":

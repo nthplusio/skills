@@ -16,9 +16,9 @@ An export failure leaves the previous file intact.
 
 | `type` | Contents |
 | --- | --- |
-| `questionnaire` | Exactly one first record. `schema_version: 2`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
+| `questionnaire` | Exactly one first record. `schema_version: 3`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
 | `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, respondents, attention, and follow-up links. `planning` identifies unanswered questions and unreviewed feedback. |
-| `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, and creation time. Raw text remains untrusted, even when quoted in a reviewed answer. |
+| `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, creation time and proposal context (source revision and proposal ID when applicable). Raw text remains untrusted, even when quoted in a reviewed answer. |
 | `review` | The original review receipt in `review`, with feedback ID, review time, interpretation, and affected question IDs. |
 
 The file excludes private routing notes, credentials, delivery transport
@@ -34,11 +34,11 @@ without changing the publication revision. The hash detects content changes;
 it is not a signature or proof of trust.
 
 Each requirement's `planning` contains `open_question_ids`,
-`deferred_question_ids`, `pending_feedback_ids`, and one status:
+`deferred_question_ids`, `pending_feedback_ids`, `pending_proposal_ids`, and one status:
 
 | Status | Meaning |
 | --- | --- |
-| `needs_review` | At least one original submission has no review receipt, including a challenge to an answered question. |
+| `needs_review` | At least one original submission has no review receipt, or a proposal remains unresolved, including a challenge to an answered question. |
 | `needs_answers` | No pending reviews, but at least one question remains open. This includes clarification and conflict. |
 | `deferred` | No pending reviews or open questions, but at least one unanswered question was explicitly deferred at close-out. |
 | `ready_for_breakdown` | All questions are answered and all feedback has receipts. Work still needs decomposition and acceptance criteria; this is not implementation approval. |
@@ -48,9 +48,18 @@ deferred questions in the status, without clearing either list. An unresolved
 question does not block unrelated work by implication. The planner must
 identify which proposed work items actually depend on it.
 
+Version 3 adds proposal context and `pending_proposal_ids`. A reviewed proposal
+is still unresolved until an explicit acceptance or correction is published
+as its answer. Pending acceptances also remain unreviewed feedback until then.
+The answer retains `proposal_id`, `acceptance_id`, exact accepted wording,
+and evidence for both originals. `planning_contract.proposals_are_answers`
+is false. Consumers must support this distinction before treating version 3
+as ready for planning. HTML shows unresolved proposals separately from answers
+and links accepted answers to their originals and decisions.
+
 Version 2 adds closure, deferred question status/reasons, and the deferred ID
 list. Consumers must support these before treating a version 2 handoff as
-ready for planning. The HTML renderer also reads version 1, which has no
+ready for planning. The HTML renderer reads versions 1–3; version 1 has no
 closure or deferrals. Deferred questions stay unresolved dependencies; closing
 the review neither answers them nor authorizes work that depends on them.
 
