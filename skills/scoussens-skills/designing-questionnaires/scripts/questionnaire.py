@@ -593,7 +593,11 @@ def main():
     store = Store(args.db)
     if args.action == "lint":
         model = json.loads(args.model.read_text())
-        validate(model, None, {f["id"]: f for f in store.feedback()}, check_review_times=False)
+        draft = deepcopy(model)
+        for receipt in draft.get("reviews", []):
+            if isinstance(receipt, dict):
+                receipt.setdefault("reviewed_at", now())  # publish fills omitted times the same way
+        validate(draft, None, {f["id"]: f for f in store.feedback()}, check_review_times=False)
         warnings = lint(model)
         print("\n".join(f"WARN: {w}" for w in warnings) or "PASS: no self-containment warnings; still run the reader check")
         raise SystemExit(1 if warnings else 0)

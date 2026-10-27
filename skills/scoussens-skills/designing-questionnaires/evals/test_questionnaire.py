@@ -479,6 +479,9 @@ class QuestionnaireTests(unittest.TestCase):
             self.assertIn(expected, warnings)
         self.assertNotIn("export-format", "\n".join(w for w in host.lint(model) if not w.startswith("export-access:")))
 
+        saved = self.submission()
+        self.post(saved)
+        model["reviews"] = [{"feedback_id": saved["id"], "question_ids": ["export-format"], "summary": "Needs clarification."}]
         draft = self.path / "draft.json"
         draft.write_text(json.dumps({**model, "revision": 2}))
         command = [sys.executable, "-B", str(SKILL / "scripts/questionnaire.py"), "--db", str(self.path / "review.sqlite")]
