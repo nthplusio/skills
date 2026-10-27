@@ -49,7 +49,7 @@ question does not block unrelated work by implication. The planner must
 identify which proposed work items actually depend on it.
 
 Version 5 adds optional `questionnaire.roles`, `questionnaire.glossary`,
-per-question `role`, and `request.options`. A question with `role` has no
+per-question `role` and `depends_on`, and `request.options`. A question with `role` has no
 `people`; its respondents are that role's `held_by`.
 `planning_contract.respondent_source` states this rule. Roles say whose
 knowledge a question needs; like respondents, they are not assignees or

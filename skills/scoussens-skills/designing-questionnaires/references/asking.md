@@ -37,7 +37,8 @@ for older publications; never put role labels in `people`.
   evidence links. Refer to another question by its title, never by number.
   Use one consistent worked example, such as "Object 100, Document 201".
 - **Carry earlier answers forward.** When an answer constrains an open
-  question, begin its background with "Already decided: …".
+  question, list that question in `depends_on`. The page shows its answer in
+  an "Already decided" strip, so the prompt need not repeat it.
 - **Define every term.** Add each domain, lab or system term a role might not
   know to the `glossary`, written for the least-informed role that reads it.
   Never invent a definition: an unknown term becomes an ask to the role that
@@ -75,7 +76,7 @@ the page shows live totals. Keep requirement and question titles unique.
    from the page alone.
 
 Repeat the check for questions a review changes. After each review, remove
-asks that an answer or follow-up settled, add "Already decided" lines, and
+asks that an answer or follow-up settled, update `depends_on`, and
 retire a superseded question with "Retired, no answer needed" and a link to
 its replacement.
 

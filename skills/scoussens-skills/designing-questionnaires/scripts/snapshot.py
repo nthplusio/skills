@@ -63,6 +63,9 @@ def write_snapshot(source, output):
         for question in requirement["questions"]:
             qid = question["id"]
             sections.append(f'<article class="question" id="question-{qid}"><span class="badge">{question["status"].capitalize()}</span><h3>{esc(question["title"])}</h3><p class="verbatim">{esc(question["prompt"])}</p>')
+            if question.get("depends_on"):
+                links = " · ".join(f'<a href="#question-{d}">{esc(qs[d]["title"])}</a>' for d in question["depends_on"])
+                sections.append(f'<p>Builds on: {links}</p>')
             if question.get("follow_up_to"):
                 sections.append(f'<p>Follow-up to <a href="#question-{question["follow_up_to"]}">{esc(questions(model)[question["follow_up_to"]]["title"])}</a></p>')
             if question["status"] == "answered":

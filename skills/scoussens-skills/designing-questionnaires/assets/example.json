@@ -109,6 +109,9 @@
           "title": "How long should exports remain?",
           "prompt": "This decides whether the first version keeps earlier exports. Does any recurring task need an export more than a month old?",
           "role": "report-archivist",
+          "depends_on": [
+            "export-format"
+          ],
           "status": "open",
           "request": {
             "options": [

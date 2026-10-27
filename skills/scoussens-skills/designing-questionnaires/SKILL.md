@@ -172,7 +172,7 @@ can open the stable URL, and the selected mode passes its gate:
    does not imply agreement or completion. Preserve earlier receipts and IDs.
 4. Export the latest model, edit it, increment its revision, and publish to the
    same database and URL. Keep the page current: remove asks that answers
-   settled, add "Already decided" lines, and rerun the self-containment check
+   settled, update `depends_on`, and rerun the self-containment check
    on changed questions. The receipt and new question state publish together.
    If another review already published, export again and reconcile; do not
    replace newer work. Repeating an identical publication is safe.

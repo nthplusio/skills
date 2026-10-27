@@ -12,8 +12,19 @@ with an explanation rather than deleting them.
 Requirement fields: `id`, `priority`, `title`, `text`, optional `details`, and
 `questions`. Question fields: `id`, `title`, `prompt`, either `role` (a role
 ID) or legacy `people` (respondent names, possibly empty), `status` (`open`,
-`answered`, or `deferred`), optional `follow_up_to` (another question ID), and
-`answer` only when answered.
+`answered`, or `deferred`), optional `follow_up_to` (another question ID),
+optional `depends_on` (other question IDs whose answers this question builds
+on), and `answer` only when answered.
+
+The page shows each question as a decision: the prompt in a decision box with
+`request.why` as "What changes", then an "Already decided" strip listing the
+answers of `depends_on` and `follow_up_to` questions, linked to them. Questions
+those point to that are still open are listed as still open. When an open
+question has `request.options`, the options are answer cards. The recommended
+card is the one option the recommendation names. Choosing a card saves an
+`answer` whose message is the option text, followed by a blank line and the
+optional note. "Something else" requires the note. Other response kinds sit
+under "Other ways to respond".
 
 Top-level `roles` lists who the questions are for. Each role has a slug `id`,
 a `name` shown on the page, `knows` (what the role knows and cares about, which
@@ -45,7 +56,7 @@ Questions can also carry these fields:
   describe the provisional recommendation, consequence, and sufficient reply.
   Optional `options` lists two or more distinct, mutually exclusive choices;
   the recommendation names exactly one of them. The template displays them
-  while the question is open.
+  as answer cards while the question is open.
 - `attention` contains `state`, `next_action`, and optional `evidence` using
   the same labeled-link format as answers. Its state is `waiting`,
   `clarification`, or `conflict`. The next action names who can supply what.

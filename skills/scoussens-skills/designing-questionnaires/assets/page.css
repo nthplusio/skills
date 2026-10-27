@@ -94,6 +94,30 @@ input[type="checkbox"] { inline-size: 1rem; block-size: 1rem; flex: none; accent
 .scope { margin-block: .5rem; }
 .scope h3 { margin-block-start: 1rem; }
 .options ul { margin-block: .25rem 0; padding-inline-start: 1.25rem; }
+.crumb { margin: 0; color: var(--muted); font-size: .8rem; }
+.decision, .decided { border: 1px solid var(--border); border-radius: 8px; padding: .85rem 1rem; margin-block: .75rem; }
+.decision { background: var(--soft); border-color: color-mix(in oklch, var(--accent) 35%, var(--border)); }
+.decision > strong, .decided > strong { color: var(--accent); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.decision p { margin-block: .35rem 0; }
+.decision p:first-of-type { font-weight: 650; font-size: 1.05rem; }
+.decided { background: color-mix(in oklch, oklch(70% .15 150) 8%, var(--surface)); border-color: color-mix(in oklch, oklch(60% .15 150) 30%, var(--border)); }
+.decided > strong { color: oklch(45% .12 150); }
+.decided ul { list-style: none; padding: 0; margin: .4rem 0 0; display: grid; gap: .4rem; }
+.decided li { display: grid; grid-template-columns: auto 1fr auto; gap: .5rem; align-items: start; font-size: .9rem; }
+.decided .check { color: oklch(50% .14 150); font-weight: 700; }
+.decided .decided-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.decided a { white-space: nowrap; font-size: .8rem; }
+.option-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: .75rem; }
+.option-cards legend { margin-block-end: .5rem; }
+.option-card { display: grid; align-content: start; gap: .5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .85rem; }
+.option-card:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.option-card label { display: flex; gap: .6rem; align-items: start; cursor: pointer; }
+.option-card label input { inline-size: 1.1rem; block-size: 1.1rem; padding: 0; margin-block-start: .15rem; flex: none; accent-color: var(--accent); }
+.option-card label { font-weight: 400; font-size: .9rem; }
+.option-card > p { margin: 0; font-size: .8rem; }
+.feedback .option-card button { justify-self: start; inline-size: auto; }
+.other-ways summary { cursor: pointer; color: var(--accent); font-size: .85rem; padding-block: .25rem; }
+.other-ways[open] summary { margin-block-end: .5rem; }
 :is(#glossary-content, .context) dt { font-weight: 650; }
 :is(#glossary-content, .context) dd { margin: 0 0 .5rem; }
 .feedback { margin-block-start: 1rem; background: var(--soft); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; }

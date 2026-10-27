@@ -443,6 +443,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Role: Access policy owner · Suggested respondents: Taylor", output.read_text())
         self.assertIn("Options: Same as viewing · Stricter than viewing", output.read_text())
+        self.assertIn('Builds on: <a href="#question-export-format">Which export format?</a>', output.read_text())
 
         def rejected(edit, message):
             model = copy.deepcopy(upgraded)
@@ -451,6 +452,8 @@ class QuestionnaireTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, message):
                 store.publish(model)
         rejected(lambda m: host.questions(m)["export-format"].update(role="ux-owner"), "declared role")
+        rejected(lambda m: host.questions(m)["export-format"].update(depends_on=["export-format"]), "depends_on")
+        rejected(lambda m: host.questions(m)["export-format"].update(depends_on=["missing"]), "depends_on")
         rejected(lambda m: host.questions(m)["export-format"].update(people=["Alex"]), "replace people")
         rejected(lambda m: (m["roles"].pop(), host.questions(m)["export-retention"].pop("role"), host.questions(m)["export-retention"].update(people=[])), "Preserve role IDs")
         rejected(lambda m: m["glossary"].append({"term": "export", "definition": "Again."}), "Duplicate glossary term")
@@ -747,28 +750,29 @@ class QuestionnaireTests(unittest.TestCase):
         browser("wait", "#question-nav a")
         form = '#question-export-format form'
         self.assertTrue(browser("eval", f'document.querySelector("{form}").checkVisibility()'))
-        self.assertEqual(browser("eval", f'document.querySelector("{form} legend").textContent'), "What would you like to do?")
+        self.assertEqual(browser("eval", f'document.querySelector("{form} .kinds legend").textContent'), "What would you like to do?")
         self.assertEqual(browser("eval", f'[...document.querySelector("{form} select").options].map(o => o.textContent)'), ["Choose your name", "Alex", "Jordan", "Other"])
+        browser("click", form + " .other-ways summary")
         browser("check", form + ' [value="question"]')
         self.assertEqual(browser("eval", f'document.querySelector("{form} [data-message-label]").textContent'), "What needs clarification?")
         browser("fill", form + " textarea", "Does CSV preserve formulas?")
         browser("select", form + " select", "other")
-        browser("click", form + " button")
+        browser("click", form + " button[type=submit]")
         self.assertEqual(self.store.feedback(), [])
         browser("fill", form + ' input[name="name"]', "Riley")
         browser("select", form + " select", "person:Jordan")
         self.assertFalse(browser("eval", f'document.querySelector(\'{form} input[name="name"]\').checkVisibility()'))
         browser("select", form + " select", "other")
         self.assertEqual(browser("eval", f'document.querySelector(\'{form} input[name="name"]\').value'), "Riley")
-        browser("scrollintoview", form + " button")
-        browser("click", form + " button")
+        browser("scrollintoview", form + " button[type=submit]")
+        browser("click", form + " button[type=submit]")
         browser("wait", "--text", "Saved. Pending review;")
         saved = self.store.feedback()[0]
         self.assertEqual((saved["name"], saved["kind"], saved["message"]), ("Riley", "question", "Does CSV preserve formulas?"))
         self.assertEqual(browser("eval", 'document.querySelector("[data-responses=export-format] h3").textContent'), "Previous feedback (1)")
         browser("select", form + " select", "person:Alex")
         browser("check", form + ' [value="agree"]')
-        browser("click", form + " button")
+        browser("click", form + " button[type=submit]")
         browser("wait", "--text", "Previous feedback (2)")
         saved = self.store.feedback()[1]
         self.assertEqual((saved["name"], saved["kind"], saved["message"]), ("Alex", "agree", ""))
@@ -785,10 +789,11 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-access .roles dd").textContent'), "Access policy owner")
         browser("click", "#reset")
         self.assertEqual(browser("eval", '[...document.querySelectorAll("#question-export-format details")].find(d => d.querySelector("summary").textContent === "Terms used here").querySelectorAll("dt").length'), 2)
-        self.assertEqual(browser("eval", '[...document.querySelectorAll("#question-export-format .options li")].map(li => li.textContent)'), ["CSV only", "CSV plus a formatted document"])
+        self.assertEqual(browser("eval", '[...document.querySelectorAll("#question-export-format .option-card label")].map(l => l.textContent.trim())'), ["A · CSV only Recommended", "B · CSV plus a formatted document", "C · Something else"])
         browser("click", '#question-nav a[href="#question-export-retention"]')
         browser("select", '#question-export-retention select[name="person"]', "other")
         browser("fill", '#question-export-retention input[name="name"]', "Morgan")
+        browser("click", "#question-export-retention .other-ways summary")
         browser("check", '#question-export-retention [value="change"]')
         browser("fill", "#question-export-retention textarea", "Keep this draft.")
         browser("fill", "#search", "Alex comparison")
@@ -806,7 +811,7 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention textarea").value'), "Keep this draft.")
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form").elements.person.value'), "other")
         self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form").elements.name.value'), "Morgan")
-        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form button").textContent'), "Save suggestion")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention form button[type=submit]").textContent'), "Save suggestion")
         self.post({**self.submission(), "message": "Does CSV include the headers?"})
         browser("wait", "--fn", '!document.querySelector("[data-entry=export-format] .pending").hidden')
         browser("check", '[data-filter="state"][value="pending"]')
@@ -839,6 +844,47 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(browser("eval", 'document.querySelector("[data-entry=export-access] .badge").textContent'), "Deferred")
 
     @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
+    def test_option_cards_submit_the_choice_and_show_already_decided(self):
+        command = ["agent-browser", "--session", "options-" + uuid.uuid4().hex[:8], "--json"]
+        self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
+
+        def browser(*args):
+            result = subprocess.run(command + list(args), capture_output=True, text=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            response = json.loads(result.stdout)
+            self.assertTrue(response["success"], response)
+            return response["data"].get("result")
+
+        data = self.submission()
+        self.post(data)
+        self.store.publish(self.reviewed(data))
+        browser("open", self.url + "#question-export-retention")
+        browser("set", "viewport", "1280", "900", "2")
+        browser("wait", "#question-export-retention .decided")
+        strip = '#question-export-retention .decided'
+        self.assertEqual(browser("eval", f'document.querySelector("{strip} > strong").textContent'), "Already decided")
+        self.assertEqual(browser("eval", f'document.querySelector("{strip} .decided-text").textContent'), host.questions(self.store.model())["export-format"]["answer"]["text"])
+        self.assertEqual(browser("eval", f'document.querySelector("{strip} a").getAttribute("href")'), "#question-export-format")
+        self.assertEqual(browser("eval", 'document.querySelector("#question-export-retention .crumb").textContent'), "Find previous exports · Question 1 of 1")
+
+        form = '#question-export-access form'
+        browser("click", '#question-nav a[href="#question-export-access"]')
+        self.assertIsNone(browser("eval", 'document.querySelector("#question-export-access .recommendation")'))
+        browser("check", form + ' [name="choice"][value="Stricter than viewing"]')
+        self.assertEqual(browser("eval", f'document.querySelector("{form} button[type=submit]").textContent'), "Save answer: Stricter than viewing")
+        self.assertFalse(browser("eval", f'document.querySelector("{form} textarea").required'))
+        browser("fill", form + " textarea", "Auditors only.")
+        browser("select", form + " select", "person:Jordan")
+        browser("scrollintoview", form + " button[type=submit]")
+        browser("click", form + " button[type=submit]")
+        browser("wait", "--text", "Saved. Pending review;")
+        saved = self.store.feedback()[-1]
+        self.assertEqual((saved["question"], saved["kind"], saved["message"]), ("export-access", "answer", "Stricter than viewing\n\nAuditors only."))
+        self.assertFalse(browser("eval", f'document.querySelector("{form} [name=choice]:checked") !== null'))
+        browser("check", form + ' [name="choice"][value="__other"]')
+        self.assertTrue(browser("eval", f'document.querySelector("{form} textarea").required'))
+
+    @unittest.skipUnless(shutil.which("agent-browser"), "Browser acceptance requires agent-browser and Chromium")
     def test_sme_queue_adoption_correction_cancel_and_stale_draft(self):
         command = ["agent-browser", "--session", "proposal-" + uuid.uuid4().hex[:8], "--json"]
         self.addCleanup(lambda: subprocess.run(command + ["close"], capture_output=True, timeout=30))
@@ -857,8 +903,8 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertTrue(browser("eval", 'document.querySelector(\'#question-export-format [name="kind"][value="propose"]\').checked'))
         self.assertFalse(browser("eval", 'document.querySelector("#question-export-format form textarea").readOnly'))
         browser("select", "#question-export-format form select", "person:Alex")
-        browser("scrollintoview", "#question-export-format form button")
-        browser("click", "#question-export-format form button")
+        browser("scrollintoview", "#question-export-format form button[type=submit]")
+        browser("click", "#question-export-format form button[type=submit]")
         browser("wait", "--text", "Proposal saved.")
         proposal = self.store.feedback()[0]
         self.assertEqual(proposal["kind"], "adopt")
@@ -867,8 +913,8 @@ class QuestionnaireTests(unittest.TestCase):
         browser("click", "[data-adopt=export-access]")
         browser("fill", "#question-export-access form textarea", "Downloads follow viewing permissions.")
         browser("select", "#question-export-access form select", "person:Jordan")
-        browser("scrollintoview", "#question-export-access form button")
-        browser("click", "#question-export-access form button")
+        browser("scrollintoview", "#question-export-access form button[type=submit]")
+        browser("click", "#question-export-access form button[type=submit]")
         browser("wait", "--fn", 'document.querySelector("#proposal-count").textContent === "2"')
         self.assertEqual((self.store.feedback()[1]["kind"], self.store.feedback()[1]["message"]), ("propose", "Downloads follow viewing permissions."))
         browser("fill", "#reviewer-name", "Jordan")

@@ -201,6 +201,8 @@ def validate(model, previous, feedback, *, check_review_times=True):
                 require(url.scheme == "https" and bool(url.netloc) and not url.username, "Evidence needs an HTTPS source or saved feedback link")
         if "follow_up_to" in q:
             require(q["follow_up_to"] in qs and q["follow_up_to"] != q["id"], "Follow-up must name another question")
+        depends = q.get("depends_on", [])
+        require(isinstance(depends, list) and len(set(depends)) == len(depends) and all(d in qs and d != q["id"] for d in depends), "depends_on must list other question IDs once each")
     if previous:
         require(model["id"] == previous["id"], "Keep questionnaire ID")
         require(model["revision"] == previous["revision"] + 1, "Publish the next revision; refresh before editing")

@@ -16,6 +16,20 @@ const roleFor = q => model.roles?.find(role => role.id === q.role)
 const allQuestions = () => model.requirements.flatMap(r => r.questions.map(q => ({ ...q, people: roleFor(q)?.held_by ?? q.people, requirement: r.id, priority: r.priority, context: `${r.title} ${r.text} ${r.details || ''}` })))
 const askedOf = q => roleFor(q) ? `${roleFor(q).name} · ${q.people.join(', ') || 'role not yet filled'}` : q.people.join(', ') || 'Anyone'
 const termsIn = q => (model.glossary || []).filter(g => new RegExp(`(^|\\W)${g.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\W|$)`, 'i').test(`${q.title} ${q.prompt} ${q.request ? Object.values(q.request).flat().join(' ') : ''} ${q.context}`))
+const recommendedOption = q => {
+  const named = (q.request?.options || []).filter(o => new RegExp(`(^|\\W)${o.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\W|$)`, 'i').test(q.request.recommendation))
+  return named.length === 1 ? named[0] : null
+}
+const optionCards = q => q.status === 'open' && model.state !== 'closed' && q.request?.options?.length
+const decidedStrip = q => {
+  const ids = [...new Set([...(q.depends_on || []), ...(q.follow_up_to ? [q.follow_up_to] : [])])]
+  const deps = ids.map(id => allQuestions().find(p => p.id === id))
+  const settled = deps.filter(p => p.status === 'answered')
+  const open = deps.filter(p => p.status !== 'answered')
+  if (!deps.length) return ''
+  return `<div class="decided"><strong>${settled.length ? 'Already decided' : 'Depends on'}</strong><ul>${settled.map(p => `<li><span class="check" aria-hidden="true">✓</span><span class="decided-text">${esc(p.answer.text)}</span><a href="#question-${p.id}">${esc(p.title)}</a></li>`).join('')}${open.map(p => `<li class="muted"><span class="check" aria-hidden="true">…</span><span class="decided-text">Still open</span><a href="#question-${p.id}">${esc(p.title)}</a></li>`).join('')}</ul></div>`
+}
+const setChoice = (form, value) => { for (const radio of form.querySelectorAll('[name=choice]')) radio.checked = radio.value === value }
 const draftKey = () => `questionnaire:${model.id}:drafts`
 const attentionFor = q => q.status !== 'open' ? null : q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` }
 const pendingFor = id => feedback.filter(row => row.question === id && !reviews.some(r => r.feedback_id === row.id)).length
@@ -83,16 +97,19 @@ function render() {
   $('#requirements').innerHTML = model.requirements.map(r => `<article class="card" id="requirement-${r.id}">
     ${allQuestions().filter(q => q.requirement === r.id).map(q => `<section class="question" id="question-${q.id}">
       <div class="question-header"><span class="badge" data-tone="${attentionFor(q)?.state || q.status}">${statusLabels[attentionFor(q)?.state || q.status]}</span><span class="badge">${esc(r.priority)} priority</span></div>
+      <p class="crumb">${esc(r.title)} · Question ${r.questions.findIndex(p => p.id === q.id) + 1} of ${r.questions.length}</p>
       <h2 tabindex="-1">${esc(q.title)}</h2>
-      <p>${esc(q.prompt)}</p>${q.request?.options && q.status === 'open' ? `<div class="options"><strong>Options</strong><ul>${q.request.options.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
-      ${q.request && q.status === 'open' ? `<div class="recommendation"><strong>Recommendation · not an answer</strong><p>${esc(q.request.recommendation)}</p>${model.state !== 'closed' ? `<button type="button" class="secondary" data-adopt="${q.id}">Use as proposal</button>` : ''}</div>` : ''}
+      <div class="decision"><strong>${q.status === 'open' ? 'The decision' : 'The question'}</strong><p>${esc(q.prompt)}</p>${q.request?.why ? `<p><strong>What changes:</strong> ${esc(q.request.why)}</p>` : ''}</div>
+      ${decidedStrip(q)}${q.request?.options && q.status === 'open' && !optionCards(q) ? `<div class="options"><strong>Options</strong><ul>${q.request.options.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
+      ${q.request && q.status === 'open' && !(optionCards(q) && recommendedOption(q)) ? `<div class="recommendation"><strong>Recommendation · not an answer</strong><p>${esc(q.request.recommendation)}</p>${model.state !== 'closed' ? `<button type="button" class="secondary" data-adopt="${q.id}">Use as proposal</button>` : ''}</div>` : ''}
       <dl class="roles">${roleFor(q) ? `<div><dt>Role</dt><dd>${esc(roleFor(q).name)}</dd></div>` : ''}<div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || (roleFor(q) ? 'Role not yet filled' : 'Anyone'))}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
       ${q.answer ? `<div class="answer" data-tone="${q.answer.acceptance_id ? 'answered' : 'recorded'}"><strong>${q.answer.acceptance_id ? 'Accepted answer' : 'Answer'}</strong><p>${esc(q.answer.text)}</p>${q.answer.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</div>` : ''}
       <div data-proposals="${q.id}"></div>
       ${q.status === 'deferred' ? `<p class="review-note"><strong>Deferred — not answered.</strong> ${esc(q.deferral)}</p>` : ''}
       ${model.state === 'closed' && drafts[q.id]?.message ? `<label>Unsent draft (not submitted)<textarea readonly>${esc(drafts[q.id].message)}</textarea></label>` : ''}
       ${model.state === 'closed' ? '' : `<form class="feedback" data-question="${q.id}" aria-label="Feedback on ${esc(q.title)}">
-        <fieldset><legend>What would you like to do?</legend>${Object.entries(responseKinds).map(([kind, copy]) => `<label class="response-option" ${kind === 'adopt' ? 'hidden' : ''}><input type="radio" name="kind" value="${kind}" ${kind === 'answer' ? 'checked' : ''}><span>${esc(kind === 'agree' ? q.answer ? 'Agree with the answer' : q.request ? copy.choice : 'Express agreement' : copy.choice)}</span></label>`).join('')}</fieldset>
+        ${optionCards(q) ? `<fieldset class="option-cards"><legend>Choose an answer</legend>${q.request.options.map((o, i) => `<div class="option-card"><label><input type="radio" name="choice" value="${esc(o)}"><span><strong>${String.fromCharCode(65 + i)} · ${esc(o)}</strong>${o === recommendedOption(q) ? ' <span class="badge" data-tone="answered">Recommended</span>' : ''}</span></label>${o === recommendedOption(q) ? `<p class="muted"><strong>Why this is recommended</strong><br>${esc(q.request.recommendation)}</p><button type="button" class="secondary" data-adopt="${q.id}">Use as proposal</button>` : ''}</div>`).join('')}<div class="option-card"><label><input type="radio" name="choice" value="__other"><span><strong>${String.fromCharCode(65 + q.request.options.length)} · Something else</strong></span></label><p class="muted">Write your own answer in the note.</p></div></fieldset>` : ''}
+        ${optionCards(q) ? '<details class="other-ways"><summary>Other ways to respond: propose for SME review, suggest a change, ask a question</summary>' : ''}<fieldset class="kinds"><legend>What would you like to do?</legend>${Object.entries(responseKinds).map(([kind, copy]) => `<label class="response-option" ${kind === 'adopt' ? 'hidden' : ''}><input type="radio" name="kind" value="${kind}" ${kind === 'answer' ? 'checked' : ''}><span>${esc(kind === 'agree' ? q.answer ? 'Agree with the answer' : q.request ? copy.choice : 'Express agreement' : copy.choice)}</span></label>`).join('')}</fieldset>${optionCards(q) ? '</details>' : ''}
         <label><span data-message-label>Your answer</span><textarea name="message" rows="3" maxlength="3000" aria-describedby="message-hint-${q.id}"></textarea></label>
         <p class="muted message-hint" id="message-hint-${q.id}"></p>
         <label>Your name<select name="person" required><option value="">Choose your name</option>${people.map(name => `<option value="person:${esc(name)}">${esc(name)}</option>`).join('')}<option value="other">Other</option></select></label>
@@ -101,7 +118,7 @@ function render() {
         <button type="submit">Save answer</button><p class="status" role="status"></p>
       </form>`}
       <div class="previous-feedback" data-responses="${q.id}"></div>
-      <details class="context"><summary>Requirement details</summary><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<p>${esc(r.details)}</p>` : ''}${q.request ? `<p><strong>Why it matters</strong> ${esc(q.request.why)}</p>` : ''}</details>
+      <details class="context"><summary>Requirement details</summary><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<p>${esc(r.details)}</p>` : ''}</details>
       ${termsIn(q).length ? `<details class="context"><summary>Terms used here</summary><dl>${termsIn(q).map(g => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}</dd>`).join('')}</dl></details>` : ''}
       <p class="review-note" data-attention="${q.id}" hidden></p>
       ${q.attention?.evidence ? `<p>${q.attention.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</p>` : ''}
@@ -114,16 +131,19 @@ function render() {
     const draft = drafts[id]
     if (draft) {
       for (const field of ['kind', 'message']) form.elements[field].value = draft[field] ?? (field === 'kind' ? 'answer' : '')
+      setChoice(form, draft.choice ?? '')
+      if (draft.kind && draft.kind !== 'answer') form.querySelector('.other-ways')?.setAttribute('open', '')
       form.elements.person.value = draft.person === 'other' ? 'other' : people.includes(draft.name) ? `person:${draft.name}` : draft.name ? 'other' : ''
       form.elements.name.value = form.elements.person.value === 'other' ? draft.name ?? '' : draft.otherName ?? ''
     }
     const updateFields = () => {
       const kind = form.elements.kind.value
       const copy = responseKinds[kind]
-      form.querySelector('[data-message-label]').textContent = copy.label
+      const choice = kind === 'answer' && form.elements.choice ? form.elements.choice.value : ''
+      form.querySelector('[data-message-label]').textContent = form.elements.choice && kind === 'answer' ? choice === '__other' ? 'Your answer' : 'Add a note (optional)' : copy.label
       form.querySelector('.message-hint').textContent = kind === 'answer' && question.request ? question.request.response : copy.hint
-      form.querySelector('button').textContent = copy.button
-      form.elements.message.required = kind !== 'agree'
+      form.querySelector('button[type=submit]').textContent = choice && choice !== '__other' ? `${copy.button}: ${choice}` : copy.button
+      form.elements.message.required = kind !== 'agree' && !(choice && choice !== '__other')
       form.elements.message.readOnly = kind === 'adopt'
       const other = form.elements.person.value === 'other'
       form.querySelector('[data-other-name]').hidden = !other
@@ -133,18 +153,24 @@ function render() {
     const respondent = () => form.elements.person.value === 'other' ? form.elements.name.value : form.elements.person.value.slice('person:'.length)
     const capture = () => {
       updateFields()
-      drafts[id] = { ...drafts[id], name: respondent(), person: form.elements.person.value, otherName: form.elements.name.value, kind: form.elements.kind.value, message: form.elements.message.value }
+      drafts[id] = { ...drafts[id], name: respondent(), person: form.elements.person.value, otherName: form.elements.name.value, kind: form.elements.kind.value, choice: form.elements.choice?.value ?? '', message: form.elements.message.value }
       saveDrafts()
     }
     updateFields()
     form.addEventListener('input', capture)
-    form.addEventListener('change', capture)
+    form.addEventListener('change', event => {
+      if (event.target.name === 'choice') form.elements.kind.value = 'answer'
+      capture()
+    })
     form.addEventListener('submit', async event => {
       event.preventDefault()
       capture()
       const status = form.querySelector('.status')
-      const button = form.querySelector('button')
-      const payload = { question: id, name: respondent(), kind: form.elements.kind.value, message: form.elements.message.value }
+      const button = form.querySelector('button[type=submit]')
+      const choice = form.elements.kind.value === 'answer' && form.elements.choice ? form.elements.choice.value : ''
+      const note = form.elements.message.value
+      const message = choice && choice !== '__other' ? (note.trim() ? `${choice}\n\n${note}` : choice) : note
+      const payload = { question: id, name: respondent(), kind: form.elements.kind.value, message }
       if (payload.kind === 'propose' && payload.message === question.request?.recommendation) payload.kind = 'adopt'
       if (['propose', 'adopt'].includes(payload.kind)) payload.context = { revision: model.revision }
       const fingerprint = JSON.stringify(payload)
@@ -158,7 +184,10 @@ function render() {
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Save failed')
         delete drafts[id].pending
-        if (form.elements.message.value === payload.message) form.elements.message.value = ''
+        if (form.elements.message.value === note) {
+          form.elements.message.value = ''
+          setChoice(form, '')
+        }
         if (payload.kind === 'adopt') form.elements.kind.value = 'answer'
         capture()
         status.textContent = ['propose', 'adopt'].includes(payload.kind) ? 'Proposal saved. Awaiting SME acceptance or correction; not an answer yet.' : 'Saved. Pending review; saving does not mark the question answered.'
@@ -409,7 +438,8 @@ async function refresh(adopt = false) {
       if (key.startsWith('proposal:')) delete drafts[key]
       else {
         delete draft.pending
-        if (draft.message === saved.message) draft.message = ''
+        const composed = draft.choice && draft.choice !== '__other' ? (draft.message?.trim() ? `${draft.choice}\n\n${draft.message}` : draft.choice) : draft.message
+        if (composed === saved.message) { draft.message = ''; draft.choice = '' }
         if (draft.kind === 'adopt') draft.kind = 'answer'
       }
     }
@@ -431,6 +461,8 @@ document.addEventListener('click', event => {
   if (button?.dataset.adopt) {
     const q = allQuestions().find(q => q.id === button.dataset.adopt)
     const form = document.querySelector(`form[data-question="${q.id}"]`)
+    form.querySelector('.other-ways')?.setAttribute('open', '')
+    setChoice(form, '')
     form.elements.kind.value = 'propose'
     form.elements.message.value = q.request.recommendation
     form.dispatchEvent(new Event('input'))

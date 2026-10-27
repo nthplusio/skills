@@ -17,7 +17,8 @@ Use disposable generic data, not copied customer feedback.
    list names the role and its holder. The retention question shows an
    unfilled role. Expand the saved setup and verify the outcome, roles and
    holders, response budget, and review policy. Check the glossary and the
-   format question's Terms used here and Options. Open a question and check its recommendation, consequence,
+   format question's Terms used here. Each question shows its decision box,
+   and the format question shows answer cards with CSV only recommended. Open a question and check its recommendation, consequence,
    and response format without needing the agent conversation.
 2. Submit “CSV is sufficient for the monthly comparison. Which encoding will
    preserve accented names?” to the format question. Observe exact text in
