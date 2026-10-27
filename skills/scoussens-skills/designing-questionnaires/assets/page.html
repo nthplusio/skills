@@ -35,9 +35,10 @@
         <div class="filter-controls">
           <button class="secondary" id="reset">Clear filters</button>
           <label>Search questions<input id="search" type="search" placeholder="Search" aria-describedby="search-help"></label>
-          <p id="search-help" class="muted">Search question text, context or people.</p>
+          <p id="search-help" class="muted">Search question text, context, roles or people.</p>
           <p class="muted">Choose any within a group. Counts cover all questions.</p>
           <fieldset><legend>Priority</legend><div id="priorities"></div></fieldset>
+          <fieldset hidden><legend>Role</legend><div id="roles"></div></fieldset>
           <fieldset><legend>Who can answer</legend><div id="people"></div></fieldset>
           <fieldset><legend>Status</legend><div id="statuses"></div></fieldset>
           <div><h2>Active filters</h2><div id="active-filters"></div></div>
@@ -57,6 +58,7 @@
     </div>
   </div>
   <details class="scope"><summary>Review history and next actions</summary><p id="last-review" class="muted"></p><div id="attention-items"></div><p id="latest-review"></p></details>
+  <details id="glossary" class="scope" hidden><summary>Glossary</summary><dl id="glossary-content"></dl></details>
   <details id="setup" class="scope" hidden><summary>Review purpose and agreed approach</summary><div id="setup-content"></div></details>
   <footer><p id="notice"></p><p>Answered does not mean implemented. Feedback does not authorize tracker changes or other actions.</p></footer>
 </main>

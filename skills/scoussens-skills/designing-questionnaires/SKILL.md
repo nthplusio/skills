@@ -58,13 +58,15 @@ Use [assets/example.json](assets/example.json) and the
 [data and delivery contract](references/contract.md). Keep each requirement to
 one or two sentences. Put evidence, constraints and background in expandable
 details. Resolve facts already supported by evidence yourself. For remaining
-gaps, apply [targeted asks](references/asking.md). Each ask names its respondent,
-recommendation, consequence, and smallest sufficient response in that reader's
-vocabulary. Keep technical detail expandable.
+gaps, apply [targeted asks](references/asking.md). Each ask names the role it
+is for, opens with the decision, and asks one thing. It gives a recommendation
+that names one listed option, the consequence, and the smallest sufficient
+response in that role's vocabulary. Define unfamiliar terms in the glossary.
+Prompts address the role, not a named person. Keep technical detail expandable.
 
 Keep the template's question list, selected-question detail, search, and
-priority, respondent, and status filters. Global totals show open and answered
-questions; attention counts follow the filters. People are **suggested
+priority, role, respondent, and status filters. Global totals show open and answered
+questions; attention counts follow the filters. Role holders are **suggested
 respondents**, not implementation assignees or decision makers. Answered does
 not mean implemented. On narrow screens, filters collapse and selecting a
 question opens its detail with a return to the list.
@@ -88,8 +90,8 @@ outcomes and history.
 access limit, and only missing human evidence or decisions become respondent
 asks. Keep unverified technical gaps visible with an agent/check next action.
 Each question can be answered without this conversation: it has
-a stable ID, named ask, suggested respondent or explicit unknown, response
-format, and reason the answer matters. Any answer has evidence links. Open
+a stable ID, named ask, role with its holders or an explicit unfilled role,
+response format, and reason the answer matters. Every term it uses is defined. Any answer has evidence links. Open
 questions say who can move them forward and what they need to supply.
 
 ## 3. Connect and publish
@@ -102,9 +104,14 @@ revision checks, and same-page updates without a vendor dependency.
 ```bash
 # SKILL is this installed skill directory; RUN is a private, persistent run folder.
 cp "$SKILL/assets/example.json" "$RUN/review.json"
+python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" lint "$RUN/review.json"
 python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" publish "$RUN/review.json"
 python3 "$SKILL/scripts/questionnaire.py" --db "$RUN/review.sqlite" serve --port 8765
 ```
+
+Before sharing the URL, run the [self-containment check](references/asking.md#check-self-containment-before-sharing):
+the lint, then a reader per role with that role's context but no code,
+ticket, meeting or conversation context. Fix what the reader cannot answer.
 
 Supervise the server with the environment's supported service manager. The
 command above defaults to **manual review**, visibly labeled on the page.
@@ -115,8 +122,8 @@ Credentials belong outside served assets and source control. The reference
 server binds loopback and has no account system; use an authenticated gateway
 for a team, never expose it directly to the public internet.
 
-**Done when** the intended audience can open the stable URL and the selected
-mode passes its gate:
+**Done when** every question passed the reader check, the intended audience
+can open the stable URL, and the selected mode passes its gate:
 
 - **Automatic review:** a real test submission is durably stored and reaches
   the reviewer's actual queue. An HTTP 2xx, console log, or saved comment is
@@ -164,7 +171,9 @@ mode passes its gate:
    clock at publication. A receipt may say “needs clarification”; it
    does not imply agreement or completion. Preserve earlier receipts and IDs.
 4. Export the latest model, edit it, increment its revision, and publish to the
-   same database and URL. The receipt and new question state publish together.
+   same database and URL. Keep the page current: remove asks that answers
+   settled, add "Already decided" lines, and rerun the self-containment check
+   on changed questions. The receipt and new question state publish together.
    If another review already published, export again and reconcile; do not
    replace newer work. Repeating an identical publication is safe.
 5. Follow [targeted delivery](references/asking.md#targeted-delivery) for any

@@ -7,12 +7,46 @@
   "setup": {
     "outcome": "Decide the scope of the first report download.",
     "out_of_scope": "Delivery dates and implementation assignments.",
-    "readers": "Alex supplies monthly comparison examples. Jordan explains access rules. Both know the reporting workflow; neither needs code details.",
+    "readers": "Each question names the role it is for. Alex holds the operations lead role and Jordan the access policy owner role; the questionnaire owner decides conflicts. No role needs code details.",
     "response_budget": "A short choice with one example when needed. Not sure and Someone else should answer are valid replies.",
     "reviewer": "Reviewing agent; questionnaire owner resumes manual review if delivery fails.",
     "decision_maker": "Questionnaire owner resolves scope conflicts after checking the evidence.",
     "escalation": "If evidence conflicts, present both claims to the owner. No response deadline or reminder permission is agreed."
   },
+  "roles": [
+    {
+      "id": "operations-lead",
+      "name": "Operations lead",
+      "knows": "Runs the monthly comparison and shares reports with colleagues. Knows the reporting workflow, not the code.",
+      "held_by": [
+        "Alex"
+      ]
+    },
+    {
+      "id": "access-policy-owner",
+      "name": "Access policy owner",
+      "knows": "Owns who may see which reports and the policies behind those rules. Knows the access rules, not how they are implemented.",
+      "held_by": [
+        "Jordan"
+      ]
+    },
+    {
+      "id": "report-archivist",
+      "name": "Report archivist",
+      "knows": "Retrieves earlier reports for audits or recurring tasks.",
+      "held_by": []
+    }
+  ],
+  "glossary": [
+    {
+      "term": "Monthly comparison",
+      "definition": "The report that compares this month's figures with the previous month's."
+    },
+    {
+      "term": "Export",
+      "definition": "A downloaded copy of a report that can be shared outside the application."
+    }
+  ],
   "requirements": [
     {
       "id": "report-export",
@@ -22,26 +56,44 @@
       "details": "Keep the first version focused on one report. Access rules must also apply to downloads.",
       "questions": [
         {
-          "id": "export-format", "title": "Which export format?",
-          "prompt": "Alex, is CSV sufficient for the monthly comparison?",
-          "people": ["Alex"], "status": "open",
+          "id": "export-format",
+          "title": "Which export format?",
+          "prompt": "This decides whether the first export is CSV only or also a formatted document. Is CSV enough for the monthly comparison you share?",
+          "role": "operations-lead",
+          "status": "open",
           "request": {
-            "recommendation": "Start with CSV; confirm before settling scope.",
+            "options": [
+              "CSV only",
+              "CSV plus a formatted document"
+            ],
+            "recommendation": "CSV only for the first version; confirm before settling scope.",
             "why": "A formatted document adds scope to the first version.",
-            "response": "Reply Yes, No, Not sure, or Someone else should answer. If No, give one example CSV cannot support and link a sample if available."
+            "response": "Choose an option, or reply Not sure or Someone else should answer. If you need a formatted document, give one example CSV cannot support and link a sample if available."
           },
-          "attention": {"state": "waiting", "next_action": "Alex can confirm CSV or provide an example that needs another format."}
+          "attention": {
+            "state": "waiting",
+            "next_action": "The operations lead can confirm CSV or provide an example that needs another format."
+          }
         },
         {
-          "id": "export-access", "title": "Who may download?",
-          "prompt": "Jordan, should download access match the report's viewing permissions?",
-          "people": ["Jordan"], "status": "open",
+          "id": "export-access",
+          "title": "Who may download?",
+          "prompt": "This decides whether downloads need their own access rule. Should anyone who can view a report also be able to export it?",
+          "role": "access-policy-owner",
+          "status": "open",
           "request": {
-            "recommendation": "Use the same access rules as report viewing.",
-            "why": "Downloaded reports can be shared outside the application.",
-            "response": "Reply Yes, No, Not sure, or Someone else should answer. If No, name the exception and link the policy that requires it."
+            "options": [
+              "Same as viewing",
+              "Stricter than viewing"
+            ],
+            "recommendation": "Same as viewing: anyone who can see a report can export it.",
+            "why": "Exported reports can be shared outside the application.",
+            "response": "Choose an option, or reply Not sure or Someone else should answer. If stricter, name the exception and link the policy that requires it."
           },
-          "attention": {"state": "waiting", "next_action": "Jordan can confirm the access rule or identify the policy owner."}
+          "attention": {
+            "state": "waiting",
+            "next_action": "The access policy owner can confirm the access rule or identify the policy that sets it."
+          }
         }
       ]
     },
@@ -53,15 +105,24 @@
       "details": "Retention is still a question, not a delivery commitment.",
       "questions": [
         {
-          "id": "export-retention", "title": "How long should exports remain?",
-          "prompt": "Which recurring task needs an old export, and how old is it?",
-          "people": [], "status": "open",
+          "id": "export-retention",
+          "title": "How long should exports remain?",
+          "prompt": "This decides whether the first version keeps earlier exports. Does any recurring task need an export more than a month old?",
+          "role": "report-archivist",
+          "status": "open",
           "request": {
-            "recommendation": "Defer retained downloads until a recurring need is established.",
-            "why": "Retention affects storage and access policy.",
-            "response": "Give one recurring task and the oldest export it needs, or say Not sure. Link a policy if one applies."
+            "options": [
+              "Yes",
+              "No"
+            ],
+            "recommendation": "No: defer retained exports until a recurring need appears.",
+            "why": "Keeping exports affects storage and access policy.",
+            "response": "Choose an option, or reply Not sure. If Yes, name the task and how old the export is, and link a policy if one applies."
           },
-          "attention": {"state": "waiting", "next_action": "The questionnaire owner needs to identify a respondent who uses previous exports."}
+          "attention": {
+            "state": "waiting",
+            "next_action": "The questionnaire owner needs to identify who holds the report archivist role."
+          }
         }
       ]
     }

@@ -6,19 +6,78 @@ Keep the question title recognizable in a sidebar or notification.
 
 Use the question's `request` fields to show a recommendation, why the answer
 matters, and the minimum response needed. Label a recommendation as provisional.
-Use `people` for suggested respondents. A decision maker belongs in the saved
-review policy or the question's explicit next action, never an assignee field.
+A decision maker belongs in the saved review policy or the question's explicit
+next action, never an assignee field.
 
-For example, a business reader's ask might be:
+## Write for a role, not a person
 
-> Alex, is CSV sufficient for the monthly comparison?
-> Recommend CSV for the first version. A formatted document adds scope.
-> Reply Yes, No, Not sure, or Someone else should answer. If No, give one
-> example CSV cannot support. Link a sample if you have one.
+Give each question a `role`: the knowledge it needs, such as Data model
+architect, Product owner or UI design owner. Record what each role knows and
+cares about in `knows`, and who holds it now in `held_by`. People are only a
+mapping: one person can hold every role, and a role can be unfilled. Write the
+prompt, background, examples and glossary definitions in that role's
+vocabulary, and leave out what the role does not need. Legacy `people` remains
+for older publications; never put role labels in `people`.
 
-For a data engineer, ask for the required fields and a representative record
-instead. Put technical constraints in requirement details. A reader must be
-able to answer from the page without opening the agent conversation.
+## Shape each ask
+
+- **Open with the decision.** The first sentence says what the answer changes:
+  "This decides whether the first export is CSV only." Process status, such
+  as "Ticket 12 is paused", is not a decision.
+- **Ask one thing.** One prompt gets one reply. Split a multi-part prompt into
+  separate questions. Never mix a choice with an open-ended part.
+- **List options that settle it.** Put choices in `request.options`. Make them
+  mutually exclusive; name combinations explicitly ("Back arrow only", "Back
+  arrow and full-card Back"). If the recommended answer is not listed, add it.
+  The recommendation names exactly one option, or says "No recommendation"
+  and why. Not sure and Someone else should answer stay valid replies.
+- **State plain claims.** Describe behavior in words. Leave code, CSS, rule
+  codes, file:line labels, commit hashes, ticket numbers, internal lane names
+  and meeting dates out of the ask; keep provenance in requirement details or
+  evidence links. Refer to another question by its title, never by number.
+  Use one consistent worked example, such as "Object 100, Document 201".
+- **Carry earlier answers forward.** When an answer constrains an open
+  question, begin its background with "Already decided: …".
+- **Define every term.** Add each domain, lab or system term a role might not
+  know to the `glossary`, written for the least-informed role that reads it.
+  Never invent a definition: an unknown term becomes an ask to the role that
+  knows it.
+
+For example, an operations lead's ask might be:
+
+> **For:** Operations lead (Alex)
+> This decides whether the first export is CSV only or also a formatted
+> document. Is CSV enough for the monthly comparison you share?
+> Options: CSV only · CSV plus a formatted document.
+> Recommend CSV only. A formatted document adds scope.
+> Choose an option, or reply Not sure or Someone else should answer. If you
+> need a formatted document, give one example CSV cannot support.
+
+For a data engineer role, ask for the required fields and a representative
+record instead. Put technical constraints in requirement details.
+
+Open the page with its purpose in one or two sentences and one line on how to
+reply. Keep the review process in the setup panel. Do not hard-code counts;
+the page shows live totals. Keep requirement and question titles unique.
+
+## Check self-containment before sharing
+
+1. Run `questionnaire.py --db DB lint MODEL.json` and fix each warning or
+   record why it does not apply. Publishing prints the same warnings. The lint
+   is a heuristic; a clean result is not proof.
+2. Run a reader check for each role. A reader, preferably a helper agent with
+   no access to code, tickets, meetings or this conversation, reads only the
+   page, served before its URL is shared. Its context is the role's `knows` text and nothing else.
+   For each question it records answerable or not, and the missing term,
+   reference or option.
+3. Fix every unanswerable question, republish, and recheck it. A question is
+   ready when the reader can choose an option or give the requested reply
+   from the page alone.
+
+Repeat the check for questions a review changes. After each review, remove
+asks that an answer or follow-up settled, add "Already decided" lines, and
+retire a superseded question with "Retired, no answer needed" and a link to
+its replacement.
 
 Keep recommendations separate from evidence-linked answers. A response of
 "not sure" leaves the question open. A suggested replacement respondent is

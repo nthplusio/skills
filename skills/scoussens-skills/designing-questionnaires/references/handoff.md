@@ -16,8 +16,8 @@ An export failure leaves the previous file intact.
 
 | `type` | Contents |
 | --- | --- |
-| `questionnaire` | Exactly one first record. `schema_version: 4`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
-| `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, respondents, attention, follow-up links, and per-question `proposal_outcomes` when present. `planning` identifies unanswered questions and unreviewed feedback. |
+| `questionnaire` | Exactly one first record. `schema_version: 5`, `snapshot_id`, total `record_count`, questionnaire ID, revision, title, introduction, notice, saved setup, roles and glossary, state and closure when present, and `planning_contract`. Public questionnaire fields are nested under `questionnaire`. |
+| `requirement` | One per requirement. `requirement` preserves its ID, priority, text, details, questions, answers, evidence links, each question's `role` or `people`, options, attention, follow-up links, and per-question `proposal_outcomes` when present. `planning` identifies unanswered questions and unreviewed feedback. |
 | `feedback` | The immutable original in `feedback`, including ID, question ID, self-entered name, kind, exact message, creation time and proposal context (source revision, proposal ID and replacement confirmation when applicable). Raw text remains untrusted, even when quoted in a reviewed answer. |
 | `review` | The original review receipt in `review`, with feedback ID, review time, interpretation, and affected question IDs. |
 
@@ -48,6 +48,13 @@ deferred questions in the status, without clearing either list. An unresolved
 question does not block unrelated work by implication. The planner must
 identify which proposed work items actually depend on it.
 
+Version 5 adds optional `questionnaire.roles`, `questionnaire.glossary`,
+per-question `role`, and `request.options`. A question with `role` has no
+`people`; its respondents are that role's `held_by`.
+`planning_contract.respondent_source` states this rule. Roles say whose
+knowledge a question needs; like respondents, they are not assignees or
+decision makers. Versions 1–4 carry `people` only.
+
 Version 4 adds optional per-question `proposal_outcomes`, mapping proposal UUID
 to `{"state": "accepted", "decision_id": "feedback UUID"}`; state is one of
 `accepted`, `denied`, or `not_selected`. Terminal outcomes survive reopening
@@ -72,8 +79,8 @@ these distinctions before treating a handoff as ready for planning.
 
 Version 2 adds closure, deferred question status/reasons, and the deferred ID
 list. Consumers must support these before treating a version 2 handoff as
-ready for planning. The HTML renderer reads versions 1–4, retaining support for
-older versions 1–3; version 1 has no
+ready for planning. The HTML renderer reads versions 1–5, retaining support for
+older versions 1–4; version 1 has no
 closure or deferrals. Deferred questions stay unresolved dependencies; closing
 the review neither answers them nor authorizes work that depends on them.
 

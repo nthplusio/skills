@@ -5,14 +5,17 @@ let reviews = []
 let pendingProposals = {}
 let selectedId
 let acceptingFeedback = true
-const filters = { priority: new Set(), person: new Set(), state: new Set() }
+const filters = { priority: new Set(), role: new Set(), person: new Set(), state: new Set() }
 const attentionLabels = { waiting: 'Waiting for an answer', clarification: 'Needs more detail', conflict: 'Needs a decision' }
 const statusLabels = { open: 'Open', answered: 'Answered', deferred: 'Deferred', proposed: 'Proposed answer', pending: 'Needs review', ...attentionLabels }
 const symbols = { waiting: '…', clarification: '?', conflict: '!', answered: '✓', deferred: '–', pending: '↻' }
 const desktop = matchMedia('(min-width: 64rem)')
 const $ = selector => document.querySelector(selector)
 const esc = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
-const allQuestions = () => model.requirements.flatMap(r => r.questions.map(q => ({ ...q, requirement: r.id, priority: r.priority, context: `${r.title} ${r.text} ${r.details || ''}` })))
+const roleFor = q => model.roles?.find(role => role.id === q.role)
+const allQuestions = () => model.requirements.flatMap(r => r.questions.map(q => ({ ...q, people: roleFor(q)?.held_by ?? q.people, requirement: r.id, priority: r.priority, context: `${r.title} ${r.text} ${r.details || ''}` })))
+const askedOf = q => roleFor(q) ? `${roleFor(q).name} · ${q.people.join(', ') || 'role not yet filled'}` : q.people.join(', ') || 'Anyone'
+const termsIn = q => (model.glossary || []).filter(g => new RegExp(`(^|\\W)${g.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\W|$)`, 'i').test(`${q.title} ${q.prompt} ${q.request ? Object.values(q.request).flat().join(' ') : ''} ${q.context}`))
 const draftKey = () => `questionnaire:${model.id}:drafts`
 const attentionFor = q => q.status !== 'open' ? null : q.attention || { state: q.follow_up_to ? 'clarification' : 'waiting', next_action: `${q.people.join(', ') || 'A respondent still to be identified'} can answer this question.` }
 const pendingFor = id => feedback.filter(row => row.question === id && !reviews.some(r => r.feedback_id === row.id)).length
@@ -22,7 +25,7 @@ const proposalsFor = q => {
 }
 const decisionsFor = proposal => feedback.filter(f => f.context?.proposal_id === proposal.id && ['accept', 'correct', 'deny'].includes(f.kind))
 const queuedFor = q => feedback.filter(f => pendingProposals[q.id]?.includes(f.id))
-const filterLabel = (group, value) => group === 'state' ? statusLabels[value] : group === 'person' && value === '__anyone' ? 'Anyone' : value
+const filterLabel = (group, value) => group === 'state' ? statusLabels[value] : group === 'role' ? model.roles.find(r => r.id === value).name : group === 'person' && value === '__anyone' ? 'Anyone' : value
 const responseKinds = {
   answer: { choice: 'Answer the question', label: 'Your answer', hint: 'Give the information requested above. You can also say you are not sure.', button: 'Save answer' },
   propose: { choice: 'Propose an answer for SME review', label: 'Your proposed answer', hint: 'A candidate for an SME to accept or correct. Saving a proposal does not settle the question.', button: 'Save proposal' },
@@ -34,6 +37,7 @@ const responseKinds = {
 
 function matchesGroup(q, group, value) {
   if (group === 'priority') return q.priority === value
+  if (group === 'role') return q.role === value
   if (group === 'person') return value === '__anyone' ? !q.people.length : q.people.includes(value)
   if (value === 'pending') return pendingFor(q.id) > 0
   if (value === 'proposed') return queuedFor(q).length > 0
@@ -42,7 +46,7 @@ function matchesGroup(q, group, value) {
 
 function matchesFilters(q) {
   const words = $('#search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
-  const text = `${q.title} ${q.prompt} ${q.people.join(' ')} ${q.context}`.toLocaleLowerCase()
+  const text = `${q.title} ${q.prompt} ${roleFor(q)?.name || ''} ${q.people.join(' ')} ${q.context}`.toLocaleLowerCase()
   return words.every(word => text.includes(word)) && Object.entries(filters).every(([group, values]) => !values.size || [...values].some(value => matchesGroup(q, group, value)))
 }
 
@@ -60,24 +64,29 @@ function saveDrafts() {
 function render() {
   document.title = model.title
   for (const key of ['title', 'intro', 'notice']) $(`#${key}`).textContent = model[key]
-  $('#setup').hidden = !model.setup
-  if (model.setup) $('#setup-content').innerHTML = Object.entries({ outcome: 'Outcome', out_of_scope: 'Outside this review', readers: 'Readers', response_budget: 'Response budget', reviewer: 'Review and fallback', decision_maker: 'Decision authority', escalation: 'Escalation' }).map(([key, label]) => `<p><strong>${label}</strong><br>${esc(model.setup[key])}</p>`).join('')
+  $('#setup').hidden = !model.setup && !model.roles?.length
+  $('#setup-content').innerHTML = (model.setup ? Object.entries({ outcome: 'Outcome', out_of_scope: 'Outside this review', readers: 'Readers', response_budget: 'Response budget', reviewer: 'Review and fallback', decision_maker: 'Decision authority', escalation: 'Escalation' }).map(([key, label]) => `<p><strong>${label}</strong><br>${esc(model.setup[key])}</p>`).join('') : '') +
+    (model.roles?.length ? `<h3>Roles</h3>${model.roles.map(r => `<p><strong>${esc(r.name)}</strong> · ${esc(r.held_by.join(', ') || 'Not yet filled')}<br>${esc(r.knows)}</p>`).join('')}` : '')
   const options = (group, values) => values.map(value => `<label class="filter-option"><input type="checkbox" data-filter="${group}" value="${esc(value)}"><span>${esc(filterLabel(group, value))}</span><span class="count"></span></label>`).join('')
   const people = [...new Set(allQuestions().flatMap(q => q.people))].sort()
   $('#priorities').innerHTML = options('priority', [...new Set(model.requirements.map(r => r.priority))])
   $('#people').innerHTML = options('person', people.concat('__anyone'))
+  $('#roles').innerHTML = options('role', (model.roles || []).map(r => r.id))
+  $('#roles').parentElement.hidden = !model.roles?.length
+  $('#glossary').hidden = !model.glossary?.length
+  if (model.glossary) $('#glossary-content').innerHTML = model.glossary.map(g => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}</dd>`).join('')
   $('#statuses').innerHTML = options('state', Object.keys(statusLabels))
   $('#question-nav').innerHTML = allQuestions().map(q => {
     const state = attentionFor(q)?.state || q.status
-    return `<li data-entry="${q.id}"><a href="#question-${q.id}" aria-current="false"><span class="symbol" data-tone="${state}" aria-hidden="true">${symbols[state]}</span><span class="question-preview"><strong>${esc(q.title)}</strong><small>Who can answer: ${esc(q.people.join(', ') || 'Anyone')}</small><span class="badge" data-tone="${state}">${statusLabels[state]}</span><small class="pending" hidden></small></span></a></li>`
+    return `<li data-entry="${q.id}"><a href="#question-${q.id}" aria-current="false"><span class="symbol" data-tone="${state}" aria-hidden="true">${symbols[state]}</span><span class="question-preview"><strong>${esc(q.title)}</strong><small>${roleFor(q) ? 'For' : 'Who can answer'}: ${esc(askedOf(q))}</small><span class="badge" data-tone="${state}">${statusLabels[state]}</span><small class="pending" hidden></small></span></a></li>`
   }).join('')
   $('#requirements').innerHTML = model.requirements.map(r => `<article class="card" id="requirement-${r.id}">
-    ${r.questions.map(q => `<section class="question" id="question-${q.id}">
+    ${allQuestions().filter(q => q.requirement === r.id).map(q => `<section class="question" id="question-${q.id}">
       <div class="question-header"><span class="badge" data-tone="${attentionFor(q)?.state || q.status}">${statusLabels[attentionFor(q)?.state || q.status]}</span><span class="badge">${esc(r.priority)} priority</span></div>
       <h2 tabindex="-1">${esc(q.title)}</h2>
-      <p>${esc(q.prompt)}</p>${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
+      <p>${esc(q.prompt)}</p>${q.request?.options && q.status === 'open' ? `<div class="options"><strong>Options</strong><ul>${q.request.options.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}${q.follow_up_to ? `<p class="muted">Follow-up to <a href="#question-${q.follow_up_to}">${esc(allQuestions().find(p => p.id === q.follow_up_to).title)}</a></p>` : ''}
       ${q.request && q.status === 'open' ? `<div class="recommendation"><strong>Recommendation · not an answer</strong><p>${esc(q.request.recommendation)}</p>${model.state !== 'closed' ? `<button type="button" class="secondary" data-adopt="${q.id}">Use as proposal</button>` : ''}</div>` : ''}
-      <dl class="roles"><div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || 'Anyone')}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
+      <dl class="roles">${roleFor(q) ? `<div><dt>Role</dt><dd>${esc(roleFor(q).name)}</dd></div>` : ''}<div><dt>Who can answer</dt><dd>${esc(q.people.join(', ') || (roleFor(q) ? 'Role not yet filled' : 'Anyone'))}</dd></div><div><dt>Who decides</dt><dd>${esc(model.setup?.decision_maker || 'Ask the questionnaire owner.')}</dd></div></dl>
       ${q.answer ? `<div class="answer" data-tone="${q.answer.acceptance_id ? 'answered' : 'recorded'}"><strong>${q.answer.acceptance_id ? 'Accepted answer' : 'Answer'}</strong><p>${esc(q.answer.text)}</p>${q.answer.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</div>` : ''}
       <div data-proposals="${q.id}"></div>
       ${q.status === 'deferred' ? `<p class="review-note"><strong>Deferred — not answered.</strong> ${esc(q.deferral)}</p>` : ''}
@@ -93,6 +102,7 @@ function render() {
       </form>`}
       <div class="previous-feedback" data-responses="${q.id}"></div>
       <details class="context"><summary>Requirement details</summary><h3>${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.details ? `<p>${esc(r.details)}</p>` : ''}${q.request ? `<p><strong>Why it matters</strong> ${esc(q.request.why)}</p>` : ''}</details>
+      ${termsIn(q).length ? `<details class="context"><summary>Terms used here</summary><dl>${termsIn(q).map(g => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}</dd>`).join('')}</dl></details>` : ''}
       <p class="review-note" data-attention="${q.id}" hidden></p>
       ${q.attention?.evidence ? `<p>${q.attention.evidence.map(e => `<a href="${esc(e.href)}" rel="noreferrer">${esc(e.label)}</a>`).join(' · ')}</p>` : ''}
       <p class="muted" data-save-notice></p>

@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from questionnaire import ASSETS, pending_proposals, planning, questions, require, validate
+from questionnaire import ASSETS, pending_proposals, planning, questions, require, respondents, validate
 
 
 def read_snapshot(source):
@@ -16,7 +16,7 @@ def read_snapshot(source):
     require(raw.endswith("\n"), "JSONL must end with a newline")
     records = [json.loads(line) for line in raw[:-1].split("\n")]
     header = records[0]
-    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2, 3, 4), "Expected JSONL handoff schema version 1, 2, 3 or 4")
+    require(header["type"] == "questionnaire" and header["schema_version"] in (1, 2, 3, 4, 5), "Expected JSONL handoff schema version 1 to 5")
     require(type(header["record_count"]) is int and header["record_count"] == len(records), "JSONL record count mismatch")
     require(all(r["type"] in ("requirement", "feedback", "review") for r in records[1:]), "Unexpected JSONL record type")
     canonical_header = {k: v for k, v in header.items() if k != "snapshot_id"}
@@ -82,7 +82,8 @@ def write_snapshot(source, output):
             for evidence in evidence_links:
                 sections.append(f'<li><a href="{esc(evidence["href"])}" rel="noreferrer">{esc(evidence["label"])}</a></li>')
             sections.append('</ul></div>')
-            sections.append(f'<p class="muted">Suggested respondents: {esc(", ".join(question["people"]) or "Not specified")}</p>')
+            role = next((r["name"] for r in model.get("roles", []) if r["id"] == question.get("role")), None)
+            sections.append(f'<p class="muted">{f"Role: {esc(role)} · " if role else ""}Suggested respondents: {esc(", ".join(respondents(model, question)) or "Not specified")}</p>')
             proposals = pending_proposals(question, feedback, reviews)
             if proposals:
                 sections.append(f'<div class="answer"><h4>Proposed answers — not settled ({len(proposals)})</h4><p>Awaiting SME acceptance or correction. A review receipt alone does not settle a proposal.</p><ul>')
@@ -94,7 +95,8 @@ def write_snapshot(source, output):
                 sections.append(f'<p>Accepted proposal: <a href="#feedback-{esc(answer["proposal_id"])}">Original proposal</a> · <a href="#feedback-{esc(answer["acceptance_id"])}">Acceptance or correction</a></p>')
             if question.get("request"):
                 request = question["request"]
-                sections.append(f'<details><summary>Original recommendation and ask</summary><p class="verbatim">{esc(request["recommendation"])}</p><p class="verbatim">{esc(request["why"])}</p><p class="verbatim">{esc(request["response"])}</p></details>')
+                options = f'<p class="verbatim">Options: {esc(" · ".join(request["options"]))}</p>' if request.get("options") else ''
+                sections.append(f'<details><summary>Original recommendation and ask</summary>{options}<p class="verbatim">{esc(request["recommendation"])}</p><p class="verbatim">{esc(request["why"])}</p><p class="verbatim">{esc(request["response"])}</p></details>')
             replies = [f for f in feedback if f["question"] == qid]
             sections.append(f'<h4>Feedback and review ({len(replies)})</h4>')
             if not replies:
@@ -124,6 +126,8 @@ def write_snapshot(source, output):
         sections.append('</section>')
     labels = {"outcome": "Outcome", "out_of_scope": "Out of scope", "readers": "Readers", "response_budget": "Response budget", "reviewer": "Review policy", "decision_maker": "Decision authority", "escalation": "Escalation"}
     setup = ''.join(f'<div><dt>{label}</dt><dd class="verbatim">{esc(model["setup"][key])}</dd></div>' for key, label in labels.items()) if model.get("setup") else '<p>No review setup was recorded.</p>'
+    setup += ''.join(f'<div><dt>Role: {esc(r["name"])}</dt><dd class="verbatim">Held by {esc(", ".join(r["held_by"]) or "nobody yet")}. {esc(r["knows"])}</dd></div>' for r in model.get("roles", []))
+    setup += ''.join(f'<div><dt>Term: {esc(g["term"])}</dt><dd class="verbatim">{esc(g["definition"])}</dd></div>' for g in model.get("glossary", []))
     template = Template((ASSETS / "snapshot.html").read_text(encoding="utf-8"))
     document = template.substitute(
         title=esc(model["title"]), intro=esc(model["intro"]), notice=esc(model["notice"]),

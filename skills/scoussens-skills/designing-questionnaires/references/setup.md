@@ -16,7 +16,7 @@ the same sheet rather than conducting another interview:
 | Setting | Settle before publishing |
 | --- | --- |
 | Outcome and scope | Which decision should the answers unlock? What is outside this review? |
-| Readers | Who supplies facts, who decides, what each already knows, and what vocabulary they use. |
+| Roles | Which roles the questions are for, what each role knows and cares about, and who holds each role now. One person may hold several roles. Who decides, kept in the review policy. |
 | Response budget | Quick choices, a short explanation, or evidence-backed answers. Ask for the cheapest response that settles the question. |
 | Delivery | Page audience, preferred reply channel, verified recipient identity, and the user's permission to notify them. |
 | Review policy | Reviewing agent, human fallback, conflict decision maker, and the condition for escalation. |
@@ -27,6 +27,9 @@ or grants autonomy. Unknown identity or authority stays unknown; it never
 becomes permission to send. Use a draft notification as the fallback.
 
 Save the public choices in the model's `setup` object before publication.
+Save the roles in the model's `roles` list, and keep `setup.readers` to one
+line that maps people to roles, such as "Taylor holds all three roles;
+Morgan decides conflicts."
 Save private delivery choices in `RUN/routing.md`, outside served assets:
 
 ```markdown

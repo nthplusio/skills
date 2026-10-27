@@ -93,6 +93,9 @@ input[type="checkbox"] { inline-size: 1rem; block-size: 1rem; flex: none; accent
 .correction { display: grid; gap: .75rem; border-block-start: 1px solid var(--border); padding-block-start: 1rem; }
 .scope { margin-block: .5rem; }
 .scope h3 { margin-block-start: 1rem; }
+.options ul { margin-block: .25rem 0; padding-inline-start: 1.25rem; }
+:is(#glossary-content, .context) dt { font-weight: 650; }
+:is(#glossary-content, .context) dd { margin: 0 0 .5rem; }
 .feedback { margin-block-start: 1rem; background: var(--soft); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; }
 .feedback > p { margin: 0; }
 .feedback .message-hint { margin-block-start: -.5rem; }

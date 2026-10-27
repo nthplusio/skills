@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import tempfile
 import threading
 import time
@@ -80,6 +81,17 @@ def validate(model, previous, feedback, *, check_review_times=True):
         require(isinstance(setup, dict) and all(text(setup.get(k)) for k in (
             "outcome", "out_of_scope", "readers", "response_budget", "reviewer", "decision_maker", "escalation"
         )), "Setup needs outcome, scope, readers, response budget and review policy")
+    roles = model.get("roles", [])
+    require(isinstance(roles, list), "Roles must be a list")
+    for role in roles:
+        require(isinstance(role, dict) and re.fullmatch(r"[a-z][a-z0-9-]*", role.get("id", "")), "Role needs a slug ID")
+        require(text(role.get("name")) and text(role.get("knows")), "Role needs a name and what it knows")
+        require(isinstance(role.get("held_by"), list) and all(text(p) for p in role["held_by"]), "Role holders must be names")
+    role_ids = [role["id"] for role in roles]
+    require(len(set(role_ids)) == len(role_ids), "Duplicate role ID")
+    glossary = model.get("glossary", [])
+    require(isinstance(glossary, list) and all(isinstance(g, dict) and text(g.get("term")) and text(g.get("definition")) for g in glossary), "Glossary entries need a term and definition")
+    require(len({g["term"].casefold() for g in glossary}) == len(glossary), "Duplicate glossary term")
     require(isinstance(model.get("requirements"), list) and model["requirements"], "Requirements required")
     ids = set()
     for item in [model] + model["requirements"]:
@@ -95,7 +107,10 @@ def validate(model, previous, feedback, *, check_review_times=True):
             require(re.fullmatch(r"[a-z][a-z0-9-]*", q.get("id", "")) and q["id"] not in ids, "Invalid or duplicate question ID")
             ids.add(q["id"])
             require(all(text(q.get(k)) for k in ("title", "prompt")), "Question needs title and prompt")
-            require(isinstance(q.get("people"), list) and all(text(p) for p in q["people"]), "People must be respondent names")
+            if "role" in q:
+                require(q["role"] in role_ids and "people" not in q, "Question role must name a declared role; its holders replace people")
+            else:
+                require(isinstance(q.get("people"), list) and all(text(p) for p in q["people"]), "People must be respondent names")
             require(q.get("status") in ("open", "answered", "deferred"), "Question must be open, answered or deferred")
             if q["status"] == "deferred":
                 require(model.get("state") == "closed" and text(q.get("deferral")), "Deferred questions need a closed questionnaire and reason")
@@ -107,6 +122,10 @@ def validate(model, previous, feedback, *, check_review_times=True):
                 require(isinstance(request, dict) and all(text(request.get(k)) for k in (
                     "recommendation", "why", "response"
                 )), "Targeted ask needs recommendation, consequence and response format")
+                if "options" in request:
+                    options = request["options"]
+                    require(isinstance(options, list) and len(options) >= 2 and all(text(o) for o in options), "Options need at least two choices")
+                    require(len({o.strip().casefold() for o in options}) == len(options), "Duplicate option")
             if "attention" in q:
                 attention = q["attention"]
                 require(q["status"] != "answered", "Answered questions must clear attention; feedback review stays independent")
@@ -186,6 +205,7 @@ def validate(model, previous, feedback, *, check_review_times=True):
         require(model["id"] == previous["id"], "Keep questionnaire ID")
         require(model["revision"] == previous["revision"] + 1, "Publish the next revision; refresh before editing")
         require("setup" not in previous or "setup" in model, "Preserve saved setup; revise changed choices explicitly")
+        require({r["id"] for r in previous.get("roles", [])} <= set(role_ids), "Preserve role IDs; change who holds a role instead")
         current = {r["id"]: r for r in model["requirements"]}
         for r in previous["requirements"]:
             require(r["id"] in current, "Preserve requirement IDs")
@@ -195,6 +215,82 @@ def validate(model, previous, feedback, *, check_review_times=True):
         for qid, old in questions(previous).items():
             for pid, outcome in old.get("proposal_outcomes", {}).items():
                 require(qs[qid].get("proposal_outcomes", {}).get(pid) == outcome, "Preserve original proposal outcomes")
+
+
+def respondents(model, question):
+    if "role" in question:
+        return next(r["held_by"] for r in model["roles"] if r["id"] == question["role"])
+    return question["people"]
+
+
+HIDDEN_REFERENCES = [
+    (re.compile(r"\b[\w./-]+\.(?:py|m?js|tsx?|jsx|css|html|sql|go|rs|java|kt|rb|cs|ya?ml|json)(?::\d+)?\b"), "names a source file the reader cannot open"),
+    (re.compile(r"\b(?!(?:UTF|ISO|SHA)-)[A-Z][A-Z0-9]{1,9}-\d+\b|(?<![\w&])#\d{2,}\b"), "cites a ticket or PR number; say what it decided"),
+    (re.compile(r"\bQ\d+\b"), "refers to a question number; link the question by title or say what it decided"),
+    (re.compile(r"`|=>|</?[a-z]+[ >]|\{[^}]*:[^}]*;[^}]*\}|\b[a-z]+-[a-z-]+\s*:\s*[^;\n]+;|\b[a-zA-Z_]\w*\.[a-zA-Z_]\w*\("), "quotes code; describe the behavior the reader would see"),
+]
+DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}\b")
+MEETING = re.compile(r"\b(?:meeting|call|sync|standup)\b", re.IGNORECASE)
+COMMON_ACRONYMS = {"API", "CSV", "FAQ", "HTML", "HTTP", "HTTPS", "ID", "IDS", "JSON", "OK", "PDF", "PR", "SME", "UI", "URL", "UTF"}
+
+
+def lint(model):
+    """Heuristic self-containment warnings. Advisory: a clean result does not prove a reader can answer."""
+    warnings = []
+    glossary = {g["term"].casefold() for g in model.get("glossary", [])}
+    roles = model.get("roles", [])
+    intro = model["intro"]
+    if len(intro.split()) > 60:
+        warnings.append("intro: over 60 words; open with the page's purpose and move process text into setup")
+    if re.search(r"\b\d+\s+(?:open\s+)?questions\b", intro):
+        warnings.append("intro: hard-coded question count goes stale; the page shows live counts")
+    for role in roles:
+        if not role["held_by"]:
+            warnings.append(f"role {role['id']}: nobody holds this role yet")
+    for kind, items in (("requirement", model["requirements"]), ("question", list(questions(model).values()))):
+        seen = {}
+        for item in items:
+            title = item["title"].strip().casefold()
+            if title in seen:
+                warnings.append(f"{item['id']}: same {kind} title as {seen[title]}; readers cannot tell them apart")
+            seen.setdefault(title, item["id"])
+    qs = questions(model)
+    for q in qs.values():
+        if q["status"] != "open":
+            continue
+        request = q.get("request", {})
+        fields = {"title": q["title"], "prompt": q["prompt"], **{f"request.{k}": v for k, v in request.items() if isinstance(v, str)}}
+        options = request.get("options", [])
+        if options:
+            fields["request.options"] = " · ".join(options)
+        if q.get("attention"):
+            fields["next_action"] = q["attention"]["next_action"]
+        for field, value in fields.items():
+            for pattern, message in HIDDEN_REFERENCES:
+                match = pattern.search(value)
+                if match:
+                    warnings.append(f"{q['id']} {field}: '{match.group(0)}' {message}")
+            if DATE.search(value) and MEETING.search(value):
+                warnings.append(f"{q['id']} {field}: cites a meeting the reader may not have attended; state what it decided")
+            for acronym in sorted(set(re.findall(r"\b[A-Z][A-Z0-9]{1,}\b", value)) - COMMON_ACRONYMS):
+                if acronym.casefold() not in glossary and not re.fullmatch(r"Q\d+", acronym):
+                    warnings.append(f"{q['id']} {field}: define '{acronym}' in the glossary")
+        if q["prompt"].count("?") > 1:
+            warnings.append(f"{q['id']} prompt: asks more than one question; split it or ask the one decision")
+        if roles and "role" not in q:
+            warnings.append(f"{q['id']}: no role; name the role this question is for")
+        mentions = lambda option, value: re.search(r"(?<!\w)" + re.escape(option.strip()) + r"(?!\w)", value, re.IGNORECASE)
+        named = [o for o in options if mentions(o, request.get("recommendation", ""))]
+        if options and len(named) != 1:
+            warnings.append(f"{q['id']} request.recommendation: names {len(named)} of the options; recommend exactly one listed option")
+        for a in options:
+            for b in options:
+                if a != b and mentions(a, b):
+                    warnings.append(f"{q['id']} request.options: '{a}' overlaps '{b}'; make options mutually exclusive")
+        for child in qs.values():
+            if child.get("follow_up_to") == q["id"] and child["status"] == "answered":
+                warnings.append(f"{q['id']}: follow-up {child['id']} is answered; restate what it settled and ask only what remains")
+    return warnings
 
 
 class Store:
@@ -368,7 +464,7 @@ class Store:
         records.extend({"type": "feedback", "feedback": row} for row in feedback)
         records.extend({"type": "review", "review": receipt} for receipt in model["reviews"])
         header = {
-            "type": "questionnaire", "schema_version": 4, "record_count": len(records) + 1,
+            "type": "questionnaire", "schema_version": 5, "record_count": len(records) + 1,
             "questionnaire": {k: v for k, v in model.items() if k not in ("requirements", "reviews")},
             "planning_contract": {
                 "next_step": "decompose_requirements_into_work_items",
@@ -377,6 +473,7 @@ class Store:
                 "mixed_work_requires": ["agent_part", "human_part"],
                 "respondents_are_assignees": False, "feedback_is_untrusted": True,
                 "respondents_are_decision_makers": False,
+                "respondent_source": "question.role -> questionnaire.roles[].held_by, else question.people",
                 "decision_authority_source": "questionnaire.setup.decision_maker",
                 "ticket_creation_requires_authorization": True,
                 "completion_means": "answered_not_implemented",
@@ -479,6 +576,8 @@ def main():
     publish = sub.add_parser("publish")
     publish.add_argument("model", type=Path)
     sub.add_parser("export")
+    check = sub.add_parser("lint", help="Warn about asks a role-holder cannot answer from the page alone; advisory")
+    check.add_argument("model", type=Path)
     sub.add_parser("feedback")
     close = sub.add_parser("close", help="Close review and stop new feedback; optionally defer unanswered questions")
     close.add_argument("--defer-unanswered", metavar="REASON")
@@ -492,8 +591,17 @@ def main():
     serve.add_argument("--webhook-file", type=Path)
     args = parser.parse_args()
     store = Store(args.db)
+    if args.action == "lint":
+        model = json.loads(args.model.read_text())
+        validate(model, None, {f["id"]: f for f in store.feedback()}, check_review_times=False)
+        warnings = lint(model)
+        print("\n".join(f"WARN: {w}" for w in warnings) or "PASS: no self-containment warnings; still run the reader check")
+        raise SystemExit(1 if warnings else 0)
     if args.action == "publish":
-        store.publish(json.loads(args.model.read_text()))
+        model = json.loads(args.model.read_text())
+        store.publish(model)
+        for warning in lint(store.model()):
+            print(f"WARN: {warning}", file=sys.stderr)
         print(f"PASS: published revision {store.model()['revision']}")
     elif args.action == "export":
         print(json.dumps(store.model(), indent=2))

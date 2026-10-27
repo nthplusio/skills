@@ -10,9 +10,26 @@ remove them. Deep links use `#requirement-ID`, `#question-ID`, and
 with an explanation rather than deleting them.
 
 Requirement fields: `id`, `priority`, `title`, `text`, optional `details`, and
-`questions`. Question fields: `id`, `title`, `prompt`, `people` (respondent
-names, possibly empty), `status` (`open`, `answered`, or `deferred`), optional
-`follow_up_to` (another question ID), and `answer` only when answered.
+`questions`. Question fields: `id`, `title`, `prompt`, either `role` (a role
+ID) or legacy `people` (respondent names, possibly empty), `status` (`open`,
+`answered`, or `deferred`), optional `follow_up_to` (another question ID), and
+`answer` only when answered.
+
+Top-level `roles` lists who the questions are for. Each role has a slug `id`,
+a `name` shown on the page, `knows` (what the role knows and cares about, which
+sets the question's vocabulary), and `held_by` (names, possibly empty while the
+role is unfilled). A question with `role` takes its respondents from that
+role's `held_by` and must not also carry `people`. Change who holds a role in
+one place; role IDs, like question IDs, are never removed once published.
+Optional top-level `glossary` lists `{"term", "definition"}` entries with
+unique terms. The page shows the full glossary and, on each question, the
+terms that appear in its text or requirement context.
+
+Publications without `roles` stay valid and keep `people`. Upgrading an older
+publication, including one that put role labels in `people`, is an ordinary
+next revision: add `roles`, replace each question's `people` with `role`, and
+keep every ID. Feedback, receipts and earlier publications are untouched; no
+database migration runs.
 Deferred questions carry a text `deferral` reason and keep their original ask
 and attention context. They are not counted as answered or awaiting a reply.
 
@@ -26,7 +43,9 @@ Questions can also carry these fields:
 
 - `request` contains `recommendation`, `why`, and `response`, all text. These
   describe the provisional recommendation, consequence, and sufficient reply.
-  The template displays them while the question is open.
+  Optional `options` lists two or more distinct, mutually exclusive choices;
+  the recommendation names exactly one of them. The template displays them
+  while the question is open.
 - `attention` contains `state`, `next_action`, and optional `evidence` using
   the same labeled-link format as answers. Its state is `waiting`,
   `clarification`, or `conflict`. The next action names who can supply what.
@@ -47,7 +66,8 @@ questions. Attention counts cover open questions and can overlap with pending
 review. Global open/answered totals and filter-option counts cover the whole
 questionnaire. Checkboxes match any selected value within a group and all
 selected groups together. Search matches every word across the question,
-prompt, requirement context, and respondent names. Selecting a question keeps
+prompt, requirement context, role name and respondent names. The Role filter
+appears only when the model declares roles. Selecting a question keeps
 other forms and drafts mounted. Last review and latest interpretation cover
 the whole questionnaire.
 While an update awaits loading, the page names the displayed question revision;

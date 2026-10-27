@@ -13,8 +13,11 @@ Use disposable generic data, not copied customer feedback.
    chip and sort by question name. Reset and follow a question link; it opens
    the targeted question. Open that link in a fresh tab. A deep link to a hidden
    question or source response clears obstructing filters and reveals it.
-   Expand the saved setup and verify the outcome, reader roles, response budget,
-   and review policy. Open a question and check its recommendation, consequence,
+   Filter Role: Access policy owner; only the access question remains, and the
+   list names the role and its holder. The retention question shows an
+   unfilled role. Expand the saved setup and verify the outcome, roles and
+   holders, response budget, and review policy. Check the glossary and the
+   format question's Terms used here and Options. Open a question and check its recommendation, consequence,
    and response format without needing the agent conversation.
 2. Submit “CSV is sufficient for the monthly comparison. Which encoding will
    preserve accented names?” to the format question. Observe exact text in
