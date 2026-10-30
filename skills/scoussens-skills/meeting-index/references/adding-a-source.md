@@ -24,7 +24,7 @@ because the skill needs very little from a source.
 | --- | --- | --- |
 | `id` | Stable identifier for later calls and for reader traceability | Must survive into the output so a reader can find the source |
 | `title` | Human-readable name | Usually auto-generated, usually names the *topic* rather than the subject |
-| `start` | ISO 8601 start time | Note whether it is UTC or local — you need this for the offset |
+| `start` | ISO 8601 start time with `Z` or a numeric offset | The script treats naive timestamps as UTC. Resolve naive local times, including ambiguous or nonexistent daylight-saving times, in the adapter first. |
 | `duration_ms` | Length in **milliseconds** | Seconds and milliseconds are easy to confuse; a 1000× error is obvious in a rollup, which is one reason to run the script |
 
 `scripts/rollup.py` reads these names, and also accepts the common aliases
@@ -46,7 +46,9 @@ An adapter document should answer six questions. Everything else is optional.
 5. **Summary versus transcript** — which call returns which, their relative
    size, and any call that bundles a transcript you did not ask for.
 6. **Timezone** — what the timestamps are in, and how to recover the user's
-   local offset rather than assuming one.
+   local offset for each meeting date rather than assuming one. Follow the
+   [fixed-offset contract](../SKILL.md#roll-up-the-numbers-with-the-script)
+   when a window crosses an offset change.
 
 Then add the source to the list in `SKILL.md` under "Pick a source", and say
 plainly whether the adapter was verified against a real account or written from

@@ -159,10 +159,13 @@ Three hazards worth expecting:
 
 Per-meeting local times, durations, per-day totals and the overall sum are
 arithmetic, and arithmetic done by hand across forty rows goes wrong in ways
-that are hard to spot. Save the normalised records to a JSON file and run:
+that are hard to spot. Resolve `MEETING_INDEX_SKILL_DIR` to the absolute directory
+containing this loaded `SKILL.md`, using the skill loader's path. Keep the working
+directory in the user's project. Save the normalised records to a JSON file there
+and invoke the installed script by its quoted absolute path:
 
 ```bash
-python3 scripts/rollup.py records.json --offset-hours -5 --min-seconds 60
+python3 "$MEETING_INDEX_SKILL_DIR/scripts/rollup.py" records.json --offset-hours -5 --min-seconds 60
 ```
 
 It prints per-meeting local start and duration, per-day and overall rollups, and
@@ -170,9 +173,27 @@ lists anything under the duration floor separately so accidental clips surface
 instead of hiding. `--json` emits the same data for programmatic use; `--help`
 has the rest.
 
-**Deriving `--offset-hours`:** timestamps are usually UTC and the user thinks in
-local time. Do not assume a zone. Take any record whose summary quotes a local
-time, subtract it from that record's `start`, and pass the difference.
+**Input times:** the script converts timestamps with `Z` or numeric offsets to
+UTC before applying the display offset. It treats timestamps without an offset
+as UTC, independently of the machine's timezone. If a source uses naive local
+timestamps, its adapter must resolve their timezone and any daylight-saving
+ambiguity before passing them to the script.
+
+**Deriving `--offset-hours`:** use local datetime minus UTC datetime for the same
+instant, in hours. For example, 10:00 local minus 15:00 UTC is `-5`; 20:30 local
+minus 15:00 UTC is `5.5`. Include both dates when the times cross midnight.
+Confirm the user's offset for the meeting date rather than assuming a zone or
+trusting one potentially incorrect summary header.
+
+**Fixed-offset limit:** one invocation applies the same offset to every record;
+it does not accept named timezones or adjust for daylight saving. If the window
+crosses an offset change, enumerate the whole window first, partition the records
+at the transition instant, and run each partition with its verified offset.
+Combine the counts and durations, including same-day subtotals, without dropping
+or duplicating source IDs. Preserve chronological order using the original
+instants and label each partition's offset so repeated local times remain
+distinct. If the offsets or transition are unknown, use `--offset-hours 0`, label
+the output UTC, and disclose that local times could not be established.
 
 ## Find the threads
 

@@ -100,10 +100,14 @@ was accidental, and exclude it rather than retrying.
 
 ## Timezone
 
-`start_at` is UTC. The `get_note` summary header usually quotes local time, so
-the offset is recoverable: subtract one recording's stated local time from its
-`start_at` and pass the difference to `rollup.py --offset-hours`. Derive it;
-never assume a zone.
+`start_at` is UTC even when its string omits the offset. The `get_note` summary
+header can suggest a local offset, but its date can be wrong; confirm the local
+datetime before deriving an offset. Subtract the UTC datetime from the local
+datetime for the same instant: 10:00 local minus 15:00 UTC gives `-5`.
+Follow [the rollup instructions](../../SKILL.md#roll-up-the-numbers-with-the-script)
+for installed script paths and fixed-offset limits, including windows that cross
+a daylight-saving transition. One recording's offset does not establish the
+offset for the entire window.
 
 ## Transcription quality
 

@@ -25,9 +25,12 @@ Usage
 
 Deriving --offset-hours
 -----------------------
-Timestamps are usually UTC and the user thinks in local time. Do not assume a
-zone: take any record whose summary quotes a local time, subtract it from that
-record's start, and pass the difference.
+Use local datetime minus UTC datetime for the same instant, in hours:
+10:00 local minus 15:00 UTC is -5. Include the dates when crossing midnight.
+This is a fixed offset, not a named timezone: it does not adjust for daylight
+saving. Split a window at offset changes and run each part with its own offset.
+Aware input timestamps are converted to UTC; timestamps without an offset are
+treated as UTC. Source adapters must disambiguate naive local timestamps first.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ import argparse
 import json
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 TITLE_KEYS = ("title", "name")
 START_KEYS = ("start", "start_at", "created_at")
@@ -87,7 +90,10 @@ def parse_start(rec: dict) -> datetime | None:
     if raw is None:
         return None
     try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).replace(tzinfo=None)
+        start = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if start.tzinfo is not None:
+            start = start.astimezone(timezone.utc)
+        return start.replace(tzinfo=None)
     except ValueError:
         return None
 
@@ -197,12 +203,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="Roll up meeting records into local times, durations and totals.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=("Derive --offset-hours by comparing one record's stated local time to\n"
-                "its start timestamp. Do not assume a zone."),
+        epilog=("Offset = local datetime minus UTC datetime for the same instant.\n"
+                "10:00 local minus 15:00 UTC gives -5. Include dates across midnight.\n"
+                "No automatic daylight-saving adjustment: split at offset changes.\n"
+                "Input timestamps without an offset are treated as UTC."),
     )
     ap.add_argument("records", help="JSON file: array of records, or a listing response")
     ap.add_argument("--offset-hours", type=float, default=0.0,
-                    help="hours to add to the timestamp for local time, e.g. -5 (default: 0)")
+                    help="fixed hours to add to UTC for local time, e.g. -5 (default: 0)")
     ap.add_argument("--min-seconds", type=float, default=0.0,
                     help="report records shorter than this separately, uncounted "
                          "(try 60 to surface accidental clips)")
