@@ -90,6 +90,8 @@ def main():
     raw = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
     d = json.loads(raw)
     pr, threads, timeline, checks = d["pr"], d["threads"], d["timeline"], d["checkRuns"]
+    failed = d.get("failedFetches") or []
+    truncated = d.get("truncatedSources") or []
 
     # GitHub's own account types, when gather_pr.sh could fetch them.
     for login, kind in (d.get("accountTypes") or {}).items():
@@ -195,6 +197,11 @@ def main():
     ev = lambda name: [e for e in timeline if e.get("event") == name]
 
     print(json.dumps({
+        "evidence": {
+            "complete": not (failed or truncated),
+            "failedFetches": failed,
+            "truncatedSources": truncated,
+        },
         "pr": {
             "number": pr.get("number"), "title": pr.get("title"), "author": author,
             "state": pr.get("state"), "baseRef": pr.get("baseRefName"),
@@ -232,7 +239,7 @@ def main():
             "slaBreach": (None if (_SLA is None or not first_any)
                           else (response_hours(first_any) or 0) > _SLA),
             "slaClockFrom": "ready_for_review" if rfr else "createdAt",
-            "mergedWithNoReview": len(reviews) == 0,
+            "mergedWithNoReview": None if "reviews" in failed else len(reviews) == 0,
         },
         "findings": {
             "total": len(thread_rows),

@@ -33,7 +33,7 @@
 # GitHub's PR search knows the real base ref and the real merge time
 # directly, so none of the above applies. This is the reliable source.
 #
-# Usage: find_merged_prs.sh <branch> <start-utc-iso> <end-utc-iso> [limit]
+# Usage: find_merged_prs.sh <owner/repo> <branch> <start-utc-iso> <end-utc-iso> [limit]
 #   <start>/<end> must be explicit UTC instants, e.g. 2026-07-20T00:00:00Z —
 #   compute these once against a single clock (see SKILL.md) rather than
 #   passing bare YYYY-MM-DD and hoping the timezone works out; `mergedAt`
@@ -43,10 +43,17 @@
 # url, author, headRefName — sorted by merge time, oldest first.
 set -euo pipefail
 
-BRANCH="${1:?usage: find_merged_prs.sh <branch> <start-utc-iso> <end-utc-iso> [limit]}"
-START="${2:?start UTC ISO-8601 required, e.g. 2026-07-20T00:00:00Z}"
-END="${3:?end UTC ISO-8601 required, e.g. 2026-07-23T00:00:00Z}"
-LIMIT="${4:-300}"
+REPO="${1:?usage: find_merged_prs.sh <owner/repo> <branch> <start-utc-iso> <end-utc-iso> [limit]}"
+BRANCH="${2:?branch required}"
+START="${3:?start UTC ISO-8601 required, e.g. 2026-07-20T00:00:00Z}"
+END="${4:?end UTC ISO-8601 required, e.g. 2026-07-23T00:00:00Z}"
+LIMIT="${5:-300}"
+if [[ ! "$LIMIT" =~ ^[1-9][0-9]{0,3}$ ]] || (( LIMIT > 1000 )); then
+  echo 'error: limit must be between 1 and 1000 (the search result cap).' >&2
+  exit 2
+fi
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
 if ! gh auth status >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -64,9 +71,14 @@ EOF
 fi
 
 gh pr list \
+  --repo "$REPO" \
   --state merged \
   --base "$BRANCH" \
   --search "merged:${START}..${END}" \
   --json number,title,mergedAt,url,author,headRefName \
-  --limit "$LIMIT" \
-  --jq 'sort_by(.mergedAt)'
+  --limit "$LIMIT" > "$TMP/prs.json"
+if (( $(jq 'length' "$TMP/prs.json") >= LIMIT )); then
+  echo "error: merged PR results reached limit $LIMIT for $REPO; coverage may be incomplete. Increase the limit (max 1000) or split the time window and deduplicate PR numbers." >&2
+  exit 2
+fi
+jq 'sort_by(.mergedAt)' "$TMP/prs.json"

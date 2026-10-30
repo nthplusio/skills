@@ -69,13 +69,23 @@ Skip the question outright if the user already said which they wanted.
 
 ## Step 3 — Gather the evidence
 
-Run `scripts/gather_pr.sh <owner/repo> <N>` from this skill's directory, then
-pipe it through `scripts/metrics.py`:
+Resolve `SKILL_DIR` to this installed skill's absolute directory. Use a new
+directory for each assessment and keep both files until the artifact is built:
 
 ```bash
-scripts/gather_pr.sh <owner/repo> <N> > /tmp/pr.json
-scripts/metrics.py /tmp/pr.json > /tmp/metrics.json
+RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pr-detail.XXXXXX")
+bash "$SKILL_DIR/scripts/gather_pr.sh" <owner/repo> <N> > "$RUN_DIR/pr.json" &&
+  python3 "$SKILL_DIR/scripts/metrics.py" "$RUN_DIR/pr.json" > "$RUN_DIR/metrics.json"
 ```
+
+If either command fails, stop rather than assessing an empty or stale file.
+Read `evidence.failedFetches` and `evidence.truncatedSources` in the metrics
+before interpreting any count. If `evidence.complete` is false, counts describe
+only observed records: disclose each missing source, retry it or withhold the
+dependent score, absence claim, and person-level conclusion. CI covers at most
+the first 40 returned commits and reports that limit when exceeded; a failed
+check-runs fetch is not a commit with passing checks. Remove only this run's
+directory after finishing with its evidence.
 
 `metrics.py` emits counts only, never judgment, and it already absorbs the
 five data-source traps that would otherwise skew them — both scripts' comment
@@ -109,7 +119,7 @@ A PR's comment stream mixes three kinds of participant, and conflating them
 produces claims that are simply false about a person:
 
 1. **The AI reviewer** — whichever bot login the repo uses; find it with
-   `gh pr view <n> --json reviews -q '.reviews[].author.login'` rather than
+   `gh pr view <n> --repo <owner/repo> --json reviews -q '.reviews[].author.login'` rather than
    assuming a name. It is `[bot]`-suffixed in timeline events and un-suffixed in
    `reviews`, so match both forms. Its findings are real
    and worth counting, but "a bot flagged this" and "a teammate blocked this"

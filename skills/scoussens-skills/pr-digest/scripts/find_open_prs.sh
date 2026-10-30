@@ -12,7 +12,7 @@
 #     the whole point of an inventory, so excluding them there would hide the
 #     finding rather than tidy it.
 #
-# Usage: find_open_prs.sh [--include-drafts] <branch> [limit]
+# Usage: find_open_prs.sh [--include-drafts] <owner/repo> <branch> [limit]
 #
 # Output: JSON array — number, title, url, author, headRefName, createdAt,
 # updatedAt, isDraft, reviewDecision, additions, deletions, changedFiles,
@@ -23,9 +23,7 @@
 # oldest-first list alone cannot tell a PR pushed yesterday from one untouched
 # since the day it opened, and that difference is the whole signal.
 #
-# NOTE: run this from inside the repo. `gh` resolves the target repo from the
-# git remote of the *current directory*, so invoking it from a scratch/tmp dir
-# fails with "not a git repository" rather than falling back to anything.
+# The repository argument binds the query independently of the installed path.
 set -euo pipefail
 
 INCLUDE_DRAFTS=0
@@ -37,8 +35,15 @@ for arg in "$@"; do
   esac
 done
 
-BRANCH="${ARGS[0]:?usage: find_open_prs.sh [--include-drafts] <branch> [limit]}"
-LIMIT="${ARGS[1]:-200}"
+REPO="${ARGS[0]:?usage: find_open_prs.sh [--include-drafts] <owner/repo> <branch> [limit]}"
+BRANCH="${ARGS[1]:?branch required}"
+LIMIT="${ARGS[2]:-200}"
+if [[ ! "$LIMIT" =~ ^[1-9][0-9]{0,3}$ ]] || (( LIMIT > 1000 )); then
+  echo 'error: limit must be between 1 and 1000.' >&2
+  exit 2
+fi
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
 
 if ! gh auth status >/dev/null 2>&1; then
   echo "error: gh is not authenticated (gh auth status failed). Run 'gh auth login' and retry." >&2
@@ -52,8 +57,13 @@ else
 fi
 
 gh pr list \
+  --repo "$REPO" \
   --state open \
   --base "$BRANCH" \
   --json number,title,url,author,headRefName,createdAt,updatedAt,isDraft,reviewDecision,additions,deletions,changedFiles,statusCheckRollup \
-  --limit "$LIMIT" \
-  --jq "$FILTER"
+  --limit "$LIMIT" > "$TMP/prs.json"
+if (( $(jq 'length' "$TMP/prs.json") >= LIMIT )); then
+  echo "error: open PR results reached limit $LIMIT for $REPO before draft filtering; coverage may be incomplete. Increase the limit (max 1000) or enumerate with a paginated forge API before reporting a complete inventory." >&2
+  exit 2
+fi
+jq "$FILTER" "$TMP/prs.json"

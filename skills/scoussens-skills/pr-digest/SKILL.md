@@ -88,10 +88,16 @@ have open," "what can we close." None of those describe a time window.
 
 ## Step 1 — Resolve the branch and the time window
 
+**Repository**: resolve `owner/repo` from the user's request, or run
+`gh repo view --json nameWithOwner -q .nameWithOwner` in the target checkout.
+Resolve `SKILL_DIR` separately to this installed skill's absolute directory.
+Pass the repository to every helper and forge detail call; the skill's own
+checkout is not the target. If the target is ambiguous, ask before gathering.
+
 **Branch**: default to whatever the current repo treats as the PR-merge target —
 check the agent instructions (`AGENTS.md` or `CLAUDE.md`) for SDLC/branching
 notes, or the session's git status if the harness shows one, first;
-fall back to `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`
+fall back to `gh repo view <owner/repo> --json defaultBranchRef -q .defaultBranchRef.name`
 if neither is available. This is the *recommended* option in Step 0's
 question, not a silent decision — only skip asking if the user already
 named a branch.
@@ -119,8 +125,8 @@ the pipeline never has to think about timezones again.
 
 ## Step 2 — Find every PR that actually merged (digest scopes only)
 
-Run `scripts/find_merged_prs.sh <branch> <start-utc> <end-utc>` from this
-skill's directory. It shells out to `gh pr list --search "merged:X..Y"`
+Run `bash "$SKILL_DIR/scripts/find_merged_prs.sh" <owner/repo> <branch> <start-utc> <end-utc>`
+from any directory. It shells out to `gh pr list --search "merged:X..Y"`
 rather than walking git history — read the comment block at the top of
 that script if you want the full story, but the short version: three
 different git-log strategies were tried while building this skill (grep
@@ -138,6 +144,15 @@ rather than quietly falling back to a git-log approach that's already been
 shown to undercount — tell the user to run `gh auth login` and stop there;
 a degraded answer that *looks* complete is worse than a clear error.
 
+Both list helpers stop with exit code 2 and no JSON if the raw result reaches
+the requested limit (300 merged, 200 open by default), before draft filtering.
+Treat this as unknown coverage, not zero PRs. Increase the final limit argument
+up to 1000; if it still saturates, split the merged window and deduplicate PR
+numbers, or use a fully paginated forge API for open PRs. Disclose any remaining
+gap and withhold completeness claims and inventory totals. Other fetch failures
+also stop the run; never replace them with an empty list. If staging evidence,
+use a run-specific `mktemp -d` directory rather than shared filenames.
+
 Handle the two edge cases up front:
 
 - **Zero PRs.** Say so plainly and move on to Step 2b if in-review PRs
@@ -151,7 +166,7 @@ Handle the two edge cases up front:
 
 ## Step 2b — Find PRs ready for review (only if requested)
 
-Run `scripts/find_open_prs.sh <branch>`. Unlike the merged list, this is a
+Run `bash "$SKILL_DIR/scripts/find_open_prs.sh" <owner/repo> <branch>`. Unlike the merged list, this is a
 **live snapshot, not bound to the time window** — a PR opened three weeks
 ago that's still sitting ready for review today belongs in the digest
 precisely because it's stale, so filtering it out by open-date would hide
@@ -170,7 +185,7 @@ long-lived branch can easily have 20+ PRs sitting open.
 
 ## Step 2c — Take inventory of everything open (inventory scope only)
 
-Run `scripts/find_open_prs.sh --include-drafts <branch>`. Without that flag
+Run `bash "$SKILL_DIR/scripts/find_open_prs.sh" --include-drafts <owner/repo> <branch>`. Without that flag
 the script filters drafts out, which for this scope would discard most of
 the answer: on a long-lived branch **drafts are often most of what is open**,
 and they are the entire point.
@@ -208,7 +223,7 @@ Two guardrails specific to this scope:
 For each PR — merged, ready-for-review, or draft — pull the detail that
 actually explains it:
 
-- `gh pr view <n> --json title,body,author,mergedAt,additions,deletions,changedFiles,files` —
+- `gh pr view <n> --repo <owner/repo> --json title,body,author,mergedAt,additions,deletions,changedFiles,files` —
   the PR's own account of what changed and how it was tested. **Skip this
   call entirely on a light pass**: Step 2/2c already returned title, author,
   branch, dates and diffstat in bulk, and that is everything a one-line
@@ -310,12 +325,14 @@ actually changed:
   of which files changed.
 
 For each ready-for-review card, add the CI-status pill and the review-status
-pill from Step 2b (`approved` / `changes requested` / `no blocking issues` /
+pill from Step 2b (`approved` / `changes requested` / `reviewed; no formal verdict` /
 `awaiting review` — four visually distinct states, not the same pill
 recolored) plus, whenever Step 2b surfaced one, the excerpt from the latest
 review body as a third, short element — a status pill or line is enough, it
-doesn't need its own paragraph. Only "awaiting review" should ever appear
-without an excerpt; the other three all have a real review to quote.
+doesn't need its own paragraph. If a review has no body, attribute its state
+and author without inventing a quote. If history could not be retrieved, show
+`review status unknown` and disclose the retrieval gap instead of inferring
+clearance or lack of review.
 
 **On a light pass, one line per PR replaces both call-outs** — what the
 change is and, where it matters, why it's stuck. Don't write a thinner

@@ -74,45 +74,104 @@ fetch_failed() {
 # Who is a bot, according to GitHub rather than a name list. `gh pr view
 # --json reviews` gives only author.login and strips the [bot] suffix, so the
 # authoritative account type has to come from REST.
-gh api "repos/$REPO/pulls/$NUM/reviews" --paginate \
-  --jq '[.[] | {login: .user.login, type: .user.type}] | from_entries? // ([.[] | {(.login): .type}] | add)' \
-  > "$TMP/accounts.json" 2>/dev/null || echo '{}' > "$TMP/accounts.json"
-if [ ! -s "$TMP/accounts.json" ]; then echo '{}' > "$TMP/accounts.json"; fi
+gh api "repos/$REPO/pulls/$NUM/reviews?per_page=100" --paginate --slurp \
+  > "$TMP/reviews-pages.json" || fetch_failed reviews "$TMP/reviews-pages.json"
+jq '[.[][]] | map({key: .user.login, value: .user.type}) | from_entries' \
+  "$TMP/reviews-pages.json" > "$TMP/accounts.json"
+jq --slurpfile pages "$TMP/reviews-pages.json" \
+  '.reviews = [$pages[0][][] | {author: {login: (.user.login | rtrimstr("[bot]"))}, state, body,
+    submittedAt: .submitted_at, url: .html_url}]' "$TMP/pr.json" > "$TMP/pr-next.json"
+mv "$TMP/pr-next.json" "$TMP/pr.json"
 
 gh api graphql -f query='
-query($o:String!,$r:String!,$n:Int!){
+query($o:String!,$r:String!,$n:Int!,$endCursor:String){
   repository(owner:$o,name:$r){ pullRequest(number:$n){
-    reviewThreads(first:100){ nodes{
-      isResolved isOutdated isCollapsed
-      comments(first:20){ nodes{ author{login} createdAt path line body } }
-    }}
+    reviewThreads(first:100,after:$endCursor){
+      pageInfo{hasNextPage endCursor}
+      nodes{
+        id isResolved isOutdated isCollapsed
+        comments(first:100){
+          totalCount
+          nodes{ author{login} createdAt path line body url }
+        }
+      }
+    }
   }}
 }' -F o="$OWNER" -F r="$NAME" -F n="$NUM" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes' > "$TMP/threads.json" \
-  || fetch_failed threads "$TMP/threads.json"
+  --paginate --slurp > "$TMP/thread-pages.json" \
+  || fetch_failed threads "$TMP/thread-pages.json"
+jq '[.[] | .data.repository.pullRequest.reviewThreads.nodes[]]' \
+  "$TMP/thread-pages.json" > "$TMP/threads.json"
 
-gh api "repos/$REPO/issues/$NUM/timeline?per_page=100" --paginate \
-  --jq '[.[] | {event, at: (.created_at // .submitted_at // .committed_at // .author.date // .committer.date),
+# Each nested connection has its own cursor; the outer paginator cannot advance it.
+jq -r '.[] | select(.comments.totalCount > (.comments.nodes | length)) | .id' "$TMP/threads.json" > "$TMP/thread-ids"
+while IFS= read -r id; do
+  if gh api graphql -f query='
+query($id:ID!,$endCursor:String){
+  node(id:$id){ ... on PullRequestReviewThread {
+    comments(first:100,after:$endCursor){
+      pageInfo{hasNextPage endCursor}
+      nodes{ author{login} createdAt path line body url }
+    }
+  }}
+}' -f id="$id" --paginate --slurp > "$TMP/comment-pages.json"; then
+    jq --arg id "$id" --slurpfile pages "$TMP/comment-pages.json" \
+      'map(if .id == $id then .comments = {nodes: [$pages[0][] | .data.node.comments.nodes[]]} else . end)' \
+      "$TMP/threads.json" > "$TMP/threads-next.json"
+    mv "$TMP/threads-next.json" "$TMP/threads.json"
+  else
+    fetch_failed "thread-comments:$id" "$TMP/comment-pages.json"
+  fi
+done < "$TMP/thread-ids"
+
+gh api "repos/$REPO/issues/$NUM/timeline?per_page=100" --paginate --slurp \
+  > "$TMP/timeline-pages.json" || fetch_failed timeline "$TMP/timeline-pages.json"
+jq '[.[][] | {event, at: (.created_at // .submitted_at // .committed_at // .author.date // .committer.date),
                 actor: (.actor.login // .user.login // .author.name // null),
                 state, label: .label.name,
                 sha: (.sha // .commit_id),
                 message: (.message // null),
-                ref: (.source.issue.number // null)}]' > "$TMP/timeline.json" \
-  || fetch_failed timeline "$TMP/timeline.json"
+                ref: (.source.issue.number // null)}]' "$TMP/timeline-pages.json" > "$TMP/timeline.json"
+
+# gh pr view may cap its connections. Compare returned rows with forge totals
+# rather than treating a capped collection as a complete personnel record.
+gh api graphql -f query='
+query($o:String!,$r:String!,$n:Int!){
+  repository(owner:$o,name:$r){ pullRequest(number:$n){
+    comments{totalCount} commits{totalCount} files{totalCount}
+  }}
+}' -F o="$OWNER" -F r="$NAME" -F n="$NUM" \
+  --jq '.data.repository.pullRequest' > "$TMP/counts.json" \
+  || fetch_failed collection-counts "$TMP/counts.json"
+if ! jq -e 'type == "object" and ([.comments.totalCount, .commits.totalCount, .files.totalCount] | all(type == "number"))' \
+  "$TMP/counts.json" >/dev/null; then
+  if [[ " $FAILED_FETCHES " != *" collection-counts "* ]]; then
+    fetch_failed collection-counts "$TMP/counts.json"
+  fi
+fi
+jq -n --slurpfile pr "$TMP/pr.json" --slurpfile counts "$TMP/counts.json" \
+  '["comments", "commits", "files"] | map(. as $key |
+    select(($counts[0] | type) == "object") |
+    select(($pr[0][$key] | length) < $counts[0][$key].totalCount))' > "$TMP/truncated.json"
 
 # Per-commit CI history. Bounded to 40 commits: beyond that the pattern is
-# established and the extra calls cost more than they inform.
-SHAS=$(jq -r '.commits[].oid' "$TMP/pr.json" | head -40)
-echo '[]' > "$TMP/checks.json"
-if [ -n "$SHAS" ]; then
-  for sha in $SHAS; do
-    gh api "repos/$REPO/commits/$sha/check-runs" \
-      --jq "{sha: \"$sha\", runs: [.check_runs[] | {name, conclusion, status}]}" \
-      || { echo "WARNING: check-runs fetch failed for $sha -- its CI history is missing" >&2
-           FAILED_FETCHES="$FAILED_FETCHES check-runs:$sha"
-           echo "{\"sha\":\"$sha\",\"runs\":[]}"; }
-  done | jq -s '.' > "$TMP/checks.json"
+# sampled, not a claim about the remaining commits.
+if [ "$(jq '.commits | length' "$TMP/pr.json")" -gt 40 ]; then
+  jq '. + ["check-runs:commits-after-40"]' "$TMP/truncated.json" > "$TMP/truncated-next.json"
+  mv "$TMP/truncated-next.json" "$TMP/truncated.json"
 fi
+jq -r '.commits[:40][].oid' "$TMP/pr.json" > "$TMP/shas"
+: > "$TMP/checks.jsonl"
+while IFS= read -r sha; do
+  if gh api "repos/$REPO/commits/$sha/check-runs?per_page=100&filter=all" --paginate --slurp \
+    > "$TMP/check-pages.json"; then
+    jq --arg sha "$sha" '{sha: $sha, runs: [.[] | .check_runs[] | {name, conclusion, status}]}' \
+      "$TMP/check-pages.json" >> "$TMP/checks.jsonl"
+  else
+    fetch_failed "check-runs:$sha" "$TMP/check-pages.json"
+  fi
+done < "$TMP/shas"
+jq -s '.' "$TMP/checks.jsonl" > "$TMP/checks.json"
 
 jq -n \
   --slurpfile pr       "$TMP/pr.json" \
@@ -120,7 +179,9 @@ jq -n \
   --slurpfile timeline "$TMP/timeline.json" \
   --slurpfile checks   "$TMP/checks.json" \
   --slurpfile accounts "$TMP/accounts.json" \
+  --slurpfile truncated "$TMP/truncated.json" \
   --arg failed "$FAILED_FETCHES" \
   '{pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0],
     accountTypes: $accounts[0],
+    truncatedSources: $truncated[0],
     failedFetches: ($failed | split(" ") | map(select(length > 0)))}'
