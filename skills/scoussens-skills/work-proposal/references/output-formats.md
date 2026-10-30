@@ -53,22 +53,37 @@ plain one.
 Use `font-variant-numeric: tabular-nums` on every money and hours column so
 digits line up down the column.
 
-Tell the user the page stays private until they share it. Clients sometimes
-assume a link is already public and hold back on that basis.
+Before uploading proposal content, verify the destination's access rules:
+named recipients, workspace members, anyone with the link, or public access.
+Report the observed audience and its evidence, not a blanket privacy promise.
+Publish only when that destination and audience are authorized. If access
+cannot be verified or exceeds the approved audience, keep the draft local or
+in the conversation and ask before publication.
 
 ## PDF
 
-Write the same HTML, add a print stylesheet, and render it with headless
-Chrome:
+PDF generation requires Bash, Python 3, and a Chrome-compatible browser; plain
+Markdown drafting does not. Resolve the script from the installed skill
+directory, add a print stylesheet to the HTML, then render it:
 
 ```bash
-scripts/html-to-pdf.sh proposal.html proposal.pdf
+bash "$SKILL_DIR/scripts/html-to-pdf.sh" proposal.html proposal.pdf
+# If automatic discovery misses your installed browser:
+CHROME_BIN="/absolute/path/to/chrome" bash "$SKILL_DIR/scripts/html-to-pdf.sh" proposal.html proposal.pdf
 ```
 
-The script tries Chrome, Chromium, and Edge in turn, prints which one it used,
-and fails loudly rather than producing a zero-byte file. It renders backgrounds
-and honours `@page` — both off by default in headless Chrome, and both needed
-for a themed document.
+Set `SKILL_DIR` to the installed `work-proposal` directory. The script searches
+PATH, standard macOS application paths, and agent-browser/Playwright Linux
+caches. `CHROME_BIN` selects an executable, not a shell command with arguments.
+It reports the selected browser and requires both exit status 0 and a fresh,
+nonempty file with a PDF signature before replacing the destination. A failed
+rerender leaves an older PDF unchanged and reports failure; that older file is
+not evidence of a successful rerender. The signature check does not prove
+content, page layout, or asset availability: inspect the result below.
+
+If no renderer is available, return the HTML or Markdown draft and state that
+PDF export is unavailable. Do not claim a PDF was produced. Use `@page` for
+size and margins and check that the renderer preserves the intended theme.
 
 Print is a different medium, so add a print block rather than shipping the
 screen styles:
@@ -126,6 +141,12 @@ writing constraint, not a styling one:
 
 Markdown is also the right output when the proposal is going into a tracker
 comment or a shared doc, where the destination applies its own styling.
+
+Prepare email and tracker text as a draft. A drafting request does not authorize
+message sends, tracker comments, or shared-document writes. Send or post only
+when the user authorizes the content, destination, and recipients; otherwise
+return the text for review. Report whether delivery was drafted, attempted,
+confirmed, or unverified from the tool result.
 
 ## Theme constraints per format
 

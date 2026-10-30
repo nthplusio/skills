@@ -105,8 +105,10 @@ not make its past work more complex, and rescaling points to match a new pace
 destroys every historical comparison the tracker holds.
 
 If a ticket body carries an old hour figure that now contradicts the proposal,
-correct it in the ticket with a note saying why, rather than leaving the
-tracker and the proposal disagreeing where a client might see both.
+report the discrepancy in the draft with the ticket reference and proposed
+correction. Drafting a proposal does not authorize tracker edits. Change the
+ticket only when the user authorizes that correction; preserve unrelated edits
+and explain the revised estimate in the authorized update.
 
 ## Items you cannot price yet
 

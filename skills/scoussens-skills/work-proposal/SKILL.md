@@ -17,6 +17,11 @@ signed or contradicts it. Close both before drafting.
 
 Build it in this order: find the commercial ground, read the code, then write.
 
+Drafting authorizes research and a draft, not tracker estimate edits, message
+sends, or publication. Report discrepancies for review. Before any external
+write, confirm that the user's authorization covers the content, destination,
+and audience; a format choice alone does not grant that authority.
+
 ## Ask two questions and show the sheet first
 
 Two of these you cannot derive, and the third changes the whole page. Ask all
@@ -183,13 +188,22 @@ other number on the page, and it is the easiest error to make while editing
 ranges by hand.
 
 ```bash
-python3 scripts/check-totals.py <file> --rate <hourly-rate>
+python3 "$SKILL_DIR/scripts/check-totals.py" <file> --rate <hourly-rate> --strict
 ```
 
-The script reads HTML or Markdown tables, sums each numeric and currency
-column including ranges like `16–20` and `$1,600–$2,000`, compares them to any
-stated total, and — given a rate — checks that money equals hours times that
-rate on every row. Run it after every edit pass, not once at the end.
+Set `SKILL_DIR` to this installed skill's directory. The Python 3 script reads
+HTML or Markdown tables, including ranges like `16–20` and `$1,600–$2,000`.
+It compares complete numeric columns with stated totals and uses a single
+`Hours` or `Hrs` header to check money against the supplied rate. Computed sums
+alone are not verified totals. Run it after every edit pass, not once at the end.
+
+Read the three outcomes: `CHECKED` names arithmetic actually compared, `FAIL`
+names a mismatch, and `UNVERIFIED` names missing or ambiguous evidence. Failures
+exit nonzero; `--strict` also exits nonzero for unverified checks, including no
+tables. Without `--strict`, exit 0 can include unverified arithmetic. Resolve
+those gaps or record a manual calculation before calling the proposal checked.
+If Python is unavailable, draft normally and verify the arithmetic manually;
+report that the script was not run.
 
 ## Deliver it
 
@@ -197,13 +211,16 @@ Build the form agreed on the sheet. Each one changes the writing.
 
 | | Best for | Constraint that shapes the writing |
 | --- | --- | --- |
-| **Artifact** | A client who will forward a link; anything with tables | Private until shared. Renders in the reader's theme, so both must work |
+| **Artifact** | A client who will forward a link; anything with tables | Verify destination access before uploading. Both reader themes must work |
 | **PDF** | Attachments, board packs, signatures, print | Fixed width, no dark theme, page breaks are yours to control |
 | **Email / Markdown** | A short proposal inside a thread | Clients strip CSS. No theme survives. Keep tables small or drop them |
 
 Mechanics for each, including rendering a PDF with headless Chrome via
 `scripts/html-to-pdf.sh`, are in
 [references/output-formats.md](references/output-formats.md).
+PDF export requires Bash, Python 3, and a Chrome-compatible browser; these are
+not prerequisites for Markdown drafting. Report unavailable export separately
+from draft completion. Inspect every rendered PDF page before delivery.
 
 Write the prose plainly whatever the format. If the `speak-clearly` skill is
 available, apply it — a proposal is exactly the document where filler and
@@ -237,5 +254,9 @@ out.
 - Sequencing encodes real dependencies, external deadlines are flagged, and
   independent items are identified as such.
 - Every column sums, and money matches hours times the rate.
+- Unverified arithmetic is resolved or explicitly held for manual review;
+  the reply distinguishes script checks from manual checks.
 - The theme came from the project, or your reply says you chose it.
 - Your reply names the judgement calls the user should check.
+- Any external write has authorization for its content, destination, and
+  audience. The reply states actual access and whether delivery occurred.
