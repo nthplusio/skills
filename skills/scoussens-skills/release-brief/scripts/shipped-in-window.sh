@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Gather the raw material for a release brief, and say whether it is live.
+# Gather candidate release evidence; deployment needs separate verification.
 #
 # Two modes, matching the two kinds of brief:
 #
 #   --since <date>     PERIOD  — what shipped across a stretch of calendar time
-#   --release <ref>    RELEASE — what one named release contains
+#   --release <ref> --previous <ref>  RELEASE — explicit previous/current boundaries
 #
 # Prints:
-#   1. Ship state  — whether the integration branch holds anything production does not
-#   2. Releases    — the promotion sequence, one entry per release
+#   1. Ship state  — whether production and integration branch trees differ
+#   2. Releases    — recent first-parent entries to check against deployment records
 #   3. Pull requests — split into product work and promotions, which are not changes
 #   4. Commits     — non-merge commits, walked on the branch that holds the history
 #   5. Tracker IDs — candidate issue identifiers harvested from the above
@@ -19,19 +19,20 @@
 # Usage:
 #   shipped-in-window.sh --since 2026-01-12 [--until 2026-01-16] \
 #                        [--production master] [--integration staging] [--remote origin]
-#   shipped-in-window.sh --release v2.3.0 [--production main]
+#   shipped-in-window.sh --release v2.3.0 --previous v2.2.0 [--production main]
 #
 # Requires: git. Uses gh for the pull request block when available.
 
 set -euo pipefail
 
-since=""; until_date=""; release=""; production=""; integration=""; remote="origin"
+since=""; until_date=""; release=""; previous=""; production=""; integration=""; remote="origin"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --since)       since="$2"; shift 2 ;;
     --until)       until_date="$2"; shift 2 ;;
     --release)     release="$2"; shift 2 ;;
+    --previous)    previous="$2"; shift 2 ;;
     --production)  production="$2"; shift 2 ;;
     --integration) integration="$2"; shift 2 ;;
     --remote)      remote="$2"; shift 2 ;;
@@ -41,12 +42,26 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$since" ] && [ -z "$release" ]; then
-  echo "error: pass --since <date> for a period, or --release <ref> for one release" >&2
+  echo "error: pass --since <date>, or --release <ref> --previous <ref>" >&2
+  exit 2
+fi
+if { [ -n "$release" ] && { [ -z "$previous" ] || [ -n "$since" ] || [ -n "$until_date" ]; }; } ||
+   { [ -z "$release" ] && [ -n "$previous" ]; }; then
+  echo "error: release mode requires --release and --previous, without date filters" >&2
   exit 2
 fi
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "error: not a git repository" >&2; exit 2; }
 
 have_branch() { git show-ref --verify --quiet "refs/remotes/$remote/$1"; }
+unknown() { echo "UNKNOWN: $*" >&2; exit 1; }
+
+git fetch --quiet --prune --tags "$remote" || unknown "fetch failed; branch freshness is unverified."
+
+if [ -n "$release" ]; then
+  current_commit=$(git rev-parse --verify --end-of-options "$release^{commit}") || unknown "could not resolve current release '$release'."
+  previous_commit=$(git rev-parse --verify --end-of-options "$previous^{commit}") || unknown "could not resolve previous release '$previous'."
+  git merge-base --is-ancestor "$previous_commit" "$current_commit" || unknown "previous release is not an ancestor of current release; reconcile the boundaries."
+fi
 
 # Resolve branch names when not supplied. These are guesses; confirm the real
 # production branch with whoever owns the deploy.
@@ -59,35 +74,37 @@ fi
 
 rule() { printf '\n%s\n%s\n' "$1" "$(printf '%*s' "${#1}" '' | tr ' ' '-')"; }
 
-git fetch --quiet --tags "$remote" ${production:+"$production"} ${integration:+"$integration"} 2>/dev/null || true
+for branch in "$production" "$integration"; do
+  if [ -n "$branch" ]; then
+    have_branch "$branch" || unknown "branch '$remote/$branch' is unavailable."
+  fi
+done
 
 # ── 1. Ship state ───────────────────────────────────────────────────────────
 rule "SHIP STATE"
 if [ -z "$production" ]; then
-  echo "No production branch found or supplied. Pass --production."
+  echo "UNKNOWN: no production branch found or supplied. Pass --production."
 elif [ -z "$integration" ] || [ "$integration" = "$production" ]; then
-  echo "Single-branch repository: '$production' is production."
-  echo "A merge into it is a release, so there is no queue to report."
+  echo "No separate integration branch resolved for '$production'."
+  echo "Queue: UNKNOWN; compare the deployed revision with the branch."
 else
-  drift=$(git diff --stat "$remote/$production" "$remote/$integration" || true)
+  drift=$(git diff --stat "refs/remotes/$remote/$production" "refs/remotes/$remote/$integration" --) || unknown "tree comparison failed."
   if [ -z "$drift" ]; then
     echo "IDENTICAL: '$integration' and '$production' hold the same content."
-    echo "Nothing is queued."
+    echo "No content difference between these branches; deployment is unverified."
   else
-    echo "DIVERGED: '$integration' holds content '$production' does not."
-    echo "Split the brief into what is live and what is queued."
+    echo "DIVERGED: '$integration' and '$production' hold different content."
+    echo "Inspect the diff before classifying changes as queued or release-only."
     echo
     echo "$drift" | tail -15
   fi
 fi
 echo
-echo "Merged is not deployed. Check the deploy platform and probe the live host"
+echo "Deployment: UNVERIFIED. Merged is not deployed. Check the deploy platform and probe the live host"
 echo "before writing that anything is live."
 
 # ── 2. Release boundaries ───────────────────────────────────────────────────
-# --first-parent on the production branch gives one entry per promotion, in
-# order. Trunk-based repositories have no such boundary: there the release is
-# the deploy, so read the sequence from the deploy platform instead.
+# First-parent entries are release candidates, not evidence of deployment.
 rule "RELEASES"
 if [ -n "$production" ] && have_branch "$production"; then
   # Deliberately NOT date-filtered. git interprets --since in local time while
@@ -95,16 +112,16 @@ if [ -n "$production" ] && have_branch "$production"; then
   # "yesterday" to git and "today" to the API. Filtering here silently drops
   # releases across that boundary. Timestamps are printed in full ISO form so
   # the offset is visible; match them to the window yourself.
-  releases=$(git log --first-parent --pretty='%h %cI %s' "$remote/$production" 2>/dev/null | head -15 || true)
+  releases=$(git log --first-parent -15 --pretty='%h %cI %s' "refs/remotes/$remote/$production" --) || unknown "could not read release candidates."
   if [ -n "$releases" ]; then
     echo "$releases"
     echo
-    echo "Each entry is one promotion to production, newest first, NOT filtered to"
-    echo "the window — compare the timestamps yourself, in one timezone. For a"
-    echo "release brief, take the range between two consecutive entries, or"
-    echo "<prev-tag>..<tag>."
+    echo "Recent first-parent entries, newest first, NOT filtered to the window."
+    echo "Confirm which entries are release boundaries using deployment records."
+    echo "Compare timestamps in one timezone; this list is limited to 15 entries."
+    echo "For release contents, supply --previous <ref> --release <ref>."
   else
-    echo "(no promotions in this window — work may be merged but not yet released)"
+    echo "(no first-parent entries found; deployment remains unverified)"
   fi
 else
   echo "(no production branch resolved; pass --production)"
@@ -134,7 +151,7 @@ elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     work_label="Product work (no production branch resolved, so every base):"
     pr_work=$(merged_into "") || pr_failed=1
   elif [ -z "$integration" ] || [ "$integration" = "$production" ]; then
-    work_label="Product work (merged to '$production'; each merge is also a release):"
+    work_label="Product work (merged to '$production'; deployment unverified):"
     pr_work=$(merged_into "$production") || pr_failed=1
   else
     two_branch=1
@@ -144,7 +161,7 @@ elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   fi
   if [ -n "${pr_failed:-}" ]; then
     pr_work=""; pr_promo=""
-    echo "(gh could not list pull requests — no remote host, or no access)"
+    echo "UNKNOWN: gh could not list pull requests — no remote host, or no access."
   else
     echo "Lines read #number|merged|base|head|title."
     echo "$work_label"
@@ -156,7 +173,7 @@ elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     fi
     if [ -n "$two_branch" ]; then
       echo
-      echo "Promotions (merged to '$production') — these are releases, NOT changes."
+      echo "Promotions (merged to '$production') — deployment unverified, NOT separate changes."
       echo "Do not add them to the change count:"
       if [ -n "$pr_promo" ]; then
         echo "$pr_promo"
@@ -171,20 +188,15 @@ elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     fi
   fi
 else
-  echo "(gh unavailable or not authenticated; skipping)"
+  echo "UNKNOWN: gh unavailable or not authenticated; skipping pull requests."
 fi
 
 # ── 4. Commits ──────────────────────────────────────────────────────────────
 rule "COMMITS"
 if [ -n "$release" ]; then
-  # One release: the range from the previous first-parent entry up to this ref.
-  prev=$(git rev-parse "$release^" 2>/dev/null || true)
-  if [ -z "$prev" ]; then
-    echo "error: could not resolve '$release'" >&2
-  else
-    echo "(contents of $release)"
-    commits=$(git log --no-merges --date=short --pretty='%h %ad %s' "$prev..$release" 2>/dev/null || true)
-  fi
+  echo "(contents of $previous..$release; previous boundary excluded)"
+  echo "Resolved boundaries: $previous_commit..$current_commit"
+  commits=$(git log --no-merges --date=short --pretty='%h %ad %s' "$previous_commit..$current_commit" --) || unknown "could not read release contents."
 else
   # A squash-merge repository keeps one commit per release on production, so
   # its log hides the work. Prefer the branch that holds the real history.
@@ -193,7 +205,7 @@ else
   else ref="HEAD"; fi
   echo "(walking $ref)"
   w=(--since "$since"); [ -n "$until_date" ] && w+=(--until "$until_date")
-  commits=$(git log "${w[@]}" --no-merges --date=short --pretty='%h %ad %s' "$ref" 2>/dev/null || true)
+  commits=$(git log "${w[@]}" --no-merges --date=short --pretty='%h %ad %s' "$ref" --) || unknown "could not read candidate commits."
 fi
 if [ -n "${commits:-}" ]; then
   echo "$commits"

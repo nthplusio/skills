@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,6 +22,8 @@ with open(os.environ["GH_STUB_LOG"], "a") as log:
 if args[:2] == ["auth", "status"]:
     sys.exit(0)
 if args[:2] == ["pr", "list"]:
+    if os.environ.get("GH_STUB_FAIL"):
+        sys.exit(1)
     base = args[args.index("--base") + 1] if "--base" in args else ""
     print("\\n".join(json.loads(os.environ["GH_STUB_PRS"]).get(base, [])))
     sys.exit(0)
@@ -62,11 +65,11 @@ class ShippedInWindow(unittest.TestCase):
         git(self.work, "push", "-q", "origin", f"HEAD:{branch}")
         git(self.work, "fetch", "-q", "origin")
 
-    def run_script(self, prs, *args):
+    def run_script(self, prs, *args, exit_code=0):
         result = subprocess.run(["bash", str(SCRIPT), *args], cwd=self.work, capture_output=True, text=True,
                                 env={**self.env, "GH_STUB_PRS": json.dumps(prs)})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
+        self.assertEqual(result.returncode, exit_code, result.stdout + result.stderr)
+        return result.stdout + result.stderr
 
     def listings(self):
         calls = [json.loads(line) for line in self.log.read_text().splitlines()]
@@ -75,10 +78,94 @@ class ShippedInWindow(unittest.TestCase):
     def test_single_branch_counts_every_merge_as_product_work(self):
         out = self.run_script({"main": ["#7|2026-01-13|main|add-export|Add export"]},
                               "--since", "2026-01-12", "--production", "main")
-        work = between(out, "Product work (merged to 'main'; each merge is also a release):", "COMMITS")
+        work = between(out, "Product work (merged to 'main'; deployment unverified):", "COMMITS")
         self.assertIn("#7|2026-01-13|main|add-export|Add export", work)
         self.assertIn("count: 1", work)
         self.assertNotIn("Promotions", out)
+        self.assertNotIn("A merge into it is a release", out)
+
+    def test_missing_refs_never_mean_identical(self):
+        out = self.run_script({}, "--since", "2026-01-12", "--production", "missing-production",
+                              "--integration", "missing-integration", exit_code=1)
+        self.assertIn("UNKNOWN", out)
+        self.assertNotIn("IDENTICAL", out)
+        self.assertNotIn("Nothing is queued", out)
+
+    def test_failed_fetch_cannot_certify_stale_equal_refs(self):
+        self.push("staging")
+        git(self.work, "remote", "set-url", "origin", str(self.origin / "missing"))
+        out = self.run_script({}, "--since", "2026-01-12", "--production", "main",
+                              "--integration", "staging", exit_code=1)
+        self.assertIn("UNKNOWN", out)
+        self.assertNotIn("IDENTICAL", out)
+        self.assertNotIn("Nothing is queued", out)
+
+    def test_failed_diff_with_valid_refs_is_not_equality(self):
+        self.push("staging")
+        stub = self.log.parent / "bin" / "git"
+        stub.write_text(f"#!{sys.executable}\n"
+                        "import os, sys\n"
+                        "if sys.argv[1] == 'diff': sys.exit(37)\n"
+                        f"os.execv({shutil.which('git')!r}, ['git', *sys.argv[1:]])\n")
+        stub.chmod(0o755)
+        out = self.run_script({}, "--since", "2026-01-12", "--production", "main",
+                              "--integration", "staging", exit_code=1)
+        self.assertIn("UNKNOWN", out)
+        self.assertNotIn("IDENTICAL", out)
+        self.assertNotIn("Nothing is queued", out)
+
+    def test_equal_and_different_trees_are_not_deployment_evidence(self):
+        self.push("staging")
+        args = ("--since", "2026-01-12", "--production", "main", "--integration", "staging")
+        out = self.run_script({}, *args)
+        self.assertIn("IDENTICAL", out)
+        self.assertIn("Deployment: UNVERIFIED", out)
+        (self.work / "feature").write_text("export")
+        git(self.work, "add", "feature")
+        git(self.work, "commit", "-qm", "Add export")
+        self.push("staging")
+        out = self.run_script({}, *args)
+        self.assertIn("DIVERGED", out)
+        self.assertIn("feature", out)
+        self.assertIn("Deployment: UNVERIFIED", out)
+        self.assertNotIn("IDENTICAL", out)
+
+    def test_release_uses_explicit_boundaries_not_one_parent(self):
+        git(self.work, "tag", "v1")
+        for subject in ("ABC-11 first change", "ABC-12 second change", "ABC-13 third change"):
+            git(self.work, "commit", "-q", "--allow-empty", "-m", subject)
+        git(self.work, "tag", "-a", "v2", "-m", "Second release")
+        git(self.work, "commit", "-q", "--allow-empty", "-m", "ABC-14 outside release")
+        out = self.run_script({}, "--release", "v2", "--previous", "v1", "--production", "main")
+        commits = between(out, "COMMITS", "CANDIDATE TRACKER IDS")
+        for subject in ("ABC-11 first change", "ABC-12 second change", "ABC-13 third change"):
+            self.assertIn(subject, commits)
+        self.assertIn("count: 3", commits)
+        self.assertNotIn("Initial commit", commits)
+        self.assertNotIn("ABC-14", out)
+        self.assertFalse(self.log.exists(), "release mode must not query PRs by date")
+
+    def test_invalid_or_ambiguous_release_boundaries_fail(self):
+        git(self.work, "tag", "v1")
+        git(self.work, "commit", "-q", "--allow-empty", "-m", "Next release")
+        git(self.work, "tag", "v2")
+        for args, code in [
+            (("--release", "v2"), 2),
+            (("--release", "missing", "--previous", "v1"), 1),
+            (("--release", "v2", "--previous", "missing"), 1),
+            (("--release", "v1", "--previous", "v2"), 1),
+            (("--release", "v2", "--previous", "v1", "--since", "2026-01-12"), 2),
+        ]:
+            with self.subTest(args=args):
+                out = self.run_script({}, *args, exit_code=code)
+                self.assertNotIn("(none)", out)
+
+    def test_failed_forge_query_is_unknown_not_empty(self):
+        self.env["GH_STUB_FAIL"] = "1"
+        out = self.run_script({}, "--since", "2026-01-12", "--production", "main")
+        prs = between(out, "PULL REQUESTS", "COMMITS")
+        self.assertIn("UNKNOWN", prs)
+        self.assertNotIn("(none)", prs)
 
     def test_two_branch_splits_changes_from_promotions(self):
         self.push("staging")

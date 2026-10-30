@@ -73,15 +73,20 @@ on the promotion that carried it, not on when its pull request merged.
 
 ### Finding the release boundaries
 
-On the production branch, `--first-parent` gives the promotion sequence — one
-entry per release, in order:
+On a branch that receives only release promotions, `--first-parent` gives the
+promotion sequence. Otherwise it lists candidate boundaries, not releases:
 
 ```bash
 git log --first-parent --date=short --pretty='%h %ad %s' origin/<production-branch>
 ```
 
-Each entry is a release. To read one release's contents, take the range between
-two consecutive entries; to read a tagged release, use `git log <prev-tag>..<tag>`.
+Resolve the previous and current release from tags or deployment records and
+record both commit IDs. Use `<previous>..<current>`: the previous boundary is
+excluded and the current boundary is included. Adjacent first-parent entries
+work only when the release process confirms that each entry is a promotion.
+A tag can span many commits; its parent is not necessarily the previous release.
+If either boundary is missing, ambiguous, or on an unrelated history, label the
+contents unknown and resolve the gap before claiming a complete release list.
 
 Trunk-based repositories have no git-visible boundary, because there the
 release *is* the deploy. Get the sequence from the deploy platform's own
@@ -116,9 +121,11 @@ git fetch origin <production-branch> <integration-branch>
 git diff --stat origin/<production-branch> origin/<integration-branch>
 ```
 
-Empty output means the two branches hold identical content and nothing is
-waiting. Non-empty output is the real backlog, and the brief must say which
-items are live and which are queued.
+Only a successful fetch and comparison can establish identical branch content.
+A failed fetch, missing ref, or failed comparison leaves the state **unknown**;
+empty output from a failed command is not equality. A successful empty diff
+proves equal trees, not deployment or an empty deployment queue. Read a non-empty
+diff to distinguish product changes from production-only fixes or release files.
 
 Then collect the work and probe production. For a period brief, select what
 reached production inside the window; for a release brief, select each named
@@ -134,11 +141,14 @@ gh pr list --state merged --base <branch> --search "merged:>=<start>" --limit 30
 ```
 
 `scripts/shipped-in-window.sh` runs this sequence and prints the ship-state
-verdict, the release boundaries, the merged pull requests split into product
-work and promotions, and every tracker ID it can find. In a single-branch
-repository every merge is both a change and a release, so there are no
-promotions to subtract. Pass `--release <ref>` to
-read one release's contents instead of a date window. For the
+comparison, candidate release boundaries, merged pull requests split into product
+work and promotions, and every tracker ID it can find. It does not verify
+deployment. In a single-branch repository there are no separate promotions to
+subtract; deployment records still determine which merges shipped. Pass
+`--release <current-ref> --previous <previous-ref>` to read explicit release
+contents instead of a date window. The helper exits nonzero on Git evidence
+failures and labels unavailable forge data unknown; report those gaps rather
+than treating them as empty results. For the
 failure modes it guards against — release branches, cherry-picks, reverts,
 deploys that lag the merge — read
 [references/verifying-ship-state.md](references/verifying-ship-state.md).
@@ -229,8 +239,13 @@ customer's public brand and say in your reply that you did.
 Build the form agreed on the sheet. For an HTML page, read the destination from
 the harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
 harness") describes. If an `artifact-design` skill is available, load it before
-writing the page. Give the page a specific name, and hand the user the URL along
-with who can see it; a page stays private until they share it.
+writing the page. Before uploading, verify the destination's access controls and
+state who can see it: named users, a workspace, anyone with the link, or the
+public. An unlisted URL is not private. Publish only when the user has authorized
+that audience; otherwise keep the draft in-thread or local and request approval.
+If access cannot be verified, label it **unknown** and hold publication. After
+authorized publication, give the page a specific name and report the URL with
+the verified audience, not a blanket privacy promise.
 
 For Markdown, use heading levels for the section hierarchy and keep the
 reference line on its own line beneath each item so it survives pasting into
@@ -258,7 +273,8 @@ requested.
   period, release contents for a release — not by merge date alone.
 - Promotions are reported separately from the changes they carried.
 - Every claim that something is live was checked against production, and
-  anything still queued is labelled as such.
+  anything still queued is labelled as such. Failed or cancelled deployments
+  remain unverified; branch equality never overrides deployment evidence.
 - Every identifier, title, priority, type, and status came from the tracker; no
   field was inferred to fill a gap.
 - Counts are phrased so they stay true — *shipped* rather than *closed* when
@@ -267,3 +283,5 @@ requested.
 - Each item opens with an observable effect and carries its tracker and pull
   request references.
 - Your reply names the judgement calls the user should check.
+- The delivery audience was verified and authorized, or publication is held
+  with the missing access evidence named.

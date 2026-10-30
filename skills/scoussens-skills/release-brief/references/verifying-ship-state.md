@@ -29,8 +29,10 @@ Compare content:
 git diff --stat origin/<production> origin/<integration>
 ```
 
-Empty output means the branches are identical and nothing is queued. That is
-the sentence a brief can rest on.
+Check fetch and diff exit statuses before interpreting output. A failed fetch,
+missing ref, or failed diff means **unknown**, even when stdout is empty.
+Successful empty output proves equal branch trees, not that production runs
+that content or that the deployment queue is empty.
 
 If the output is non-empty, read it before concluding anything. A handful of
 changed files may be release-only scaffolding — a version bump, a lockfile —
@@ -42,7 +44,7 @@ Ask which branch serves production rather than assuming a name. Common shapes:
 
 | Shape | Production branch | What to compare |
 | --- | --- | --- |
-| Trunk-based | `main` / `master` | Nothing; a merge is a release |
+| Trunk-based | `main` / `master` | Deployed revision against trunk; a merge can await deployment |
 | Two-stage | `master`, fed by `staging` | `master` against `staging` |
 | Release branches | `release/*`, merged back | The active release branch against trunk |
 | Tag-driven | Whatever the latest tag points at | `git diff <latest-tag> origin/main` |
@@ -68,6 +70,13 @@ curl -sS -o /dev/null -w "%{http_code}\n" https://<production-host>/
 
 Read a run's `conclusion` rather than trusting an exit code: some watch
 commands exit `0` on a run that was cancelled.
+
+Tie the successful production deployment to the release commit or artifact and
+record its environment, time, and evidence URL. A failed, cancelled, pending, or
+unavailable deployment leaves that release **unverified**, even when branches
+are identical or the old application returns HTTP 200. A successful status
+endpoint alone does not identify the running version; verify the revision or
+the changed behavior. Preserve these evidence gaps in both the brief and reply.
 
 ## Dates disagree across tools
 
