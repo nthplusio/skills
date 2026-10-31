@@ -22,7 +22,7 @@ MQ=$(gh api "repos/$REPO/branches/$BASE/protection" -q '.required_status_checks.
 QUEUE=$(gh api graphql -f query="{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){mergeQueue(branch:\"$BASE\"){id}}}" \
   -q '.data.repository.mergeQueue.id' 2>/dev/null)
 if [ -n "$QUEUE" ] && [ "$QUEUE" != "null" ]; then
-  echo "  MERGE QUEUE: enabled -> call 'gh pr merge <n>' with NO strategy flag; the queue owns the strategy"
+  echo "  MERGE QUEUE: enabled -> after merge authorization, use land.py --enqueue <n>:<reviewed-full-sha>; no strategy flag"
 else
   echo "  merge queue: not detected -> pick the strategy the repo's history uses (see below)"
 fi

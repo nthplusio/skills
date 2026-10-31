@@ -3,8 +3,8 @@ name: pr-review-round
 description: >-
   Work a queue of open pull requests end to end — every non-draft PR against a
   base branch, oldest first, each reviewed at a depth scaled to its risk, every
-  finding verified at the PR's current head rather than relayed, then approved,
-  unblocked by naming the smallest change that clears it, and landed. Load this
+  finding verified at the PR's current head rather than relayed. Report readiness;
+  approve, dismiss, or land only within the user's authorized scope. Load this
   only when the user explicitly asks to work the queue — "review round", "work
   through the open PRs", "review everything targeting main", "clear the review
   queue", "triage the PR backlog and merge what's ready". Do not load it to
@@ -16,7 +16,7 @@ disable-model-invocation: true
 
 # PR review round
 
-Get a review queue from "piled up" to "everything ready has landed", without
+Assess every PR in a review queue. When authorized, land what is ready without
 merging anything on the strength of a claim nobody checked.
 
 **Verify, never relay.** Reviewing a queue tempts you into restating an
@@ -24,24 +24,39 @@ automated reviewer's findings and moving on. They are often already fixed,
 sometimes mis-severed, and blind to the bugs that matter most. Every claim you
 pass on, you own.
 
-## Autonomy
+## Authority
 
-The skill runs only when someone asks for it by name, so treat the request as
-standing. Run the whole loop: review, approve, dismiss stale blocking reviews,
-land what is ready, report at the end.
+Invocation selects the workflow, not permission to write. Start with the
+requested repository, base, and scope:
+
+- **Assessment-only** is the default for "review round", "which PRs are ready?",
+  and requests to explain blockers. Read, verify, and draft verdicts locally;
+  make no forge mutations, including comments, reviews, dismissals, or merges.
+- **Authorized writes** cover only the actions and PRs the user names. Permission
+  to post reviews does not authorize dismissing others' reviews or merging.
+  "Merge what's ready" authorizes eligible merges, not blanket approval or
+  dismissal. Finish the assessment and hold any missing action for approval.
+- **Publication** is separate: a selected destination or silence does not
+  authorize uploading repository content to an external audience.
 
 **Approving can be the merge action.** When the author enables auto-merge —
-`queue.py`'s `AUTO` column — GitHub enqueues as soon as the review gate clears,
-with no merge command from you. Read that column before approving.
+`queue.py`'s `AUTO` column — clearing the review gate can enqueue or merge it,
+with no merge command from you. Approval and dismissal on such a PR also need
+merge authority. Re-read auto-merge immediately before either action.
 
 Three rules hold regardless:
 
-- Merge only a PR that is `APPROVED` + `CLEAN` at the moment you enqueue it.
-  `land.py` re-checks and refuses; a green from ten minutes ago is not evidence.
+- Bind every write to the full head SHA you verified. Re-read the head before
+  each action; if it changes, hold writes and review the new head. Use
+  `review_write.py` for review/comment/dismissal actions and `land.py --enqueue`
+  for merges. These helpers do not grant authority. Merge only an open,
+  non-draft PR that still has that head and is `APPROVED` + `CLEAN` before every
+  enqueue, including retries. An unknown state holds the write.
 - Never approve your own PR. GitHub forbids it; on your own work, resolve the
   conflicts and name a reviewer.
-- When a permission gate denies a merge command, record the PR as **approved,
-  ready to land**, give the exact command a human should run, confirm state with
+- When a permission gate denies a merge command, record the denial and the
+  observed readiness separately, give the head-bound command a human can run
+  after rechecking the head and approval, confirm state with
   `land.py --watch <n>` (poll-only), and carry on with the round.
 
 **Base branch.** Use whatever was passed as an argument. With no argument,
@@ -57,8 +72,10 @@ round report: what came in, what landed, what is blocked and on whose desk),
 the settings this skill fixes (reader: a teammate who was not there; output:
 one HTML page built as [`references/report.md`](references/report.md) says;
 interaction, length, and anchor as that spec sets them), and the one open
-setting, the page's destination. The request is standing, so silence is
-acceptance and the round does not wait for a reply.
+setting, the page's destination. Continue local assessment while the destination
+is unresolved. Hold external publication until the user authorizes that
+destination and audience; if access is unknown, report it as unknown rather
+than private. Return the summary and a local draft meanwhile.
 
 ## Scripts
 
@@ -75,7 +92,8 @@ python3 $S/prstate.py <n>           # review state + head sha + staleness, one P
 python3 $S/findings.py <n>          # blocking review bodies + their inline comments
 python3 $S/test_reach.py <n>        # added symbols with no test referencing them
 python3 $S/ledger.py open|heads     # findings and heads carried in from earlier rounds
-python3 $S/land.py <n> [n...]       # enqueue approved+clean PRs, watch until merged
+python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
+python3 $S/land.py --enqueue <n>:<reviewed-full-sha> # authorized merges only
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
 python3 $S/round_report.py <base>   # report data: urls, review timestamps, bodies
@@ -136,7 +154,7 @@ For every PR, in this order:
 2. **`ledger.py open`** for findings carried forward from earlier rounds, and
    `ledger.py heads` for the head each PR carried when you last reviewed it. A
    head that has not moved means the author pushed nothing: skip the diff,
-   answer with one comment, and escalate on age.
+   draft one response, post only with comment authority, and escalate on age.
 3. **`findings.py <n>`** for the open blocking reviews. The substance is in the
    inline comments, not the body.
 4. **Verify each finding at the head SHA yourself** (`git show <sha>:<path>`).
@@ -152,8 +170,10 @@ For every PR, in this order:
    what the diff does is reliably where the interesting finding is — including
    authors who have already written down the reason their own PR should not
    merge yet.
-7. **Decide and act.** Verdict table and review structure are in
-   [`references/writing-reviews.md`](references/writing-reviews.md).
+7. **Decide, then apply the authority gate.** Verdict table, guarded write
+   commands, and API race limits are in
+   [`references/writing-reviews.md`](references/writing-reviews.md). In
+   assessment-only mode, retain the proposed verdict and evidence locally.
 
 ### 4. Reconcile the count before moving on
 
@@ -163,30 +183,37 @@ number out loud in your summary: "14 found, 14 verdicts".
 
 A dropped PR is worse than an unreviewed one, because the summary asserts the
 round is complete. `round_report.py` names any PR you left no review or comment
-on, and separates never-reviewed from reviewed-in-an-earlier-round.
+on, and separates never-reviewed from reviewed-in-an-earlier-round. In an
+assessment-only round, reconcile those warnings against your local verdicts;
+absence of a posted review is expected, not a reason to post one.
 
 ### 5. Land what is ready
 
-For a PR whose `AUTO` column is blank, `land.py <n> [n...]` re-checks approval
-and mergeability, enqueues, and watches until each lands. It handles the traps:
-no strategy flag when a queue owns the merge, "already queued" being success,
-and silent eviction when the queue rebuilds after another PR lands.
+With merge authority, use `land.py --enqueue <n>:<reviewed-full-sha> [n:sha...]`.
+It checks approval, head, and mergeability on every attempt and passes
+`--match-head-commit` to GitHub. Changed heads, lost approval, conflicts, and
+failed or uncertain writes stop that PR's writes. It re-enqueues only when an
+actual queue read confirms absence; unknown membership holds writes.
 
-For a PR with `AUTO` set, your approval already enqueued it. Use
-`land.py --watch <n>` to confirm, and report **queued** until `state=MERGED`.
-A PR in a merge queue has not landed.
+Without merge authority, or with `AUTO` set, use `land.py --watch <n>`.
+Bare PR numbers also default to read-only. Report **queued** only when
+`mergeQueueEntry` exists, **merged** only when `state=MERGED`, and **pending,
+queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
+merge command are not evidence of queue membership. Conflicted, closed, held,
+or timed-out PRs never count as landed; the helper exits nonzero for them.
 
 Merges reshuffle the queue. A PR you approved five minutes ago can go
 conflicting because another landed first. When that happens, run
 [technique 12](references/verification-playbook.md) on the overlapping file
 before commenting — the interesting bug often exists in neither branch, only in
-the merged result. Then comment naming the file and whose desk it is on, and
-leave the approval in place.
+the merged result. Then draft a comment naming the file and whose desk it is on;
+post only with comment authority, and leave the approval in place.
 
 ### 6. Dismiss with evidence, never on faith
 
-Dismissal overrides another reviewer's judgment, so the message is the whole
-justification. Name the SHA you checked and what you confirmed:
+Dismissal needs explicit authority and overrides another reviewer's judgment,
+so the message is the whole justification. Name the SHA you checked and what
+you confirmed:
 
 > Both findings fixed at `a1b2c3d`: `orders/store.py:88-120` now reads
 > `OrderPresets` with a legacy fallback, matching the router.
@@ -211,8 +238,12 @@ never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
 PRs that merged during the round and have already left `queue.py`'s list.
 
+In assessment-only mode, combine that observed forge state with your local
+verdicts. Label them **proposed, not posted**, with the reviewed head and local
+assessment time; do not invent a submitted review timestamp.
+
 Terminal summary and HTML artifact spec — including the per-PR link, timestamp,
-expandable review body and teach-me button, all four of which are load-bearing:
+expandable review body and optional teach-me prompt:
 [`references/report.md`](references/report.md).
 
 ## What good looks like
@@ -224,6 +255,6 @@ specific decision the author got right. They also correct the record when a
 previous finding — automated or your own — turns out to be overstated, because
 the author is reading both and silence leaves them guessing.
 
-The round worth running ends with fewer open PRs than it started, an accurate
-account of who is blocked on whom, and at least one finding that no gate in the
-pipeline would have caught.
+The round ends with an evidence-backed verdict for every PR and an accurate
+account of who is blocked on whom. When landing is authorized, it also reports
+which PRs actually merged and which still need action.

@@ -75,6 +75,11 @@ Silently dropping it leaves them wondering whether it still applies.
 
 ## Choosing the verdict
 
+The table names proposed actions. In assessment-only mode, keep them local.
+Execute each action only with authority for that action and PR; approval or
+dismissal that can release auto-merge also needs merge authority. Preserve the
+independent risk-tier trace and evidence requirements before granting clearance.
+
 | Situation | Action |
 |---|---|
 | Code ready, branch conflicting or behind | **Approve**, then comment about the conflict. Approving clears the review gate — the only gate you control. Requesting changes for a rebase is noise. |
@@ -106,16 +111,36 @@ gate, so the author is not guessing.
 
 ## Commands
 
-```bash
-# Long bodies belong in a file; heredoc quoting will mangle backticks inline.
-gh pr review <n> --approve         --body-file /tmp/r<n>.md
-gh pr review <n> --request-changes --body-file /tmp/r<n>.md
-gh pr comment <n>                  --body-file /tmp/c<n>.md
+Use the guarded helper after verifying the full head SHA, not an unpinned
+`gh pr review` call. `--write` asserts authority for this specific action; omit
+it when preparing a proposed action. `--allow-landing` additionally asserts
+merge authority and is required for approval or dismissal if auto-merge is
+enabled. Neither flag substitutes for the user's permission or for evidence.
 
-# Dismissing needs the REST endpoint; there is no gh pr subcommand for it.
-gh api -X PUT "repos/$REPO/pulls/<n>/reviews/<review-id>/dismissals" \
-  -f message="what you verified, and at which sha" -f event=DISMISS
+```bash
+# Set S to this skill's scripts directory; HEAD is the full SHA already reviewed.
+python3 "$S/review_write.py" approve <n> --repo "$REPO" --head "$HEAD" \
+  --body-file /tmp/r<n>.md --write
+python3 "$S/review_write.py" request-changes <n> --repo "$REPO" --head "$HEAD" \
+  --body-file /tmp/r<n>.md --write
+python3 "$S/review_write.py" comment <n> --repo "$REPO" --head "$HEAD" \
+  --body-file /tmp/c<n>.md --write
+python3 "$S/review_write.py" dismiss <n> --repo "$REPO" --head "$HEAD" \
+  --review-id <review-id> --body-file /tmp/d<n>.md --write
 ```
+
+The helper reads the head immediately before each write, rejects self-approval,
+and pins review submissions through REST `commit_id`. It includes the verified
+head in every body and checks it again after the write. If the head moved,
+reconcile the posted action and review the new head before further writes.
+
+**API limit:** comments and dismissals have no atomic expected-head parameter.
+A preflight and postflight check can detect movement, not undo a write that
+raced it. Review `commit_id` pins the review's subject, not all concurrent
+approval or auto-merge changes. If the requested guarantee needs an atomic
+gate the API cannot supply, hold the action for a human. Never describe these
+checks as eliminating the race. On a permission denial or uncertain response,
+inspect remote state before retrying; the helper does not retry mutations.
 
 ## Reporting the round
 

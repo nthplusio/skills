@@ -170,13 +170,13 @@ RISK -> depth   DATA/AUTH  full independent trace; check migrations and reverts
                 WEB        verify findings, check key logic in both directions
                 DOCS       check the claims actually match the diff
 
-BLOCKER         AUTHOR:*   approve anyway when the CODE is ready -- that clears
-                           the review gate -- then comment about the conflict.
+BLOCKER         AUTHOR:*   propose approval when CODE is ready, with a conflict
+                           note. Post only with authority for each action.
                            Requesting changes for a conflict just adds noise.
-AUTO            The author enabled auto-merge, so APPROVING IS LANDING: GitHub
-                enqueues as soon as the review gate clears and no merge command
-                is needed. Check this column before you approve. Confirm the
-                landing with `land.py --watch <n>`, which only polls.
+AUTO            Approval or dismissal can release auto-merge, so either also
+                needs merge authority. Re-read auto-merge and the verified head
+                before writing. AUTO is not queue membership; confirm actual
+                queue/merge state with `land.py --watch <n>`, which only polls.
 
 CI              'N RED' is not automatically the author's fault: a failing
                 review/lint job is sometimes the reviewer tooling erroring out,

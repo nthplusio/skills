@@ -5,6 +5,11 @@ what gets shared. Build both from `round_report.py`'s JSON, not from memory —
 by report time the merged PRs have left `queue.py`'s list and the bodies you
 posted are hundreds of lines back.
 
+For assessment-only rounds, add the locally verified verdicts as **proposed,
+not posted**, with their head SHA and assessment time. Keep those separate from
+the API's submitted review bodies and timestamps. A proposed approval is not
+an approval on GitHub.
+
 `round_report.py` bounds the round from the ledger's previous `ended_at`. A
 fixed clock window is wrong in both directions: too wide and it reports PRs that
 landed before the round opened, too narrow and it drops a long round's earliest
@@ -37,15 +42,19 @@ Link every PR number and give every row the time its review was submitted;
 markdown links clickable, so a linked number costs nothing.
 
 **Say plainly what is queued versus merged.** A PR in a merge queue has not
-landed, and reporting it as merged is the one inaccuracy that will bite. With
-auto-merge, approval enqueues immediately — so a PR can be queued seconds after
-you approve and still take half an hour to land.
+landed. Use the returned `queue_state`: `queued` means an observed
+`mergeQueueEntry`, `not_queued` means observed absence, and `unknown` means the
+query failed, was unavailable, or saw a different head. `CLEAN` and auto-merge
+do not prove membership. Keep approved-but-not-queued and queue-unknown rows
+separate from queued rows. Conflicted and closed PRs are not merged.
 
 ## HTML artifact
 
-Publish to the destination agreed in the round's first message, read from the
+Publish only to a destination and audience the user authorized, read from the
 harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
-harness") describes.
+harness") describes. Settings, availability, and silence are not publication
+consent. If the only available destination is public or its audience is unknown,
+hold the upload and return a local draft until disclosure is authorized.
 
 If an `artifact-design` skill is available, load it first — it calibrates how
 much design the page warrants.
@@ -57,12 +66,13 @@ what is blocked and on whose desk, what the notable findings were.
 - A row per PR: **PR number linked**, author, risk tier, verdict, blocker,
   one-line finding, **the review's timestamp**.
 - **Each row expands into the review you left**, collapsed by default.
-- **A teach-me button per row** (below).
+- **An optional teach-me button per row** (below); its absence does not block
+  review, reporting, or delivery, and does not require installing `pr-teacher`.
 - A section for the substantive findings, each with `file:line` and the
   scenario — the reusable part, and the reason anyone opens the page.
 - A short synthesis: patterns worth acting on, gates that failed to catch things.
 
-### The four per-PR affordances
+### Per-PR affordances
 
 **Link.** A verdict a reader cannot act on is one they defer.
 
@@ -103,7 +113,7 @@ Three CSS details that bite once bodies are rendered:
 - **Cap the height** with `max-height` + `overflow-y: auto`, and give tables and
   code blocks their own `overflow-x: auto` container.
 
-**Teach-me prompt.** The other three point backwards, at what was decided. This
+**Optional teach-me prompt.** The other three point backwards, at what was decided. This
 one points forward, at the code. A round report is read by people who own two or
 three of its rows, and their next question after "why is this blocked" is "what
 do I have to understand to unblock it".
@@ -132,13 +142,13 @@ this code, not just that it was flagged.
 If `/pr-teacher` isn't installed: read the PR with `gh pr view <N> --repo
 <owner/repo>` and `gh pr diff <N>` (that API caps at 20,000 diff lines — above
 it, fetch the branch and use `git diff $(git merge-base origin/<base> <head>)
-<head>`), read the changed files and the code around them, then publish one
+<head>`), read the changed files and the code around them, then prepare one
 self-contained HTML artifact covering the problem it solved, a map of where each
 changed file sits and why, how the mechanism works (mermaid where a diagram
 beats prose), before/after on the decisive hunks, the open findings above traced
 to the code that causes them, and 6-10 self-check questions with revealable
 answers grounded in the real code. Prefer real paths and line numbers over
-illustrative ones.
+illustrative ones. Publish only to an authorized destination and audience.
 ```
 
 **Build it from data attributes, not duplicated markup.** Put the row's identity

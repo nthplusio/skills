@@ -39,7 +39,9 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-LIST_FIELDS = ("number,title,url,author,createdAt,isDraft,reviewDecision,"
+from merge_queue import queue_state
+
+LIST_FIELDS = ("id,headRefOid,number,title,url,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,state,mergedAt")
 
 
@@ -74,14 +76,19 @@ def verdict_of(pr):
     is sitting in a merge queue as landed is the one inaccuracy that bites."""
     if pr.get("state") == "MERGED":
         return "MERGED"
+    if pr.get("state") == "CLOSED":
+        return "CLOSED"
     ms = pr.get("mergeStateStatus")
     rd = pr.get("reviewDecision")
     if ms in ("DIRTY", "CONFLICTING"):
-        return "APPROVED_CONFLICTING" if rd == "APPROVED" else "CHANGES_REQUESTED_CONFLICTING"
+        return f"{rd}_CONFLICTING" if rd in ("APPROVED", "CHANGES_REQUESTED") else "CONFLICTING"
     if rd == "CHANGES_REQUESTED":
         return "CHANGES_REQUESTED"
     if rd == "APPROVED":
-        return "APPROVED_QUEUED" if ms == "CLEAN" else "APPROVED"
+        queue = pr.get("queue_state", "unknown")
+        if queue == "queued":
+            return "APPROVED_QUEUED"
+        return "APPROVED" if queue == "not_queued" else "APPROVED_QUEUE_UNKNOWN"
     return "NEEDS_REVIEW"
 
 
@@ -141,6 +148,8 @@ def main():
     out = []
     for p in prs:
         n = p["number"]
+        p["queue_state"] = (queue_state(p.get("id"), p.get("headRefOid"))
+                            if p.get("state") == "OPEN" else "not_queued")
         # Review bodies carry the reasoning; the inline comments carry the
         # specifics. Both belong in an expandable section, so fetch both.
         reviews = gh(["gh", "api", f"repos/{slug}/pulls/{n}/reviews",
@@ -168,6 +177,8 @@ def main():
             "mergeable": p.get("mergeable"),
             "merge_state": p.get("mergeStateStatus"),
             "review_decision": p.get("reviewDecision"),
+            "head": p.get("headRefOid"),
+            "queue_state": p["queue_state"],
             "verdict": verdict_of(p),
             # The per-PR review timestamp the report asks for. None means you
             # left a comment but no formal review -- say so rather than
@@ -177,6 +188,7 @@ def main():
                 {
                     "id": r["id"],
                     "state": r["state"],
+                    "commit_id": r.get("commit_id"),
                     "submitted_at": r["submitted_at"],
                     "url": r.get("html_url"),
                     "body": r.get("body") or "",

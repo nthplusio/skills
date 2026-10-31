@@ -28,9 +28,17 @@ def _esc(s):
     return html.escape(s, quote=False)
 
 
+def _emphasis(text):
+    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"<em>\1</em>", text)
+    text = re.sub(r"(?<![\w`])_(?!\s)([^_]+?)(?<!\s)_(?![\w`])", r"<em>\1</em>", text)
+    return re.sub(r"~~(.+?)~~", r"<del>\1</del>", text)
+
+
 def _inline(text):
     """Inline spans. Escapes first, then substitutes markup, protecting code."""
-    text = _esc(text)
+    text = _esc(text.replace("\x00", "\ufffd"))
 
     # Pull inline code out before emphasis so backticked markdown stays literal.
     codes = []
@@ -41,27 +49,31 @@ def _inline(text):
 
     text = re.sub(r"`([^`]+)`", _stash_code, text)
 
-    # Links: [text](url). Only http(s)/# targets, so a body can't inject a
-    # javascript: href.
+    links = []
+
+    def _stash_link(label, url):
+        # Undo only the initial text escaping, then escape for an attribute.
+        href = html.escape(html.unescape(url), quote=True)
+        links.append(f'<a href="{href}">{label}</a>')
+        return f"\x00LINK{len(links) - 1}\x00"
+
+    # Protect generated anchors from both autolinking and emphasis substitution.
     text = re.sub(
-        r"\[([^\]]+)\]\((https?://[^\s)]+|#[^\s)]*)\)",
-        r'<a href="\2">\1</a>',
+        r"\[([^\]]+)\]\((https?://[^\s)\x00]+|#[^\s)\x00]*)\)",
+        lambda m: _stash_link(_emphasis(m.group(1)), m.group(2)),
         text,
     )
     # Bare autolinks that markdown would leave alone but readers expect to click.
     text = re.sub(
-        r"(?<![\"\'>=])\bhttps?://[^\s<>\"')\]]+",
-        lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>',
+        r"(?<![\"\'>=])\bhttps?://[^\s<>\"')\]\x00]+",
+        lambda m: _stash_link(m.group(0), m.group(0)),
         text,
     )
 
-    text = re.sub(r"\*\*\*(.+?)\*\*\*", r"<strong><em>\1</em></strong>", text)
-    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
-    # Single-asterisk emphasis, but not a lone `*` used as a bullet or glob.
-    text = re.sub(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)", r"<em>\1</em>", text)
-    text = re.sub(r"(?<![\w`])_(?!\s)([^_]+?)(?<!\s)_(?![\w`])", r"<em>\1</em>", text)
-    text = re.sub(r"~~(.+?)~~", r"<del>\1</del>", text)
+    text = _emphasis(text)
 
+    for i, link in enumerate(links):
+        text = text.replace(f"\x00LINK{i}\x00", link)
     for i, c in enumerate(codes):
         text = text.replace(f"\x00CODE{i}\x00", f"<code>{c}</code>")
     return text
