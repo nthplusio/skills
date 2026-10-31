@@ -65,9 +65,9 @@ The page's destination is a setting, and `explain-to` owns settings. Load
   Anchor: none. Length: the template's own.
 - **The open setting.** Output, from the destinations this session can
   deliver to the user. A **local file** counts when the user can open it. In a
-  remote environment where the harness entry says the user cannot open local
-  files, it is not offered. **Hosted pages** come from the running harness's
-  discovery entry (`artifacts`), each with who can see it and whether it
+  remote environment without a supported local-file preview, it is not offered.
+  **Hosted pages** come from relevant saved discovery or narrow inspection of
+  session tools, each with who can see it and whether it
   reloads an updated page from the same URL (`auto_refresh`). A tool that
   stores text does not count, because it drops the page's styles and scripts.
 - **The rule for the Why cell.** Publishing shows every row's title, owner
@@ -75,21 +75,15 @@ The page's destination is a setting, and `explain-to` owns settings. Load
   audience that includes the people who need to read it is the
   recommendation. The user decides.
 
-Skip the sheet only on the grounds `settings-sheet.md` allows: every setting
-is fixed by the request or by the caller, or the user said not to ask. A
-producer that fixed the destination as well as the settings above, such as
-a planner passing the destination the user agreed at kickoff, leaves nothing
-open, so there is no sheet; name the destination in the first
-assumption line of the reply. The user saying where ("just open it", "publish
-it") fixes the destination the same way. One deliverable destination is not a
-skip ground: show it as a one-row sheet, because other choices list only what
-you could build. A setup preference, a template value or an existing path is
-not a choice. When the user asks only for a decision and leaves the
-destination unanswered, keep the page unrendered and let the producer record
-the hold; an old page stays unchanged and is not the current display.
+Apply the shared settings contract: reuse known choices and ask only unresolved
+consequential ones. A producer may pass the user's approved destination and
+audience at kickoff; reuse them on refresh without another interview. A single
+destination is capability, not disclosure consent. If publication authority is
+missing, record the hold; an old page stays unchanged and is not the current
+display. Keep HTML as the deliverable rather than substituting Markdown.
 
-**Done when** you hold one destination, agreed through the sheet or fixed by
-the request or the caller, and its `auto_refresh` capability.
+**Done when** you hold the destination, audience, publication authority or hold,
+and its `auto_refresh` capability. Publish only within the approved scope.
 
 ## Step 3 — Render
 

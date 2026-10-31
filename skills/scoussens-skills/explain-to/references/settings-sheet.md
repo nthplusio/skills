@@ -1,22 +1,39 @@
 # The settings sheet
 
-One table, one question, one answer. The user sees every choice the skill is
-about to make, with the reason, and changes any of them in one reply. The
-inference is the recommendation; the user's answer is the decision.
+Reuse known choices; ask only what changes the deliverable or its disclosure.
+This contract applies to direct explanations and callers that run only step 1.
+
+## Resolve before asking
+
+Take the artifact, fixed settings with their sources, unresolved choices,
+available outputs, and any delivery constraints from the caller. Reuse the
+user's reader, output, destination, and task-specific saved setup. Apply profile
+defaults to incidental length, anchor, and layout choices; label assumptions.
+Ask only when an unresolved choice changes the purpose, reader, required
+interaction, substantial scope, or disclosure. A refresh does not restart intake.
+
+Return selected settings, destination (or none), actual audience (or unknown),
+and publication authority: authorized with its source and scope, or held with
+the missing permission. A settings result cannot grant authority the task lacks.
+
+**Capability is not consent.** One public destination is a capability fact,
+not publication consent. Naming a destination selects it; permission to upload
+must also cover the content and audience. If access is unknown or broader than
+approved, hold publication and ask that specific question. A generic "go",
+"publish it", silence, or drafting autonomy does not approve an undisclosed
+public audience. If the user explicitly approves the stated content and audience,
+reuse that approval for in-scope updates; ask again only when its scope changes.
+Keep a local or in-thread draft when supported, and label an old page stale.
 
 ## Shape
 
-Show the sheet before any output, as a Markdown table in the reply. One
-lead-in line naming what you are about to produce may precede it, such as
-*Before I write the explanation for your product manager, the settings:*
+When consequential choices remain, show only those rows before building the
+dependent output. State fixed settings in one line above them. For example,
+when the reader is known but the lifetime is not:
 
 | Setting | Recommended | Why | Other choices |
 | --- | --- | --- | --- |
-| Reader | business stakeholder | the request names a product manager deciding on sprint scope | end user, developer who owns the code |
 | Output | chat reply | one decision, read once, you will forward it | Markdown document, HTML page with comments |
-| Interaction | still | nothing to step through or try | interactive, if you want to toggle the before and after |
-| Length | about 400 words | the profile's budget | shorter, longer |
-| Anchor | yes | the reader does not hold the concept | definitions only |
 
 Then one question, in one line: *Reply **go** to use the recommendations, or
 name a setting and the choice you want.* Nothing else follows in that reply.
@@ -27,21 +44,20 @@ or the repository, so the user can see what the recommendation rests on.
 
 ## The answer
 
-- *go*, *yes*, *ok*, or silence after an explicit grant to proceed: use every
-  recommendation.
+- *go*, *yes*, or *ok*: use the presented recommendations within the authority
+  stated above. Silence adds no permission.
 - A setting and a value: apply it, keep the rest, and say the changed settings
   in one line before building. Do not show the sheet again.
-- A value that changes other settings, such as a reader whose profile has a
-  different default output: apply the profile's defaults for the settings the
-  user did not name, and say so in that one line.
+- A value that changes other settings: preserve fixed choices, apply defaults
+  only to incidental open ones, and ask about any consequential conflict.
 - A question back: answer it, then ask the one question again.
 
 ## When the sheet is skipped
 
-- The request fixes every setting, for example "a 200-word chat note for the
-  on-call engineer, no analogies". Build with them.
-- The user said not to ask, or granted autonomy for the task. Build with the
-  recommendations.
+- No consequential choice remains: reuse the request, caller, or saved setup
+  and build with incidental defaults.
+- The user said not to ask, or granted autonomy for the task: build within that
+  scope; hold any unapproved publication rather than inferring consent.
 - In both cases the first assumption line of the reply names the settings
   used, so the user still sees every choice in one place.
 - A calling skill fixed some settings. Show only the open ones, and list the
@@ -58,8 +74,8 @@ or the repository, so the user can see what the recommendation rests on.
 When the running harness has a structured question tool and the user has
 asked to be asked questions, put the one question through it with *Use the
 recommendations* as the first option and one option per setting the user is
-most likely to change. Read whether the tool exists from the harness entry's
-`ask_user` fact (`state.py resolve --harness '<harness>'`). Otherwise the
+most likely to change. Check the available tool inventory or a relevant saved
+`ask_user` fact; no Python or durable discovery is required. Otherwise the
 question goes in the reply.
 
 ## Calling this from another skill
@@ -68,12 +84,18 @@ A skill that produces an output with more than one reader or more than one
 form does not ask its own way. It loads `explain-to`, runs step 1, and passes:
 
 - what the artifact is, in one line, so the sheet's *Why* cells can cite it
-- the settings it has already fixed, with the reason each is fixed
+- the settings it has already fixed, with their sources, and only the choices
+  that remain unresolved
 - any extra output it can produce beyond chat, Markdown, and HTML page, such
   as a PDF or an email, with who can see each
 - any rule the caller must enforce, such as "a hosted page shows the
   repository's paths to everyone who can see it", which goes into the
   output row's *Why* cell
 
-It takes the agreed settings back and builds. The calling skill owns the
-content; `explain-to` owns the reader and the form.
+It takes the settings and authority result back and builds within that scope.
+The calling skill owns the content; `explain-to` owns this settings contract.
+If a required companion cannot be loaded or read through supported means,
+report the missing dependency and hold that workflow unless it defines a
+self-contained fallback. Do not install companions as a side effect of intake.
+Optional prose or page helpers stay optional where the workflow can deliver
+without them; an absent helper is not permission to weaken an HTML contract.

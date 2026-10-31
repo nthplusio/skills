@@ -32,12 +32,12 @@ The page's form and reader are settings, and `explain-to` owns settings. Load `e
 
 - **The artifact.** A throwaway spec-mirror page built from this skill's template; its sections and checker are fixed by this skill, not by the sheet.
 - **Fixed settings.** Reader: the developer who asked, the *developer new to the code* profile, because the page defines every project-local name. Interaction: still. Anchor: definitions only. Length: this skill's own limits (about 900 words, twelve-box diagrams).
-- **The open setting.** Output, from the destinations this session can deliver to the user. A **local file** counts when the user can open it: on their own machine, in a browser on a desktop (macOS, or Linux with `$DISPLAY` or `$WAYLAND_DISPLAY`) or by path otherwise. In a remote environment where the harness entry says the user cannot open local files, it is not offered. **Hosted pages** come from the running harness's discovery entry (`artifacts`), each with who can see it; an inline view that is not a full page is not one. Without an entry, any tool that publishes an HTML page and returns a link. A docs or wiki connector that stores text does not count, because it drops the styles and the diagrams.
+- **The open setting.** Destination for the HTML page, only if not already fixed. A **local file** counts when the user has a supported way to open it, not merely because the agent can write it. **Hosted pages** come from relevant saved discovery or narrow inspection of session tools, each with verified access; an inline view that is not a full page is not one. A docs or wiki connector that stores text does not count, because it drops the styles and diagrams.
 - **The rule for the Why cell.** Publishing shows the repository's paths and gaps to everyone who can see the page, so the local file is the recommendation whenever it is deliverable and the user did not say where; otherwise the narrowest hosted audience is. The user decides.
 
-When the user already said where ("just open it", "publish it"), or only one destination is deliverable, the sheet is skipped and the first assumption line of the reply names the destination and the fixed settings. If step 1 also needs a question, ask both together.
+Apply the shared settings contract: reuse known settings and ask only unresolved consequential choices, together with any step 1 question. One public destination is not publication consent. A generic "publish it" does not approve an undisclosed audience. Hold publication until its content and audience are authorized; keep an unshared HTML draft when possible. If HTML delivery is unavailable, report the limit rather than silently substituting Markdown.
 
-**Done when** you hold one destination, agreed through the sheet or left as the only one available.
+**Done when** you hold the destination, actual audience, and publication authority with its source, or an explicit delivery hold.
 
 ## Step 3 — Find the code the spec touches
 

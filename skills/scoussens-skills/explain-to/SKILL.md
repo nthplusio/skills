@@ -3,8 +3,8 @@ name: explain-to
 description: >-
   Fit an explanation of a concept, problem, or change to one named reader —
   choose the audience, the altitude, an anchor analogy with its twist, the
-  output type, and whether the reader must operate it, confirm them with the
-  user as a settings sheet, then hand sentences to speak-clearly and the
+  output type, and whether the reader must operate it, reuse known settings
+  and ask only consequential open choices, then hand sentences to speak-clearly and the
   medium to the harness's page or view skill. Other skills with a reader or
   output choice call this step instead of asking their own way. Use when
   asked to explain something to a named audience ("explain this to the PM",
@@ -14,8 +14,7 @@ description: >-
   technical or too vague. Do not load it for a one-line factual answer, a
   commit message, or a change summary for the developer who made it; answer
   those directly instead.
-metadata:
-  needs: artifacts, skills.load, helpers.invoke
+compatibility: Chat needs only instructions and supplied context. HTML delivery needs a verified destination; page skills, helpers, and durable discovery are conditional.
 ---
 
 # Explain to
@@ -26,10 +25,11 @@ below follows from who they are.
 
 ## Step 1 — Settle the settings with the user
 
-Every explanation has five settings. Infer each one from the request, then
-show all five as a **settings sheet** and ask before building, per
-[references/settings-sheet.md](references/settings-sheet.md). The inference is
-the recommendation, never the decision.
+Every explanation has five settings. Reuse choices fixed by the user, an
+authorized caller, or the saved setup for this task. Use the reader's defaults
+for incidental choices. Ask only unresolved consequential choices in one
+**settings sheet**, per [references/settings-sheet.md](references/settings-sheet.md).
+Publication permission is separate from these settings.
 
 | Setting | Chosen from | Default when the user says nothing |
 | --- | --- | --- |
@@ -45,18 +45,20 @@ with a short block for the other at the end. When the user asks for separate
 texts, or names readers from three or more profiles, recommend one output per
 profile. Several people of one profile share one output.
 
-Skip the sheet only when the request already fixes every setting, or when the
-user said not to ask; then build, and name the settings you used in the
-first assumption line of the reply (step 7). A reply of *go* accepts every
-recommendation.
+When no consequential choice remains, build without an interview and name the
+settings used in the first assumption line (step 7). A request not to ask
+permits reasonable drafting defaults, not disclosure to an unapproved audience.
+Ordinary chat needs no Python, filesystem, persistent discovery, or companion
+installation. Use available instructions directly; `speak-clearly` remains optional.
 
 Write the agreed reader as the **reader line**, one line in italics that
 follows the output, for example *Written for a product manager deciding
 whether to ship this week*.
 
-**Done when** the user has accepted or changed the sheet, or the request fixed
-every setting, and you can say what the reader already knows, what they
-decide, and which of your words are jargon to them.
+**Done when** the settings and any delivery hold are explicit, and you can say
+what the reader already knows, what they decide, and which words are jargon
+to them. Callers receive the settings, destination, audience, and publication
+authority with its source or an explicit hold; they then resume their own workflow.
 
 ## Step 2 — Write the takeaway
 

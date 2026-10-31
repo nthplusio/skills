@@ -72,7 +72,9 @@ round report: what came in, what landed, what is blocked and on whose desk),
 the settings this skill fixes (reader: a teammate who was not there; output:
 one HTML page built as [`references/report.md`](references/report.md) says;
 interaction, length, and anchor as that spec sets them), and the one open
-setting, the page's destination. Continue local assessment while the destination
+setting, the page's destination if not already fixed. Reuse known settings and
+in-scope publication approval; ask only unresolved consequential choices.
+Continue local assessment while the destination
 is unresolved. Hold external publication until the user authorizes that
 destination and audience; if access is unknown, report it as unknown rather
 than private. Return the summary and a local draft meanwhile.
@@ -194,6 +196,11 @@ It checks approval, head, and mergeability on every attempt and passes
 `--match-head-commit` to GitHub. Changed heads, lost approval, conflicts, and
 failed or uncertain writes stop that PR's writes. It re-enqueues only when an
 actual queue read confirms absence; unknown membership holds writes.
+
+Approval can change after the helper's read and before the merge request.
+`--match-head-commit` guards the head, not approval. Server-side branch
+protections are necessary to enforce approval at merge time; polling does not
+eliminate that race. Hold the merge if a required atomic guarantee is unavailable.
 
 Without merge authority, or with `AUTO` set, use `land.py --watch <n>`.
 Bare PR numbers also default to read-only. Report **queued** only when

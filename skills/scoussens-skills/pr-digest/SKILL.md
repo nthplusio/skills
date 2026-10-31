@@ -35,11 +35,11 @@ this-week narrative, and vice versa.
 
 ## Step 0 — Ask before running
 
-Confirm branch, scope, period, and the page's destination in a single
-round-trip, not four: ask them together with the harness's structured question
-tool when it has one (`ask_user` in its entry of the repository's
-`.nthplusio-skills/discovery.json`), otherwise in your reply. Skip asking
-anything the user already stated explicitly in their own words; if they said
+Resolve branch, scope, period, and the page's destination from the request or
+authorized caller first. Ask only unresolved consequential choices together,
+with an available structured question tool or in the reply; no persistent
+discovery is needed for questions. Skip asking
+anything already settled; if they said
 "digest the last two weeks on `release/foo` including in-review PRs," you
 already have the first three answers and should just confirm briefly rather
 than re-ask.
@@ -55,9 +55,8 @@ than re-ask.
      (Step 2c). No merged PRs at all.
 - **Time period** — offer "This week so far" (recommended default),
   "Last week," "This sprint/cycle," and let "Other" cover an explicit
-  range. Ask for the period every run *when the scope involves merged
-  PRs*: one extra turn buys back a whole rerun whenever a hardcoded
-  default would have guessed wrong.
+  range. Ask for the period only when it is unresolved and the scope involves
+  merged PRs; reuse a specified or agreed window rather than asking every run.
 - **Depth** — *full detail* (recommended) vs. *light pass* (title + ticket
   ID + one line each, no per-PR "for the user / under the hood" split).
   Ask this only when you already have reason to expect a big result — a
@@ -71,7 +70,8 @@ than re-ask.
   up on the branch, with each card written for the user and for the codebase;
   output: one HTML page laid out as Step 6 says; interaction, length, and
   anchor as that layout sets them), and the one open setting, the page's
-  destination.
+  destination if unresolved. Carry known settings and publication authority
+  into the shared contract; destination availability alone grants no permission.
 
 **The period question is moot in inventory scope, so don't ask it there.**
 An inventory is a live snapshot with no window. Offering a period anyway
@@ -412,7 +412,8 @@ runs (a single emoji, e.g. 📰) helps the reader recognize the series in
 their browser tabs — but if an artifact-design skill is loaded, defer to it
 for the rest of the visual treatment.
 
-Publish to the destination agreed in Step 0, read from the harness entry as
+Publish only with authority for the content and audience at the destination
+agreed in Step 0, using saved facts or narrow capability inspection as
 `explain-to`'s `references/formats.md` ("Hand-offs by harness") describes.
 
 ## Step 7 — Give every PR a "teach me this one" button

@@ -324,6 +324,38 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertEqual(store.feedback()[0]["receipt"], "test-review-queue/message-1")
         self.assertEqual(store.model()["reviews"], [])
 
+    def test_manual_review_survives_restart_and_exports_without_wake_receipt(self):
+        data = self.submission()
+        self.post(data)
+        with urlopen(self.url + "/api/state") as response:
+            self.assertEqual(json.load(response)["mode"], "manual")
+
+        restarted = host.Store(self.store.path)
+        self.assertIsNone(restarted.feedback()[0]["receipt"])
+        updated = self.reviewed(data)
+        updated["reviews"][0].pop("reviewed_at")
+        restarted.publish(updated)
+        restarted.publish(updated)
+
+        reopened = host.Store(self.store.path)
+        self.assertIsNone(reopened.feedback()[0]["receipt"])
+        self.assertEqual({key: reopened.feedback()[0][key] for key in host.FIELDS}, data)
+        self.assertEqual(len(reopened.model()["reviews"]), 1)
+        self.assertIn("reviewed_at", reopened.model()["reviews"][0])
+        self.assertEqual(reopened.model()["setup"], self.example["setup"])
+        output = self.path / "manual.jsonl"
+        reopened.handoff(output)
+        records = [json.loads(line) for line in output.read_text().splitlines()]
+        self.assertEqual(records[0]["record_count"], len(records))
+        self.assertEqual([r["review"] for r in records if r["type"] == "review"], reopened.model()["reviews"])
+        originals = [r["feedback"] for r in records if r["type"] == "feedback"]
+        self.assertEqual({key: originals[0][key] for key in host.FIELDS}, data)
+        self.assertEqual(records[1]["planning"]["pending_feedback_ids"], [])
+        with urlopen(self.url + "/api/state") as response:
+            state = json.load(response)
+        self.assertEqual(state["mode"], "manual")
+        self.assertEqual(state["model"], reopened.model())
+
     def test_review_and_followup_publish_together_without_losing_feedback(self):
         data = self.submission()
         self.post(data)

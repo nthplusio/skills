@@ -24,8 +24,9 @@ and audience; a format choice alone does not grant that authority.
 
 ## Ask two questions and show the sheet first
 
-Two of these you cannot derive, and the third changes the whole page. Ask all
-three in one message.
+Reuse known settings from the user, authorized caller, or saved setup. Ask only
+unresolved consequential choices below in one message. Rates and delivery
+capacity need evidence; an absent rate remains unknown, not a drafting default.
 
 1. **Which work, and is anything already agreed?** Get the specific list — a
    tracker project, an email, a set of issue IDs. Ask whether the client has
@@ -48,9 +49,10 @@ three in one message.
      rendered by `scripts/html-to-pdf.sh`, seen by whoever receives the
      attachment, and an **email**, Markdown in the body, seen by the thread's
      recipients.
-   - **The rule for the Why cell.** A proposal under roughly 300 words goes as
-     email whatever else was asked, and anything with a cost table needs a
-     page or a PDF, because email clients mangle tables.
+   - **The rule for the Why cell.** Recommend an email draft for a proposal
+     under roughly 300 words and a page or PDF for cost tables. Preserve the
+     requested output; if its constraints prevent a readable table, ask about
+     that conflict rather than silently changing the format. Drafting does not send it.
      [references/output-formats.md](references/output-formats.md) has the
      constraint each form puts on the writing.
 

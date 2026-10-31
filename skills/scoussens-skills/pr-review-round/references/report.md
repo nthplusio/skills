@@ -50,8 +50,8 @@ separate from queued rows. Conflicted and closed PRs are not merged.
 
 ## HTML artifact
 
-Publish only to a destination and audience the user authorized, read from the
-harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
+Publish only to a destination and audience the user authorized, using saved
+facts or narrow capability inspection as `explain-to`'s `references/formats.md` ("Hand-offs by
 harness") describes. Settings, availability, and silence are not publication
 consent. If the only available destination is public or its audience is unknown,
 hold the upload and return a local draft until disclosure is authorized.

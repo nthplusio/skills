@@ -14,9 +14,10 @@ Build it in this order: establish ground truth, agree the story, then write.
 
 ## Ask two questions and show the sheet first
 
-The first two you cannot derive from the repository, and the form changes what
-you build. Ask them in one message, before gathering anything, each with a
-bold default so that *go* answers all of them.
+Reuse known settings from the user, authorized caller, or saved setup. Ask
+only unresolved consequential choices below in one message before gathering,
+each with a bold recommendation. Repository evidence alone cannot choose the
+user's window or business framing.
 
 1. **Which window, and is the unit a period or a release?** These are two
    different documents and the distinction decides what goes in. See
@@ -236,8 +237,8 @@ customer's public brand and say in your reply that you did.
 
 ## Deliver it
 
-Build the form agreed on the sheet. For an HTML page, read the destination from
-the harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
+Build the agreed form. For an HTML page, use saved destination facts or narrow
+capability inspection as `explain-to`'s `references/formats.md` ("Hand-offs by
 harness") describes. If an `artifact-design` skill is available, load it before
 writing the page. Before uploading, verify the destination's access controls and
 state who can see it: named users, a workspace, anyone with the link, or the

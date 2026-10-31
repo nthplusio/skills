@@ -40,8 +40,9 @@ requirement IDs as category IDs when that fits; otherwise list the covered IDs.
 Choose boundaries that let researchers inspect independently. Small or tightly
 coupled questionnaires can use one researcher, including the coordinator.
 
-Use existing `harness-discovery` owners and helpers to select supported execution.
-Parallelize independent categories when available. A category is a durable
+Use relevant saved `harness-discovery` facts or inspect available owner/helper
+tools to select supported execution; a missing discovery companion does not
+block coordinator-only research. Parallelize independent categories when available. A category is a durable
 assignment, not a requirement to create a separate thread. Record the supported
 continuation handle when one exists; otherwise use saved reports to reconstruct
 context. Cap concurrency to the harness's verified limits. Unsupported parallel

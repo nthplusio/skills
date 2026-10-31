@@ -173,14 +173,20 @@ and run its step 1, the settings sheet (`references/settings-sheet.md` there),
 passing the artifact (a teaching page for one PR), the settings this skill
 fixes (reader: an engineer fluent in the language and new to this codebase;
 output: one HTML page built as Step 4 says; interaction: the thing the reader
-operates; length and anchor as Step 4 sets them), and the one open setting, the
-page's destination. Show the sheet before building, in the same message as any
-Step 1 confirmation, so one reply settles both.
+operates; length and anchor as Step 4 sets them), and the page's destination
+only if unresolved. Reuse known settings; ask only consequential open choices
+before building, in the same message as any Step 1 confirmation.
 
-Publish to the agreed destination, read from the harness entry as
+If the required `explain-to` companion cannot be loaded or read, report that
+dependency and hold the dependent workflow. Installation needs separate authority.
+
+Publish only with authority for the content and audience at the agreed
+destination, using saved facts or narrow capability inspection as
 `explain-to`'s `references/formats.md` ("Hand-offs by harness") describes. Give
 the page a stable favicon (`🔬` works well for this series) and a title naming
 the PR, so a reader who generates several can tell their tabs apart.
+If HTML or the required interaction cannot be delivered, hold delivery and
+name the missing capability rather than substituting a Markdown summary.
 
 ## Honesty rules
 

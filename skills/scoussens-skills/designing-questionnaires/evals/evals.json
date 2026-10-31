@@ -4,8 +4,8 @@
     {
       "id": 1,
       "prompt": "Make a design questionnaire for report exports. We have a static host and a way to save comments, but no verified agent wake-up. Keep it short and filter by suggested respondent.",
-      "expected_output": "A concise questionnaire using existing harness discovery, with explicit manual-review or static fallback rather than claiming automatic review.",
-      "assertions": ["Loads harness-discovery rather than creating a capability registry", "Inspects publishing, persistence, feedback, wake-up, browser and tracker capabilities", "Does not treat comment storage or HTTP success as reviewer wake-up", "Names people as respondents and completion as answered", "Does not mutate a tracker"]
+      "expected_output": "A concise questionnaire using relevant saved facts or narrow inspection, with explicit manual-review or static fallback rather than claiming automatic review. Missing companions do not require installation.",
+      "assertions": ["Reuses relevant discovery when available without creating a capability registry or installing companions", "Inspects only the selected mode's capabilities and records wake-up as not required for manual/static review", "Preserves durable originals and review receipts", "Does not treat comment storage or HTTP success as reviewer wake-up", "Names people as respondents and completion as answered", "Does not mutate a tracker"]
     },
     {
       "id": 2,

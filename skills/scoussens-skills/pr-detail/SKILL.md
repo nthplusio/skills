@@ -41,16 +41,16 @@ convincing detail is the worst outcome this skill has available to it.
 
 ## Step 2 — Ask how deep to go, and where it goes
 
-Ask one question of your own — whether to judge the PR standalone or against a
-baseline — with the harness's structured question tool when it has one
-(`ask_user` in its entry of the repository's `.nthplusio-skills/discovery.json`),
-otherwise in your reply. The destination is a setting, and `explain-to` owns
+If not already settled, ask whether to judge the PR standalone or against a
+baseline. Use an available structured question tool or ask in the reply;
+this needs no persistent discovery. The destination is a setting, and `explain-to` owns
 settings: load `explain-to` and run its step 1, the settings sheet
 (`references/settings-sheet.md` there), in the same message, passing the
 artifact (a retrospective on one PR that scores a named developer's execution),
 the settings this skill fixes (reader: the lead, in third person; output: one
 HTML page laid out as Step 8 says; interaction, length, and anchor as that
-layout sets them), and the one open setting, the page's destination. The rule
+layout sets them), and the page's destination only if unresolved. Reuse known
+settings and ask only consequential open choices. The rule
 for the Why cell: the page evaluates a named person, so who can see each
 destination decides it. The skill has already decided the rest.
 
@@ -276,7 +276,8 @@ Layout, top to bottom:
 6. **Limits of this assessment** — the Step 7 honesty items, stated plainly and
    not collapsed. This section exists to be read.
 
-Publish to the destination agreed in Step 2, read from the harness entry as
+Publish only with authority for the content and audience at the destination
+agreed in Step 2, using saved facts or narrow capability inspection as
 `explain-to`'s `references/formats.md` ("Hand-offs by harness") describes. Use
 favicon `🔍` and a title with the PR number and a short name, so several runs
 stay distinguishable in a tab strip.

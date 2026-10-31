@@ -7,7 +7,7 @@ description: >-
   questionnaire, or apply responses and republish the same questionnaire.
 compatibility: Reference host requires Python 3.10+ and a JavaScript browser. Automatic review requires a verified wake-up adapter; otherwise review is explicitly manual.
 metadata:
-  needs: artifacts, monitoring.notifications, monitoring.wake, owners.message, evidence.retain_before_close
+  needs: artifacts, evidence.retain_before_close
 ---
 
 # Designing questionnaires
@@ -24,26 +24,36 @@ incoming feedback does not restart the setup interview.
 
 ## 1. Establish the review route
 
-Load `harness-discovery`; use its saved entry for the **current harness** and
-inspect missing or unexercised facts. If that skill is not installed, obtain it
-from the same library before offering automatic review. Reuse its
-`.nthplusio-skills/discovery.json`; do not create another capability registry.
-Record observations in its existing artifacts, monitoring, evidence, sources,
-limitations, and repository ticket fields. Read [integration guidance](references/integration.md)
-for the evidence to collect and fallback rules.
+Reuse the saved setup and inspect only capabilities the selected mode needs.
+When available, read `harness-discovery`'s entry for the **current harness**;
+otherwise use session tool inventories and documentation, recording the sources
+and limits in the private run note. No companion installation is required for
+manual or static review. Reuse `.nthplusio-skills/discovery.json` when durable
+discovery is needed; do not create another capability registry. Read
+[integration guidance](references/integration.md) for mode-specific evidence.
+
+Manual review needs durable submissions and receipts plus a named reviewer and
+reply channel, not `monitoring.wake`, `monitoring.notifications`, or
+`owners.message`. Static review uses an existing reply channel and preserves
+original responses and receipts in approved durable storage; it has no live
+form. Automatic review additionally requires a tested delivery and actual wake
+route. An installed companion or HTTP success does not establish that route.
 
 For a new questionnaire, follow [first-run setup](references/setup.md). Reuse
-`explain-to`'s settings sheet to settle only unknown choices in one reply.
+`explain-to`'s settings contract when available, or the setup reference's
+self-contained intake, to settle only unresolved consequential choices in one reply.
 Persist the outcome, audience, response budget, and review policy with the
 questionnaire. Keep private delivery identities and notification authorization
 in its run folder. Name the reviewing agent's existing conversation or process,
 storage lifetime, wake route, and human fallback. Inspect tracker capabilities
 read-only; changing tickets needs separate authorization.
 
-**Done when** publishing, feedback delivery, actual agent wake-up, persistence,
-browser verification, and tracker access each have a sourced capability or an
-explicit limit. Tell the user which review mode is supported. A static host
-or comment database alone does not provide automatic review.
+**Done when** the selected mode's delivery, persistence, browser verification,
+and tracker access have sourced capabilities or explicit limits. Record wake-up
+as not required for manual/static mode, and tested or held for automatic mode.
+Tell the user which mode is supported. A static host or comment database alone
+does not provide automatic review. Publication and notifications each need
+authority for their content, destination, and audience, even with one destination.
 
 ## 2. Write questions, not a planning document
 

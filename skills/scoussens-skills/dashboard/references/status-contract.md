@@ -247,8 +247,9 @@ coordinator link in [presentation](#presentation).
 
 Where the page lives and how a reader talks back. All fields are optional:
 
-- `destination`: the chosen destination ID from the harness entry's
-  `artifacts`, or `local`.
+- `destination`: the chosen destination ID from saved `artifacts` facts or
+  a sourced session-local observation, or `local`. This records a capability,
+  not publication permission.
 - `local_path`, `artifact_id`, `artifact_url`: the rendered file and the
   hosted copy, if any.
 - `coordinator_href`: a link back to the producer's conversation. Copied
@@ -259,7 +260,7 @@ Where the page lives and how a reader talks back. All fields are optional:
   reloads the updated page from the same URL; it embeds an HTML refresh at
   `monitoring.interval_seconds`. `false` or absent renders a static snapshot
   and the page says so.
-- `hold`: the producer's note while the destination is not yet chosen. The
+- `hold`: the producer's note while the destination or disclosure is unresolved. The
   page does not show it; the producer keeps rendering held while it is set.
 
 ## Monitoring and refresh

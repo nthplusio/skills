@@ -22,8 +22,8 @@ has failed, even when every summary is accurate.
 
 This spends real time and tokens — roughly one lookup per recording plus a long
 synthesis — so settle scope before starting rather than guessing and running it
-twice. One question round covers it. Skip anything the user already specified in
-their own words.
+twice. One question round covers unresolved consequential choices. Reuse known
+settings from the user, authorized caller, or saved setup without another intake.
 
 - **Topic** — what threads the recordings together. Offer what they said, plus
   candidates from context: a product, a client, a project, a person. "Everything
@@ -232,8 +232,9 @@ interaction, keep the structure. If the sheet settled on an email or a tracker
 comment as the destination, let that shape the length rather than forcing the
 full apparatus into it.
 
-Publish a page to the destination agreed on the sheet, read from the harness
-entry as `explain-to`'s `references/formats.md` ("Hand-offs by harness")
+Publish a page only with authority for its content and audience at the agreed
+destination, using saved facts or narrow capability inspection as
+`explain-to`'s `references/formats.md` ("Hand-offs by harness")
 describes.
 
 ## Report what only the aggregate shows

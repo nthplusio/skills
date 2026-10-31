@@ -17,6 +17,23 @@ and skills that publish HTML. A caller loaded this skill, or the user named
 `/harness-discovery`. Discovery describes what works; each caller decides what
 to use. Do not start the caller's work from here.
 
+## Choose the lookup scope
+
+For one needed fact, read the relevant saved field or inspect the session's
+tool inventory and documentation. Return the observation, source, and limits
+to the caller without running migration, seeding, or a full survey. If no
+durable record is needed, keep this lookup session-local; it needs neither
+Python nor filesystem access. Ordinary chat needs no discovery at all.
+
+For durable orchestration, sync, or an explicitly requested repository survey,
+follow steps 1–3 using Python and writable repository storage. A stale saved
+fact requires reinspection of what the caller relies on, not an upstream PR.
+Capability lookup, local registry maintenance, contribution, installation,
+sync, and publication have distinct authority. Discovery authorizes none of
+the latter operations. Offer a sanitized contribution only when requested;
+exporting into a source checkout, committing, pushing, and opening a PR each
+must stay within the user's authorized scope.
+
 ## 1. Identify the harness and read saved discovery
 
 Saved state lives in `<repository root>/.nthplusio-skills/`. First run
@@ -46,11 +63,10 @@ The first line it prints decides how much of step 2 you do.
   is now in `discovery.json` (or an existing entry was kept). Inspect only the
   fields the entry's `limitations` say were not exercised, and the repository
   conventions, which are never in the registry.
-- `stale`: the harness changed since the entry was written. Inspect every field
-  in step 2, and after saving, run `state.py export --harness '<name>'` so the
-  registry gains the change. Open a pull request with the exported file.
-- `unverifiable`, or no registry entry: inspect as step 2 says, and `export`
-  the result when the harness is one other installs will meet.
+- `stale`: the harness changed since the entry was written. For this durable
+  survey, inspect every field in step 2 and save the local report.
+- `unverifiable`, or no registry entry: inspect as step 2 says and save the
+  local result. Neither state requires contribution to the shipped registry.
 
 Reuse the saved key when it names this product. Record execution context separately.
 If identity remains ambiguous after inspection, report the missing identity fact
@@ -139,9 +155,10 @@ For observations made now, capture `observed_at` from the environment clock with
 `python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat())'`.
 For reused observations, preserve their recorded time. A date from conversation
 context is not a measured observation time.
-A registry entry holds only what is true of the harness itself: no repository
-URL, no local path, no choice a team made. `export` scrubs the repository path;
-you remove the rest before the pull request.
+For an authorized registry contribution, `state.py export --harness '<name>'`
+produces the shared entry. It must hold only harness facts: no repository URL,
+local path, or team choice. `export` scrubs the repository path; inspect and
+remove the rest before any separately authorized push or pull request.
 
 Run:
 

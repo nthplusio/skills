@@ -1,6 +1,6 @@
 {
   "skill_name": "explain-to",
-  "note": "Paths are relative to the repository root. The baseline receives the user's request verbatim without the skill. A win shows in reader fit, not in length: the output opens with the takeaway in the reader's words, states who it is written for, stays on one altitude per picture, anchors each new concept with a stated twist where the profile asks for one, and keeps every project-local name defined or absent. Graders should read as the named audience and mark any term they would have to look up. The Snowflake fixture is synthetic; graders check that the output states only facts the fixture gives and labels the rest as assumptions. Every prompt ends with 'Use your recommended settings.' so a single-turn run skips the settings sheet; eval 7 is the one that checks the sheet itself.",
+  "note": "Scenario definitions, not execution results. Paths are relative to the repository root. The baseline receives the request without the skill. Grade reader fit and grounded claims, not length alone. IDs 0–6 use recommended incidental settings; this does not authorize publication. ID 7 checks a consequential unresolved choice. Shared-settings cases are in settings-scenarios.json; README.md describes execution and evidence. Static tests do not evaluate model behavior.",
   "evals": [
     {
       "id": 0,
@@ -112,14 +112,14 @@
       "id": 6,
       "name": "schema-change-stakeholder-page",
       "prompt": "Our head of customer success and two account managers need to review and comment on the Snowflake schema change in skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md before it ships next week. They are not technical. Make them a page. Use your recommended settings.",
-      "expected_output": "A business-stakeholder page whose hand-off destination comes from the harness entry in .nthplusio-skills/discovery.json (its artifacts list), not from a remembered harness skill name. The reply links the page first, names what the readers must decide, and carries the reader line and assumptions.",
+      "expected_output": "A business-stakeholder page whose destination comes from relevant saved facts or narrow tool inspection, not remembered skill names. Publication stays held until the content and audience are authorized. After authorized delivery, the reply links the page first and names what the readers must decide.",
       "files": [
         "skills/scoussens-skills/explain-to/evals/files/level-schema-pr.md"
       ],
       "assertions": [
-        "handoff_from_discovery: the run resolves the harness entry (state.py resolve, or reads discovery.json) before choosing the page destination, and the destination it uses is one listed under that entry's artifacts",
-        "no_remembered_skill_names: the reply and the page do not justify the destination by naming a harness skill from memory; a skill is named only when the resolved artifacts entry names it",
-        "link_first: the reply opens with the page link, then at most five lines, then the reader line and up to three assumptions",
+        "sourced_destination: uses relevant saved discovery or inspected tools, without requiring registry initialization",
+        "no_remembered_skill_names: destination capabilities and audience have inspected evidence",
+        "authorized_delivery: uploads only after audience and content approval; otherwise names the hold without claiming publication",
         "profile_budget_holds: the page's prose, template rows included, stays within about 480 words",
         "no_schema_words: the page contains no table, column, view, or schema names and no SQL"
       ]
@@ -127,18 +127,17 @@
     {
       "id": 7,
       "name": "settings-sheet-first",
-      "prompt": "Explain the CI change in skills/scoussens-skills/explain-to/evals/files/ci-split-pr.md to our product manager.",
-      "expected_output": "No explanation yet. One reply holding a settings sheet: a table with Reader, Output, Interaction, Length, and Anchor rows, each with a recommendation, the evidence for it from the request or the file, and the other choices the harness can deliver, followed by one line asking for go or a changed setting. The turn ends there.",
+      "prompt": "Explain the CI change in skills/scoussens-skills/explain-to/evals/files/ci-split-pr.md. It might be for our product manager's funding decision or for the on-call engineer operating the rollout; I have not decided which. Keep it in chat.",
+      "expected_output": "One focused question about reader and purpose, with a recommendation and its reason. Chat remains fixed; incidental length and anchor follow the eventual reader profile rather than becoming a five-row interview.",
       "files": [
         "skills/scoussens-skills/explain-to/evals/files/ci-split-pr.md"
       ],
       "assertions": [
-        "sheet_before_output: the reply contains the settings table and no explanation prose, picture, or document",
-        "five_settings: the table has exactly the rows Reader, Output, Interaction, Length, and Anchor",
-        "recommendations_with_evidence: every row names one recommendation and a Why cell that cites the request or the file, not a generic reason",
-        "deliverable_choices_only: the Output row's other choices are limited to what the harness entry's artifacts and the skill's three outputs allow",
-        "one_question: the reply ends with one line asking for go or a named setting and value, and asks nothing else",
-        "stops: the turn ends after the question without building"
+        "open_choices_only: asks about reader and purpose without reopening chat or interviewing about incidental defaults",
+        "recommendation_grounded: recommends a reader and purpose with a reason grounded in the request or source",
+        "no_discovery: no registry, Python, or installation is needed to ask the question",
+        "focused_question: requests only the unresolved choice between the funding decision and rollout operation",
+        "awaits_choice: waits for the reader and purpose decision before drafting the explanation"
       ]
     }
   ]

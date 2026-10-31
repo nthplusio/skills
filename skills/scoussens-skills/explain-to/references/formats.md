@@ -44,22 +44,28 @@ binds the page's prose, and the page template's summary rows, decisions, and
 risks count toward it, so delete template sections the budget cannot afford
 rather than fill them.
 
-- **Read the destinations, do not remember them.** Resolve the running
-  harness's facts with `python3 <harness-discovery>/scripts/state.py resolve
-  --harness '<harness>'`, where the harness is the product running you by the
-  name `harness-discovery` saves, such as `Amp`, or its slug (the
-  `harness-discovery` skill seeds the file when the repository has none). The entry's `artifacts` list names each destination
-  with how to present it, how to update it, who can see it, and whether readers
-  can comment. Pick the one whose `present` operation you can carry out with
-  a tool or skill you have, and whose audience matches the reader, and hand off with that destination's `present` and
-  `update` operations named. Its `skills.load` says how the harness loads a
-  skill, and `helpers.invoke` says how to run a helper when the page needs one.
-- **Text diagrams** in a chat reply are yours to draw under visuals.md, with no
-  hand-off.
-- **No page destination in the entry, or no entry.** Use any tool in your tool
-  list that publishes an HTML page and returns a link. Without one, write the
-  Markdown document instead, say in one line what the page would have added,
-  and give the file path.
+- **Chat first when selected.** Write the reply and text diagrams directly.
+  No Python, filesystem, discovery state, page helper, or installation is needed.
+- **For HTML, inspect only the needed capabilities.** Reuse relevant saved
+  `artifacts` facts or inspect the session's tools and documentation for present,
+  update, audience/access, comments, and required interaction support. Record
+  the source and any uncertainty in the hand-off. A local file counts only
+  when the user has a supported way to open it. Verify that the destination
+  retains the page's styles and scripts; text storage is not an HTML destination.
+- **Durable discovery is conditional.** When orchestration or repeated setup
+  needs a repository record, use `harness-discovery` and its existing registry.
+  With that skill and Python available, read a saved entry using
+  `python3 <harness-discovery>/scripts/state.py resolve --harness '<harness>'`.
+  A single destination lookup can remain session-local; it does not require
+  seeding a registry, installing a companion, or contributing upstream.
+- **Authorize delivery separately.** Apply the settings contract's content,
+  destination, and audience gate before uploading or widening access. A single
+  public destination does not authorize publication. Preserve approved settings
+  and authority on refresh; recheck access if it changed or is uncertain.
+- **HTML unavailable or held.** Report the missing capability or permission.
+  Keep an unshared HTML draft if possible. If the user or caller requires HTML
+  or interaction, do not silently replace it with Markdown. Offer a different
+  output only as an explicit scope change, not a completed HTML workflow.
 
 ## Markdown document placement
 

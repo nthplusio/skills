@@ -14,10 +14,10 @@ of the project's theme each one can carry.
 
 ## Choosing the format
 
-The form is agreed on `explain-to`'s settings sheet, which the skill runs
-before drafting. The right answer depends on what the reader does next, not on
-which is nicest to build, and these signals are the evidence for the sheet's
-*Why* cell.
+Reuse the form fixed by the request or saved setup through `explain-to`'s
+settings contract. Ask only unresolved consequential choices before drafting.
+These signals recommend defaults, not overrides of the user's chosen output
+or permission to send:
 
 | Signal from the user | Format |
 | --- | --- |
@@ -25,7 +25,7 @@ which is nicest to build, and these signals are the evidence for the sheet's
 | "attach it", "they need to sign", "print it" | PDF |
 | "reply to this thread", "put it in the email" | Markdown in the body |
 | Tables, cost breakdowns, anything columnar | Artifact or PDF — email clients mangle tables |
-| Fewer than roughly 300 words | Email, whatever else was asked |
+| Fewer than roughly 300 words | Email draft, unless another output is fixed |
 
 Offering both an Artifact and a Markdown summary is often right — the link for
 the detail, a short summary in the email body so the recipient reads something
@@ -33,8 +33,8 @@ without clicking.
 
 ## Artifact
 
-The default for anything with a cost table. Read the destination from the
-harness entry as `explain-to`'s `references/formats.md` ("Hand-offs by
+The default for anything with a cost table. Use saved destination facts or
+narrow capability inspection as `explain-to`'s `references/formats.md` ("Hand-offs by
 harness") describes. If an `artifact-design` skill is available, load it before
 writing the page; it carries the design fundamentals and the theming rules the
 platform requires.
