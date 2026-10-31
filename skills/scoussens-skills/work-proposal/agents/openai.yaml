@@ -1,0 +1,4 @@
+interface:
+  display_name: work-proposal
+policy:
+  allow_implicit_invocation: true

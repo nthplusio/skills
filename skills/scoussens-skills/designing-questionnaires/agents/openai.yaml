@@ -1,0 +1,4 @@
+interface:
+  display_name: designing-questionnaires
+policy:
+  allow_implicit_invocation: true

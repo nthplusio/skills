@@ -1,0 +1,4 @@
+interface:
+  display_name: visualize-spec
+policy:
+  allow_implicit_invocation: false

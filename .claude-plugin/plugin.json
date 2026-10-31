@@ -1,0 +1,26 @@
+{
+  "name": "nthplusio-coding-agent",
+  "version": "0.0.0",
+  "description": "Coding-agent skill candidates; target-client behavior unverified.",
+  "license": "MIT",
+  "skills": [
+    "./skills/scoussens-skills/agent-handoff",
+    "./skills/scoussens-skills/business-rules-catalogue",
+    "./skills/scoussens-skills/dashboard",
+    "./skills/scoussens-skills/designing-questionnaires",
+    "./skills/scoussens-skills/explain-to",
+    "./skills/scoussens-skills/harness-discovery",
+    "./skills/scoussens-skills/meeting-index",
+    "./skills/scoussens-skills/optimize-ci",
+    "./skills/scoussens-skills/pr-detail",
+    "./skills/scoussens-skills/pr-digest",
+    "./skills/scoussens-skills/pr-review-round",
+    "./skills/scoussens-skills/pr-teacher",
+    "./skills/scoussens-skills/release-brief",
+    "./skills/scoussens-skills/speak-clearly",
+    "./skills/scoussens-skills/visualize-spec",
+    "./skills/scoussens-skills/work-proposal",
+    "./skills/scoussens-skills/working-tickets",
+    "./skills/scoussens-skills/writing-in-voice"
+  ]
+}

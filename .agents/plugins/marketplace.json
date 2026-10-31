@@ -1,0 +1,20 @@
+{
+  "name": "nthplusio-skills",
+  "interface": {
+    "displayName": "nthplusio coding-agent candidates"
+  },
+  "plugins": [
+    {
+      "name": "nthplusio-coding-agent",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

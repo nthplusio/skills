@@ -1,0 +1,4 @@
+interface:
+  display_name: working-tickets
+policy:
+  allow_implicit_invocation: true

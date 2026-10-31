@@ -18,3 +18,6 @@ plugins/*/.claude-plugin/types/
 
 # Private patterns for scripts/check-private-terms.mjs; never commit.
 .private-terms
+
+# Local candidate packages and evaluation evidence are not skill sources.
+dist/

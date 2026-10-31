@@ -19,6 +19,7 @@ import { parse as parseYaml } from 'yaml'
 import { CONTAINER, discoverPluginSkillDirs, discoverSkillDirs, skillPaths } from './lib/discover-skills.mjs'
 import { dirname, join, relative, basename, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { knownNeed } from './lib/needs.mjs'
 
 const ROOT = process.cwd()
 const MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -39,19 +40,6 @@ const FRONTMATTER_KEYS = new Set([
 // template, so the vocabulary has exactly one home.
 const DISCOVERY_TEMPLATE = resolve(dirname(fileURLToPath(import.meta.url)),
   '../skills/scoussens-skills/harness-discovery/assets/discovery.template.json')
-let needsVocabulary
-function knownNeed(path) {
-  if (needsVocabulary === undefined) {
-    const template = JSON.parse(readFileSync(DISCOVERY_TEMPLATE, 'utf8'))
-    needsVocabulary = Object.values(template.harnesses)[0]
-  }
-  let node = needsVocabulary
-  for (const part of path.split('.')) {
-    if (node === null || typeof node !== 'object' || Array.isArray(node) || !(part in node)) return false
-    node = node[part]
-  }
-  return true
-}
 function checkNeeds(rel, value) {
   for (const item of value.split(',')) {
     const need = item.trim()

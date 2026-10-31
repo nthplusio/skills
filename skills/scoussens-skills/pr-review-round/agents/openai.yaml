@@ -1,0 +1,4 @@
+interface:
+  display_name: pr-review-round
+policy:
+  allow_implicit_invocation: false

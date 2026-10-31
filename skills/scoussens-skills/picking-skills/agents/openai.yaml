@@ -1,0 +1,4 @@
+interface:
+  display_name: picking-skills
+policy:
+  allow_implicit_invocation: true

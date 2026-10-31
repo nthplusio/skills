@@ -1,0 +1,4 @@
+interface:
+  display_name: writing-in-voice
+policy:
+  allow_implicit_invocation: true

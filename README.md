@@ -5,6 +5,10 @@ AI coding agents — and a Claude Code plugin marketplace.
 
 ## Install
 
+For product-specific routes, companion requirements, update behavior and limits,
+read [installation and candidate packages](docs/installation.md). Use one route
+per skill; copied skills and managed plugins can otherwise appear twice.
+
 Install the [pack](https://www.skills.sh/docs/packs):
 
 ```bash
@@ -25,33 +29,38 @@ npx skills add nthplusio/skills --skill speak-clearly
 
 ## What's in here
 
+<!-- Generated from SKILL.md by distribution:sync. -->
+
 | Skill | Description |
 | --- | --- |
-| [`scoussens-skills/agent-handoff`](skills/scoussens-skills/agent-handoff/SKILL.md) | Write a handoff another agent or person can act on without asking a question — a preflight that proves the state still holds, only the context and decisions that are load-bearing for what remains, and the rest of the work as a dependency-mapped action table. Invoked explicitly. |
-| [`scoussens-skills/business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Find where a repository's business logic lives, derive the rules its code actually enforces, have a second reader check them, and deliver a tree explorer where business owners mark each rule correct or wrong and export corrections. Asks where the explorer goes and who can see it before publishing. Invoked explicitly. |
-| [`scoussens-skills/dashboard`](skills/scoussens-skills/dashboard/SKILL.md) | Render one status file that follows its contract into a self-contained HTML status page for a non-technical reader, choose the destination through `explain-to`'s settings sheet, and keep the page current in place. Any producer feeds it: an orchestrate loop, a task with subagents, a thread with child threads. |
-| [`scoussens-skills/designing-questionnaires`](skills/scoussens-skills/designing-questionnaires/SKILL.md) | Review requirements through a concise questionnaire, then deliver a JSONL handoff for an agent to break work into agent, human, or mixed tickets. Preserves answers, evidence, original feedback, and unresolved questions. Reuses harness discovery and keeps Amp integration in an adapter. |
-| [`scoussens-skills/explain-to`](skills/scoussens-skills/explain-to/SKILL.md) | Fit an explanation of a concept, problem, or change to one named reader — audience, altitude, anchor analogy with its twist, output type, and whether the reader must operate it — then hand sentences to `speak-clearly` and the medium to the harness's page or view skill. |
-| [`scoussens-skills/harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discover what the running harness can do — threads, subagents, monitoring, skills, instruction files, questions, models, and HTML destinations — and the repository's ticket conventions. Save sourced observations by harness name for any skill to read. |
-| [`scoussens-skills/meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a per-meeting ledger, and what got decided, owned and left at risk. Reads from Plaud or any source with a listing and per-meeting notes. Invoked explicitly. |
-| [`scoussens-skills/optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluate, design, or improve repository-specific CI for trustworthy feedback, runner cost, and maintainability. Preserves merge and release contracts, including when designing a pipeline without run history. |
-| [`scoussens-skills/picking-skills`](skills/scoussens-skills/picking-skills/SKILL.md) | Open a reusable Amp portal with live skill search by name or description. Choose an exact source and copy its loading request, without injecting the skill's contents. |
-| [`scoussens-skills/pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request: a timeline of how it went, a ledger of what each reviewer said and whether it was acted on, and a scored evaluation, published as an HTML artifact. Invoked explicitly. |
-| [`scoussens-skills/pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact, grouped by theme and tied to its tickets, with what the period adds up to. Invoked explicitly. |
-| [`scoussens-skills/pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests oldest first: review each at a depth scaled to its risk, verify every finding at the current head, then approve, unblock, or land it. Invoked explicitly. |
-| [`scoussens-skills/pr-teacher`](skills/scoussens-skills/pr-teacher/SKILL.md) | Teach one pull request as an interactive artifact: the problem, how the mechanism works, a map of every changed file, something to operate, and a grounded self-check. Invoked explicitly. |
-| [`scoussens-skills/pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync the pstack skills from `cursor/plugins`, with the skills and subagent definitions they hand off to, into the directory that holds this skill — adding, updating, and removing skills — and adapt Cursor-only features to the running harness, replaying recorded adaptations so a fresh install does not re-adapt. Ships an Amp harness profile and a template for others, and reads harness facts from `harness-discovery`. Invoked explicitly. |
-| [`scoussens-skills/release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder, verified against what actually reached production. Invoked explicitly. |
-| [`scoussens-skills/speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style: named actors, condition-first sentences, timeless tense, no filler. |
-| [`scoussens-skills/visualize-spec`](skills/scoussens-skills/visualize-spec/SKILL.md) | Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — with every place the spec is silent marked as a gap, themed to the repository, and opened locally or published where the agent can. Invoked explicitly. |
-| [`scoussens-skills/work-proposal`](skills/scoussens-skills/work-proposal/SKILL.md) | Turn a body of scoped work into a client-ready proposal — effort grounded in the codebase, priced against the agreement that already exists, delivered as a themed Artifact, PDF, or email. Invoked explicitly. |
-| [`scoussens-skills/working-tickets`](skills/scoussens-skills/working-tickets/SKILL.md) | Keep assigned, resumed, and self-initiated tickets accurate using each repository's own standards. Apply concise updates, legal status changes, title/body cleanup, and established tags; plan and work every in-scope child of an assigned parent in dependency order. Automatically discoverable; creates no duplicate policy or backlog. |
-| [`scoussens-skills/writing-in-voice`](skills/scoussens-skills/writing-in-voice/SKILL.md) | Draft in a personal or project voice, learn from corrections with scoped confirmation, and format for Gmail, Outlook, Teams, Slack, text messages, documents, or public posts. Offers an optional versioned interview and opt-in hosted personal profiles; personal definitions stay outside this repository. |
+| [`agent-handoff`](skills/scoussens-skills/agent-handoff/SKILL.md) | Write a handoff another agent or person can act on without coming back to ask a question — opening with a preflight that proves the state still holds, carrying only the context and decisions that are load-bearing for what remains, and putting the remaining work in a dependency-mapped action table with a completion criterion on every row. Load this only when the user explicitly asks for a handoff — "write a handoff", "hand this off", "brief the next session", "I'm running out of context, write this up", "package this for a subagent", "document where we got to so someone else can pick it up". Do not load it to summarise a conversation, to write a status update or a standup note, to plan work nobody has started, or to write a commit message or pull request description; answer those directly instead. |
+| [`business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Finds where a repository's business logic lives, derives the rules its code actually enforces, has a second reader check them, and delivers a tree explorer in which business owners mark each rule correct or wrong and export corrections for engineering. Load this only when the user explicitly asks for such a catalogue or its discovery — "derive the business rules", "catalogue the business logic", "where does our business logic live", "business rules review for the product team", "refresh the rules explorer". Do not load it to explain one function, review a pull request, or document an API; answer those directly instead. |
+| [`dashboard`](skills/scoussens-skills/dashboard/SKILL.md) | Renders one status file into a self-contained HTML status page for a non-technical reader and keeps it current in place at a destination the user chooses. Any producer feeds it through the same contract — an orchestrate loop, a single task that spawned subagents, a thread that spawned child threads. Use when asked for a "dashboard for this run", a "status page for these threads", or to "show me where the subagents are", and when a coordinating skill needs to present progress as one page. Do not load it to decide what the status is; the producer owns the record, and this skill draws it. |
+| [`designing-questionnaires`](skills/scoussens-skills/designing-questionnaires/SKILL.md) | Researches requirements, coordinates category research when needed, and reviews feedback through a concise questionnaire with a JSONL planning handoff. Use when asked to collect team feedback on requirements, create a design questionnaire, or apply responses and republish the same questionnaire. |
+| [`explain-to`](skills/scoussens-skills/explain-to/SKILL.md) | Fit an explanation of a concept, problem, or change to one named reader — choose the audience, the altitude, an anchor analogy with its twist, the output type, and whether the reader must operate it, reuse known settings and ask only consequential open choices, then hand sentences to speak-clearly and the medium to the harness's page or view skill. Other skills with a reader or output choice call this step instead of asking their own way. Use when asked to explain something to a named audience ("explain this to the PM", "write it up for the data engineers", "make this understandable to a customer"), to teach a concept, to write an overview or walkthrough for someone outside the code, or when the user says the last explanation was too technical or too vague. Do not load it for a one-line factual answer, a commit message, or a change summary for the developer who made it; answer those directly instead. |
+| [`harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discovers what the current agent harness can do — independent threads or sessions, subagents, monitoring and wake-ups, skill loading, instruction files, structured questions, model choice, and HTML publishing destinations — plus the repository's ticket conventions, and saves sourced observations keyed by harness name. Load this when pstack-sync, dashboard, or another skill needs discovery, or when the user names /harness-discovery to refresh facts. Do not run it as the first step of a task that only needs one saved fact. |
+| [`meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Index a period of recorded meetings — the threads that carried across them, a searchable per-meeting ledger, and what got decided, who owns it, and what is at risk — reading from Plaud, or any source that can list recordings and return per-meeting notes. Load this only when the user explicitly asks for such an index — "index my meetings from last week", "what did we discuss about the migration", "recap my recordings this sprint", "digest my calls with that client", "what came out of this month's meetings". Do not load it to summarise a single meeting, to answer one factual question about something that was said, to take notes on a call in progress, or to write minutes — answer those directly instead, because this sweeps every recording in a window and costs a lookup per meeting. |
+| [`optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluates, designs, and improves a repository's CI architecture for trustworthy feedback, runner cost, and maintainability while preserving merge and release contracts. Use when the user asks to audit or speed up CI, reduce CI cost, redesign a pipeline, or design CI for a repository without an existing pipeline. Supports GitHub Actions, GitLab CI, and other providers. Do not load for one failing build, one flaky test, or a narrow workflow syntax question. |
+| [`picking-skills`](skills/scoussens-skills/picking-skills/SKILL.md) | Opens a reusable searchable skill picker and copies an exact-source loading instruction. Use for submitted /skills messages, a &lt;skill&gt; placeholder anywhere in a message, or requests to browse and choose skills. |
+| [`pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Retrospective on one pull request — a timeline of how it actually went, a ledger of what every reviewer said and whether it was acted on, and a scored evaluation of the execution, published as an HTML artifact. Load this only when the user explicitly asks how a PR went — "how did this PR go", "review the process on #101", "retrospective on this pull request", "how did this developer handle that change", "why did this PR take three weeks". Do not load it to teach the code a PR changed, to produce a review verdict on something still open, or to recap a period of merged work; answer those directly instead. |
+| [`pr-digest`](skills/scoussens-skills/pr-digest/SKILL.md) | Recap every pull request merged to a branch over a period as one HTML artifact — grouped by theme, each tied to its issue-tracker ticket, explained both for the user and for the codebase, and closed with what the period adds up to; optionally covering what is still open and in review. Load this only when the user explicitly asks for such a recap — "what shipped this week", "digest the PRs merged this sprint", "release notes for last month", "what landed on staging since the cut", "catch me up on recent development". Do not load it to explain one pull request, to write a commit message, or to review anything still open; answer those directly instead. |
+| [`pr-review-round`](skills/scoussens-skills/pr-review-round/SKILL.md) | Work a queue of open pull requests end to end — every non-draft PR against a base branch, oldest first, each reviewed at a depth scaled to its risk, every finding verified at the PR's current head rather than relayed. Report readiness; approve, dismiss, or land only within the user's authorized scope. Load this only when the user explicitly asks to work the queue — "review round", "work through the open PRs", "review everything targeting main", "clear the review queue", "triage the PR backlog and merge what's ready". Do not load it to review a single pull request, to recap what merged recently, or to explain a change to someone; answer those directly or reach for a single-PR skill instead. |
+| [`pr-teacher`](skills/scoussens-skills/pr-teacher/SKILL.md) | Teach one pull request as an interactive artifact — the problem it solved, how its mechanism actually works, a map of where every changed file sits and why, something the reader can operate rather than only read, and a grounded self-check. Load this only when the user wants to understand or be taught a specific PR — "teach me PR 412", "explain this pull request", "help me understand what #1234 does", "walk me through this change", "I have to review this and I don't know the codebase", "quiz me on this PR", or when they paste a PR URL and ask what it does. Do not load it to recap a period of merged work, to produce a review verdict, or to answer one narrow factual question about a diff; answer those directly instead. |
+| [`pstack-sync`](skills/scoussens-skills/pstack-sync/SKILL.md) | Sync a managed skill set, pstack by default or any set under `sets/`, from its upstream repository, with the skills and subagent definitions they hand off to, into this harness's shared skills — adding new, updating changed, and removing retired skills — and adapt Cursor-specific features to what the harness supports, replaying recorded adaptations so a fresh install does not re-adapt. Load this only when the user explicitly asks to sync or update pstack — "sync pstack", "update pstack", "pull the latest pstack skills", "install pstack for this harness". Do not load it to install or edit one skill no set hands off to, to sync a repository that has no set file, or to change what a synced skill says upstream; answer those directly instead. |
+| [`release-brief`](skills/scoussens-skills/release-brief/SKILL.md) | Turn a window of shipped work into a brief for a non-technical stakeholder — verified against what actually reached production, grouped by consequence, referenced back to issue-tracker IDs and pull request numbers, and delivered as a themed Artifact page or Markdown. Load this only when the user explicitly asks for such a brief — "write a release brief", "board update", "brief the client on this sprint", "stakeholder summary of what we shipped". Do not load it to answer what changed recently, to generate a changelog or technical release notes, to summarise a single pull request, or to write a commit message; answer those directly instead. |
+| [`speak-clearly`](skills/scoussens-skills/speak-clearly/SKILL.md) | Write human-facing prose in Google developer style — named actors, condition-first sentences, timeless tense, no filler. Use when drafting docs, READMEs, comments, commit messages, PR descriptions, error messages, or UI copy; when editing existing prose; or when asked to make writing clearer, tighten wording, or fix tone. |
+| [`visualize-spec`](skills/scoussens-skills/visualize-spec/SKILL.md) | Turn a spec into a throwaway HTML page — problem, outcome, workflow, pieces and seams, data layer, file layout, tests, and validation plan — themed to the repository and opened locally or published wherever the agent can, so a developer can check it delivers what they want. |
+| [`work-proposal`](skills/scoussens-skills/work-proposal/SKILL.md) | Turn a body of scoped work into a client-ready proposal — effort and cost grounded in the actual codebase rather than ticket titles, priced against whatever commercial agreement already exists, with anything not yet knowable named rather than averaged into a range, and delivered as a themed Artifact page, a PDF, or email-ready Markdown. Use when the user asks to scope and price work — "write a proposal", "what would it take to build X", "quote this work", "put together an SOW", "estimate this epic for the client", "how much for phase 2". Do not load it to estimate one ticket, to plan a sprint for an internal team, or to answer how long a single change takes; answer those directly instead. |
+| [`working-tickets`](skills/scoussens-skills/working-tickets/SKILL.md) | Keeps tickets accurate throughout execution using the repository's own ticket standards, concise comments, status changes, title and body cleanup, and tags. Use whenever the agent is told to work a ticket or issue, is assigned one, resumes one, or creates or picks up one to work on its own. For a parent ticket or epic, plans and works every in-scope child in dependency order with the same hygiene. Applies to hosted and file-based trackers. Not for read-only ticket lookups or drafting tickets that the agent is not taking on. |
+| [`writing-in-voice`](skills/scoussens-skills/writing-in-voice/SKILL.md) | Drafts and revises writing using a personal or project voice profile, learns from corrections, and formats for the destination. Use when asked to write in my voice, learn my writing style, remember a writing preference, or adapt a voice-led draft for email, Teams, Slack, text messages, documents, or public posts. Not a source of facts or permission to send. |
 
 ## Claude Code plugins
 
 This repository is also a Claude Code plugin marketplace, named `nthplusio`.
-Plugins live in `plugins/`; `.claude-plugin/marketplace.json` lists them.
+Native integrations live in `plugins/`; `.claude-plugin/marketplace.json` lists
+them separately from the root `nthplusio-coding-agent` skill collection. The
+OpenAI catalog excludes the native Claude mods. Source manifests reference
+tracked canonical paths, never generated `dist/` files.
 The pack builder also discovers marketplace plugins' bundled skills. Mark a
 plugin-local skill with `metadata.internal: true` to exclude it from normal pack
 discovery while keeping it available inside Claude Code.
@@ -63,6 +72,7 @@ discovery while keeping it available inside Claude Code.
 
 | Plugin | Description |
 | --- | --- |
+| [`nthplusio-coding-agent`](docs/installation.md) | Eighteen skill candidates with required companions and Codex/Claude invocation metadata. Target-client behavior remains unverified. |
 | [`context-statusline`](plugins/context-statusline/README.md) | A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch, collapsing to fit any terminal width. |
 | [`doorbell`](plugins/doorbell/README.md) | Directory-bound messaging through Doorbell's public MCP connection, with local execution authority, explicit leases, and bounded optional Stop continuation. |
 | [`doorbell-grant`](plugins/doorbell-grant/README.md) | Approves doorbell's own read-only inbox calls at the permission check, so its background refresh works in auto mode. Installed with doorbell. |
@@ -124,7 +134,10 @@ source directories rather than sharing another orb's paths or portal URL.
 ## Layout
 
 The skills CLI discovers skills by convention — there is no manifest to
-maintain. It walks the `skills/` container directory up to three levels deep
+maintain for CLI discovery. The [distribution catalog](distribution/catalog.json)
+records reviewed bundle membership, activation, companions and mode requirements;
+`npm run distribution:sync` generates host metadata and the skill index above.
+The CLI walks the `skills/` container directory up to three levels deep
 looking for `SKILL.md`, and a shallower `SKILL.md` shadows any nested beneath
 it.
 
@@ -238,13 +251,14 @@ Other fields follow the [Agent Skills specification](https://agentskills.io/spec
 The pack uses two extensions that strict validators reject:
 
 - `disable-model-invocation: true` keeps a skill out of Claude Code's automatic
-  loading, so it runs only when invoked by name.
+  loading, so it runs only when invoked by name. Generated Codex sidecars carry
+  the matching `allow_implicit_invocation: false` policy. Strict standalone
+  exports exclude these manual-only workflows rather than dropping the policy.
 - A skill whose output can take more than one form, or serve more than one
-  reader, does not ask its own question about it. It loads `explain-to` and
-  runs its settings sheet (`explain-to/references/settings-sheet.md`), passing
-  the settings it fixes and any extra outputs it can produce, and builds from
-  what the user agreed. The sheet shows every inferred choice as a
-  recommendation with its evidence; *go* accepts them all.
+  reader, can delegate settings to `explain-to`. Reuse settled choices and ask
+  only consequential unresolved questions; delivery audience and publishing
+  permission remain separate. The questionnaire also has self-contained intake.
+  The catalog distinguishes required companions from optional helpers.
 - `metadata.needs` lists, comma-separated, the harness capabilities a skill
   reads from `discovery.json`, as dotted paths into one harness entry of
   `harness-discovery/assets/discovery.template.json` (for example
@@ -260,9 +274,19 @@ match.
 ## Validation
 
 ```bash
-npm install
+npm ci --ignore-scripts
 npm run validate
+npm run test:distribution
+npm run build:distribution
+npm run check:host-manifests
+npm run check:installed
 ```
+
+These are deterministic metadata, archive and installed-file checks, not
+target-product acceptance. `npm run eval:agents -- --list` enumerates scenarios;
+the [agent evaluation adapter](distribution/agent-evaluation.md) requires actual
+runner evidence and reports missing execution honestly. `npm run test:browser`
+explicitly runs the opt-in explorer browser cases and fails without its browser.
 
 The pack builder fails *quietly*: it skips invalid `SKILL.md` files and omits
 binary or over-2 MB files without reporting an error, so a broken pack still
