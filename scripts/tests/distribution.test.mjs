@@ -29,7 +29,7 @@ function changeCatalog(root, change) {
 function inspectZip(path) {
   return JSON.parse(execFileSync('python3', ['-c', `import hashlib,json,sys,zipfile
 with zipfile.ZipFile(sys.argv[1]) as z:
- print(json.dumps({i.filename: {"sha256": hashlib.sha256(z.read(i)).hexdigest(), "mode": i.external_attr >> 16, "text": z.read(i).decode() if i.filename.endswith(("SKILL.md", "openai.yaml", "plugin.json", "LICENSE")) else None} for i in z.infolist()}))`, path], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }))
+ print(json.dumps({i.filename: {"sha256": hashlib.sha256(z.read(i)).hexdigest(), "mode": i.external_attr >> 16, "text": z.read(i).decode() if i.filename.endswith(("SKILL.md", "README.md", "openai.yaml", "plugin.json", "LICENSE")) else None} for i in z.infolist()}))`, path], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }))
 }
 
 test('catalog covers 20 sources, five host-enforced policies and nine explain-to requirements', () => {
@@ -65,6 +65,12 @@ test('build real archives with all tracked resources, licenses, policy and repro
       assert.equal(portable.$schema, 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json')
       assert.equal(portable.version, catalog.version)
       assert.equal(JSON.parse(entries[`${prefix}/.claude-plugin/plugin.json`].text).version, catalog.version)
+      const readme = entries[`${prefix}/README.md`].text
+      const documented = [...readme.matchAll(/^- \*\*([^*]+)\*\*:[\s\S]*?^  Activation: ([a-z-]+)\. Modes: (.+)$/gm)]
+        .map(([, name, activation, modes]) => ({ name, activation, modes: JSON.parse(modes) }))
+      const reviewed = bundleEntries(catalog, name.includes('conversation') ? 'conversation' : 'coding-agent')
+        .map(({ name, activation, modes }) => ({ name, activation, modes }))
+      assert.deepEqual(documented, reviewed, `${name} README must preserve every reviewed mode prerequisite`)
     }
     for (const skillName of sourceNames) {
       const entry = catalog.entries.find((e) => e.name === skillName)
