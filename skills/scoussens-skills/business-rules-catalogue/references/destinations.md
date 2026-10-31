@@ -126,7 +126,14 @@ reviewer's verdict; retain the original exports for attribution. CSV and
 Markdown are handoff formats; only JSON imports. A legacy JSON export without
 a project field still requires the matching commit and valid rule IDs.
 
-## DocStash
+## DocStash through Amp
+
+This recipe is an Amp adapter, not the generic destination contract above.
+It requires Amp's `code_exec` runtime and connected DocStash tools. The generated
+`publish/UPLOAD.md` and `publish/verify.js` target that runtime. On another host,
+use its supported upload/read-back tools under **Other hosts and local delivery**;
+do not assume `code_exec` or bare-module imports exist. If no compatible route
+exists for the confirmed destination, keep publication held and report the gap.
 
 1. Run `$BR publish-prep --work <work>`. It refuses until a hosted
    destination is recorded, splits the site into upload groups, and proves

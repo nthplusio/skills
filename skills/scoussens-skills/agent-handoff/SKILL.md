@@ -60,6 +60,22 @@ Everything downstream inherits the accuracy of this step, and it pays twice:
 the facts you gather become Context, and the commands you gathered them with
 become the preflight.
 
+Choose the evidence path before running commands:
+
+- **Repository available:** inspect the target repository and record observed
+  results. Run the commands below there, not in the installed skill directory.
+- **Conversation only:** build from the conversation and supplied attachments.
+  Attribute reported facts to their speaker or attachment; label repository,
+  branch, revision, worktree, test, tracker and deployment evidence that you
+  cannot inspect as **unavailable — not verified**. Do not invent command
+  results or require Git, a shell, or persistent storage to produce the handoff.
+  Deliver one paste-ready document in the reply. Its preflight separates
+  conversation-established decisions from checks the receiver must still run.
+  Make any missing evidence that blocks safe work an action row, and block
+  dependent rows on it. Do not describe an unrun check as a passing baseline.
+
+For the repository path:
+
 ```bash
 git status --porcelain --branch && git rev-parse --short HEAD
 git stash list && git worktree list
@@ -173,7 +189,7 @@ will not.
 
 The document decays from the moment you save it, so it opens with a short block
 of checks the receiver runs before touching anything — each carrying the result
-you observed.
+you observed, or an explicit unavailable-evidence label in conversation-only mode.
 
 ```
 Preflight — stop if any line disagrees.
@@ -195,13 +211,18 @@ A dependency table is a directed graph written by hand, and by hand is where
 graphs acquire cycles that deadlock, dependencies pointing at rows that do not
 exist, and rows with no end condition. None of that is visible by reading.
 
+When Python and a saved handoff are available, resolve the absolute skill
+directory from this installed `SKILL.md` and run its checker from any cwd:
+
 ```bash
-python3 scripts/check-handoff.py <file>
+python3 "<absolute installed skill directory>/scripts/check-handoff.py" "<absolute handoff file>"
 ```
 
 It fails on duplicate IDs, dangling dependencies, cycles (printing the loop),
 and blank actions or completion criteria. Those are properties of the table
-rather than of the script, so read for them by hand if it is not there. Then it prints back what the table
+rather than of the script: if the checker, shell, Python, or file access is
+unavailable, check them manually and say the checker was not run. Do not install
+tools merely to deliver a conversation-only handoff. The checker prints what the table
 actually says — which rows are ready now, which wait on someone outside the
 room, the longest chain through the dependencies, and any two ready rows that
 touch the same file and therefore cannot run at once. Read that output as a
@@ -252,7 +273,7 @@ It is invoked deliberately, by name or by an explicit request to hand work over.
   rather than by what it was meant to do.
 - Every decision names what was rejected and what would reopen it, and the
   user's decisions are attributed to the user.
-- The preflight is four to six lines, each carrying the result you observed,
-  and it says what a disagreement means.
+- The preflight is four to six lines, each carrying an observed result or a
+  labeled evidence gap, and it says what a disagreement or missing check means.
 - The whole handoff is one document.
 - Your reply names what you could not verify and the row you trust least.

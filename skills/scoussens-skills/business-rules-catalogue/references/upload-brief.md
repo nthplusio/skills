@@ -1,10 +1,15 @@
-# Upload brief: copy the site into DocStash exactly
+# Amp upload brief: copy the site into DocStash exactly
 
 You are copying prepared files into a DocStash app. They must arrive
 byte-for-byte, so you paste prepared text into code and copy it unchanged. A
 hash check proves each copy before anything is written.
 
-DocStash is reached through `code_exec` with `import { ... } from "docstash"`.
+This recipe requires Amp's `code_exec` and connected DocStash tools. It is not
+a portable tool API. On other hosts, follow the generic destination contract
+in the skill's `references/destinations.md` with supported upload/read-back
+tools, or hold publication if the confirmed destination is unavailable.
+
+In Amp, reach DocStash through `code_exec` with `import { ... } from "docstash"`.
 The `code_exec` runtime has no filesystem, network, `setTimeout` or `crypto`,
 so you read each prepared file with your shell tool and paste its contents into
 the code you send. Every prepared file is JSON, and JSON is valid JavaScript:

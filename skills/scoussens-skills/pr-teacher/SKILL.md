@@ -43,31 +43,35 @@ detail is worse than a clarifying question.
 
 ## Step 2 — Gather ground truth before composing anything
 
-Everything you write has to trace back to something you actually read. Run
-these first:
+Everything you write has to trace back to something you actually read. Pin the
+PR snapshot before reading source; branch names and the present checkout are
+not historical evidence. Save this metadata in a run-specific directory:
 
 ```bash
 gh pr view <N> --repo <owner/repo> --json title,body,author,state,mergedAt,\
-additions,deletions,changedFiles,files,headRefName,baseRefName
+additions,deletions,changedFiles,files,headRefName,baseRefName,headRefOid,baseRefOid
 gh pr diff <N> --repo <owner/repo>
 gh pr view <N> --repo <owner/repo> --json reviews,comments
 ```
 
+Record the full head and base OIDs, repository, PR number and retrieval time.
+Follow [references/source-snapshot.md](references/source-snapshot.md) to resolve
+the comparison base, enumerate changed files and read source at those revisions.
+If the required objects cannot be obtained, report the missing evidence and hold
+the source-dependent teaching rather than substituting today's code.
+
 Then — and this is the step that separates a real teaching artifact from a
-narrated diff — **read the changed files in the repository, plus the code on
-either side of them**: what calls into the changed function, what it calls,
-what the tests assert. The diff tells you what moved. The surrounding source
+narrated diff — **read the changed files at the pinned revisions, plus the code on
+either side of them at the same revisions**: what calls into the changed
+function, what it calls, what the tests assert. The diff tells you what moved. The surrounding source
 tells you why that was the right place to move it, what else depended on the
 old behavior, and what the author chose *not* to do. The reader's hardest
 questions will all come from that second category.
 
-If the repo is checked out locally, read the files directly. If not, use
-`gh api repos/<owner>/<repo>/contents/<path>?ref=<sha>` or clone shallowly.
-
 **Absorb the house rules too.** Look for `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`,
 `docs/conventions.md`, an ADR or `docs/decisions/` directory, and any
-architecture notes the PR references. A change that looks arbitrary usually
-becomes obvious once you know the convention it is satisfying — and "which
+architecture notes the PR references at the pinned revisions. A change that
+looks arbitrary usually becomes obvious once you know the convention it is satisfying — and "which
 rule made them put it there" is exactly the kind of question the reader wants
 to be able to answer. Where a PR *departs* from a documented rule, that is
 worth teaching, not smoothing over.
@@ -141,8 +145,11 @@ and show counts rather than listing all hundred.
 
 **3. The mechanism.** How the change actually works, stepped through in
 order. Where control flow, data flow, or a state transition carries more than
-prose would, draw it — a ```mermaid fence renders natively in artifacts, so
-reach for one rather than describing a graph in words.
+prose would, draw it. Self-contained HTML does not render a Mermaid fence by
+itself. Pre-render diagrams to inline SVG, or build them with inline HTML/SVG.
+Use a destination's Mermaid renderer only after verifying it on the delivered
+page; keep a rendered diagram in the standalone file rather than depending on
+a CDN or host-specific Markdown processing.
 
 **4. Before and after.** The two or three hunks that carry the real change,
 side by side, with the decisive lines called out. Use the actual code and real
@@ -165,6 +172,21 @@ second call?") to judgment ("why this approach over the alternative, and what
 does it give up?"). Ground every answer in the real code. The judgment
 questions are the valuable ones — they are what the reader will actually be
 asked, and they are the ones a diff summary cannot produce.
+
+### Exercise the teaching interaction
+
+Open the actual HTML in a real browser before delivery. Commit a prediction,
+run or step the mechanism, and compare the result and reasoning with the pinned
+source. Cover the original case, a contrasting input, and reset/repeat; check
+keyboard operation, self-check reveals, diagrams and browser errors. Inspect
+screenshots of the initial and checked states and retain the evidence. Label
+simulated behavior and keep its limits visible as `references/interactions.md`
+requires. Repeat on the destination when it can change script or download behavior.
+
+The detectors in `evals/check_mechanical.py` are static screening heuristics,
+not proof that a reader can operate the page or learn from it. If a browser or
+required interaction is unavailable, report the unrun checks and hold delivery
+rather than certifying the page from those detectors alone.
 
 ## Step 5 — Publish
 
