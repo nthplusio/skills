@@ -1,6 +1,11 @@
 ---
 name: meeting-index
-description: Index a period of recorded meetings — the threads that carried across them, a searchable per-meeting ledger, and what got decided, who owns it, and what is at risk — reading from Plaud, or any source that can list recordings and return per-meeting notes. Load this only when the user explicitly asks for such an index — "index my meetings from last week", "what did we discuss about the migration", "recap my recordings this sprint", "digest my calls with that client", "what came out of this month's meetings". Do not load it to summarise a single meeting, to answer one factual question about something that was said, to take notes on a call in progress, or to write minutes — answer those directly instead, because this sweeps every recording in a window and costs a lookup per meeting.
+description: >-
+  Indexes recorded meetings across a period into shared themes, a searchable
+  ledger, decisions, owners, and risks. Reads Plaud or another recordings-and-notes
+  source. Use only when explicitly asked to index meetings, recap recordings,
+  or digest calls across a period or topic. Not for a single-meeting summary,
+  one factual lookup, live note-taking, or minutes.
 ---
 
 # Meeting index

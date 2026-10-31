@@ -1,13 +1,11 @@
 ---
 name: harness-discovery
 description: >-
-  Discovers what the current agent harness can do — independent threads or
-  sessions, subagents, monitoring and wake-ups, skill loading, instruction files,
-  structured questions, model choice, and HTML publishing destinations — plus the
-  repository's ticket conventions, and saves sourced observations keyed by
-  harness name. Load this when pstack-sync, dashboard, or another skill needs
-  discovery, or when the user names /harness-discovery to refresh facts. Do not
-  run it as the first step of a task that only needs one saved fact.
+  Discovers agent capabilities and repository ticket conventions, saving
+  sourced facts by harness. Covers sessions, subagents, wake-ups, skills,
+  instructions, questions, models, and HTML destinations. Use when pstack-sync,
+  dashboard, or another caller needs discovery, or for /harness-discovery.
+  For one saved fact, read that field instead of starting a full survey.
 ---
 
 # Harness discovery

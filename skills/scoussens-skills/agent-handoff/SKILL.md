@@ -1,6 +1,11 @@
 ---
 name: agent-handoff
-description: Write a handoff another agent or person can act on without coming back to ask a question — opening with a preflight that proves the state still holds, carrying only the context and decisions that are load-bearing for what remains, and putting the remaining work in a dependency-mapped action table with a completion criterion on every row. Load this only when the user explicitly asks for a handoff — "write a handoff", "hand this off", "brief the next session", "I'm running out of context, write this up", "package this for a subagent", "document where we got to so someone else can pick it up". Do not load it to summarise a conversation, to write a status update or a standup note, to plan work nobody has started, or to write a commit message or pull request description; answer those directly instead.
+description: >-
+  Writes actionable handoffs with a state-checking preflight, essential context,
+  and dependency-ordered actions with completion criteria. Use only when
+  explicitly asked to write a handoff, brief the next session, or package work
+  for a subagent or person. Not for conversation summaries, status or standup
+  updates, plans for unstarted work, commit messages, or PR descriptions.
 ---
 
 # Agent handoff

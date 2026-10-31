@@ -1,6 +1,11 @@
 ---
 name: work-proposal
-description: Turn a body of scoped work into a client-ready proposal — effort and cost grounded in the actual codebase rather than ticket titles, priced against whatever commercial agreement already exists, with anything not yet knowable named rather than averaged into a range, and delivered as a themed Artifact page, a PDF, or email-ready Markdown. Use when the user asks to scope and price work — "write a proposal", "what would it take to build X", "quote this work", "put together an SOW", "estimate this epic for the client", "how much for phase 2". Do not load it to estimate one ticket, to plan a sprint for an internal team, or to answer how long a single change takes; answer those directly instead.
+description: >-
+  Drafts client proposals with code-grounded effort, agreed commercial terms,
+  and explicit unknowns, as HTML, PDF, or email-ready Markdown. Use when asked
+  to scope and price work, quote a phase or epic, or write a proposal or SOW.
+  Not for estimating one ticket, internal sprint planning, or timing a single
+  change. Drafting does not authorize tracker edits, sending, or publication.
 ---
 
 # Work proposal

@@ -1,15 +1,11 @@
 ---
 name: business-rules-catalogue
 description: >-
-  Finds where a repository's business logic lives, derives the rules its code
-  actually enforces, has a second reader check them, and delivers a tree
-  explorer in which business owners mark each rule correct or wrong and export
-  corrections for engineering. Load this only when the user explicitly asks for
-  such a catalogue or its discovery — "derive the business rules", "catalogue
-  the business logic", "where does our business logic live", "business rules
-  review for the product team", "refresh the rules explorer". Do not load it to
-  explain one function, review a pull request, or document an API; answer those
-  directly instead.
+  Derives code-enforced business rules, has a second reader check them, and
+  builds an explorer for business owners to review and export corrections.
+  Use only when explicitly asked to catalogue business logic, find where it
+  lives, or refresh the rules explorer. Not for explaining one function,
+  reviewing a PR, or documenting an API.
 ---
 
 # Business rules catalogue

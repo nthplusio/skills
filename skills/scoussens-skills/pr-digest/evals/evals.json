@@ -1,0 +1,104 @@
+{
+  "skill_name": "pr-digest",
+  "note": "Scenario definitions, not selection results. For recommendation cases, expose the installed descriptions and activation policies for pr-digest, pr-review-round, pr-teacher, pr-detail, release-brief, and any available single-PR review skill. Do not preload workflow bodies or force pr-digest because this file owns the case. Recommend a workflow without invoking it. Keep manual-only host policies enabled. The explicit /pr-digest case may load its body and required explain-to companion; use isolated forge doubles and local output only. Record the actual model, client/version, mode, skill loads, and tool trace before claiming an evaluation result.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "select-open-inventory",
+      "prompt": "Which installed skill fits this task: show everything sitting open against main in acme/widgets, including drafts, grouped by workstream? I want the backlog as it stands, not a date range. Recommend the skill and mode only; do not run it.",
+      "expected_output": "Recommends pr-digest in open-PR inventory mode, including drafts without a time window. Explains that the manual-only workflow needs explicit invocation rather than running it.",
+      "assertions": [
+        "Selects pr-digest inventory rather than a queue review or shipped-period recap",
+        "Keeps drafts and older open PRs in scope without asking for a period",
+        "Does not invoke a manual-only skill or make external writes"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "select-backlog-health-not-closure",
+      "prompt": "Which skill should I invoke to see what's in flight on main, which old drafts are still alive, and what we could close? I want an inventory with recommendations, not code reviews or actual closures. Do not run anything yet.",
+      "expected_output": "Recommends pr-digest inventory with backlog-health checks. Treats possible closures as recommendations, not authority to close PRs or tickets.",
+      "assertions": [
+        "Selects pr-digest inventory even without an explicit date or the word digest",
+        "Distinguishes backlog health from code-review verdicts and closure mutations",
+        "Does not invoke workflows, close PRs, or change tickets"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "select-shipped-period-recap",
+      "prompt": "Which skill fits a themed recap of every PR merged to staging last week, with a separate snapshot of PRs ready for review? I want to catch up on development, not verify production deployment. Recommend only; do not run it.",
+      "expected_output": "Recommends pr-digest merged-plus-ready-for-review mode. Keeps the merged date window separate from the live open snapshot and does not substitute a production release brief.",
+      "assertions": [
+        "Selects pr-digest recap rather than inventory-only, review-round, or release-brief",
+        "Applies last week's window to merged PRs, not to the live ready-for-review snapshot",
+        "Does not invoke a manual-only workflow or equate merged with deployed"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "reject-one-pr-review",
+      "prompt": "I need a code review of PR 42 for correctness and blockers before merge, not a walkthrough or a retrospective. Which workflow should I use? Recommend only; do not start the review.",
+      "expected_output": "Recommends an available single-PR review workflow or direct review if none exists. Does not select the digest, queue round, teacher, or process retrospective.",
+      "assertions": [
+        "Routes to single-PR review without inventing an installed skill",
+        "Does not select pr-digest, pr-review-round, pr-teacher, or pr-detail",
+        "Does not invoke workflows or post reviews"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "reject-queue-assessment",
+      "prompt": "Which workflow should I invoke to review every non-draft PR targeting main and tell me which are ready to merge? I need findings verified in the code, not a list of what's open. No posting or merging. Recommend only.",
+      "expected_output": "Recommends pr-review-round in assessment-only mode, not pr-digest inventory. Keeps review, dismissal, merge, and publication authority absent.",
+      "assertions": [
+        "Selects pr-review-round assessment rather than pr-digest inventory",
+        "Does not treat readiness assessment as authority to post, dismiss, merge, or publish",
+        "Does not invoke a manual-only workflow"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "reject-queue-mutations",
+      "prompt": "Which skill should I invoke to work through the review queue on main, post verified reviews, and merge what's ready? Do not dismiss anyone's review. Recommend only; I am not asking you to start this run yet.",
+      "expected_output": "Recommends pr-review-round, not pr-digest. Identifies the requested review/merge scope and excluded dismissals without treating recommendation as execution authority.",
+      "assertions": [
+        "Selects pr-review-round for queue review and merge rather than an inventory or recap",
+        "Preserves the no-dismissal boundary and the requirement to verify findings before mutations",
+        "Does not invoke workflows or perform forge writes during recommendation"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "reject-single-pr-teaching",
+      "prompt": "Which skill should I use to understand PR 42, operate an example of its mechanism, and quiz myself on it? I am not asking for a merge verdict. Recommend only.",
+      "expected_output": "Recommends pr-teacher, not a digest, review round, or process retrospective. Does not invoke the manual-only workflow.",
+      "assertions": [
+        "Selects pr-teacher rather than pr-digest, pr-review-round, or pr-detail",
+        "Distinguishes teaching from a correctness or merge-readiness verdict",
+        "Does not invoke workflows or make external writes"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "manual-inventory-includes-old-drafts",
+      "prompt": "/pr-digest inventory acme/widgets against main. Use a light pass, include every open PR, and prepare the HTML locally without publishing. The forge fixture contains PR 10, a 90-day-old draft, and PR 11, a ready-for-review PR opened yesterday; no other open PRs exist. No tracker is available. Do not close, approve, or merge anything.",
+      "expected_output": "Uses the explicit invocation for a no-window inventory, includes both PRs, resolves settings through explain-to, discloses missing tracker enrichment, reconciles the rendered set, and keeps the page local.",
+      "assertions": [
+        "Loads pr-digest only after explicit invocation and uses its required explain-to companion",
+        "Includes PR 10 and PR 11 without asking for a period or fetching a merged-period set",
+        "Reconciles the primary rendered entries against the fetched PR numbers without dropping the old draft",
+        "Discloses unavailable tracker enrichment rather than inventing ticket state",
+        "Makes no publication, closure, approval, dismissal, or merge call"
+      ],
+      "files": []
+    }
+  ]
+}

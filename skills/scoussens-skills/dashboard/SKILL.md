@@ -1,15 +1,11 @@
 ---
 name: dashboard
 description: >-
-  Renders one status file into a self-contained HTML status page for a
-  non-technical reader and keeps it current in place at a destination the user
-  chooses. Any producer feeds it through the same contract — an orchestrate
-  loop, a single task that spawned subagents, a thread that spawned child
-  threads. Use when asked for a "dashboard for this run", a "status page for
-  these threads", or to "show me where the subagents are", and when a
-  coordinating skill needs to present progress as one page. Do not load it to
-  decide what the status is; the producer owns the record, and this skill
-  draws it.
+  Renders a producer-owned status file as a self-contained HTML page for
+  non-technical readers and refreshes it at the user's chosen destination.
+  Use for a run dashboard, thread status page, subagent progress view, or a
+  coordinating skill's report. The producer determines status; this skill
+  renders the record rather than judging it.
 metadata:
   needs: artifacts
 ---

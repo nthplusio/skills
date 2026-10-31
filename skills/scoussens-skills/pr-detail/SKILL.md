@@ -1,15 +1,11 @@
 ---
 name: pr-detail
 description: >-
-  Retrospective on one pull request — a timeline of how it actually went, a
-  ledger of what every reviewer said and whether it was acted on, and a scored
-  evaluation of the execution, published as an HTML artifact. Load this only
-  when the user explicitly asks how a PR went — "how did this PR go", "review
-  the process on #101", "retrospective on this pull request", "how did this
-  developer handle that change", "why did this PR take three weeks". Do not
-  load it to teach the code a PR changed, to produce a review verdict on
-  something still open, or to recap a period of merged work; answer those
-  directly instead.
+  Produces an HTML retrospective on one PR with its timeline, reviewer
+  feedback and outcomes, and an evidence-based execution score. Use only for
+  explicit requests about how a PR went, its review process, or why it took
+  so long. Not for teaching the code, judging an open PR's merge readiness,
+  or recapping a period of merged work.
 disable-model-invocation: true
 ---
 

@@ -1,16 +1,11 @@
 ---
 name: pr-teacher
 description: >-
-  Teach one pull request as an interactive artifact — the problem it solved, how
-  its mechanism actually works, a map of where every changed file sits and why,
-  something the reader can operate rather than only read, and a grounded
-  self-check. Load this only when the user wants to understand or be taught a
-  specific PR — "teach me PR 412", "explain this pull request", "help me
-  understand what #1234 does", "walk me through this change", "I have to review
-  this and I don't know the codebase", "quiz me on this PR", or when they paste
-  a PR URL and ask what it does. Do not load it to recap a period of merged
-  work, to produce a review verdict, or to answer one narrow factual question
-  about a diff; answer those directly instead.
+  Teaches one PR through an interactive HTML artifact with the problem,
+  mechanism, changed-file map, operable example, and grounded self-check.
+  Use only when asked to explain a specific PR, walk through its change,
+  or quiz the reader on it. Not for a merged-period recap, a review verdict,
+  or one narrow factual question about a diff.
 disable-model-invocation: true
 ---
 

@@ -1,59 +1,36 @@
 ---
 name: pstack-sync
 description: >-
-  Sync a managed skill set, pstack by default or any set under `sets/`,
-  from its upstream repository, with the skills and subagent
-  definitions they hand off to, into this harness's shared skills — adding new,
-  updating changed, and removing retired skills — and adapt Cursor-specific
-  features to what the harness supports, replaying recorded adaptations so a
-  fresh install does not re-adapt. Load this only when the user explicitly asks
-  to sync or update pstack — "sync pstack", "update pstack", "pull the latest
-  pstack skills", "install pstack for this harness". Do not load it to install
-  or edit one skill no set hands off to, to sync a repository that has no set
-  file, or to change what a synced skill says upstream; answer those directly
-  instead.
+  Syncs pstack or another configured set from upstream, including skill and
+  subagent dependencies, and replays harness adaptations. Use only when
+  explicitly asked to sync, update, or install a managed set for this harness.
+  Not for an unrelated single skill, a repository without a set file, or
+  upstream content edits. Sync does not authorize publication or contribution.
 ---
 
 # pstack sync
 
-Brings the **managed** pstack skills in line with upstream `cursor/plugins` `pstack/skills`, together with their **dependencies** (the skills and subagent definitions elsewhere in `cursor/plugins` that they hand off to), and **adapts** them to the harness you are running in, whichever it is. `scripts/sync.py` does the mechanical work and replays past adaptations; you profile the harness, adapt what it flags, review, and report.
+Sync managed skills and their transitive skill/subagent dependencies from
+upstream, adapting them to this harness. `scripts/sync.py` copies files and
+replays recorded adaptations; you profile, adapt flagged files, review, and report.
 
-## State
+## State for an ordinary sync
 
-A plain copy of this pack replaces `pstack-sync/` and leaves `.nthplusio-skills/` at the repository root. Install state lives there, with `discovery.json`, so the refresh does not wipe it. The skill directory keeps only the seeds.
+The installed skill directory holds seeds and adapters. Durable state lives
+in `.nthplusio-skills/pstack-sync/` at the destination repository root, with
+each set under `sets/<set>/` and shared profiles under `harness/`.
+`harness-discovery` owns the adjacent `.nthplusio-skills/discovery.json`.
+The script owns manifests and transforms; hand edits are limited to `exclude`
+and harness `accept` regexes. Repository-specific adaptations use `record --local`
+and local profile rows, not shared seeds.
 
-The sync manages **sets**. A set is one upstream repository, one root plugin whose skills are the roots, and the dependencies they pull in. pstack is the default set; `--set <name>` picks another, and several sets share one install. A set's text is adapted through a **dialect**, the catalog of constructs its source harness uses (Cursor, for every set from `cursor/plugins`), plus the set's own rows. Code the harness must replace as a unit is a **port**: the set names the upstream files, and an adapter under `adapters/<harness>/<port>/` provides them; until the adapter exists the port is reported pending and its files are not installed.
-
-Portable workflow additions are **extensions**, declared by the set independently of harness ports. Each extension names a `skill`, a `files` map of installed paths to pack-relative sources, a `reference`, and `entrypoints` that receive a pointer to that reference. Sync preserves upstream text and harness transformations, installs the additions, and records their hashes in the manifest. Upstream claiming an extension's path stops sync for reconciliation. A locally edited extension is reported as drift, not overwritten. Change its pack source rather than recording it as an upstream transform. Read [references/orchestration.md](references/orchestration.md) when changing orchestration policy and [references/native-execution.md](references/native-execution.md) when exercising native lifecycle recording.
-
-Shipped in `pstack-sync/`, replaced on refresh:
-
-- `dialects/<dialect>.json`: the constructs of one source harness, the markers that flag them, and the discovery fields that answer a need. Shared by every set with that dialect.
-- `sets/<set>/set.json`: the set's upstream, root plugin, skills subdirectory, plugin marker, dialect, agents directory, collision prefix, `extra_needs` in the catalog shape, `exclude` (names never installed, joined with the manifest's), `ignore` (file globs never installed, such as upstream tests), and `ports`.
-- `sets/<set>/transform.json`: the set's seed adaptations. The first run copies it into durable state.
-- `adapters/<harness>/<port>/<file>`: this harness's replacement for a port's files.
-- `harness/TEMPLATE.md`, and `harness/<harness>.md` when the pack ships one: the seed profile. The first run copies it into durable state.
-
-Durable, in `.nthplusio-skills/pstack-sync/` at the root of the repository that holds the skills, with each set's files under `sets/<set>/` and the profiles shared:
-
-- `sets/<set>/manifest.json`: what is installed: set, upstream commit, harness, `exclude`, and per skill its upstream `source`, and per file the upstream and installed hashes, any `pending` adaptation, and the `port` that owns it. A skill whose upstream and transforms are unchanged is left as installed.
-- `sets/<set>/transform.json`: how upstream becomes installed, per harness: exact find/replace edits per file, replayed onto new upstream text until upstream rewrites the adapted passage. Each harness block has a `local` sub-block with the same shape for entries that belong to this install only.
-- `sets/<set>/seed.json`: the shipped `transform.json` block as of the last sync, per harness. Each sync three-way merges the pack's current seed into the shared block against it, so an adaptation the pack ships after the first install still arrives: a key only the pack changed takes the pack's entry, a key only this install changed keeps it, and a key both changed keeps this install's entry and is reported under `seed_conflicts`. An install without the file takes the pack's entry wherever the two differ, reported under `seed_refreshed`.
-- `sets/<set>/LICENSE-<plugin>`: the license of each plugin the installed skills come from.
-- `harness/<harness>.md`: the **harness profile** in use. Where pstack goes, and for each need without discovery fields whether the harness supports it and how. You write this copy; [`references/adapting.md`](references/adapting.md) says how.
-- `harness/<harness>.local.md`: rows that hold only for this install, in the same table shape. A local row overrides the shared row for its need.
-
-**Shared or local.** A seed holds only what is true of the harness itself, so a fresh install anywhere gets the same start. Anything that names this repository, a skill only this repository has, or a choice its owners made is local: a companion mapping to a repository's own skill, an exclusion, a rewording that cites a team's workflow. Record such a file with `record --local`, and put such a row in the local profile. `seed --out <pack's pstack-sync dir>` writes the shared block and the shared profile back into the pack and keeps every local entry here.
-
-`.nthplusio-skills/pack-manifest.json` is what `publish` copied last: the pack commit and remote, when, and the skill names. `publish` removes a retired skill only when this file names it; a directory the file does not name is never touched.
-
-- In the separate plugins clone, `.nthplusio-skills/pack-manifest.json` records the Amp plugins copied by `publish`, independently of the skills manifest. Publishing replaces directories named by the pack and removes retired plugins only when this manifest names them; other plugin directories remain untouched.
-
-`.nthplusio-skills/discovery.json` is the harness facts `harness-discovery` saves, keyed by harness name. `harness-discovery` owns that file. `sync.py` reads it for every need with discovery fields, so the profile never repeats those facts.
-
-The script owns the durable `manifest.json` and `transform.json`. The only hand edits are `exclude` (names of pstack skills, dependencies, or subagent definitions) and a harness's `accept` regexes, shared or local. An upstream skill whose name is taken by an unmanaged skill installs as `pstack-<name>`; if that is taken too, the script exits with an error, so ask the user what to call it. An install from before sets kept the pstack files directly under `.nthplusio-skills/pstack-sync/`, or inside the skill directory; the next run moves them into `sets/pstack/`, and `status --since` still finds the old paths for its baseline.
-
-**Dependencies.** A pstack skill that hands off to a skill or subagent definition elsewhere in `cursor/plugins` gets it installed beside pstack and adapted the same way, and so on transitively. A skill installs under its own name; subagent definitions install as `pstack-agents/<name>.md`, which is not a skill. A cross-plugin hand-off counts only in a skill that names the plugin, as pstack writes "`deslop` from `cursor-team-kit`". A dependency whose name an unmanaged skill already has is left to that skill. Excluding a dependency also drops whatever only it needed. [`references/adapting.md`](references/adapting.md) has the exact rules.
+For state migration, seed conflicts, name collisions, or changes to set
+configuration or extensions, read [references/state.md](references/state.md).
+For profile, port, and dependency rules, read
+[references/adapting.md](references/adapting.md) at the profile/adaptation step.
+When changing orchestration policy, read
+[references/orchestration.md](references/orchestration.md); for native lifecycle
+recording, read [references/native-execution.md](references/native-execution.md).
 
 ## Steps
 

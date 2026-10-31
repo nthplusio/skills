@@ -1,15 +1,11 @@
 ---
 name: pr-digest
 description: >-
-  Recap every pull request merged to a branch over a period as one HTML
-  artifact — grouped by theme, each tied to its issue-tracker ticket, explained
-  both for the user and for the codebase, and closed with what the period adds
-  up to; optionally covering what is still open and in review. Load this only
-  when the user explicitly asks for such a recap — "what shipped this week",
-  "digest the PRs merged this sprint", "release notes for last month", "what
-  landed on staging since the cut", "catch me up on recent development". Do not
-  load it to explain one pull request, to write a commit message, or to review
-  anything still open; answer those directly instead.
+  Builds a themed HTML recap of PRs merged to a branch over a period, optionally
+  including ready-for-review PRs, or an open-PR inventory including drafts
+  with no time window. Use only for explicit requests for what shipped this
+  week, a merged-PR digest, or what's open or in the backlog. Not for one-PR
+  explanations or reviews, commit messages, or review-queue assessments or mutations.
 disable-model-invocation: true
 ---
 

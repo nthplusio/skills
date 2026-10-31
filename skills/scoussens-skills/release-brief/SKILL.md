@@ -1,6 +1,11 @@
 ---
 name: release-brief
-description: Turn a window of shipped work into a brief for a non-technical stakeholder — verified against what actually reached production, grouped by consequence, referenced back to issue-tracker IDs and pull request numbers, and delivered as a themed Artifact page or Markdown. Load this only when the user explicitly asks for such a brief — "write a release brief", "board update", "brief the client on this sprint", "stakeholder summary of what we shipped". Do not load it to answer what changed recently, to generate a changelog or technical release notes, to summarise a single pull request, or to write a commit message; answer those directly instead.
+description: >-
+  Writes non-technical release briefs from verified production evidence,
+  grouped by consequence and linked to tickets and PRs, as HTML or Markdown.
+  Use only for explicit release-brief, board-update, or client/stakeholder
+  shipped-work requests. Not for general recent-change recaps, changelogs,
+  technical release notes, single-PR summaries, or commit messages.
 ---
 
 # Release brief

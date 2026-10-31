@@ -1,13 +1,11 @@
 ---
 name: working-tickets
 description: >-
-  Keeps tickets accurate throughout execution using the repository's own ticket
-  standards, concise comments, status changes, title and body cleanup, and tags.
-  Use whenever the agent is told to work a ticket or issue, is assigned one,
-  resumes one, or creates or picks up one to work on its own. For a parent ticket
-  or epic, plans and works every in-scope child in dependency order with the same
-  hygiene. Applies to hosted and file-based trackers. Not for read-only ticket
-  lookups or drafting tickets that the agent is not taking on.
+  Maintains hosted or file-based tickets under repository policy throughout
+  execution, including comments, status, title, body, and tags. Use when assigned
+  a ticket, resuming one, or creating or picking one up to work on. For a parent
+  or epic, plans and works every in-scope child in dependency order. Not for
+  read-only lookups or drafting tickets the agent is not taking on.
 ---
 
 # Working tickets

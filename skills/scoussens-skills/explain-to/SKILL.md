@@ -1,19 +1,11 @@
 ---
 name: explain-to
 description: >-
-  Fit an explanation of a concept, problem, or change to one named reader —
-  choose the audience, the altitude, an anchor analogy with its twist, the
-  output type, and whether the reader must operate it, reuse known settings
-  and ask only consequential open choices, then hand sentences to speak-clearly and the
-  medium to the harness's page or view skill. Other skills with a reader or
-  output choice call this step instead of asking their own way. Use when
-  asked to explain something to a named audience ("explain this to the PM",
-  "write it up for the data engineers", "make this understandable to a
-  customer"), to teach a concept, to write an overview or walkthrough for
-  someone outside the code, or when the user says the last explanation was too
-  technical or too vague. Do not load it for a one-line factual answer, a
-  commit message, or a change summary for the developer who made it; answer
-  those directly instead.
+  Fits explanations to a named reader and resolves audience/output settings
+  for caller skills, reusing known choices. Use to explain to a PM or customer,
+  teach a concept, write an overview for someone outside the code, or revise
+  an explanation that is too technical or vague. Not for one-line facts,
+  commit messages, or change summaries for the developer who made the change.
 compatibility: Chat needs only instructions and supplied context. HTML delivery needs a verified destination; page skills, helpers, and durable discovery are conditional.
 ---
 

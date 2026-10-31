@@ -1,16 +1,11 @@
 ---
 name: pr-review-round
 description: >-
-  Work a queue of open pull requests end to end — every non-draft PR against a
-  base branch, oldest first, each reviewed at a depth scaled to its risk, every
-  finding verified at the PR's current head rather than relayed. Report readiness;
-  approve, dismiss, or land only within the user's authorized scope. Load this
-  only when the user explicitly asks to work the queue — "review round", "work
-  through the open PRs", "review everything targeting main", "clear the review
-  queue", "triage the PR backlog and merge what's ready". Do not load it to
-  review a single pull request, to recap what merged recently, or to explain a
-  change to someone; answer those directly or reach for a single-PR skill
-  instead.
+  Reviews every non-draft PR against a base branch, oldest first, with
+  risk-scaled depth and findings verified at the current head. Reports readiness;
+  approves, dismisses, or merges only within explicit authority. Use only when
+  asked for a review round, queue triage, or to clear the review queue. Not for
+  a single-PR review, a merged-work recap, or explaining a change.
 disable-model-invocation: true
 ---
 
