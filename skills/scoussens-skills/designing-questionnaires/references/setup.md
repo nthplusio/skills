@@ -21,6 +21,7 @@ the same sheet rather than conducting another interview:
 | Response budget | Quick choices, a short explanation, or evidence-backed answers. Ask for the cheapest response that settles the question. |
 | Delivery | Page audience, preferred reply channel, verified recipient identity, and the user's permission to notify them. |
 | Review policy | Reviewing agent, human fallback, conflict decision maker, and the condition for escalation. |
+| Team channel | Whether to post asks to a team chat channel and watch it for answers. If yes: the tool (Microsoft Teams, Slack or another), the channel, the harness route that reaches it, the owner's approval of each post, and the watch schedule. See [channel posting and monitoring](channel.md). |
 
 Accept corrections in one reply and keep the other recommendations. Incidental
 format choices follow the saved response budget. Return the selected settings,
@@ -48,15 +49,30 @@ Save private delivery choices in `RUN/routing.md`, outside served assets:
   sources and limits; manual/static wake-up is not required.
 - Sent batches: publication revision, recipient, question IDs, transport
   receipt, and outcome. Record uncertain sends for reconciliation.
+
+## Team channel (only if chosen; otherwise "No channel")
+- Tool, channel name, stable channel ID, and link:
+- Route (MCP server, connector, CLI or bot) and its read, reply and post operations:
+- Access evidence: read check and post check, with dates:
+- Voice and approval: per post, or standing approval with scope and source:
+- Watch: schedule, time zone and working hours, wake capability, or on demand only:
+- Cursor: last message read and recorded:
+- Posts: status (sending, posted, uncertain), revision, question IDs,
+  approved text, message ID and link.
+- Unmatched messages: link, author, time, and why no question matched.
 ```
 
 The routing note records this questionnaire's choices, not harness
 capabilities. Secrets remain in the adapter's credential store. Check the
 saved setup on later reviews; ask only about a changed or unresolved choice.
+A saved setup without a channel choice means no channel; settle the channel
+row only when the owner asks for channel posting or watching.
 An older page without setup can continue reviewing existing submissions.
 Derive its setup from available evidence without blocking that review on a
 fresh interview.
 
 **Done when** the saved settings identify the decision, readers, response
-budget, review policy, and authorized delivery scope. Each unknown has a
-visible fallback rather than a guessed person, deadline, or permission.
+budget, review policy, authorized delivery scope, and the team channel choice.
+A chosen channel has passed its read and post checks or is labeled draft only.
+Each unknown has a visible fallback rather than a guessed person, deadline, or
+permission.

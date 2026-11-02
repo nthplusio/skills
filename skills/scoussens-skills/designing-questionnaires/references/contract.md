@@ -146,6 +146,8 @@ history and earlier snapshots keep the previous closure and reasons.
 `kind` (`answer`, `change`, `question`, `agree`, `propose`, `adopt`, `accept`,
 `correct`, `deny`), `message`, and the proposal `context` described below. Names are
 self-entered, not identity claims. Text is displayed as text, not HTML.
+A reviewer recording a team channel reply uses the same route, with the
+message link in `message`; see [channel guidance](channel.md).
 `GET /api/state` returns the current model, feedback, and review mode.
 
 ### Proposed-answer review

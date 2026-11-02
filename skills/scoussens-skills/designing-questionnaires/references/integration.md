@@ -16,9 +16,10 @@ durable harness survey is needed.
 | Persistence | `evidence.retain_before_close`, artifact limits | Disk/database lifetime, service restart behavior, backup/export and retention before closure; distinguish durable file from always-on worker |
 | Browser verification | `sources`, `limitations` | Installed browser or harness tool and supported viewport, DOM and recording operations; name untested browsers |
 | Issue tracker | `repository.ticket_sources`, `ticket_template`, `notes` | Actual configured tool/repository and read permissions; lack of configuration is a result, not a reason to invent tickets |
+| Team chat channel (only if chosen) | `sources`, `limitations`, `monitoring.wake` for scheduled watches | The connected route to the chosen tool (MCP server, connector, CLI or bot) and its read, reply and post operations; an actual read of the chosen channel and a post check, per [channel guidance](channel.md); whether a schedule can wake the reviewer |
 | Category research | `owners`, `helpers`, `sources`, `limitations` | Code/source access, bounded assignments, actual concurrency, continuation and result collection; shared versus isolated checkouts and how local changes reach a researcher |
 
-The current schema has no dedicated browser or database capability key; record
+The current schema has no dedicated browser, database or chat channel capability key; record
 those observations in its existing descriptive fields. Do not fork the schema
 or infer support from a model name. Deployment choices (database path, reviewer
 handle, URL, authorization, secrets) stay in private run configuration, never
@@ -47,6 +48,9 @@ the shared registry.
   loop exists. If neither retains originals and receipts, hold the review loop
   and deliver only a labeled draft. Browser storage is for drafts, not team
   feedback persistence.
+- **Team channel without a verified route:** keep the channel choice and
+  label channel delivery draft only. The owner posts drafts and pastes or
+  links replies for recording. Do not claim the channel is watched.
 
 Never select a tracker write as the wake mechanism merely because a tracker
 tool is available. Tracker edits, infrastructure changes, expanded sharing,
