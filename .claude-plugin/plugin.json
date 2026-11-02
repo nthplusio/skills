@@ -5,11 +5,13 @@
   "license": "MIT",
   "skills": [
     "./skills/scoussens-skills/agent-handoff",
+    "./skills/scoussens-skills/auditing-business-rules",
     "./skills/scoussens-skills/business-rules-catalogue",
     "./skills/scoussens-skills/dashboard",
     "./skills/scoussens-skills/designing-questionnaires",
     "./skills/scoussens-skills/explain-to",
     "./skills/scoussens-skills/harness-discovery",
+    "./skills/scoussens-skills/maintaining-business-rules",
     "./skills/scoussens-skills/meeting-index",
     "./skills/scoussens-skills/optimize-ci",
     "./skills/scoussens-skills/pr-detail",

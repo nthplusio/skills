@@ -33,6 +33,15 @@ and obtain the second read from another agent invocation or a human checker.
 The extractor cannot certify its own output as independently checked. Hold the
 final build when an independent checker is unavailable.
 
+## When a durable policy registry exists
+
+This catalogue records observed behavior, not approved business intent. If the
+project has `.business-rules/config.json`, or the user asks to connect discovery
+to approved policy, load `maintaining-business-rules` for its shared contract and
+[follow the registry integration](references/registry.md). The catalogue remains
+usable without that skill. Its generated display IDs and browser reviews stay
+snapshot-specific; neither becomes a durable policy ID or approval automatically.
+
 ## The explorer is settled
 
 `assets/app` defines the explorer. Build it as defined unless the user asks for
@@ -199,6 +208,10 @@ inspect an unflagged rule and state why the flagged/filter cases do not apply.
 are inspected and retained at a user-accessible location, and failures or
 unavailable browser checks are named. See the repeatable checks in
 [references/verification.md](references/verification.md).
+
+For an authorized registry integration, reconcile this built snapshot using
+[references/registry.md](references/registry.md) after completing the source reads.
+Keep the source checkout unchanged until all catalogue steps that check it finish.
 
 ## Step 8 — Write the note
 

@@ -36,6 +36,19 @@ static intake do not require it. `explain-to` can use `speak-clearly` and
 destination discovery conditionally; they are not required closure. No sidecar
 pretends to install companion skills automatically.
 
+`auditing-business-rules` requires `maintaining-business-rules`, which owns the
+registry contract and validator. Install both when selecting the audit alone:
+
+```bash
+npx skills add nthplusio/skills --skill auditing-business-rules maintaining-business-rules --agent codex --copy
+```
+
+`business-rules-catalogue` uses maintenance only for optional registry integration.
+Maintenance can capture policy without the catalogue, audit, or questionnaire
+helpers. Both registry skills belong to the coding-agent collection, not
+the conversational exports; executable registry work needs Python 3.9+, Git,
+and a POSIX filesystem.
+
 The five manual-only workflows are `pr-detail`, `pr-digest`, `pr-review-round`,
 `pr-teacher`, and `visualize-spec`. Use explicit host invocation: `$name` in
 Codex or the plugin's namespaced slash command in Claude Code. Their Codex policy
@@ -62,7 +75,7 @@ npm run check:installed
 release). `dist/` is ignored by Git and source discovery. The build replaces only
 a directory marked as its own output. It produces:
 
-- `dist/plugins/nthplusio-coding-agent/`: 18 skills with required companions,
+- `dist/plugins/nthplusio-coding-agent/`: 20 skills with required companions,
   excluding the Amp picker and administrative pstack-sync.
 - `dist/plugins/nthplusio-conversation/`: `speak-clearly`, session-only
   `writing-in-voice`, `explain-to` chat, and conversation-only `agent-handoff`.
@@ -95,7 +108,7 @@ strict chat target to bypass a policy gate.
    `npm run test:distribution`. Archive tests inspect actual ZIP contents,
    resources, licenses, closure, policy and reproducibility. The pinned
    `npm run check:installed` uses `skills@1.7.4` twice in temporary homes/projects,
-   copies all 18 skills into Codex/Claude file locations, compares complete
+   copies all 20 skills into Codex/Claude file locations, compares complete
    contents, and runs installed meeting rollup and handoff checks from a foreign
    working directory with spaces. This does not run either agent.
 2. **Agent behavior:** `npm run eval:agents -- --list` only lists definitions.

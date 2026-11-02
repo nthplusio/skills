@@ -1,0 +1,39 @@
+{
+  "skill_name": "maintaining-business-rules",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In a disposable repository, capture this conversation. The authenticated project owner explicitly designates herself as the orders domain owner and says: Customers cannot cancel shipped orders. We have not decided whether support can override this. An engineer replies: I think any unshipped order can be cancelled. Use synthetic identities and do not publish. Replay the capture once.",
+      "expected_output": "A scoped customer prohibition eligible for exact-meaning approval, an unapproved engineer proposal, and an unresolved support question. Replay changes nothing.",
+      "assertions": [
+        "Records the explicit domain-owner designation and exact source locators.",
+        "Does not infer that all unshipped orders are cancellable.",
+        "Records exception completeness as unknown and preserves support uncertainty.",
+        "Approves only wording established by the designated owner's decision.",
+        "Replays stable source and claim IDs without new revisions."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "A questionnaire export shows an accepted answer attributed to a self-entered name matching the domain owner. The original publication wording and authenticated identity are unavailable. Import the answer as business-rule evidence without changing the questionnaire's accepted state.",
+      "expected_output": "The answer remains accepted in its source workflow but is proposed, not approved, in the registry. Missing authority and exact-publication evidence are explicit.",
+      "assertions": [
+        "Does not interpret a self-entered name as authenticated owner approval.",
+        "Does not reconstruct historical approved wording from the current publication.",
+        "Preserves the original answer, receipt, and access limitations.",
+        "Does not overwrite or reopen the questionnaire answer."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Only maintaining-business-rules is installed; auditing-business-rules, business-rules-catalogue and designing-questionnaires are unavailable. In a disposable repository, capture this authenticated synthetic conversation at fixture:standalone#message-1, 2026-10-31T12:00:00Z: project owner Ava says, I designate myself as orders domain owner. Effective immediately, customers cannot cancel shipped orders. No exceptions were discussed. Record the decision and validate the registry. I am not requesting a semantic audit. Do not publish.",
+      "expected_output": "Capture, exact-meaning approval, structural validation and policy selection complete without optional helpers. Exceptions stay unknown and semantic consistency is reported not assessed.",
+      "assertions": [
+        "Completes registry capture, approval, validation and selection through the real CLI.",
+        "Does not load, install, or require auditing-business-rules or another optional helper to finish maintenance.",
+        "Reports semantic consistency as not assessed rather than proven by structural validation.",
+        "Preserves the owner decision's scope, explicit effectivity and unknown exceptions."
+      ]
+    }
+  ]
+}

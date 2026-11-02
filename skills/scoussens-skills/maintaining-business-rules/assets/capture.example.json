@@ -1,0 +1,31 @@
+{
+  "source": {
+    "schema_version": 1,
+    "id": "conversation-001",
+    "kind": "conversation",
+    "locator": "fixture:conversation-001#message-17",
+    "attribution": "Order operations owner",
+    "excerpt": "Customers can cancel new or packing orders. Customers cannot cancel shipped orders. We have not decided whether support can override this.",
+    "authority_evidence": "Synthetic fixture: the designated owner made this decision directly."
+  },
+  "rule_id": "BR-ORD-0042",
+  "domain": "orders",
+  "claim": {
+    "claim_id": "message-17-customer-cancellation",
+    "source_id": "conversation-001",
+    "action": "enforce",
+    "statement": "Customers may cancel new or packing orders, but cannot cancel shipped orders.",
+    "kind": "authorization",
+    "hierarchy": ["Orders", "Cancellation", "Eligibility"],
+    "scope": "Customer cancellation of an order in new, packing, or shipped status.",
+    "condition": "Evaluate the order status when cancellation is requested.",
+    "outcome": "Allow new and packing; deny shipped.",
+    "exceptions": {"knowledge": "unknown", "items": []},
+    "questions": ["Can support staff override the customer restriction? Outside this rule's customer scope."],
+    "examples": [
+      {"given": "Customer requests cancellation of a packing order.", "expect": "Allow cancellation."},
+      {"given": "Customer requests cancellation of a shipped order.", "expect": "Deny cancellation."}
+    ],
+    "relations": []
+  }
+}

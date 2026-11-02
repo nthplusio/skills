@@ -1,0 +1,4 @@
+interface:
+  display_name: auditing-business-rules
+policy:
+  allow_implicit_invocation: true

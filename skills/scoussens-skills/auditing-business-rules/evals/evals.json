@@ -1,0 +1,29 @@
+{
+  "skill_name": "auditing-business-rules",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review a synthetic PR that changes customer cancellation from allowing new and packing orders to allowing only new orders. Its registry revision proposes the same cutoff but has no owner approval. Use the maintaining-business-rules fixture as a starting point. Inspect and execute the affected behavior without publishing or fixing the application.",
+      "expected_output": "The packing-order counterexample establishes a violation of accepted policy. The proposed amendment does not clear it. Base/base and both head comparisons are explicit.",
+      "assertions": [
+        "Runs new, packing, and shipped cases with expectations derived independently from approved policy.",
+        "Preserves the violation despite the matching proposed policy revision.",
+        "Pins code and registry revisions and supplies actual command output.",
+        "Does not claim production conformance or a passing semantic CI gate.",
+        "Does not alter policy or code to erase the finding."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Audit two proposed rules: retail refunds must be requested within 30 days of purchase; wholesale refunds must be requested within 60 days of delivery. A reviewer calls their different limits a contradiction. The meaning of delivery time is unresolved. Give a consistency assessment without a registry, Python runtime or code snapshots.",
+      "expected_output": "Different customer scopes are not automatically contradictory. Delivery-time ambiguity is a missing decision, and no solver or code conformance claim is made.",
+      "assertions": [
+        "Checks whether conditions overlap before claiming a conflict.",
+        "Preserves the unresolved time semantics instead of inventing them.",
+        "Distinguishes proposals from approved rules.",
+        "Does not manufacture commit IDs or present schema validity as semantic proof.",
+        "Completes the semantic assessment without requiring, creating, or validating a registry or installing Python."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: maintaining-business-rules
+policy:
+  allow_implicit_invocation: true
