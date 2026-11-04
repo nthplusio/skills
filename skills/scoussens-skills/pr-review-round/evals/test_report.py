@@ -153,6 +153,38 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in row["reviews"]], [11])
         self.assertEqual([e["id"] for e in row["history"]["events"] if e["returned"]], ["review-10", "review-11"])
 
+    def test_prs_merging_between_queue_reads_appear_once_with_the_later_snapshot(self):
+        raw, record = fixture()
+        opened = {**raw["pr"], "id": "PR_482", "isDraft": False, "reviewDecision": "APPROVED",
+                  "state": "OPEN", "mergeStateStatus": "CLEAN", "mergedAt": None}
+        still_open = {**opened, "number": 483, "id": "PR_483", "createdAt": "2026-11-01T14:00:00Z"}
+        also_merging = {**opened, "number": 484, "id": "PR_484", "createdAt": "2026-11-02T14:00:00Z"}
+        draft = {**opened, "number": 485, "id": "PR_485", "isDraft": True}
+        merged = {**opened, "state": "MERGED", "mergedAt": "2026-11-03T16:00:00Z", "headRefOid": "e" * 40}
+        also_merged = {**also_merging, "state": "MERGED", "mergedAt": "2026-11-03T16:00:01Z"}
+        merged_before = {**merged, "number": 481, "id": "PR_481", "createdAt": "2026-10-01T14:00:00Z"}
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.object(sys, "argv", ["round_report.py", "main", "--since", "2026-11-03T00:00:00Z", "--me", "Alex"]), \
+                patch.object(round_report, "repo_slug", return_value=record["repository"]), \
+                patch.object(round_report, "gh", side_effect=[
+                    [also_merging, still_open, opened, draft], [also_merged, merged, merged_before]]), \
+                patch.object(round_report, "history_evidence", side_effect=lambda slug, pr: {**raw, "pr": pr}), \
+                patch.object(round_report, "queue_state", return_value="queued"), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            round_report.main()
+        rows = json.loads(output.getvalue())
+        self.assertEqual([r["number"] for r in rows], [481, 482, 483, 484])
+        by_number = {r["number"]: r for r in rows}
+        for number, snapshot in ((482, merged), (484, also_merged)):
+            with self.subTest(number=number):
+                row = by_number[number]
+                self.assertEqual((row["state"], row["verdict"], row["queue_state"]),
+                                 ("MERGED", "MERGED", "not_queued"))
+                self.assertEqual(row["head"], snapshot["headRefOid"])
+                self.assertEqual(row["merged_at"], snapshot["mergedAt"])
+        self.assertEqual(by_number[483]["verdict"], "APPROVED_QUEUED")
+        self.assertIn("4 PR(s) in this round (APPROVED_QUEUED=1 MERGED=3)", errors.getvalue())
+
     def test_queue_read_failure_never_looks_like_an_empty_complete_round(self):
         with patch.object(sys, "argv", ["round_report.py", "main", "--since", "2026-11-03T00:00:00Z", "--me", "Alex"]), \
                 patch.object(round_report, "repo_slug", return_value="sample/product"), \

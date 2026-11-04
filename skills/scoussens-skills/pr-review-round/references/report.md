@@ -1,9 +1,12 @@
 # Reporting the round
 
-Two deliverables. The terminal summary is what gets read now; the artifact is
-what gets shared. Build both from `round_report.py`'s JSON, not from memory —
-by report time the merged PRs have left `queue.py`'s list and the bodies you
-posted are hundreds of lines back.
+Produce exactly one report artifact: the HTML page, delivered at the authorized
+destination. Refresh that same page when reconciling the round; do not create a
+parallel document or second report artifact. Accompany it with a brief chat or
+terminal summary that links to the page. Retained JSON is supporting evidence,
+not another report. Build the page and summary from `round_report.py`'s JSON,
+not from memory — by report time the merged PRs have left `queue.py`'s list and
+the bodies you posted are hundreds of lines back.
 
 For assessment-only rounds, add the locally verified verdicts as **proposed,
 not posted**, with their head SHA and assessment time. Keep those separate from

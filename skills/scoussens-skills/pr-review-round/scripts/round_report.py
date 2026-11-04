@@ -166,9 +166,10 @@ def main():
     if mergedq is None or len(mergedq) >= 100:
         sys.exit("merged queue unavailable or at collection limit; coverage unknown")
 
-    prs = [p for p in openq if not p["isDraft"]]
-    prs += mergedq
-    prs.sort(key=lambda p: p["createdAt"])
+    # A PR can merge between these reads. Keep the later confirmed snapshot.
+    by_number = {p["number"]: p for p in openq if not p["isDraft"]}
+    by_number.update((p["number"], p) for p in mergedq)
+    prs = sorted(by_number.values(), key=lambda p: p["createdAt"])
 
     out = []
     for p in prs:

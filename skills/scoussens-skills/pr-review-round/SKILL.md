@@ -240,7 +240,8 @@ work; a round that ignores them is not finished. In one round this surfaced a PR
 that had left draft an hour earlier carrying the batch's most consequential
 finding.
 
-**Then `round_report.py <base>`** and build both deliverables from its output,
+**Then `round_report.py <base>`** and build the single HTML report and chat
+summary from its output,
 never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
 PRs that merged during the round and have already left `queue.py`'s list.
