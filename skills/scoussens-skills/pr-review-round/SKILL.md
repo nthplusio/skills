@@ -11,6 +11,10 @@ disable-model-invocation: true
 
 # PR review round
 
+Read [references/pr-family.md](references/pr-family.md) before collecting evidence.
+This skill coordinates the queue. Compose single-change review checks where
+available, reuse matching evidence, and keep scoring and teaching in their owners.
+
 Assess every PR in a review queue. When authorized, land what is ready without
 merging anything on the strength of a claim nobody checked.
 
@@ -94,6 +98,7 @@ python3 $S/land.py --enqueue <n>:<reviewed-full-sha> # authorized merges only
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
 python3 $S/round_report.py <base>   # report data: urls, review timestamps, bodies
+python3 $S/render_round.py <round.json> --base <base> --timezone <IANA-zone> # offline HTML
 python3 $S/md_to_html.py            # render a review body's markdown (import: `render`)
 ```
 
@@ -240,9 +245,24 @@ never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
 PRs that merged during the round and have already left `queue.py`'s list.
 
+The same pass collects lifetime history from all reviewers through the bundled
+collector's `--history` profile. It skips source files and per-commit CI. The
+round boundary filters round outcomes, not earlier handoffs. Enrich linked
+ticket transitions using the shared contract and pass `--tickets tickets.json`.
+If history is unavailable, retain the PR events and display the gap.
+
 In assessment-only mode, combine that observed forge state with your local
 verdicts. Label them **proposed, not posted**, with the reviewed head and local
 assessment time; do not invent a submitted review timestamp.
+
+Run `render_round.py` with saved evidence and optional `--assessments` as
+[`references/report.md`](references/report.md) specifies. Use its template rather
+than rebuilding the report layout. Each row shows the compact handoff trail and
+expands into original objections, inline findings, and review-round detail.
+Write the summary and next action for product owners using the family language
+guidance. Keep the summary, status, next person/action, and trail visible. Put
+review timestamps, code versions, technical risk, and original evidence in Details.
+A historical return does not establish a current blocker or developer quality score.
 
 Terminal summary and HTML artifact spec — including the per-PR link, timestamp,
 expandable review body and optional teach-me prompt:

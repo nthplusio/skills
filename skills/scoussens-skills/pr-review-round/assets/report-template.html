@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR review round · $base</title>
+<style>
+:root { color-scheme: light dark; --bg: light-dark(oklch(99% 0 none), oklch(17% 0 none)); --text: light-dark(oklch(24% 0 none), oklch(92% 0 none)); --muted: light-dark(oklch(46% 0 none), oklch(73% 0 none)); --border: light-dark(oklch(86% 0 none), oklch(36% 0 none)); --warning: light-dark(oklch(48% .11 65), oklch(79% .12 75)); --link: light-dark(oklch(47% .14 250), oklch(79% .11 250)); }
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--text); background: var(--bg); font: 14px/1.5 system-ui, sans-serif; }
+main { max-inline-size: 1280px; margin-inline: auto; padding: clamp(16px, 2vi, 28px); }
+h1 { font-size: 22px; font-weight: 500; margin-block: 0 8px; }
+h2, h3 { font-size: 15px; font-weight: 500; margin-block: 12px 8px; }
+p { margin-block: 4px 8px; }
+a { color: var(--link); overflow-wrap: anywhere; }
+.muted { color: var(--muted); font-size: 12px; }
+.pr-row { border-block-start: 1px solid var(--border); padding-block: 10px; }
+.row-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; justify-content: space-between; }
+.row-heading h2 { flex: 1 1 300px; margin-block: 0; }
+.verdict { border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: 12px; }
+.current-action { margin-block: 3px; font-size: 13px; }
+.current-action strong { font-weight: 500; margin-inline-end: 6px; }
+.proposal { margin-block: 12px; }
+summary { cursor: pointer; min-block-size: 32px; padding-block: 4px; }
+summary:active, a:active { opacity: .7; }
+:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
+code { font-family: ui-monospace, monospace; font-size: 12px; overflow-wrap: anywhere; }
+@media (hover: hover) and (pointer: fine) { summary:hover { text-decoration: underline; } }
+$history_css
+</style>
+</head>
+<body><main>
+<header><h1>Changes under review · $base</h1><p>$count changes · $merged merged</p>
+<p class="muted">Read the summary and next action, then open Details for the reasons. ↩ marks a review that asked the developer for changes, not an unresolved problem.</p>
+<details class="report-notes"><summary>About this report · collected $collected</summary>
+<p>Times use $timezone. Recommendations in this report are not reviews posted to GitHub.</p>$synthesis</details></header>
+$rows
+<footer class="muted">Before merging, a maintainer must check the code version, required tests, and permission to merge. An earlier approval does not replace those checks.</footer>
+</main></body></html>

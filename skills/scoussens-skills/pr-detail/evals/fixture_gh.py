@@ -20,7 +20,11 @@ if args == ["auth", "status"]:
 if args[:2] == ["pr", "view"]:
     assert flag("--repo") == fixture["repo"]
     assert args[2] == str(fixture["pr"]["number"])
+    if fixture.get("forbid_full"):
+        assert not {"files", "commits", "statusCheckRollup"}.intersection(flag("--json").split(","))
     key, pages = "pr", [fixture["pr"]]
+    if flag("--json") == "headRefOid,baseRefOid" and fixture.get("final_head"):
+        pages = [{**fixture["pr"], "headRefOid": fixture["final_head"]}]
 elif args[:2] == ["api", "graphql"]:
     query = next(arg[6:] for arg in args if arg.startswith("query="))
     if "node(id:" in query:
@@ -40,6 +44,8 @@ elif args[:1] == ["api"]:
     endpoint = args[1][len(prefix):].split("?")[0]
     if endpoint.endswith("/reviews"):
         key = "reviews"
+    elif endpoint.endswith("/comments"):
+        key = "comments"
     elif endpoint.endswith("/timeline"):
         key = "timeline"
     elif endpoint.endswith("/check-runs"):
@@ -51,6 +57,8 @@ else:
     raise AssertionError(f"unsupported or mutating command: {args}")
 
 time.sleep(0.01)
+if fixture.get("forbid_full"):
+    assert key != "counts" and not key.startswith("check-runs:")
 if key in fixture.get("fail", []):
     print(json.dumps(pages[0]))
     print(f"fixture fetch failure: {key}", file=sys.stderr)

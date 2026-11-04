@@ -14,7 +14,8 @@ SKILL = Path(__file__).resolve().parents[1]
 
 def fixture(number=17):
     def review(login, kind, state):
-        return {"user": {"login": login, "type": kind}, "state": state,
+        return {"id": len(login), "commit_id": "a" * 40,
+                "user": {"login": login, "type": kind}, "state": state,
                 "body": "Do not merge" if state == "COMMENTED" else "",
                 "submitted_at": "2026-10-03T02:00:00Z", "html_url": f"https://example.test/{login}"}
 
@@ -39,6 +40,8 @@ def fixture(number=17):
     return {
         "repo": "target/product",
         "pr": {"number": number, "title": f"PR {number}", "author": {"login": "author"},
+               "url": f"https://example.test/pr/{number}",
+               "headRefOid": "a" * 40, "baseRefOid": "b" * 40,
                "createdAt": "2026-10-01T00:00:00Z", "mergedAt": "2026-10-05T00:00:00Z",
                "additions": 200, "reviews": [], "comments": [], "files": [], "commits": commits},
         "reviews": [[review("custom-reviewer[bot]", "Bot", "DISMISSED"),
@@ -52,6 +55,8 @@ def fixture(number=17):
                                for nodes, more in [(comments, True), (tail, False)]],
         "timeline": [[{"event": "ready_for_review", "created_at": "2026-10-02T00:00:00Z"},
                       {"event": "review_dismissed"}], [{"event": "head_ref_force_pushed"}]],
+        "comments": [[{"id": 19, "user": {"login": "author", "type": "User"},
+                       "created_at": "2026-10-03T03:00:00Z", "body": "Response", "html_url": "https://example.test/comment/19"}]],
         "counts": [{"data": {"repository": {"pullRequest": {
             "comments": {"totalCount": 0}, "commits": {"totalCount": 3}, "files": {"totalCount": 0}}}}}],
         "check-runs:own": [{"check_runs": [{"name": "lint", "conclusion": "success"},
@@ -89,9 +94,9 @@ class CollectionTests(unittest.TestCase):
         return {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}",
                 "FORGE_FIXTURE": str(path), "TMPDIR": str(self.scratch), "SKILL_DIR": str(self.installed)}
 
-    def gather(self, data):
+    def gather(self, data, *flags):
         result = subprocess.run(["bash", str(self.installed / "scripts/gather_pr.sh"),
-                                 data["repo"], str(data["pr"]["number"])],
+                                 data["repo"], str(data["pr"]["number"]), *flags],
                                 cwd=self.installed, env=self.environment(data), capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
@@ -108,6 +113,9 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(len(data["threads"][0]["comments"]["nodes"]), 102)
         self.assertEqual(len(data["timeline"]), 3)
         self.assertEqual(len(data["checkRuns"][0]["runs"]), 3)
+        self.assertEqual(data["pr"]["reviews"][0]["commitOid"], "a" * 40)
+        self.assertEqual(data["pr"]["comments"][0]["id"], 19)
+        self.assertEqual(data["schemaVersion"], 1)
         metrics = self.metrics(data)
         self.assertTrue(metrics["evidence"]["complete"])
         self.assertEqual(metrics["review"]["botRounds"], 1)
@@ -145,6 +153,24 @@ class CollectionTests(unittest.TestCase):
             "commits", "files", "check-runs:commits-after-40"})
         self.assertEqual(metrics["ci"]["commitsChecked"], 40)
         self.assertFalse(metrics["evidence"]["complete"])
+
+    def test_history_profile_preserves_evidence_without_ci_or_source_collection(self):
+        data = fixture()
+        data["forbid_full"] = True
+        gathered = self.gather(data, "--history")
+        self.assertEqual(gathered["profile"], "history")
+        self.assertEqual(gathered["checkRuns"], [])
+        self.assertEqual(gathered["failedFetches"], [])
+        self.assertEqual(gathered["omittedSources"], ["files", "commits", "check-runs"])
+        self.assertEqual(len(gathered["pr"]["reviews"]), 3)
+        self.assertEqual(len(gathered["threads"][0]["comments"]["nodes"]), 102)
+
+    def test_head_movement_during_collection_is_disclosed(self):
+        data = fixture()
+        data["final_head"] = "c" * 40
+        gathered = self.gather(data, "--history")
+        self.assertEqual(gathered["pr"]["headRefOid"], "a" * 40)
+        self.assertIn("snapshot-consistency", gathered["failedFetches"])
 
     def test_concurrent_assessments_do_not_share_scratch_or_evidence(self):
         recipe = (self.installed / "SKILL.md").read_text().split("```bash\n", 1)[1].split("\n```", 1)[0]

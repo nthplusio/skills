@@ -11,6 +11,11 @@ disable-model-invocation: true
 
 # PR teacher
 
+Read [references/pr-family.md](references/pr-family.md) before gathering evidence.
+Reuse a caller's matching PR identity, ticket context, reviewed head, and original
+findings. Fetch missing evidence and verify the pinned source comparison below.
+Keep readiness decisions and developer evaluation in their owning skills.
+
 Produce one self-contained HTML artifact that teaches a single pull request
 well enough that the reader can afterwards answer detailed questions about it
 under pressure — in a review, in an interview, or when the thing breaks at
@@ -50,6 +55,10 @@ gh pr view <N> --repo <owner/repo> --json reviews,comments
 ```
 
 Record the full head and base OIDs, repository, PR number and retrieval time.
+When a round supplies saved history, use its original reviews and inline findings
+instead of repeating the review fetch. Historical objections are not evidence
+that the present code is still broken. Inspect the pinned code before teaching
+their mechanism or outcome.
 Follow [references/source-snapshot.md](references/source-snapshot.md) to resolve
 the comparison base, enumerate changed files and read source at those revisions.
 If the required objects cannot be obtained, report the missing evidence and hold

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Gather every evidence source /pr-detail needs for one PR, as a single JSON blob.
+# Canonical collector for pr-detail and pr-review-round. Copies are checked by evals.
 #
-# Usage: gather_pr.sh <owner/repo> <pr-number>
+# Usage: gather_pr.sh <owner/repo> <pr-number> [--history]
 #
 # Why one script instead of five ad-hoc `gh` calls per run: the five sources
 # below each have a quirk that is easy to get wrong, and getting one wrong
@@ -9,10 +9,8 @@
 #
 #   .reviews      MUST include DISMISSED entries. Some AI reviewers dismiss
 #                 their own prior review every time new commits land,
-#                 so the dismissed rows ARE the record of how many review
-#                 rounds a PR took. (pr-digest deliberately filters these out
-#                 because it reports CURRENT status; a retrospective needs the
-#                 opposite.) Verified on one PR: 5 dismissals = 5 rounds.
+#                 so preserve them and their dismissal metadata. Dismissal alone
+#                 proves neither a return to the developer nor a fix.
 #
 #   .threads      Only GraphQL exposes isResolved / isOutdated. Thread
 #                 resolution is how you tell "reviewer raised it and it was
@@ -46,6 +44,14 @@ REPO="${1:?usage: gather_pr.sh <owner/repo> <pr-number>}"
 NUM="${2:?usage: gather_pr.sh <owner/repo> <pr-number>}"
 OWNER="${REPO%%/*}"
 NAME="${REPO##*/}"
+PROFILE="full"
+if [[ "${3:-}" == "--history" ]]; then
+  PROFILE="history"
+elif [[ $# -ne 2 ]]; then
+  echo 'usage: gather_pr.sh <owner/repo> <pr-number> [--history]' >&2
+  exit 2
+fi
+COLLECTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 if ! gh auth status >/dev/null 2>&1; then
   echo "gh is not authenticated. Run 'gh auth login' and retry." >&2
@@ -54,10 +60,11 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-gh pr view "$NUM" --repo "$REPO" --json \
-  number,title,body,author,state,isDraft,createdAt,mergedAt,closedAt,updatedAt,\
-additions,deletions,changedFiles,files,headRefName,baseRefName,labels,\
-reviews,comments,commits,statusCheckRollup,mergedBy,reviewDecision > "$TMP/pr.json"
+FIELDS='number,url,title,body,author,state,isDraft,createdAt,mergedAt,closedAt,updatedAt,additions,deletions,changedFiles,headRefName,baseRefName,headRefOid,baseRefOid,labels,mergedBy,reviewDecision'
+if [[ "$PROFILE" == "full" ]]; then
+  FIELDS+=',files,commits,statusCheckRollup'
+fi
+gh pr view "$NUM" --repo "$REPO" --json "$FIELDS" > "$TMP/pr.json"
 
 # An empty result from a FAILED fetch and an empty result from a PR with
 # nothing to report are the same JSON. This artifact publishes a judgement
@@ -79,8 +86,14 @@ gh api "repos/$REPO/pulls/$NUM/reviews?per_page=100" --paginate --slurp \
 jq '[.[][]] | map({key: .user.login, value: .user.type}) | from_entries' \
   "$TMP/reviews-pages.json" > "$TMP/accounts.json"
 jq --slurpfile pages "$TMP/reviews-pages.json" \
-  '.reviews = [$pages[0][][] | {author: {login: (.user.login | rtrimstr("[bot]"))}, state, body,
-    submittedAt: .submitted_at, url: .html_url}]' "$TMP/pr.json" > "$TMP/pr-next.json"
+  '.reviews = [$pages[0][][] | {id, author: {login: .user.login, type: .user.type}, state, body,
+    commitOid: .commit_id, submittedAt: .submitted_at, url: .html_url}]' "$TMP/pr.json" > "$TMP/pr-next.json"
+mv "$TMP/pr-next.json" "$TMP/pr.json"
+gh api "repos/$REPO/issues/$NUM/comments?per_page=100" --paginate --slurp \
+  > "$TMP/issue-comment-pages.json" || fetch_failed comments "$TMP/issue-comment-pages.json"
+jq --slurpfile pages "$TMP/issue-comment-pages.json" \
+  '.comments = [$pages[0][][] | {id, author: {login: .user.login, type: .user.type},
+    body, createdAt: .created_at, url: .html_url}]' "$TMP/pr.json" > "$TMP/pr-next.json"
 mv "$TMP/pr-next.json" "$TMP/pr.json"
 
 gh api graphql -f query='
@@ -92,7 +105,7 @@ query($o:String!,$r:String!,$n:Int!,$endCursor:String){
         id isResolved isOutdated isCollapsed
         comments(first:100){
           totalCount
-          nodes{ author{login} createdAt path line body url }
+          nodes{ id author{login} createdAt path line body url pullRequestReview{databaseId} }
         }
       }
     }
@@ -111,7 +124,7 @@ query($id:ID!,$endCursor:String){
   node(id:$id){ ... on PullRequestReviewThread {
     comments(first:100,after:$endCursor){
       pageInfo{hasNextPage endCursor}
-      nodes{ author{login} createdAt path line body url }
+      nodes{ id author{login} createdAt path line body url pullRequestReview{databaseId} }
     }
   }}
 }' -f id="$id" --paginate --slurp > "$TMP/comment-pages.json"; then
@@ -126,13 +139,20 @@ done < "$TMP/thread-ids"
 
 gh api "repos/$REPO/issues/$NUM/timeline?per_page=100" --paginate --slurp \
   > "$TMP/timeline-pages.json" || fetch_failed timeline "$TMP/timeline-pages.json"
-jq '[.[][] | {event, at: (.created_at // .submitted_at // .committed_at // .author.date // .committer.date),
+jq '[.[][] | {id, event, url: .html_url,
+                at: (.created_at // .submitted_at // .committed_at // .author.date // .committer.date),
                 actor: (.actor.login // .user.login // .author.name // null),
+                actorType: (.actor.type // .user.type // null),
+                dismissedReview: .dismissed_review,
+                requestedReviewer: .requested_reviewer.login,
                 state, label: .label.name,
                 sha: (.sha // .commit_id),
                 message: (.message // null),
                 ref: (.source.issue.number // null)}]' "$TMP/timeline-pages.json" > "$TMP/timeline.json"
 
+echo '[]' > "$TMP/truncated.json"
+echo '[]' > "$TMP/checks.json"
+if [[ "$PROFILE" == "full" ]]; then
 # gh pr view may cap its connections. Compare returned rows with forge totals
 # rather than treating a capped collection as a complete personnel record.
 gh api graphql -f query='
@@ -172,6 +192,16 @@ while IFS= read -r sha; do
   fi
 done < "$TMP/shas"
 jq -s '.' "$TMP/checks.jsonl" > "$TMP/checks.json"
+fi
+
+gh pr view "$NUM" --repo "$REPO" --json headRefOid,baseRefOid > "$TMP/final-head.json" \
+  || fetch_failed snapshot "$TMP/final-head.json"
+if ! jq -e --slurpfile final "$TMP/final-head.json" \
+  '.headRefOid != null and .baseRefOid != null and
+   .headRefOid == $final[0].headRefOid and .baseRefOid == $final[0].baseRefOid' \
+  "$TMP/pr.json" >/dev/null; then
+  FAILED_FETCHES="$FAILED_FETCHES snapshot-consistency"
+fi
 
 jq -n \
   --slurpfile pr       "$TMP/pr.json" \
@@ -180,8 +210,11 @@ jq -n \
   --slurpfile checks   "$TMP/checks.json" \
   --slurpfile accounts "$TMP/accounts.json" \
   --slurpfile truncated "$TMP/truncated.json" \
+  --arg repo "$REPO" --arg collected "$COLLECTED_AT" --arg profile "$PROFILE" \
   --arg failed "$FAILED_FETCHES" \
-  '{pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0],
+  '{schemaVersion: 1, repository: $repo, collectedAt: $collected, profile: $profile,
+    omittedSources: (if $profile == "history" then ["files", "commits", "check-runs"] else [] end),
+    pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0],
     accountTypes: $accounts[0],
     truncatedSources: $truncated[0],
     failedFetches: ($failed | split(" ") | map(select(length > 0)))}'

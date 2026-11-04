@@ -38,11 +38,26 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from merge_queue import queue_state
+from pr_history import normalize
 
 LIST_FIELDS = ("id,headRefOid,number,title,url,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,state,mergedAt")
+
+
+def history_evidence(slug, pr):
+    result = subprocess.run(["bash", str(Path(__file__).with_name("gather_pr.sh")),
+                             slug, str(pr["number"]), "--history"], capture_output=True, text=True)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    if result.returncode:
+        return {"repository": slug, "pr": pr, "failedFetches": ["history-collection"]}
+    evidence = json.loads(result.stdout)
+    if evidence["pr"].get("headRefOid") != pr.get("headRefOid"):
+        evidence["failedFetches"].append("queue-head-changed")
+    return evidence
 
 
 def gh(args, tries=3):
@@ -99,11 +114,14 @@ def main():
     base = argv[0]
     since = None
     who = None
+    tickets_path = None
     for i, a in enumerate(argv):
         if a == "--since" and i + 1 < len(argv):
             since = argv[i + 1]
         if a == "--me" and i + 1 < len(argv):
             who = argv[i + 1]
+        if a == "--tickets" and i + 1 < len(argv):
+            tickets_path = Path(argv[i + 1])
     if since is None:
         prev = None
         try:
@@ -125,9 +143,14 @@ def main():
     slug = repo_slug()
     if not slug:
         sys.exit("could not resolve repo (gh failed) -- check auth and network")
+    tickets = json.loads(tickets_path.read_text()) if tickets_path else {"repository": slug, "prs": {}}
+    if tickets["repository"] != slug:
+        sys.exit("tracker evidence belongs to a different repository")
 
     openq = gh(["gh", "pr", "list", "--base", base, "--state", "open",
-                "--limit", "200", "--json", LIST_FIELDS]) or []
+                "--limit", "200", "--json", LIST_FIELDS])
+    if openq is None or len(openq) >= 200:
+        sys.exit("open queue unavailable or at collection limit; coverage unknown")
     # Merged PRs have already dropped out of the open list by report time. They
     # are the rows a report most wants and most often loses.
     #
@@ -139,7 +162,9 @@ def main():
     # missing. Let the server filter on merge date instead.
     mergedq = gh(["gh", "pr", "list", "--base", base, "--state", "merged",
                   "--limit", "100", "--search", f"merged:>={since}",
-                  "--json", LIST_FIELDS]) or []
+                  "--json", LIST_FIELDS])
+    if mergedq is None or len(mergedq) >= 100:
+        sys.exit("merged queue unavailable or at collection limit; coverage unknown")
 
     prs = [p for p in openq if not p["isDraft"]]
     prs += mergedq
@@ -150,21 +175,21 @@ def main():
         n = p["number"]
         p["queue_state"] = (queue_state(p.get("id"), p.get("headRefOid"))
                             if p.get("state") == "OPEN" else "not_queued")
-        # Review bodies carry the reasoning; the inline comments carry the
-        # specifics. Both belong in an expandable section, so fetch both.
-        reviews = gh(["gh", "api", f"repos/{slug}/pulls/{n}/reviews",
-                      "--paginate"]) or []
-        issue_comments = gh(["gh", "api", f"repos/{slug}/issues/{n}/comments",
-                             "--paginate"]) or []
+        evidence = history_evidence(slug, p)
+        if str(n) in tickets["prs"]:
+            evidence["ticketEvidence"] = tickets["prs"][str(n)]
+        reviews = evidence["pr"].get("reviews", [])
+        issue_comments = evidence["pr"].get("comments", [])
 
         mine = [r for r in reviews
-                if r.get("user", {}).get("login") == who
-                and (r.get("submitted_at") or "") >= since
+                if (r.get("author") or {}).get("login") == who
+                and (r.get("submittedAt") or "") >= since
                 and r.get("state") != "PENDING"]
         # Latest first: the report wants this round's verdict, not the history.
-        mine.sort(key=lambda r: r.get("submitted_at") or "", reverse=True)
+        mine.sort(key=lambda r: r.get("submittedAt") or "", reverse=True)
 
         rec = {
+            "repository": slug,
             "number": n,
             "url": p["url"],
             "title": p["title"],
@@ -183,27 +208,28 @@ def main():
             # The per-PR review timestamp the report asks for. None means you
             # left a comment but no formal review -- say so rather than
             # implying a review happened.
-            "reviewed_at": mine[0]["submitted_at"] if mine else None,
+            "reviewed_at": mine[0]["submittedAt"] if mine else None,
+            "history": normalize(evidence),
             "reviews": [
                 {
                     "id": r["id"],
                     "state": r["state"],
-                    "commit_id": r.get("commit_id"),
-                    "submitted_at": r["submitted_at"],
-                    "url": r.get("html_url"),
+                    "commit_id": r.get("commitOid"),
+                    "submitted_at": r["submittedAt"],
+                    "url": r.get("url"),
                     "body": r.get("body") or "",
                 }
                 for r in mine
             ],
             "comments": [
                 {
-                    "created_at": c["created_at"],
-                    "url": c.get("html_url"),
+                    "created_at": c["createdAt"],
+                    "url": c.get("url"),
                     "body": c.get("body") or "",
                 }
                 for c in issue_comments
-                if c.get("user", {}).get("login") == who
-                and (c.get("created_at") or "") >= since
+                if (c.get("author") or {}).get("login") == who
+                and (c.get("createdAt") or "") >= since
             ],
         }
         out.append(rec)
@@ -230,7 +256,7 @@ def main():
         fresh = [n for n in unreviewed if n not in seen]
         prior = [n for n in unreviewed if n in seen]
         if fresh:
-            print(f"NO REVIEW FROM {who} IN ANY ROUND: "
+            print(f"NO POSTED REVIEW OR COMMENT FROM {who} IN THIS ROUND: "
                   + ", ".join(f"#{n}" for n in fresh)
                   + "\n  -> reconcile before reporting; a dropped PR is worse than an "
                     "unreviewed one, because the summary asserts the round is complete.",

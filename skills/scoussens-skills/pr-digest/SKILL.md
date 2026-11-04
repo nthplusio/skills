@@ -11,6 +11,10 @@ disable-model-invocation: true
 
 # PR digest
 
+Read [references/pr-family.md](references/pr-family.md) before gathering evidence.
+Reuse matching ticket and review records from a caller. Keep light passes light.
+Hand readiness, execution evaluation, and code teaching to their owning skills.
+
 Produce a single HTML artifact that teaches a reader what actually shipped
 to a branch over some window of time — not a raw PR list, but grouped by
 theme, with each item explained for two different audiences (what changes
@@ -225,26 +229,9 @@ actually explains it:
   branch, dates and diffstat in bulk, and that is everything a one-line
   entry needs. One `gh pr view` per PR across dozens of PRs buys nothing a
   light pass will print.
-- **Extract the ticket ID(s) from the title and `headRefName`
-  first, case-insensitively** (`[A-Za-z]{2,10}-[0-9]{1,6}`, normalized to
-  uppercase — e.g. `ABC-123`, `WEB-42`, `OPS-7`; keep the
-  prefix open, trackers often use several team prefixes). Case-
-  insensitivity matters: branch names are often lowercase
-  (`jdoe/abc-123-fix-...`), so a pattern that only matches
-  uppercase silently misses every ticket that only shows up in the branch
-  name and not the title. Title/branch matches are reliable signals of
-  *this PR's own* ticket — treat a match found only in the PR body as a
-  cross-reference to some other, related PR/ticket, not necessarily this
-  one's (bodies routinely say things like "builds on ABC-124" or "fixes
-  a CI failure from #101").
-- **Don't trust the regex blindly — two known ways it lies:** (1) a PR
-  template's unfilled placeholder (`Fixes ABC-123`) survives verbatim in
-  PRs where nobody replaced it, and will match the pattern as a fake
-  ticket; (2) a loose prefix match also catches incidental code-shaped
-  tokens in prose (`cache-5`, `tier-1`, `actions-3`). The cheap, reliable
-  fix for both: the tracker lookup in the next bullet **is** the real
-  filter — a candidate ID that 404s or errors just isn't a ticket, drop it
-  silently rather than trying to out-guess it with a better regex.
+- Resolve ticket identity using `references/pr-family.md`. Verify title and
+  branch candidates with the tracker. Reuse verified caller context when it
+  matches this PR instead of fetching the same ticket again.
 - **Not every PR has a ticket** — dependency bumps and some infra chores
   won't, and that's fine; it means the PR is routine housekeeping, not
   that something went wrong. Give it a compact one-line entry instead of

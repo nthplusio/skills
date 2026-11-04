@@ -11,6 +11,10 @@ disable-model-invocation: true
 
 # PR detail
 
+Read [references/pr-family.md](references/pr-family.md) before collecting evidence.
+Reuse matching evidence from a digest or review round. Keep readiness decisions
+and code teaching with their owning skills.
+
 Produce one HTML artifact that answers a question a lead actually has about a
 specific pull request: **how did this go, and what does it say about how this
 developer works?**
@@ -74,6 +78,14 @@ bash "$SKILL_DIR/scripts/gather_pr.sh" <owner/repo> <N> > "$RUN_DIR/pr.json" &&
   python3 "$SKILL_DIR/scripts/metrics.py" "$RUN_DIR/pr.json" > "$RUN_DIR/metrics.json"
 ```
 
+Normalize the same evidence with `scripts/pr_history.py` for the timeline.
+Enrich its `ticketEvidence` from the tracker as `references/pr-family.md` specifies.
+Reuse `pr_history.render(history, timezone)` and inline `assets/pr-history.css`
+when building the timeline. Define the CSS tokens `--text`, `--muted`, `--border`,
+`--warning`, and `--link` in the page theme. Keep evaluation scores outside this
+neutral history fragment. Read the saved evidence once rather than collecting
+reviews again for the timeline.
+
 If either command fails, stop rather than assessing an empty or stale file.
 Read `evidence.failedFetches` and `evidence.truncatedSources` in the metrics
 before interpreting any count. If `evidence.complete` is false, counts describe
@@ -94,12 +106,8 @@ Then gather what the scripts deliberately do not:
 
 - `gh pr diff <N> --repo <owner/repo>` — you need the actual change to judge
   scope and testing, not just its size.
-- The linked tracker issue. Extract the ticket ID from the title and
-  `headRefName` case-insensitively (`[A-Za-z]{2,10}-[0-9]{1,6}`, uppercased);
-  branch names are often lowercase, so an uppercase-only pattern misses tickets
-  that appear only in the branch. Look up each surviving ID in the tracker
-  (for Linear, its MCP server's `get_issue` tool; otherwise its equivalent) — a 404 just
-  means the regex matched something that wasn't a ticket, so drop it silently. **The issue's acceptance criteria are the scope
+- The linked tracker issue. Resolve and verify its identity using
+  `references/pr-family.md`. **The issue's acceptance criteria are the scope
   yardstick**: "did this do what was asked, and only what was asked" is not
   answerable from the diff alone.
 - The repo's own standards, so the evaluation grades against the team's rules
@@ -139,15 +147,12 @@ ordering and for the events reviews cannot express (`ready_for_review`,
 What makes a timeline worth reading is not the event list — it is the gaps and
 the loops. Call out, in prose next to the timeline:
 
-- **Where the PR waited, and on whom.** Six days between a review and the next
-  commit is the author sitting on feedback; six days between a push and the
-  next review is the *reviewer* holding the PR. These look identical in an
-  event list and mean opposite things about the developer. Get the direction
-  right — grading an author for latency they didn't control is the single
-  easiest way to make this document unfair.
-- **Rework loops.** Each `review_dismissed` marks "the author pushed after
-  feedback." Two rounds is normal; six suggests either a hard change or
-  feedback that wasn't landing.
+- **Where the PR waited, and on whom.** Attribute intervals only when explicit
+  handoffs establish who held the next action. A push alone is not a request
+  for re-review. State missing handoff evidence instead of assigning blame.
+- **Returns and review attempts.** Use the shared history's explicit returns
+  and review submissions. Dismissal alone is neither rework nor proof of a fix.
+  Keep reviewer submissions separate from developer attempts.
 - **The shape of the ending.** Merged with threads open? Merged by someone
   other than the author? Auto-merge enabled early? Each says something specific
   about how much confidence the change had at the end.
@@ -257,10 +262,10 @@ Layout, top to bottom:
    days open, review rounds, findings). Facts only.
 2. **Summary** — what the PR set out to do and whether it did it, grounded in
    the ticket rather than the diff stat.
-3. **Timeline** — a vertical time-ordered track, each entry with actor and
-   timestamp, visually distinguishing the three actor classes from Step 4.
-   Annotate the gaps and loops (Step 5) inline; an unannotated event list is
-   the version of this section that teaches nothing.
+3. **Timeline** — the shared handoff trail, expandable into timestamped history,
+   original objections, inline findings, and review-attempt detail. Preserve actor
+   classes and evidence gaps. Add the retrospective's supported observations
+   beside the shared fragment rather than reinterpreting its handoff rules.
 4. **Good / bad ledger** — two columns, quoted and attributed. Every finding
    row carries its category tag, its location, and its **fate** as a distinct
    visual state (fixed / rebutted / deferred / open at merge / unknown) — five

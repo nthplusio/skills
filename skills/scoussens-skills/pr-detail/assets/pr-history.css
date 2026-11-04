@@ -1,0 +1,19 @@
+.pr-history { margin-block-start: 3px; font-size: 13px; line-height: 1.5; }
+.handoff-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.handoff-trail { display: flex; flex-wrap: wrap; gap: 2px 6px; padding: 0; margin-block: 0; list-style: none; font-size: 12px; }
+.handoff-trail li:not(:last-child)::after { content: " →"; color: var(--muted); }
+.pr-history .return { color: var(--warning); }
+.history-detail > summary { margin-block-start: 6px; color: var(--link); }
+.history-content { padding-block: 12px; }
+.history-events { padding: 0; list-style: none; }
+.history-event { display: flex; flex-wrap: wrap; gap: 8px 16px; border-block-start: 1px solid var(--border); padding-block: 12px; }
+.history-event > time { flex: 0 1 150px; color: var(--muted); font-size: 12px; }
+.history-event > div { flex: 1 1 260px; min-inline-size: 0; color: var(--text); overflow-wrap: anywhere; }
+.history-event p { margin-block: 0 4px; }
+.finding { margin-block-start: 12px; border-block-start: 1px solid var(--border); padding-block-start: 8px; }
+.evidence-gap { font-size: 12px; }
+.md { overflow-wrap: anywhere; }
+.md pre, .md table { display: block; max-inline-size: 100%; overflow-x: auto; }
+.md pre { padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.md pre code { background: none; border: 0; padding: 0; }
+.md h4, .md h5, .md h6 { font-size: 13px; font-weight: 500; margin-block: 12px 4px; }
