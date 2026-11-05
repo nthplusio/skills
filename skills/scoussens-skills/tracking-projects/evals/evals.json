@@ -1,0 +1,63 @@
+{
+  "skill_name": "tracking-projects",
+  "note": "Prompts for a candidate agent. test_record.py checks the record checker, parser and overview separately; these check how the editor keeps the record and routes questions.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "start-a-record-for-an-orchestrated-project",
+      "prompt": "I'm running this project with three lane threads. Keep a running record of work done and remaining that the lanes can follow, and only you edit it.",
+      "expected_output": "Looks for an existing record first, starts one from the template with every section, asks for the source ladder if it is not known, sets up a mirror the lanes can read when they cannot open the record, runs record.py check, and renders and embeds the overview.",
+      "assertions": [
+        "no_parallel_record: checks for an existing record before creating one",
+        "all_sections: the record has Where things stand, Lanes, How open questions get answered, Needs <Owner>, Decisions already approved, Answered by research, Stopped, Lane work, Done and Last updated",
+        "single_editor: the record states that only the editor edits it and that lanes report by message",
+        "mirror_when_needed: lanes that cannot read the record get the orphan-branch STATUS.md mirror and its read command",
+        "checked: record.py check runs and prints PASS before the reply"
+      ],
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "owner-edited-the-record-meanwhile",
+      "prompt": "Lane 3 just reported ticket 60 delivered at 084daf3 with CI green. Update the record. (The owner ruled on the bars question in the browser ten minutes ago.)",
+      "expected_output": "Re-reads the current revision before editing, keeps the owner's ruling exactly as written, adds a Done row with the checks and CI result linking the commit, updates Lanes and Lane work, sets Last updated, updates the mirror and re-renders the overview.",
+      "assertions": [
+        "reread_first: reads the record's current revision immediately before the edit",
+        "keeps_owner_ruling: the owner's ruling text is unchanged in the new revision",
+        "done_row: the Done row has the date, what landed with its checks and CI result, and the linked commit",
+        "mirror_matches: the STATUS.md mirror gets the same change",
+        "no_force: does not force a write over a newer revision"
+      ],
+      "files": [
+        "skills/scoussens-skills/tracking-projects/assets/example-record.md"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "question-goes-through-research-first",
+      "prompt": "Lane 2 asks whether a returned Airflow record is a new Job or the same one. Get it answered.",
+      "expected_output": "Does not ask the owner straight away. Starts a read-only research thread with the brief and the source ladder; records a settled answer as open to veto, or adds a full decision item under Needs <Owner> with sources, recommendation, why and what it holds up.",
+      "assertions": [
+        "research_before_owner: a research thread or subagent checks the sources before the owner is asked",
+        "ladder_order: the brief lists the sources in the record's order and says read only",
+        "complete_item: an item that reaches the owner has question, context, sources checked with citations, recommendation, why with tradeoff, and holding up",
+        "veto_label: an answer the sources settle is recorded under Answered by research as open to the owner's veto"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "owner-rules",
+      "prompt": "Approved A on the ID question.",
+      "expected_output": "Checks the item off in place with a dated ruling first, keeps the recommendation and why beneath it, adds a Done row for the ruling, tells the affected lane, and updates the mirror and overview.",
+      "assertions": [
+        "in_place: the item stays where it is and is checked off",
+        "dated_ruling: the ruling and its date are recorded on the item",
+        "lane_told: the lane the item was holding up is sent the ruling"
+      ],
+      "files": [
+        "skills/scoussens-skills/tracking-projects/assets/example-record.md"
+      ]
+    }
+  ]
+}
