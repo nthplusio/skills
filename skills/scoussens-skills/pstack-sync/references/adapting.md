@@ -49,7 +49,12 @@ pstack hands work to other skills. `sync.py` sorts each hand-off in a synced fil
 - **Companion.** A hand-off the skills directory will not have becomes a `companion-skills` marker on the file. That covers a Cursor built-in (the `` `create-skill` `` skill, the built-in babysit skill, `` `/add-plugin` ``), a skill from a plugin the file does not name, and a name in `exclude`. The profile's `companion-skills` row maps each companion to the harness's equivalent; a name the row does not mention in backticks is listed in `dependencies.unresolved`. A companion whose slash command another need's markers cover, such as `/loop`, belongs to that need instead. Once a file is adapted, the harness's own skills it names count as companions too; add them to the harness's `accept` regexes once so they stop flagging.
 - **Excluded.** A name in `exclude` that a synced file still hands off to is listed under `dependencies.excluded`, with the files. Rewrite those hand-offs per the profile, or remove the name from `exclude`.
 
-Subagent definitions install as `pstack-agents/<name>.md`, which is not a skill. Every file that names one is flagged under `custom-subagents`, and the profile row says how this harness dispatches it. In a harness without named subagents, that is a generic subagent whose prompt points at the definition file.
+Subagent definitions install as `pstack-agents/<name>.md`. The set's extension
+adds `pstack-agents/SKILL.md` so a skill loader can resolve the bundle's installed
+absolute directory. Individual definitions remain role instructions, not named
+subagent types. Every file that names one is flagged under `custom-subagents`,
+and the profile row says how this harness dispatches it. In a harness without
+named subagents, use a generic subagent whose prompt points at the definition.
 
 When a dependency installs for the first time, each file with a recorded adaptation that hands off to it gets a `dependencies` entry: an adaptation made while the dependency was missing may have cut the hand-off. Restore any hand-off it cut, then record the file.
 

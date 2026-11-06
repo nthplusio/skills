@@ -236,7 +236,7 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual(report["dependencies"]["installed"], {
             "deslop": "cursor-team-kit/skills/deslop", "verify": "cursor-team-kit/skills/verify",
             f"{sync.AGENTS}/helper.md": f"{sync.ROOT_PLUGIN}/agents/helper.md"})
-        self.assertEqual(sorted(p.name for p in (self.skills / sync.AGENTS).iterdir()), ["helper.md"])
+        self.assertEqual(sorted(p.name for p in (self.skills / sync.AGENTS).iterdir()), ["SKILL.md", "helper.md"])
         self.assertEqual(sorted(p.name for p in self.durable().glob("LICENSE-*")),
                          ["LICENSE-cursor-team-kit", f"LICENSE-{sync.ROOT_PLUGIN}"])
         self.assertEqual(list((self.skills / sync.SELF).glob("LICENSE-*")), [])
@@ -251,6 +251,23 @@ class DependencyTests(unittest.TestCase):
         self.assertEqual((second["added"], second["updated"], second["removed"]), ([], [], []))
         self.assertEqual(second["unchanged_count"], len(first["added"]))
         self.assertEqual(second["needs_adaptation"], first["needs_adaptation"])
+
+    def test_role_bundle_stays_loadable_when_a_definition_changes(self):
+        upstream = self.upstream()
+        self.run_sync()
+        bundle = self.skills / sync.AGENTS / "SKILL.md"
+        self.assertTrue(bundle.is_file(), "Amp needs SKILL.md to index the role bundle")
+        original = bundle.read_text()
+        self.assertTrue(original.startswith("---\nname: pstack-agents\n"))
+        self.assertIn("\ndescription: ", original)
+        self.assertEqual(self.run_sync()["updated"], [])
+        source = upstream / sync.ROOT_PLUGIN / "agents/helper.md"
+        source.write_text(source.read_text() + "\nReport the verification result.\n")
+        commit_all(upstream, "update role definition")
+        self.run_sync()
+        self.assertEqual(bundle.read_text(), original)
+        self.assertIn("Report the verification result.",
+                      (self.skills / sync.AGENTS / "helper.md").read_text())
 
     def test_portable_extension_survives_resync_upstream_update_and_record(self):
         config = self.skills / sync.SELF / "sets" / "pstack" / "set.json"
@@ -412,6 +429,7 @@ class DependencyTests(unittest.TestCase):
         (skill / "harness").mkdir(parents=True)
         shutil.copytree(SKILL / "dialects", skill / "dialects")
         shutil.copytree(SKILL / "sets", skill / "sets")
+        shutil.copytree(SKILL / "references", skill / "references")
         shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
         (skill / "sets" / "pstack" / "transform.json").write_text("{}\n")
         second = self.run_sync()
@@ -475,6 +493,7 @@ class DependencyTests(unittest.TestCase):
         (skill / "harness").mkdir(parents=True)
         shutil.copytree(SKILL / "dialects", skill / "dialects")
         shutil.copytree(SKILL / "sets", skill / "sets")
+        shutil.copytree(SKILL / "references", skill / "references")
         shutil.copy(SKILL / "harness" / "TEMPLATE.md", skill / "harness" / "TEMPLATE.md")
         (skill / "sets" / "pstack" / "transform.json").write_text(json.dumps({"test": {"accept": [], "global": [], "files": {}}}))
         report = self.run_sync()
@@ -866,6 +885,7 @@ class PublishTests(unittest.TestCase):
         (me / "harness").mkdir(parents=True)
         (me / "SKILL.md").write_text(skill(sync.SELF, "Sync."))
         shutil.copytree(SKILL / "dialects", me / "dialects")
+        shutil.copytree(SKILL / "references", me / "references")
         (me / "sets" / "pstack").mkdir(parents=True)
         base = json.loads((SKILL / "sets" / "pstack" / "set.json").read_text())
         base.pop("_doc", None)

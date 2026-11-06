@@ -16,6 +16,13 @@
       "files": {
         "references/nthplusio-workflow.md": "references/orchestration.md"
       }
+    },
+    {
+      "skill": "pstack-agents",
+      "entrypoints": [],
+      "files": {
+        "SKILL.md": "references/pstack-agents.md"
+      }
     }
   ],
   "extra_needs": [
