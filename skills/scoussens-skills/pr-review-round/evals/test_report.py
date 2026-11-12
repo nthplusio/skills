@@ -248,6 +248,7 @@ class ReportTests(unittest.TestCase):
                         patch.object(round_report, "repo_slug", return_value=record["repository"]), \
                         patch.object(round_report, "gh", side_effect=[[], [], closed]), \
                         patch.object(round_report, "history_evidence", return_value=raw), \
+                        patch("ledger.heads", return_value={}), \
                         contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
                     round_report.main()
                 rows = json.loads(output.getvalue())
