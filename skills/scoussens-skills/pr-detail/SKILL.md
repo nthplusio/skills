@@ -12,6 +12,7 @@ disable-model-invocation: true
 # PR detail
 
 Read [references/pr-family.md](references/pr-family.md) before collecting evidence.
+Before drafting the artifact, read [report writing](references/report-writing.md) for repository preferences and the optional clarity-then-voice passes.
 Reuse matching evidence from a digest or review round. Keep readiness decisions
 and code teaching with their owning skills.
 

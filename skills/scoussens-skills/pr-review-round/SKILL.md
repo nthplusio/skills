@@ -12,6 +12,7 @@ disable-model-invocation: true
 # PR review round
 
 Read [references/pr-family.md](references/pr-family.md) before collecting evidence.
+Before drafting the artifact, read [report writing](references/report-writing.md) for repository preferences and the optional clarity-then-voice passes.
 This skill coordinates the queue. Compose single-change review checks where
 available, reuse matching evidence, and keep scoring and teaching in their owners.
 

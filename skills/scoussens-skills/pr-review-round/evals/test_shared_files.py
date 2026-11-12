@@ -36,6 +36,14 @@ class InstallTests(unittest.TestCase):
                 self.assertEqual(owner.read_bytes(), (SKILL.parent / consumer / path).read_bytes(),
                                  f"copy {consumer}/{path} from pr-detail/{path}")
 
+    def test_report_writing_policy_is_available_to_standalone_consumers(self):
+        path = "references/report-writing.md"
+        owner = SKILL.parent / "configuring-reviews" / path
+        for consumer in ("pr-review-round", "pr-detail", "pr-digest", "pr-teacher"):
+            with self.subTest(consumer=consumer):
+                self.assertEqual(owner.read_bytes(), (SKILL.parent / consumer / path).read_bytes(),
+                                 f"copy {consumer}/{path} from configuring-reviews/{path}")
+
 
 if __name__ == "__main__":
     unittest.main()

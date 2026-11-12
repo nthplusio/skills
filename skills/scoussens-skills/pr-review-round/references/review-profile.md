@@ -16,6 +16,10 @@ Run `python3 <this skill>/scripts/review_config.py --root <repository> [--config
 
 The resolver returns every enabled category. Read each reference's applicability and select checks from the actual changed behavior, not filenames alone. A documentation-only change does not require a database exercise; a renamed persisted field does even if its path looks like UI code. Record which references applied, which did not and why. A broken required reference is a configuration gap, not a completed review.
 
+## Report-writing preferences
+
+Reports default to `speak-clearly` first, then `writing-in-voice`, when each helper is available. Keep repository overrides in a file named by `guidance`, reusing existing setup output where possible; no extra JSON field or checklist category is needed. For example, a repository can state: "For review reports, apply speak-clearly and skip writing-in-voice." It can instead select a declared project voice under the voice skill's rules. Preserve the default order when both passes are enabled. An omitted preference retains defaults; a missing helper does not block a review. Keep personal profiles and samples out of shared guidance. The bundled report-writing reference owns the editing and privacy rules; the resolver validates the guidance pointer, not the prose preference's meaning.
+
 ## Example: reuse setup and add repository checks
 
 These are illustrative paths, not requirements. Keep tracker details in the policy your existing setup owns; that policy may describe local files, a hosted tracker or no tracker.

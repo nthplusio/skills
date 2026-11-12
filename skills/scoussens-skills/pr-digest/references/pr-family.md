@@ -27,8 +27,8 @@ act, the problem, and the action that resolves it. Describe a user's consequence
 before the implementation. For infrastructure work, describe the operational
 effect without inventing a customer feature.
 
-Use `speak-clearly` and `wait-what` when available. Follow their plain-language
-rules directly when unavailable. For example, write "Closing one grid resets
+Apply the ordered, optional writing passes in `report-writing.md`; use
+`wait-what` when a reader asks for a clearer explanation. For example, write "Closing one grid resets
 the remaining grids' settings", not "Sibling removal remounts component ancestry".
 Use "Needs code changes", "Needs evidence", "Needs owner decision", "Review incomplete", "Ready", and "Review again" instead of ambiguous holds or internal
 verdict codes. Explain "code version" before showing a commit identifier.

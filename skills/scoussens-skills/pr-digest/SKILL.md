@@ -12,6 +12,7 @@ disable-model-invocation: true
 # PR digest
 
 Read [references/pr-family.md](references/pr-family.md) before gathering evidence.
+Before drafting the artifact, read [report writing](references/report-writing.md) for repository preferences and the optional clarity-then-voice passes.
 Reuse matching ticket and review records from a caller. Keep light passes light.
 Hand readiness, execution evaluation, and code teaching to their owning skills.
 

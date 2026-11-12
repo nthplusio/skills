@@ -11,6 +11,8 @@ description: >-
 
 Keep repository choices in `<repository>/.nthplusio-skills/review.json`, not in a global review skill. Each repository gets its own profile. A caller can supply another profile path explicitly. Read [the profile contract](references/review-profile.md) before editing one.
 
+Read [report writing](references/report-writing.md) before authoring the discovery summary or draft. It defaults to `speak-clearly` first, then `writing-in-voice`, using enabled helpers when available.
+
 ## Discover before writing
 
 Read the current profile and applicable repository instructions. Follow existing setup/configuration outputs for ticket policy, conventions, architecture, verification, automation and agent execution. For example, engineering setup may already point to `docs/agents/issue-tracker.md`; harness discovery may already hold `.nthplusio-skills/discovery.json`. These are pointers to reuse, not mandatory paths or dependencies. Do not create a second tracker policy or copy live harness capabilities into the review profile.
@@ -26,6 +28,7 @@ When customization is wanted, ask a short round of repository-specific questions
 - What matters most in this repository's reviews? Ask about the failure modes discovery suggests, such as schema compatibility, integration contracts or authorization; let the owner name other priorities and checks they find noisy.
 - Which existing documents should govern those checks, and what rules are missing? Propose references to reuse and categories to extend. Confirm any replacement, disabled category, new blocking threshold or exception with the owner rather than inferring policy from common code patterns.
 - Which discovered ticket lifecycle and execution settings need correction? Reuse setup/configuration outputs; ask about missing completion/automation ownership or reviewer constraints only when unresolved. A customization interview does not reinstall a tracker or select a mandatory harness.
+- Should reports keep the default clarity-then-voice passes when the helpers are available, skip either pass, or use a declared project voice? Reuse an answered preference; do not collect private voice samples or start a voice interview during review setup.
 
 Use the harness's question interface when available, otherwise ordinary conversation. Wait for answers before drafting unresolved choices; in unattended runs, retain a proposal with those choices marked unanswered instead of claiming configuration is complete. If customization is declined, skip the tailoring questions. If configuration is deferred, leave files untouched; reviews can still use the defaults and existing instructions.
 
@@ -33,7 +36,7 @@ Use the harness's question interface when available, otherwise ordinary conversa
 
 Start from [assets/review.template.json](assets/review.template.json). Set:
 
-- `guidance`: existing setup/configuration outputs or repository-wide review guidance to read first.
+- `guidance`: existing setup/configuration outputs or repository-wide review guidance to read first, including any report-writing overrides. Keep overrides in those referenced files rather than adding unsupported JSON keys; omitted writing preferences retain the clarity-then-voice defaults.
 - `tracker.policy`: existing ticket-policy files, whether the tracker is hosted, file-based or explicitly absent. Those files own identity, link resolution, tracking exceptions, statuses, automation and writeback. No provider or status mapping is bundled here.
 - `execution.reviewers`: `auto` by default; `serial` for separate passes in one agent, or `parallel` when the configured harness supports helpers. `execution.policy` points to existing execution/model configuration. Configuration never grants launch or write authority.
 - `references`: category overrides or additions. Extend bundled checks by default; replace or disable a category only deliberately. Keep applicability, check, evidence and severity in the referenced Markdown, so repository owners can change them without rewriting the skill.
@@ -50,4 +53,4 @@ Run `python3 <this skill>/scripts/review_config.py --root <repository>`; add `--
 
 Check that a repository with no profile resolves the bundled defaults, and that a tailored repository resolves only its own policy files and chosen overrides. Give the review caller the profile path, resolved files and any unresolved policy choices. Add a pointer in the repository's existing instruction/configuration index when that edit is in scope. Do not change another harness's instruction file just to advertise this profile.
 
-Review consumers bundle identical copies of `scripts/review_config.py`, `references/review-profile.md` and `references/defaults/`, so each skill can be installed alone. This skill owns those resources. Copy updates to consumers and run the shared-resource consistency test. Setup is optional: an unconfigured repository remains reviewable with defaults, with unknown ticket or harness policy reported rather than invented.
+Review consumers bundle identical copies of `scripts/review_config.py`, `references/review-profile.md` and `references/defaults/`, so each skill can be installed alone. PR artifact skills also bundle `references/report-writing.md`. This skill owns those resources. Copy updates to consumers and run the shared-resource consistency test. Setup is optional: an unconfigured repository remains reviewable with defaults, with unknown ticket or harness policy reported rather than invented.

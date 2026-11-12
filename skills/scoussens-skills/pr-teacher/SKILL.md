@@ -12,6 +12,7 @@ disable-model-invocation: true
 # PR teacher
 
 Read [references/pr-family.md](references/pr-family.md) before gathering evidence.
+Before drafting the artifact, read [report writing](references/report-writing.md) for repository preferences and the optional clarity-then-voice passes.
 Reuse a caller's matching PR identity, ticket context, reviewed head, and original
 findings. Fetch missing evidence and verify the pinned source comparison below.
 Keep readiness decisions and developer evaluation in their owning skills.
