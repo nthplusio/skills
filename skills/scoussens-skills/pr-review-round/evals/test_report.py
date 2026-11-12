@@ -15,6 +15,7 @@ sys.path.insert(0, str(SKILL / "scripts"))
 import round_report
 from pr_history import normalize
 from render_round import render
+from decision_fixtures import assessment, REVISION
 
 
 def fixture():
@@ -36,7 +37,8 @@ def fixture():
            "ticketEvidence": {"status": "partial", "tickets": [{"id": "APP-217", "state": "In review",
                                  "url": "https://tracker.test/APP-217"}], "events": []}}
     record = {"repository": repo, "number": 482, "title": raw["pr"]["title"], "url": raw["pr"]["url"],
-              "author": "Maya", "head": head, "state": "OPEN", "verdict": "CHANGES_REQUESTED",
+              "author": "Maya", "head": head, "base": "d" * 40,
+              "evidence_inputs": assessment()["evidence_inputs"], "state": "OPEN", "verdict": "CHANGES_REQUESTED",
               "reviewed_at": "2026-11-03T15:20:00Z", "reviews": [{"id": 11, "state": "CHANGES_REQUESTED",
               "commit_id": head, "submitted_at": "2026-11-03T15:20:00Z", "body": "Rollback drops saved filters."}],
               "comments": [], "history": normalize(raw)}
@@ -82,10 +84,8 @@ class ReportTests(unittest.TestCase):
         _, record = fixture()
         record["reviews"] = []
         record["reviewed_at"] = None
-        proposals = {"repository": record["repository"], "assessments": [{"number": 482, "head": record["head"],
-                     "assessed_at": "2026-11-03T16:00:00Z", "verdict": "APPROVE", "owner": "Maintainer",
-                     "blocker": "None verified at the assessed head.", "body": "Rollback verified.",
-                     "provenance": "Reused prior-round assessment; probes not rerun."}]}
+        proposals = {"repository": record["repository"], "assessments": [assessment(482, head=record["head"], base=record["base"],
+                     provenance="Reused prior-round assessment; probes not rerun.")]}
         source = render([record], "main", assessments=proposals)
         self.assertIn("Report recommendation, not posted", source)
         self.assertIn("No review or comment posted", source)
@@ -102,9 +102,7 @@ class ReportTests(unittest.TestCase):
     def test_unstable_snapshot_cannot_present_a_current_proposal(self):
         _, record = fixture()
         record["history"]["gaps"] = ["snapshot-consistency"]
-        proposals = {"repository": record["repository"], "assessments": [{"number": 482, "head": record["head"],
-                     "assessed_at": "2026-11-03T16:00:00Z", "verdict": "APPROVE", "owner": "Maintainer",
-                     "blocker": "None verified at the assessed head.", "body": "Rollback verified."}]}
+        proposals = {"repository": record["repository"], "assessments": [assessment(482, head=record["head"], base=record["base"])]}
         source = render([record], "main", assessments=proposals)
         self.assertIn("Review again", source)
         self.assertIn("Some PR history is missing", source)
@@ -190,6 +188,72 @@ class ReportTests(unittest.TestCase):
                 patch.object(round_report, "repo_slug", return_value="sample/product"), \
                 patch.object(round_report, "gh", return_value=None), self.assertRaises(SystemExit):
             round_report.main()
+
+    def test_oversized_history_links_evidence_and_preserves_every_row(self):
+        records = []
+        for number in (3341, 3345, 3397):
+            _, record = fixture()
+            record["number"] = number
+            record["reviews"][0]["body"] = "Original review evidence. " * 30_000
+            records.append(record)
+        source = render(records, "main")
+        self.assertLessEqual(len(source.encode()), 100_000)
+        self.assertEqual(Tags(source).rows, ["3341", "3345", "3397"])
+        self.assertIn("Full history omitted", source)
+        self.assertIn("retained round JSON", source)
+        self.assertNotIn("<script", source)
+
+    def test_owned_decisions_do_not_certify_incomplete_review_or_stale_evidence(self):
+        records, proposals = [], []
+        for number, kind, owner in [(3397, "code", "Author"), (3341, "evidence", "Operator"), (3345, "reviewer-incomplete", "Reviewer")]:
+            _, record = fixture()
+            record["number"] = number
+            records.append(record)
+            proposals.append(assessment(number, kind, owner, head=record["head"], base=record["base"]))
+        source = render(records, "main", assessments={"repository": records[0]["repository"], "assessments": proposals})
+        for label in ("Needs code changes", "Needs evidence", "Review incomplete", "Author ·", "Operator ·", "Reviewer ·"):
+            self.assertIn(label, source)
+        self.assertIn("Substantive reviews complete: 2", source)
+        records[1]["evidence_inputs"]["issues"] = "new-owner-decision"
+        source = render(records, "main", assessments={"repository": records[0]["repository"], "assessments": proposals})
+        self.assertIn("Review again", source)
+        self.assertIn("Substantive reviews complete: 1", source)
+        records[0]["evidence_inputs"]["policy"] = "changed-repository-reference"
+        source = render(records, "main", assessments={"repository": records[0]["repository"], "assessments": proposals})
+        self.assertIn("Substantive reviews complete: 0", source)
+
+    def test_local_posted_claim_requires_current_observed_forge_evidence(self):
+        _, record = fixture()
+        item = assessment(482, "code", "Author", head=record["head"], base=record["base"])
+        item["decisions"][0]["posted_action"] = {"action": "request-changes", "url": "https://example.test/review/11", "at": REVISION}
+        proposals = {"repository": record["repository"], "assessments": [item]}
+        self.assertNotIn("Action posted on GitHub", render([record], "main", assessments=proposals))
+        record["reviews"][0]["url"] = "https://example.test/review/11"
+        self.assertIn("Action posted on GitHub", render([record], "main", assessments=proposals))
+        record["reviews"][0]["state"] = "DISMISSED"
+        self.assertNotIn("Action posted on GitHub", render([record], "main", assessments=proposals))
+
+    def test_scoped_closed_pr_is_retained_and_external_evidence_changes_its_revision(self):
+        raw, record = fixture()
+        closed = {**raw["pr"], "id": "PR_482", "state": "CLOSED", "isDraft": False,
+                  "reviewDecision": "REVIEW_REQUIRED", "updatedAt": REVISION}
+        revisions = []
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope.json"
+            scope.write_text("[482]")
+            for observation in ("Runtime demonstration missing", "Owner accepted apply-log evidence for this criterion"):
+                raw["ticketEvidence"]["decision"] = observation
+                output = io.StringIO()
+                with patch.object(sys, "argv", ["round_report.py", "main", "--scope", str(scope), "--since", REVISION, "--me", "Alex"]), \
+                        patch.object(round_report, "repo_slug", return_value=record["repository"]), \
+                        patch.object(round_report, "gh", side_effect=[[], [], closed]), \
+                        patch.object(round_report, "history_evidence", return_value=raw), \
+                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                    round_report.main()
+                rows = json.loads(output.getvalue())
+                self.assertEqual([(r["number"], r["verdict"]) for r in rows], [(482, "CLOSED")])
+                revisions.append(rows[0]["evidence_inputs"]["issues"])
+        self.assertNotEqual(*revisions)
 
 
 if __name__ == "__main__":

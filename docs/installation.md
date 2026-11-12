@@ -75,7 +75,7 @@ npm run check:installed
 release). `dist/` is ignored by Git and source discovery. The build replaces only
 a directory marked as its own output. It produces:
 
-- `dist/plugins/nthplusio-coding-agent/`: 21 skills with required companions,
+- `dist/plugins/nthplusio-coding-agent/`: 22 skills with required companions,
   excluding the Amp picker and administrative pstack-sync.
 - `dist/plugins/nthplusio-conversation/`: `speak-clearly`, session-only
   `writing-in-voice`, `explain-to` chat, and conversation-only `agent-handoff`.
@@ -108,7 +108,7 @@ strict chat target to bypass a policy gate.
    `npm run test:distribution`. Archive tests inspect actual ZIP contents,
    resources, licenses, closure, policy and reproducibility. The pinned
    `npm run check:installed` uses `skills@1.7.4` twice in temporary homes/projects,
-   copies all 21 skills into Codex/Claude file locations, compares complete
+   copies all 22 skills into Codex/Claude file locations, compares complete
    contents, and runs installed meeting rollup and handoff checks from a foreign
    working directory with spaces. This does not run either agent.
 2. **Agent behavior:** `npm run eval:agents -- --list` only lists definitions.

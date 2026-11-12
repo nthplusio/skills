@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "guidance": [],
+  "tracker": {"policy": []},
+  "execution": {"reviewers": "auto", "policy": []},
+  "references": {}
+}

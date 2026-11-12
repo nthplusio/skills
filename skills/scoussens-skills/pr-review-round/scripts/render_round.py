@@ -4,15 +4,18 @@ import argparse
 from html import escape
 import json
 from pathlib import Path
-import re
 from string import Template
 
 from md_to_html import render as markdown
 from pr_history import format_time, render as history_html
+from ledger import DECISIONS, assessment_current, unresolved, validate_assessment
+
+REPORT_BUDGET = 100_000
 
 
-def render(records, base, timezone="UTC", assessments=None):
+def render(records, base, timezone="UTC", assessments=None, compact=False):
     rows = []
+    complete = 0
     identities = [(record["repository"], record["number"]) for record in records]
     if len(set(identities)) != len(identities):
         raise ValueError("duplicate PRs in round report")
@@ -28,19 +31,38 @@ def render(records, base, timezone="UTC", assessments=None):
         proposal = proposals.get(number)
         current = ""
         matches = False
+        posted_urls = {r.get("url") for r in record["reviews"]
+                       if r.get("url") and r.get("commit_id") == record["head"] and r.get("state") not in ("DISMISSED", "PENDING")}
+        posted_urls.update(c["url"] for c in record["comments"] if c.get("url") and record["head"] in c.get("body", ""))
         if proposal:
-            matches = bool(re.fullmatch(r"[0-9a-f]{40}", proposal["head"])) and proposal["head"] == record["head"] and not any(
+            validate_assessment(proposal)
+            matches = assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")) and not any(
                 gap in record["history"]["gaps"] for gap in
                 ("snapshot-consistency", "queue-head-changed", "history-collection"))
-            label = "Report recommendation · not posted to GitHub" if matches else "Earlier recommendation · code changed or could not be confirmed; review again"
-            current = (f'<section class="proposal"><h3>{label} · {escape(proposal["verdict"])}</h3>'
+            blockers = unresolved(proposal)
+            if matches and not any(d["kind"] == "reviewer-incomplete" for d in proposal["decisions"]):
+                complete += 1
+            decision = (blockers or proposal["decisions"])[0]
+            label = "Report recommendation · not posted to GitHub" if matches else "Earlier recommendation · source or evidence changed; review again"
+            current = (f'<section class="proposal"><h3>{label} · {escape(DECISIONS[decision["kind"]])}</h3>'
                        f'<p class="muted">Assessed {escape(proposal["assessed_at"])} at '
                        f'<code>{escape(proposal["head"])}</code></p>'
                        f'<p class="muted">{escape(proposal.get("provenance") or "Local assessment")}</p>'
-                       f'<p>Recommended next person · {escape(proposal["owner"])}</p>'
-                       f'<p>{escape(proposal["blocker"])}</p>'
-                       f'<details><summary>What the reviewer checked</summary>'
-                       f'<div class="md">{markdown(proposal["body"])}</div></details></section>')
+                       f'<p>Recommended next person · {escape(decision["owner"])}</p>'
+                       f'<p>{escape(decision["unblock"])}</p>')
+            for item in proposal["decisions"]:
+                current += (f'<p>{escape(DECISIONS[item["kind"]])} · {escape(item["axis"])} · '
+                            f'{escape(item["severity"])} · {escape(item["criterion"])}<br>'
+                            f'{escape(item["owner"])}: {escape(item["unblock"])} · {escape(item["effort"])}<br>'
+                            f'Evidence: {escape(item["evidence"]["source"])} · {escape(item["evidence"]["at"])}<br>'
+                            f'{escape(item["evidence"]["observation"])}</p>')
+                if item.get("waiver"):
+                    waiver = item["waiver"]
+                    current += f'<p>Accepted gap · {escape(waiver["actor"])} · {escape(waiver["scope"])} · {escape(waiver["source"])}</p>'
+                posted = item.get("posted_action")
+                current += (f'<p>Posted action · {escape(posted["action"])} · {escape(posted["url"])}</p>' if posted and posted["url"] in posted_urls
+                            else '<p>Proposed, not posted</p>')
+            current += '</section>'
         verdict = record["verdict"]
         status = {
             "MERGED": "Merged", "CLOSED": "Closed", "CHANGES_REQUESTED": "Changes requested",
@@ -63,9 +85,8 @@ def render(records, base, timezone="UTC", assessments=None):
             owner = "Reviewer to check this change."
         if proposal and verdict not in ("MERGED", "CLOSED"):
             if matches:
-                owner = f'{proposal["owner"]} · {proposal["blocker"]}'
-                status = {"CHANGES_REQUESTED": "Needs fixes", "ACCEPTANCE_HOLD": "Needs confirmation",
-                          "APPROVE": "Recommended approval"}.get(proposal["verdict"], "Review recommendation")
+                owner = f'{decision["owner"]} · {decision["unblock"]}'
+                status = DECISIONS[decision["kind"]] if blockers else "Ready · check forge gates"
             else:
                 owner = "Reviewer to check the code again. The earlier recommendation is out of date."
                 status = "Review again"
@@ -97,19 +118,37 @@ def render(records, base, timezone="UTC", assessments=None):
                     '<details><summary>Reviews and comments posted in this round</summary>'
                     f'{"".join(bodies) or "<p>No review or comment posted by this reviewer in this round.</p>"}</details>')
         summary = record.get("summary") or record["title"]
-        basis = " · Report recommendation, not posted" if proposal and matches and verdict not in ("MERGED", "CLOSED") else ""
+        basis = ""
+        if proposal and verdict not in ("MERGED", "CLOSED"):
+            basis = " · Report recommendation, not posted" if matches else " · Earlier recommendation, not posted; stale"
+            if matches and all(d.get("posted_action", {}).get("url") in posted_urls for d in proposal["decisions"]):
+                basis = " · Action posted on GitHub; assessment remains local"
+        if compact:
+            detail = ('<details><summary>Evidence and limits</summary>'
+                      '<p>Full history omitted to keep this report within its publication budget. '
+                      'Read the linked PR and retained round JSON; this is not additional verification.</p>'
+                      f'<a href="{escape(url, quote=True)}">Original evidence on GitHub</a>{current}</details>')
+        else:
+            detail = history_html(record["history"], timezone, evidence)
         rows.append(f'<article class="pr-row" data-pr="{number}"><div class="row-heading">'
                     f'<h2><a href="{escape(url, quote=True)}">#{number}</a> {escape(summary)}</h2>'
                     f'<span class="verdict">{escape(status)}</span></div>'
                     f'<p class="current-action"><strong>Next</strong> {escape(owner)}<span class="muted">{basis}</span></p>'
-                    f'{history_html(record["history"], timezone, evidence)}</article>')
+                    f'{detail}</article>')
     assets = Path(__file__).resolve().parents[1] / "assets"
-    return Template((assets / "report-template.html").read_text()).substitute(
+    result = Template((assets / "report-template.html").read_text()).substitute(
         base=escape(base), timezone=escape(timezone), count=len(records),
         merged=sum(record["state"] == "MERGED" for record in records), rows="".join(rows),
         collected=escape(max((r["history"].get("collectedAt") or "Unknown" for r in records), default="No PR evidence")),
-        synthesis=f'<p>{escape(assessments["synthesis"])}</p>' if assessments and assessments.get("synthesis") else "",
+        complete=complete,
+        bounded="Full history is linked, not embedded, to meet the report budget." if compact else "",
+        synthesis=f'<p>{escape(assessments["synthesis"])}</p>' if not compact and assessments and assessments.get("synthesis") else "",
         history_css=(assets / "pr-history.css").read_text())
+    if len(result.encode("utf-8")) > REPORT_BUDGET:
+        if not compact:
+            return render(records, base, timezone, assessments, compact=True)
+        raise ValueError("decision rows exceed 100 KB; use a short Markdown decision document with linked round JSON, not a runtime loader")
+    return result
 
 
 if __name__ == "__main__":

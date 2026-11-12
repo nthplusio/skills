@@ -12,8 +12,8 @@ Every field here exists because it changes what the *next* round does. A field
 that does not name the step whose behaviour it changes does not belong in the
 ledger, and per-author or per-week aggregates deliberately are not recorded.
 
-    head      -> unchanged since last round means the author pushed nothing:
-                 skip the diff, escalate on age, answer with one comment.
+    head/base -> matching source permits reuse of code checks, not the verdict:
+                 refresh discussion, issue evidence and accepted decisions.
     status    -> `open` findings are what step 3 verifies first, instead of
                  re-deriving them from the review body. `fixed` drafts the
                  dismissal evidence.
@@ -30,11 +30,106 @@ nothing is ever committed:
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from review_config import resolve as review_config
 
 STATUSES = ("open", "fixed", "overstated", "pre-existing", "withdrawn")
+DECISIONS = {
+    "code": "Needs code changes", "evidence": "Needs evidence",
+    "decision": "Needs owner decision", "reviewer-incomplete": "Review incomplete",
+    "ready": "Ready",
+}
+
+
+def validate_assessment(assessment):
+    """Validate saved decisions at the boundary, including clean assessments."""
+    for field in ("number", "head", "base", "assessed_at", "evidence_inputs", "decisions"):
+        if field not in assessment:
+            raise ValueError(f"assessment requires {field}")
+    if type(assessment["number"]) is not int or assessment["number"] <= 0:
+        raise ValueError("assessment requires a positive PR number")
+    for field in ("head", "base"):
+        if not re.fullmatch(r"[0-9a-f]{40}", assessment[field]):
+            raise ValueError(f"assessment {field} must be a full SHA")
+    if not all(assessment["evidence_inputs"].get(field) for field in ("forge", "issues", "policy")):
+        raise ValueError("assessment requires forge updatedAt, refreshed issue evidence and review policy revisions")
+    if not assessment["decisions"]:
+        raise ValueError("include a ready decision for a clean assessment")
+    for decision in assessment["decisions"]:
+        if decision.get("kind") not in DECISIONS:
+            raise ValueError("use code, evidence, decision, reviewer-incomplete, or ready; not hold")
+        for field in ("id", "axis", "criterion", "severity", "owner", "summary", "unblock", "effort", "proposed_action"):
+            if not decision.get(field):
+                raise ValueError(f"decision requires {field}")
+        if decision["severity"] not in ("blocking", "should-fix", "non-blocking"):
+            raise ValueError("severity must be blocking, should-fix or non-blocking")
+        evidence = decision.get("evidence") or {}
+        if not all(evidence.get(field) for field in ("source", "at", "observation")):
+            raise ValueError("decision evidence requires source, at and observation")
+        posted = decision.get("posted_action")
+        if posted and not all(posted.get(field) for field in ("action", "url", "at")):
+            raise ValueError("posted action requires actual action, URL and time")
+        waiver = decision.get("waiver")
+        if waiver and (not all(waiver.get(field) for field in ("actor", "source", "at", "scope"))
+                       or waiver.get("criterion") != decision["criterion"]):
+            raise ValueError("waiver must name actor, source, time, scope and this exact criterion")
+        if waiver and decision["kind"] not in ("evidence", "decision"):
+            raise ValueError("a waiver cannot substitute for code verification or unfinished review")
+    ids = [d["id"] for d in assessment["decisions"]]
+    if len(set(ids)) != len(ids):
+        raise ValueError("duplicate decision IDs")
+    if any(d["kind"] == "ready" for d in assessment["decisions"]) and len(ids) != 1:
+        raise ValueError("ready cannot mask another decision")
+
+
+def unresolved(assessment):
+    validate_assessment(assessment)
+    return [d for d in assessment["decisions"] if d["kind"] != "ready" and not d.get("waiver")
+            and (d["severity"] == "blocking" or d["kind"] == "reviewer-incomplete")]
+
+
+def assessment_current(assessment, head, base, evidence_inputs):
+    validate_assessment(assessment)
+    return (assessment["head"] == head and assessment["base"] == base
+            and assessment["evidence_inputs"] == evidence_inputs)
+
+
+def record_assessment(rid, assessment, repo=None):
+    validate_assessment(assessment)
+    _append("assessments", {**assessment, "round": rid, "recorded_at": _now()}, repo)
+
+
+def assessments(repo=None):
+    return {a["number"]: a for a in _read("assessments", repo)}
+
+
+def check_authority(authority, repo, number, action, possible_landing=False):
+    if (authority.get("repository") != repo or number not in authority.get("prs", [])
+            or action not in authority.get("actions", []) or not authority.get("instruction")
+            or (possible_landing and authority.get("possible_landing") is not True)):
+        raise ValueError("out-of-scope authority: record instruction, repository, exact PRs, action and possible landing")
+
+
+def check_clearance(bundle, repo, number, head, base, forge_revision):
+    if bundle.get("repository") != repo:
+        raise ValueError("assessment belongs to a different repository")
+    matches = [a for a in bundle.get("assessments", []) if a.get("number") == number]
+    if len(matches) != 1:
+        raise ValueError("one current assessment required for this PR")
+    assessment = matches[0]
+    validate_assessment(assessment)
+    if assessment["evidence_inputs"]["policy"] != review_config(".", bundle.get("review_config"))["revision"]:
+        raise ValueError("review policy changed; resolve configuration and review affected checks again")
+    if (assessment["head"] != head or assessment["base"] != base
+            or assessment["evidence_inputs"]["forge"] != forge_revision):
+        raise ValueError("assessment source or discussion changed; refresh evidence and review again")
+    blockers = unresolved(assessment)
+    if blockers:
+        raise ValueError("unresolved decisions: " + "; ".join(f'{d["owner"]}: {d["unblock"]}' for d in blockers))
+    return assessment
 
 
 def _now():
@@ -151,6 +246,8 @@ def heads(repo=None):
     for f in _read("findings", repo):
         if f.get("pr") and f.get("head"):
             out[f["pr"]] = f["head"]
+    for number, assessment in assessments(repo).items():
+        out[number] = assessment["head"]
     return out
 
 
@@ -201,8 +298,8 @@ def main():
         if not h:
             print("no recorded heads yet")
             return
-        print("Head SHA per PR at its last review. Unchanged means the author has")
-        print("pushed nothing since -- skip the diff and escalate on age.\n")
+        print("Head SHA per PR at its last review. Matching head/base permits code reuse;")
+        print("refresh discussion, issue evidence and accepted decisions before reusing a verdict.\n")
         for pr in sorted(h):
             print(f"  #{pr:<7} {h[pr]}")
         return

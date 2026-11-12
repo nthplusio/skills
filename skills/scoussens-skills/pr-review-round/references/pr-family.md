@@ -10,8 +10,7 @@
 | `pr-teacher` | Source-grounded explanation and learning | Readiness to round, execution evaluation to detail |
 
 Keep a caller's purpose, audience, repository, PR scope, pinned revisions,
-retrieval time, and publication authority in the handoff. Reuse supplied evidence
-when its identity and revisions match. Fetch only missing sections. Recheck
+retrieval time, and publication authority in the handoff. Reuse code checks when head/base identity and scope match, keeping original run time and exclusions. Refresh relevant comments, reviews, issue descriptions/updates and owner decisions before retaining a verdict; matching SHA alone is insufficient. Keep criterion-scoped accepted gaps with actor, source, time and scope across rounds, without expanding them to unrelated requirements. A new head invalidates affected code claims, not unrelated owner decisions. Fetch only missing sections. Recheck
 mutable head and readiness before decisions or writes. A retrospective or teaching
 artifact cannot authorize an approval, dismissal, or merge.
 
@@ -31,7 +30,7 @@ effect without inventing a customer feature.
 Use `speak-clearly` and `wait-what` when available. Follow their plain-language
 rules directly when unavailable. For example, write "Closing one grid resets
 the remaining grids' settings", not "Sibling removal remounts component ancestry".
-Use "Needs fixes", "Needs confirmation", and "Review again" instead of internal
+Use "Needs code changes", "Needs evidence", "Needs owner decision", "Review incomplete", "Ready", and "Review again" instead of ambiguous holds or internal
 verdict codes. Explain "code version" before showing a commit identifier.
 
 Keep original titles, review bodies, paths, and code identifiers in the expanded
@@ -67,9 +66,12 @@ pills exclude dismissed reviews. Historical timelines retain dismissed reviews.
 
 ## Tracker enrichment
 
-Resolve candidate ticket IDs from PR title and branch case-insensitively, using
-`[A-Za-z]{2,10}-[0-9]{1,6}`. Confirm the relationship with the tracker before
-using it. A match only in the body can refer to another ticket. A missing ticket
+Resolve tracker guidance through the repository's existing setup/configuration output and applicable instructions. A supplied review profile or `.nthplusio-skills/review.json` can point to those policies; it does not replace them. Use the configured hosted tracker, local files or explicit no-tracker convention. Read issue descriptions and relevant comments/owner decisions, not the PR body as automatic proof. Map every acceptance criterion to a requirement quote, implemented path, observed evidence/source/time, result and evidence limit. Label independently verified, author-reported, missing and explicitly accepted gaps separately. For a documented tracking exception, record "no linked ticket" and the agreed PR contract; invent neither a ticket nor tracker acceptance criteria.
+
+For tracker writeback, follow the configured lifecycle, completion gate and automation ownership. Read back supported issue state at the policy's milestones and flag mismatches instead of duplicating automated transitions. Do not universally equate a development merge, review approval or deployment with Done. With explicit tracker-write authority, return criterion-level evidence, remaining owner/evidence decisions and PR links; preserve metadata and discover current tool/file operations. Propose a follow-up's owner and concrete acceptance criteria before authorized creation. Missing history is not proof an author owned all elapsed waiting time.
+
+Resolve candidate ticket links, IDs or local paths through the configured policy and confirmed PR relationships, not a universal ID pattern. Confirm the relationship before
+using it. A link only in the body can refer to another ticket. A missing ticket
 is valid. A lookup failure is unknown, not evidence that the ticket does not exist.
 
 Fetch tracker status history separately from current ticket state. Add

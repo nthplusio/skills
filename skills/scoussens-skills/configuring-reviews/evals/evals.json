@@ -1,0 +1,50 @@
+{
+  "skill_name": "configuring-reviews",
+  "note": "Proposed fresh-agent behavior evals, not executed by the deterministic CLI tests. Use temporary repository fixtures, no live tracker/forge writes, and capture conversation plus file changes. Compare old and new instructions on the same model. Each case starts before setup and continues with the stated owner answers.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "discovery-led-customization",
+      "prompt": "Set up review preferences for this repository. Find out what is here first, then help me choose what to customize.",
+      "files": [],
+      "fixture": "A repository with schema migrations, an HTTP client, CONTRIBUTING.md, docs/storage.md, CI tests, and existing setup policies documenting local Markdown tickets, completion after operator acceptance, and serial reviewers. No review profile. Owner initially answers: the findings are accurate; customize for migration compatibility and retries. Then supplies any missing rule details. Withhold draft confirmation until it is explicitly requested.",
+      "expected_output": "Cites discovered files before asking questions, asks whether to customize, tailors questions to migration compatibility and retry behavior, reuses local-ticket/serial setup, and presents a proposed profile/reference diff for confirmation before any policy write.",
+      "assertions": [
+        "Discovery distinguishes documented policies from inferred risks and unknowns before customization questions.",
+        "Questions validate findings and offer keeping defaults, customization or deferral with a recommendation.",
+        "Follow-up questions address the owner's named risks and missing rules rather than prescribing a database, tracker or harness.",
+        "Draft extends applicable defaults with repository references and records applicability, source, evidence and blocking thresholds for new rules.",
+        "Existing lifecycle and execution policies are reused; configuration does not change tracker states or launch helpers.",
+        "No profile or reference policy is written before owner confirmation."
+      ]
+    },
+    {
+      "id": 1,
+      "name": "keep-existing-customizations",
+      "prompt": "Refresh review setup for this repo. I want to keep my current choices, not do a customization interview again.",
+      "files": [],
+      "fixture": "An existing valid profile with an accessibility category, a replaced integration checklist, and setup-owned hosted-tracker automation. All reference files exist and contain owner edits.",
+      "expected_output": "Negative control: inspects current configuration and validates findings without repeating the already answered customization choice, preserves owner content and override modes, and does not replace the profile with the bundled template.",
+      "assertions": [
+        "Reuses the owner's keep-current answer instead of asking the customization choice or a generic priorities interview again.",
+        "Preserves custom categories, reference contents, override modes and automation ownership.",
+        "Runs the read-only resolver and distinguishes valid file selection from validated policy semantics.",
+        "Any proposed correction is shown for confirmation before writing."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "defer-or-unattended",
+      "prompt": "Inspect this repo and propose review setup, but do not change policy files. I cannot answer questions right now.",
+      "files": [],
+      "fixture": "A repository with no profile, no ticket-policy output, a test command and partial conventions documentation. Run without a dedicated question tool or helper capability.",
+      "expected_output": "Uses ordinary conversation to present discovered facts and unanswered choices, leaves policy files untouched, and explains that reviews remain usable with defaults without claiming configuration complete.",
+      "assertions": [
+        "No question tool, helper, ticket provider or prerequisite setup is required to inspect and propose.",
+        "Does not invent missing lifecycle policy or treat silence as confirmation.",
+        "Repository profile and policy files remain unchanged.",
+        "Reports pending owner choices and available defaults rather than completed configuration."
+      ]
+    }
+  ]
+}

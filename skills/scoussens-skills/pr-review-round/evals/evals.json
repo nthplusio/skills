@@ -62,11 +62,11 @@
       "id": 5,
       "name": "base-merge-vs-author-work",
       "prompt": "There's a changes-requested review on PR <n> from a few days ago. Has the author done anything about it since?",
-      "expected_output": "Fixture state: a PR whose only change since its changes-requested review is a merge of the base branch. Reports that the author has pushed no work: the only thing on the branch since the review is a merge of the base branch. States the author-commit count as zero and does not present the raw range (which is inflated by base history reachable through the merge commit's second parent) as author activity. Concludes the findings are still live.",
+      "expected_output": "Fixture state: only a base merge since changes requested. Reports zero author commits without counting base history as author activity. Verifies code findings at head and refreshes discussion, issue evidence and accepted owner decisions before retaining the verdict; no author commits does not prove no evidence changed.",
       "assertions": [
         "reports_zero_author_commits: states that the author pushed no commits since the review",
         "excludes_base_history_from_the_range: uses --not origin/<base> (or equivalent) rather than reporting the unfiltered --no-merges count as work the author did",
-        "concludes_the_findings_are_still_live: says the blocking review's findings stand, rather than treating a long commit range as evidence the finding may be fixed"
+        "refreshes_decision_inputs: retains only findings independently confirmed at head after checking current evidence and accepted decisions; does not infer an unchanged verdict from zero author commits"
       ],
       "files": []
     },
@@ -92,6 +92,33 @@
         "queue_evidence_only: CLEAN never becomes queued; failed queue reads stay unknown; conflict never becomes landed",
         "teacher_optional: report completes locally without installing or invoking pr-teacher",
         "proposals_not_posts: local assessments have head and assessment time, not invented submission timestamps"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "repository-profile-without-helper-or-hosted-tracker",
+      "prompt": "Review this fixture queue using .nthplusio-skills/review.json. Its execution mode is serial; ticket policy points to local Markdown issues and completes work only after owner acceptance. The profile replaces the data checklist with docs/review/storage.md and adds docs/review/accessibility.md. Assess only; do not launch helpers or write anything.",
+      "expected_output": "Reads setup-owned policy and selected reference contents, runs separate Standards/Spec passes without helpers, maps local ticket criteria, applies the replacement/custom checks, and does not impose a hosted tracker, a fixed smell baseline or merge-to-Done mapping. Records actual rule and criterion coverage.",
+      "assertions": [
+        "profile_consumed: reads the named profile and its referenced policy/checklist files",
+        "serial_respected: records no helper launches or claims of independent parallel reviewers",
+        "local_tracker_respected: uses confirmed local issue files and owner acceptance, not a hosted issue ID assumption",
+        "reference_selection_respected: uses repository storage and accessibility checks without reimposing the replaced default checklist",
+        "authority_unchanged: records no intended forge or ticket mutations"
+      ],
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "default-review-without-setup",
+      "prompt": "Assess this fixture PR queue. There is no review profile or setup skill installed. Repository instructions explicitly allow untracked changes when the PR body states an agreed contract, which this PR has. The current harness has no helper tools.",
+      "expected_output": "Uses bundled review defaults and separate serial passes, tests the agreed PR contract, records no linked ticket, and discloses non-independent coverage without requiring a setup skill, tracker or different harness. Keeps missing evidence open rather than treating defaults as a pass.",
+      "assertions": [
+        "defaults_available: reads applicable bundled reference files without installing another skill",
+        "no_forced_setup: does not request mandatory tracker or harness setup",
+        "no_ticket_invention: uses the documented PR contract and records no linked ticket",
+        "coverage_honest: reports actual serial coverage and evidence limits without claiming independent reviewers"
       ],
       "files": []
     }

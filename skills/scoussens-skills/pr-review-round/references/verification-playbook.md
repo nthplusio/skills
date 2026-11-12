@@ -5,8 +5,17 @@ reviewer. Each one is stated as a general check, with the concrete case that
 motivated it, because the example is what makes the check memorable and the
 generalisation is what makes it useful.
 
-Read this when reviewing anything in the DATA, AUTH, API, or INFRA risk tiers.
-For WEB and DOCS, techniques 1, 2, 5, and 6 are usually enough.
+Use relevant techniques when selected by the repository's review references and changed behavior. DATA, AUTH, API and INFRA are useful default hints, not mandatory categories after repository configuration replaces or disables a checklist. Repository rules and acceptance criteria still apply.
+
+## Pin the verification session
+
+Use a separate clean, detached worktree at the reviewed head, with the base pinned to a full SHA. The served app, command and browser session must all use that worktree; do not merge, rebase or switch its checkout during a run. Give concurrent verification sessions separate ports and browser sessions. Run `scripts/verification_session.py --head <full-sha> --base <full-base-sha> --manifest <result.json> --state <tested-state> --expected <observable-outcome> --exclude <untested-lane> -- <command>` from that worktree. It monitors tracked source/head/base, aborts on observed drift and preserves nonzero command exits. Detached worktree ownership is the isolation boundary; polling cannot detect every transient edit or mutation inside an already-running server.
+
+For shell pipelines, use `bash -o pipefail -c 'test-command | tee /tmp/test.log'`. For log printing after a command, save its exit code and exit with it; a trailing `tail` must not replace test failure. A manifest records source revisions, command/browser, tested states, expected/observed result, times and exclusions. Add the actual observed assertion and evidence links after inspecting output; a zero exit alone is not criterion acceptance.
+
+Before a browser matrix, assert the page URL/identity, served build SHA and actual app theme state (DOM or computed colors, not the screenshot filename or OS preference). A wrong identity or theme fails the session before captures. Test a deliberate wrong-theme negative control. Exercise boundary inputs only where competing implementations give different results. Keep failed exploratory widths visible even when outside the accepted contract. Retain one inspected interaction clip plus representative captures, not repeated failed recordings.
+
+List untested lanes explicitly. Preserve coverage exclusions from the repository's configured verification gates: a gate pass does not verify paths it excludes. Keep reusable verification tools in the app's existing test ownership boundary only when likely to recur; otherwise retain a reproducible command and concise evidence record. Follow the app's existing review guidance rather than editing accepted ADRs.
 
 ## Contents
 
@@ -46,9 +55,7 @@ git log --oneline --no-merges <reviewed-sha>..<head-sha> --not origin/<base>
 range showed **zero** — the author had merged the base and addressed nothing.
 Without the filter that reads as three weeks of work.
 
-Author commits and base merges mean opposite things. Author work may have fixed
-the finding, so read it first. A branch carrying only base merges has addressed
-nothing, however long the raw range looks.
+Author work may have fixed code findings, so read it first. Base-only merges or unchanged source do not establish that external evidence and owner decisions are unchanged. Refresh those inputs before retaining a verdict.
 
 When a fix has landed, verify it at head and then **dismiss with a message that
 names the SHA and what you confirmed**. A bare dismissal tells the author

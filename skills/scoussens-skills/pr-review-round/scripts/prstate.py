@@ -145,8 +145,8 @@ def main():
             print("     naming the sha and what you confirmed -- otherwise the author cannot")
             print("     tell you actually looked.")
         else:
-            print("     -> LIVE. The author has addressed nothing; only base history merged")
-            print("     in. The findings stand however long the raw range looks.")
+            print("     -> No author commits; only base history merged in. Verify code findings")
+            print("     and refresh issue evidence and owner decisions before retaining the verdict.")
 
 
 if __name__ == "__main__":

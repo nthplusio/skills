@@ -33,6 +33,7 @@ Piping the result into the artifact build is the point; read it with jq to spot
 check, e.g. `jq -r '.[] | "\\(.number) \\(.verdict) \\(.reviewed_at)"' /tmp/round.json`
 """
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -42,8 +43,9 @@ from pathlib import Path
 
 from merge_queue import queue_state
 from pr_history import normalize
+from review_config import resolve as review_config
 
-LIST_FIELDS = ("id,headRefOid,number,title,url,author,createdAt,isDraft,reviewDecision,"
+LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,state,mergedAt")
 
 
@@ -115,6 +117,8 @@ def main():
     since = None
     who = None
     tickets_path = None
+    scope_path = None
+    config_path = None
     for i, a in enumerate(argv):
         if a == "--since" and i + 1 < len(argv):
             since = argv[i + 1]
@@ -122,6 +126,14 @@ def main():
             who = argv[i + 1]
         if a == "--tickets" and i + 1 < len(argv):
             tickets_path = Path(argv[i + 1])
+        if a == "--scope" and i + 1 < len(argv):
+            scope_path = Path(argv[i + 1])
+        if a == "--review-config" and i + 1 < len(argv):
+            config_path = argv[i + 1]
+    try:
+        policy = review_config(".", config_path)
+    except (ValueError, OSError) as error:
+        sys.exit(f"review configuration error: {error}")
     if since is None:
         prev = None
         try:
@@ -169,6 +181,12 @@ def main():
     # A PR can merge between these reads. Keep the later confirmed snapshot.
     by_number = {p["number"]: p for p in openq if not p["isDraft"]}
     by_number.update((p["number"], p) for p in mergedq)
+    # Persist the initial queue as a JSON list of numbers; closed PRs must not vanish.
+    for number in json.loads(scope_path.read_text()) if scope_path else []:
+        snapshot = gh(["gh", "pr", "view", str(number), "--repo", slug, "--json", LIST_FIELDS])
+        if not snapshot or snapshot.get("number") != number:
+            sys.exit(f"could not reconcile scoped PR #{number}; coverage unknown")
+        by_number[number] = snapshot
     prs = sorted(by_number.values(), key=lambda p: p["createdAt"])
 
     out = []
@@ -177,6 +195,12 @@ def main():
         p["queue_state"] = (queue_state(p.get("id"), p.get("headRefOid"))
                             if p.get("state") == "OPEN" else "not_queued")
         evidence = history_evidence(slug, p)
+        # Collection is later than enumeration; keep its lifecycle state too.
+        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "baseRefOid"):
+            if key in evidence.get("pr", {}):
+                p[key] = evidence["pr"][key]
+        if p.get("state") != "OPEN":
+            p["queue_state"] = "not_queued"
         if str(n) in tickets["prs"]:
             evidence["ticketEvidence"] = tickets["prs"][str(n)]
         reviews = evidence["pr"].get("reviews", [])
@@ -204,6 +228,13 @@ def main():
             "merge_state": p.get("mergeStateStatus"),
             "review_decision": p.get("reviewDecision"),
             "head": p.get("headRefOid"),
+            "base": p.get("baseRefOid"),
+            "review_config": config_path,
+            "evidence_inputs": {
+                "forge": p.get("updatedAt"),
+                "issues": hashlib.sha256(json.dumps(evidence.get("ticketEvidence", {}), sort_keys=True).encode()).hexdigest(),
+                "policy": policy["revision"],
+            },
             "queue_state": p["queue_state"],
             "verdict": verdict_of(p),
             # The per-PR review timestamp the report asks for. None means you

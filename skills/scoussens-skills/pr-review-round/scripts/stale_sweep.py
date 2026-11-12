@@ -15,10 +15,9 @@ Two mechanics make this reliable, and both are easy to get wrong by hand:
   received dozens of commits. ``--not origin/<base>`` is what separates work the
   author did from history that arrived with a merge.
 
-Author work and base merges mean opposite things. Author commits since a review
-may have fixed its findings, so read them first. A branch carrying only base
-merges has addressed nothing -- the findings are still live no matter how long
-the range looks.
+Author commits may have fixed code findings. Neither an unchanged head nor a
+base-only merge proves evidence/owner decisions are unchanged; refresh discussion
+and tracker inputs before retaining the decision.
 """
 import json
 import re
@@ -156,10 +155,10 @@ def main():
             else:
                 live.append(num)
                 print(f'#{num:<6}{who:<26}{"LIVE":<12}{"0":<8}{base_n:<7}{age_s:<7}'
-                      f'base merges only -- nothing addressed, findings stand')
+                      f'base merges only -- refresh evidence/owner decisions; verify code findings')
 
     print(f"\n  STALE?  : {len(stale):>3}  -> author commits landed; read them FIRST, the finding may be fixed")
-    print(f"  LIVE    : {len(live):>3}  -> only base history merged in; the findings are still live")
+    print(f"  LIVE    : {len(live):>3}  -> no author commits; refresh evidence and owner decisions before retaining findings")
     print(f"  CURRENT : {len(current):>3}  -> reviewed at head; verify each finding yourself")
     if broken:
         print(f"  UNKNOWN : {len(broken):>3}  -> range not computable; check these by hand")

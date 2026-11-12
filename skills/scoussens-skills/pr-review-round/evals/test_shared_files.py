@@ -8,6 +8,10 @@ SKILL = Path(__file__).resolve().parent.parent
 SOURCES = {
     "pr-digest": ("references/teacher-button.md",),
     "pr-detail": ("scripts/gather_pr.sh", "scripts/pr_history.py", "assets/pr-history.css"),
+    "configuring-reviews": ("scripts/review_config.py", "references/review-profile.md",
+                            "references/defaults/conventions.md", "references/defaults/data-layer.md",
+                            "references/defaults/integration.md", "references/defaults/security.md",
+                            "references/defaults/verification.md"),
 }
 
 

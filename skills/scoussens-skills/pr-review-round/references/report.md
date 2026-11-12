@@ -1,6 +1,6 @@
 # Reporting the round
 
-Produce exactly one report artifact: the HTML page, delivered at the authorized
+Produce exactly one report artifact: the HTML page, or a short Markdown decision document when HTML adds no value, delivered at the authorized
 destination. Refresh that same page when reconciling the round; do not create a
 parallel document or second report artifact. Accompany it with a brief chat or
 terminal summary that links to the page. Retained JSON is supporting evidence,
@@ -57,7 +57,7 @@ Build from the bundled template, using a run-specific directory:
 
 ```bash
 RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pr-round.XXXXXX")
-python3 "$S/round_report.py" <base> --tickets <tickets.json> > "$RUN_DIR/round.json" &&
+python3 "$S/round_report.py" <base> --scope <initial-pr-numbers.json> --tickets <tickets.json> > "$RUN_DIR/round.json" &&
   python3 "$S/render_round.py" "$RUN_DIR/round.json" --base <base> \
     --timezone <IANA-zone> --assessments <assessments.json> > "$RUN_DIR/report.html"
 ```
@@ -72,11 +72,34 @@ posted. Use this shape, with one entry per assessed PR:
 ```json
 {
   "repository": "owner/repo",
-  "assessments": [{"number": 482, "head": "<full-reviewed-head>", "assessed_at": "2026-11-03T15:20:00Z", "verdict": "CHANGES_REQUESTED", "owner": "Maya", "blocker": "Rollback drops saved filters.", "body": "Verified scenario and evidence, with findings and unblock instructions.", "risk": "DATA"}]
+  "assessments": [{
+    "number": 482, "head": "<full-reviewed-head>", "base": "<full-reviewed-base>",
+    "assessed_at": "2026-11-03T15:20:00Z", "risk": "DATA",
+    "evidence_inputs": {"forge": "<PR updatedAt>", "issues": "<hash from refreshed round JSON>", "policy": "<resolved review configuration revision>"},
+    "decisions": [{
+      "id": "rollback-filters", "kind": "code", "axis": "Spec", "severity": "blocking",
+      "criterion": "Rollback preserves saved filters", "summary": "Rollback drops saved filters",
+      "owner": "Author", "unblock": "Restore the persisted filter field on rollback", "effort": "one migration change",
+      "proposed_action": "request-changes",
+      "evidence": {"source": "<reproduction log URL or retained file>", "at": "2026-11-03T15:20:00Z", "observation": "Saved filter disappears after rollback"}
+    }]
+  }]
 }
 ```
 
-Changed heads and inconsistent collection make a proposal stale. Reassess it
+Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined in `writing-reviews.md`. A clean assessment has one `ready` record, not an empty decision list. Persist it with `ledger.record_assessment`; optional detailed findings remain in `ledger.record`. This extends the round's existing ledger, not a second issue tracker. Legacy SHA-only proposals must be reconciled into this schema before reuse.
+
+`evidence_inputs` comes from a fresh `round_report.py` collection. Include issue descriptions, relevant comments/decisions, criteria and source update times in `ticketEvidence`; its content hash makes external changes invalidate a recommendation. `policy` hashes the resolved profile and all directly referenced policy/checklist contents, including bundled defaults; changed rules invalidate reuse and guarded writes. Files linked from those policies still require source refresh and explicit provenance; this is not a transitive documentation crawler. Supply `round_report.py --review-config <repository-relative-path>` for an alternate profile and carry the same path as top-level `review_config` in the assessment bundle; omit it for the standard profile. Run write helpers from the target repository root so they can recompute the policy revision. Preserve the original `assessed_at` when reusing code checks and describe their scope/limits in `provenance`. Add `posted_action: {action, url, at}` only after an actual write/readback, never for a proposed action. For an accepted evidence/owner gap add `waiver: {actor, source, at, scope, criterion}`; `criterion` must exactly match this record. Preserve waivers across new heads only after confirming their scope still applies; they cannot waive code verification or unfinished review.
+
+Every write additionally takes `--authority authority.json`:
+
+```json
+{"repository":"owner/repo","prs":[482],"actions":["request-changes"],"instruction":"<link or exact originating instruction>","possible_landing":false}
+```
+
+Use only authorized actions (`approve`, `request-changes`, `comment`, `dismiss`, `enqueue`, `enable-auto-merge`). Approval/dismissal that can release auto-merge and both landing actions require `possible_landing: true` with permission covering that consequence. Record exact PRs rather than extending an old batch's authority. Files record permission; they do not grant it. Helpers refresh forge state, but the reviewer must refresh tracker evidence before invoking them.
+
+Changed head/base, discussion or issue inputs and inconsistent collection make a proposal stale. Reassess it
 before treating it as current. Keep source reviews and proposed assessments in
 separate disclosures. A local proposal never acquires a submission timestamp.
 For reused assessments, include a `provenance` string that names the earlier
@@ -88,8 +111,7 @@ the row's next action as if it were verified against the collected code version.
 
 Before rendering, add a `summary` to each saved PR record. Write one short
 sentence that says what changes for the user or operator. Keep `title` unchanged.
-Write each assessment's `blocker` as a plain next action, with its responsible
-person or role in `owner`. Keep technical findings and original wording in `body`.
+Write each decision's `unblock` as a plain next action, with its responsible person or role in `owner`. Keep technical findings in the linked evidence.
 Follow the language guidance in `references/pr-family.md`. The renderer uses the
 original title if no summary is supplied; this fallback is not a language rewrite.
 
@@ -104,6 +126,8 @@ much design the page warrants.
 
 The page answers, for a teammate who was not there: what came in, what landed,
 what is blocked and on whose desk, what the notable findings were.
+
+Keep one value sentence, status, named next action and posted/not-posted indicator visible per PR. Count queue coverage separately from substantive review completion; an evidence gap is not verification. Before publishing, enforce both the 100 KB UTF-8 view budget and the destination's actual limit (use the smaller). The renderer replaces oversized embedded history with explicit evidence links and a gap note, preserving every row. If decision rows alone exceed the budget, return a short Markdown document with links. Retain full raw JSON separately; no silent truncation or compressed runtime loader. Regenerate timestamps/counts/status from records rather than patching transient states manually.
 
 - Header: base branch, date, counts (reviewed / merged / blocked).
 - A dense row per PR: **PR number linked**, plain summary, status, and next

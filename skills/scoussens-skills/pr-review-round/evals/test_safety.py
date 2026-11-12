@@ -16,12 +16,14 @@ import merge_queue
 import review_write
 import round_report
 from md_to_html import render
+from decision_fixtures import assessment, authority, bundle, BASE, REVISION
 
 HEAD = "a" * 40
 
 
 def state(**changes):
     return {"state": "OPEN", "headRefOid": HEAD,
+            "baseRefOid": BASE, "updatedAt": REVISION,
             "reviewDecision": "APPROVED", "mergeStateStatus": "CLEAN",
             "queue_state": "not_queued", "isDraft": False, **changes}
 
@@ -37,7 +39,7 @@ class Elements(HTMLParser):
 
 
 class LandingTests(unittest.TestCase):
-    def run_land(self, states, args=None, failure=False):
+    def run_land(self, states, args=None, failure=False, item=None, permission=None):
         output = io.StringIO()
         snapshots = iter(states)
         writes = []
@@ -46,7 +48,7 @@ class LandingTests(unittest.TestCase):
         def forge(command, **kwargs):
             nonlocal current
             if command[:3] == ["gh", "pr", "view"]:
-                current = next(snapshots)
+                current = next(snapshots, current)
                 payload = {"id": "PR_fixture", **current}
             elif command[:3] == ["gh", "api", "graphql"]:
                 if current.get("queue_state") == "unknown":
@@ -62,19 +64,28 @@ class LandingTests(unittest.TestCase):
                 raise AssertionError(command)
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
-        with patch.object(sys, "argv", ["land.py", *(args or ["--enqueue", f"17:{HEAD}"])]), \
+        with tempfile.TemporaryDirectory() as tmp:
+            assessment_file = Path(tmp) / "assessments.json"
+            authority_file = Path(tmp) / "authority.json"
+            assessment_file.write_text(json.dumps(bundle(item)))
+            authority_file.write_text(json.dumps(permission or authority()))
+            argv = args or ["--enqueue", f"17:{HEAD}"]
+            if "--enqueue" in argv or "--enable-auto-merge" in argv:
+                argv = [*argv, "--repo", "owner/repo", "--authority", str(authority_file),
+                        "--assessments", str(assessment_file)]
+            with patch.object(sys, "argv", ["land.py", *argv]), \
                 patch.object(subprocess, "run", side_effect=forge), \
                 patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), \
                 contextlib.redirect_stdout(output):
-            code = land.main()
+                code = land.main()
         for command in writes:
-            self.assertEqual(command, ["gh", "pr", "merge", "17", "--match-head-commit", HEAD])
+            self.assertEqual(command[:8], ["gh", "pr", "merge", "17", "--repo", "owner/repo", "--match-head-commit", HEAD])
         return len(writes), output.getvalue(), code
 
     def test_revoked_approval_stops_enqueue(self):
         writes, output, code = self.run_land([state(), state(reviewDecision="CHANGES_REQUESTED")])
         self.assertEqual(writes, 1, output)
-        self.assertIn("current approval not confirmed", output)
+        self.assertIn("post-write head or approval changed", output)
         self.assertEqual(code, 1)
 
     def test_conflict_is_not_landed(self):
@@ -89,7 +100,7 @@ class LandingTests(unittest.TestCase):
             with self.subTest(expected_writes=expected_writes):
                 writes, output, code = self.run_land(snapshots)
                 self.assertEqual(writes, expected_writes, output)
-                self.assertIn("review again", output)
+                self.assertTrue("review again" in output or "reconcile before further writes" in output, output)
                 self.assertEqual(code, 1)
 
     def test_watch_and_default_never_write_or_invent_queue_membership(self):
@@ -110,9 +121,9 @@ class LandingTests(unittest.TestCase):
                 self.assertIn(f"queue={queue}", output)
                 self.assertEqual(code, 1)
 
-    def test_evicted_approved_head_is_reenqueued_then_observed_merged(self):
+    def test_accepted_request_is_not_retried_without_new_authority_and_reconciliation(self):
         writes, output, code = self.run_land([state(), state(), state(state="MERGED")])
-        self.assertEqual(writes, 2)
+        self.assertEqual(writes, 1)
         self.assertIn("all watched PRs landed", output)
         self.assertEqual(code, 0)
 
@@ -137,6 +148,35 @@ class LandingTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
             land.main()
         self.assertEqual(error.exception.code, 2)
+
+    def test_auto_merge_first_attempt_and_retry_reject_all_missing_gates(self):
+        for mode in ("--enqueue", "--enable-auto-merge"):
+            for snapshot, item, permission in [
+                (state(), assessment(kind="evidence", owner="Operator"), authority()),
+                (state(), assessment(kind="decision", owner="Owner"), authority()),
+                (state(), assessment(kind="reviewer-incomplete"), authority()),
+                (state(reviewDecision="REVIEW_REQUIRED"), assessment(), authority()),
+                (state(headRefOid="c" * 40), assessment(), authority()),
+                (state(queue_state="unknown"), assessment(), authority()),
+                (state(), assessment(), authority(prs=[99])),
+                (state(), assessment(), authority(possible_landing=False)),
+                (state(updatedAt="new discussion"), assessment(), authority()),
+                (state(), assessment(evidence_inputs={"forge": REVISION, "issues": "issue-revision-1", "policy": "outdated-rules"}), authority()),
+            ]:
+                # Each invocation represents a first attempt or a later fresh retry.
+                for attempt in range(2):
+                    with self.subTest(mode=mode, snapshot=snapshot, kind=item["decisions"][0]["kind"], attempt=attempt):
+                        writes, output, code = self.run_land([snapshot] * 3, [mode, f"17:{HEAD}"], item=item, permission=permission)
+                        self.assertEqual(writes, 0, output)
+                        self.assertEqual(code, 1)
+
+    def test_authorized_auto_merge_is_a_landing_write_and_reads_back_uncertainty(self):
+        writes, output, code = self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("post-write:", output)
+        writes, output, code = self.run_land([state(), state(queue_state="unknown")], failure=True)
+        self.assertEqual((writes, code), (1, 1), output)
+        self.assertIn("queue=unknown", output)
 
 
 class QueueReportTests(unittest.TestCase):
@@ -167,9 +207,10 @@ class QueueReportTests(unittest.TestCase):
 
 
 class ReviewWriteTests(unittest.TestCase):
-    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author"):
+    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None):
         writes = []
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
+                                      "base": {"sha": BASE}, "updated_at": REVISION,
                                       "draft": False, "auto_merge": None, "user": {"login": author}}] * 2)
 
         def forge(command, **kwargs):
@@ -183,11 +224,17 @@ class ReviewWriteTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             body = Path(directory) / "review.md"
             body.write_text("Verified store.py:42 reads the corrected key.")
+            assessment_file = Path(directory) / "assessments.json"
+            assessment_file.write_text(json.dumps(bundle(item or (assessment(kind="code", owner="Author") if action == "request-changes" else assessment()))))
+            authority_file = Path(directory) / "authority.json"
+            authority_file.write_text(json.dumps(permission or authority()))
             output = io.StringIO()
             with patch.object(sys, "argv", ["review_write.py", action, "17", "--repo", "owner/repo",
                                            "--head", HEAD, "--body-file", str(body),
-                                           "--review-id", "9", *flags]), \
-                    patch.object(subprocess, "run", side_effect=forge), contextlib.redirect_stdout(output):
+                                           "--review-id", "9", "--authority", str(authority_file),
+                                           "--assessments", str(assessment_file), *flags]), \
+                    patch.object(subprocess, "run", side_effect=forge), \
+                    patch.object(review_write, "state_of", return_value=state()), contextlib.redirect_stdout(output):
                 code = review_write.main()
         return writes, output.getvalue(), code
 
@@ -217,9 +264,13 @@ class ReviewWriteTests(unittest.TestCase):
                 if action in ["approve", "request-changes"]:
                     self.assertEqual(payload["commit_id"], HEAD)
                     self.assertEqual(payload["event"], "APPROVE" if action == "approve" else "REQUEST_CHANGES")
+                if action == "request-changes":
+                    self.assertIn("## Unblock\n- Author:", payload["body"])
+                    self.assertIn("one workflow", payload["body"])
 
     def test_auto_merge_requires_landing_authority_for_clearance(self):
         pr = {"head": {"sha": HEAD}, "state": "open", "draft": False,
+              "base": {"sha": BASE}, "updated_at": REVISION,
               "auto_merge": {"enabled_by": "author"}, "user": {"login": "author"}}
         for action in ["approve", "dismiss"]:
             with self.subTest(action=action):
@@ -242,12 +293,34 @@ class ReviewWriteTests(unittest.TestCase):
         self.assertEqual(code, 1)
 
     def test_head_movement_during_dismissal_is_not_reported_as_clearance(self):
-        pr = {"head": {"sha": HEAD}, "state": "open", "draft": False, "auto_merge": None}
+        pr = {"head": {"sha": HEAD}, "base": {"sha": BASE}, "updated_at": REVISION,
+              "state": "open", "draft": False, "auto_merge": None}
         writes, output, code = self.run_write("dismiss", flags=["--write"],
                                              snapshots=[pr, {"head": {"sha": "b" * 40}}])
         self.assertEqual(len(writes), 1)
         self.assertIn("HEAD MOVED during write", output)
         self.assertEqual(code, 1)
+
+    def test_clearance_and_changes_requested_respect_owned_decisions(self):
+        for action in ("approve", "dismiss"):
+            for kind in ("code", "evidence", "decision", "reviewer-incomplete"):
+                with self.subTest(action=action, kind=kind):
+                    writes, output, code = self.run_write(action, flags=["--write"], item=assessment(kind=kind))
+                    self.assertEqual((writes, code), ([], 1), output)
+        for kind in ("evidence", "reviewer-incomplete"):
+            writes, output, code = self.run_write("request-changes", flags=["--write"], item=assessment(kind=kind))
+            self.assertEqual((writes, code), ([], 1), output)
+        writes, output, code = self.run_write("comment", flags=["--write"], permission=authority(prs=[99]))
+        self.assertEqual((writes, code), ([], 1), output)
+
+    def test_changed_review_policy_blocks_every_posted_action(self):
+        item = assessment(kind="code")
+        item["evidence_inputs"]["policy"] = "outdated-rules"
+        for action in ("approve", "dismiss", "request-changes", "comment"):
+            with self.subTest(action=action):
+                writes, output, code = self.run_write(action, flags=["--write"], item=item)
+                self.assertEqual((writes, code), ([], 1), output)
+                self.assertIn("review policy changed", output)
 
 
 class RenderingTests(unittest.TestCase):

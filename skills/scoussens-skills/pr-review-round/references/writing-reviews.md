@@ -75,6 +75,16 @@ Silently dropping it leaves them wondering whether it still applies.
 
 ## Choosing the verdict
 
+Record an owned decision, not a "hold". Decision kind, severity, axis and GitHub state are separate:
+
+- `code`: author owns a reproduced failure or documented rule violation; clear it by verifying the smallest fix.
+- `evidence`: name the person able to run the missing workflow and the criterion; clear it with evidence or an authorized owner's criterion-scoped acceptance of the gap.
+- `decision`: the product, architecture or operator owner owes a specific scope, rollout or risk choice.
+- `reviewer-incomplete`: the reviewer owes unfinished review work. This is not an author defect and cannot be waived into completed review.
+- `ready`: independent review is complete; mutable forge gates still apply. A rebase belongs to the author as a forge next action, not a code defect.
+
+Save every assessment, including clean ones, through `ledger.record_assessment`. Use the schema in `report.md`: head/base, original assessment time and scope, input revisions, and decisions with criterion/rule, source/time/observation, severity, axis, owner, smallest unblock, effort and proposed action. Record an actual posted action/URL/time only after readback. An accepted gap keeps its actor, source, time, exact criterion and scope; it does not clear unrelated requirements.
+
 The table names proposed actions. In assessment-only mode, keep them local.
 Execute each action only with authority for that action and PR; approval or
 dismissal that can release auto-merge also needs merge authority. Preserve the
@@ -85,7 +95,9 @@ independent risk-tier trace and evidence requirements before granting clearance.
 | Code ready, branch conflicting or behind | **Approve**, then comment about the conflict. Approving clears the review gate — the only gate you control. Requesting changes for a rebase is noise. |
 | Blocking finding confirmed at head | Request changes, one clear list |
 | Blocking findings all fixed since the review | Dismiss the stale review naming the SHA and what you confirmed, then approve |
-| The author's own body says it is unverified | Hold the line they drew; that is a legitimate block |
+| The author's body says a required workflow is unverified | Needs evidence: name its criterion, workflow runner and requested evidence; do not call the PR body proof |
+| A scope/risk choice prevents a recommendation | Needs owner decision: name the owner, specific choice and proposed comment channel |
+| Independent review is not finished | Review incomplete: reviewer owns finishing it; do not request author fixes |
 | Findings real but pre-existing and out of scope | Approve, note as follow-up |
 | Automated review is red because the tool errored | Say so in the review; do not treat it as a finding |
 | You are the author | You cannot approve. Resolve conflicts, engage the findings honestly, ask for a named non-author reviewer |
@@ -112,7 +124,7 @@ gate, so the author is not guessing.
 ## Commands
 
 Use the guarded helper after verifying the full head SHA, not an unpinned
-`gh pr review` call. `--write` asserts authority for this specific action; omit
+`gh pr review` call. Supply `--authority <authority.json>` and `--assessments <assessments.json>` on every write (schema in `report.md`). The helper generates the required **Unblock** section with owner, smallest fix and effort from code decisions; it rejects changes-requested without a code decision. Evidence and owner requests use the proposed comment channel; reviewer-incomplete work stays local with the reviewer. `--write` selects execution; omit
 it when preparing a proposed action. `--allow-landing` additionally asserts
 merge authority and is required for approval or dismissal if auto-merge is
 enabled. Neither flag substitutes for the user's permission or for evidence.
@@ -120,13 +132,13 @@ enabled. Neither flag substitutes for the user's permission or for evidence.
 ```bash
 # Set S to this skill's scripts directory; HEAD is the full SHA already reviewed.
 python3 "$S/review_write.py" approve <n> --repo "$REPO" --head "$HEAD" \
-  --body-file /tmp/r<n>.md --write
+  --body-file /tmp/r<n>.md --authority <authority.json> --assessments <assessments.json> --write
 python3 "$S/review_write.py" request-changes <n> --repo "$REPO" --head "$HEAD" \
-  --body-file /tmp/r<n>.md --write
+  --body-file /tmp/r<n>.md --authority <authority.json> --assessments <assessments.json> --write
 python3 "$S/review_write.py" comment <n> --repo "$REPO" --head "$HEAD" \
-  --body-file /tmp/c<n>.md --write
+  --body-file /tmp/c<n>.md --authority <authority.json> --assessments <assessments.json> --write
 python3 "$S/review_write.py" dismiss <n> --repo "$REPO" --head "$HEAD" \
-  --review-id <review-id> --body-file /tmp/d<n>.md --write
+  --review-id <review-id> --body-file /tmp/d<n>.md --authority <authority.json> --assessments <assessments.json> --write
 ```
 
 The helper reads the head immediately before each write, rejects self-approval,

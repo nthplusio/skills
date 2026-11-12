@@ -32,9 +32,9 @@ with zipfile.ZipFile(sys.argv[1]) as z:
  print(json.dumps({i.filename: {"sha256": hashlib.sha256(z.read(i)).hexdigest(), "mode": i.external_attr >> 16, "text": z.read(i).decode() if i.filename.endswith(("SKILL.md", "README.md", "openai.yaml", "plugin.json", "LICENSE")) else None} for i in z.infolist()}))`, path], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }))
 }
 
-test('catalog covers 23 sources, five host-enforced policies and nine explain-to requirements', () => {
+test('catalog covers 24 sources, five host-enforced policies and nine explain-to requirements', () => {
   const catalog = loadCatalog()
-  assert.equal(catalog.entries.length, 23)
+  assert.equal(catalog.entries.length, 24)
   assert.equal(catalog.entries.filter((e) => e.activation === 'manual-only').length, 5)
   assert.equal(catalog.entries.filter((e) => e.required.includes('explain-to')).length, 9)
   assert.deepEqual(closure(catalog, ['pr-teacher']).map((e) => e.name), ['explain-to', 'pr-teacher'])
@@ -60,7 +60,7 @@ test('build real archives with all tracked resources, licenses, policy and repro
     assert(entries[`${prefix}/LICENSE`])
     const plugin = name.startsWith('nthplusio-')
     const sourceNames = plugin ? paths.filter((p) => /^.*\/skills\/[^/]+\/SKILL.md$/.test(p)).map((p) => p.split('/')[2]) : [prefix]
-    assert.equal(sourceNames.length, plugin ? (name.includes('conversation') ? 4 : 21) : 1)
+    assert.equal(sourceNames.length, plugin ? (name.includes('conversation') ? 4 : 22) : 1)
     assert(!sourceNames.includes('picking-skills') && !sourceNames.includes('pstack-sync'))
     if (plugin) {
       const portable = JSON.parse(entries[`${prefix}/plugin.json`].text)
@@ -110,7 +110,7 @@ test('generated metadata excludes native mods and preserves native Claude entrie
   assert.deepEqual(openai.plugins[0].source, { source: 'local', path: './' })
   assert.deepEqual(openai.plugins[0].policy, { installation: 'AVAILABLE', authentication: 'ON_INSTALL' })
   const claude = readJson(join(root, '.claude-plugin/marketplace.json')).plugins.at(-1)
-  assert.equal(claude.skills.length, 21)
+  assert.equal(claude.skills.length, 22)
 })
 
 test('missing companions, cycles and unreviewed closure fail rather than silently dropping dependencies', (t) => {

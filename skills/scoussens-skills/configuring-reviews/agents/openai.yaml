@@ -1,0 +1,4 @@
+interface:
+  display_name: configuring-reviews
+policy:
+  allow_implicit_invocation: true
