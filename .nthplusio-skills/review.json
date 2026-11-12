@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "guidance": ["README.md", "distribution/README.md"],
+  "tracker": {"policy": ["docs/agents/issue-tracker.md"]},
+  "execution": {"reviewers": "auto", "policy": []},
+  "references": {
+    "conventions": {"files": ["docs/writing-good-descriptions.md"]},
+    "integration": {"files": ["docs/installation.md", "distribution/README.md"]},
+    "verification": {"files": ["distribution/agent-evaluation.md"]},
+    "skill-portability": {"files": ["docs/review/skill-portability.md"]}
+  }
+}

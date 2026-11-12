@@ -188,6 +188,8 @@ The discovery and sync skills keep their saved state in `.nthplusio-skills/`
 at the root of the repository they work in. One script, `state.py` in
 `harness-discovery`, checks it and resolves a harness from it.
 
+This repository's [review profile](.nthplusio-skills/review.json) extends the portable defaults with [skill-portability checks](docs/review/skill-portability.md) and follows the [local requirements policy](docs/agents/issue-tracker.md). Reviewer execution uses available, authorized capabilities; the profile does not select a mandatory harness or grant external-write permission.
+
 `writing-in-voice` defaults to personal profiles at
 `~/.config/agents/voices/default.md`, outside project and shared skill repositories.
 An explicitly declared project voice can live at `.agents/voice/profile.md`
