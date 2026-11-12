@@ -12,7 +12,9 @@
         "all_sections: the record has Where things stand, Lanes, How open questions get answered, Needs <Owner>, Decisions already approved, Answered by research, Stopped, Lane work, Done and Last updated",
         "single_editor: the record states that only the editor edits it and that lanes report by message",
         "mirror_when_needed: lanes that cannot read the record get the orphan-branch STATUS.md mirror and its read command",
-        "checked: record.py check runs and prints PASS before the reply"
+        "checked: record.py check runs and prints PASS before the reply",
+        "drilldown: the overview tiles open matching tabs, queue rows open the specific decision's full context, and lane cards open lane details",
+        "decision_ready: the owner can judge the question, recommended answer, why and tradeoff, and what waits on it without leaving the page; source links provide optional deeper evidence"
       ],
       "files": []
     },
@@ -49,15 +51,78 @@
       "id": 3,
       "name": "owner-rules",
       "prompt": "Approved A on the ID question.",
-      "expected_output": "Checks the item off in place with a dated ruling first, keeps the recommendation and why beneath it, adds a Done row for the ruling, tells the affected lane, and updates the mirror and overview.",
+      "expected_output": "Verifies the sender is the owner and that A refers to the current recommendation, then checks the item off in place with a dated ruling first. Preserves the original feedback and source identity, recommendation and why, adds one Done row, and reports the saved revision separately from lane notification and mirror/overview refresh.",
       "assertions": [
         "in_place: the item stays where it is and is checked off",
         "dated_ruling: the ruling and its date are recorded on the item",
-        "lane_told: the lane the item was holding up is sent the ruling"
+        "lane_told: the lane the item was holding up is sent the ruling, or a notification failure is explicitly pending",
+        "receipt: records the source feedback identity and reads back the saved ruling before claiming it is recorded"
       ],
       "files": [
         "skills/scoussens-skills/tracking-projects/assets/example-record.md"
       ]
+    },
+    {
+      "id": 4,
+      "name": "manual-feedback-without-amp",
+      "prompt": "Keep this project tracker in STATUS.md. We use an issue discussion for owner comments and a terminal agent that I start manually. There are no artifact or agent-messaging tools. Show me how to respond and how my ruling gets recorded.",
+      "expected_output": "Uses the generic feedback workflow and the existing issue discussion. States manual review, identifies the owner account and editor, puts the comment destination and manual review trigger in Where things stand, and preserves source comment identity and the reviewed recommendation when recording a ruling. Does not require a custom server or Amp tools.",
+      "assertions": [
+        "no_amp_dependency: does not call or require artifact, send_thread_message or an Amp-specific skill",
+        "manual_route: the rendered overview and record say where to comment and what human action starts review",
+        "no_installation: does not deploy a page or install a webhook merely to enable tracking",
+        "same_rules: distinguishes feedback received from ruling recorded and preserves the owner's original words"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "saved-feedback-is-not-automatic-review",
+      "prompt": "The form saves comments in our wiki and the webhook returns 200. The editor has never received a test submission. Can the tracker say feedback is automatically reviewed?",
+      "expected_output": "Keeps the route labeled manual or pending verification. Explains the missing delivery evidence and proposes an authorized end-to-end test that reads back feedback, observes the actual editor receive it and reads its review receipt. Does not invent a working wake-up route.",
+      "assertions": [
+        "honest_mode: HTTP success and stored comments are not treated as proof of automatic review",
+        "preserve_saved: saved feedback stays pending delivery and is not submitted a second time",
+        "verification_gate: automatic mode requires editor receipt and a visible review outcome"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "amp-integration-stays-separate",
+      "prompt": "Use the Amp document and its embedded tracker. I want to give feedback from there. Does a button in the visual save my ruling or wake the editor?",
+      "expected_output": "Reads the Amp integration, explains the visual sandbox cannot submit or persist feedback, and gives the document-comment plus explicit editor-review route unless an automatic route was separately verified. Keeps the same generic ruling rules.",
+      "assertions": [
+        "integration_loaded: reads references/amp.md only for the Amp-specific behavior",
+        "no_fake_form: does not claim visual controls save or notify",
+        "manual_trigger: names the exact action that starts editor review rather than implying a comment always wakes it",
+        "revision_safe: later artifact writes use the latest base revision"
+      ],
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "question-and-stale-approval-stay-unresolved",
+      "prompt": "Review two owner comments: F-10 says 'Why not use the source-record ID?' on D-01. F-11 approves recommendation A on D-02, but A changed materially after the owner opened the page. Neither has been processed yet.",
+      "expected_output": "Preserves both comments and their reviewed versions. Answers F-10 beside its decision without checking it off. For F-11, shows the old and changed recommendations and asks one focused confirmation; it does not silently approve the new recommendation or remove either blocker.",
+      "assertions": [
+        "question_not_approval: F-10 remains an open decision with an editor answer",
+        "stale_version: F-11 needs confirmation of the changed recommendation",
+        "traceable: both original comments retain identity, text and who acts next"
+      ],
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "retry-a-ruling-without-duplicating-it",
+      "prompt": "The record-write response timed out for owner submission F-12. Read-back now shows the ruling and a Done row already saved, but the lane notification and mirror update failed. Finish processing it.",
+      "expected_output": "Recognizes the saved submission as already applied, recovers its receipt, and retries only missing follow-through through the configured host routes. Reports ruling recorded separately from notifications and refreshes.",
+      "assertions": [
+        "idempotent: does not create another ruling or Done row for F-12",
+        "no_false_delivery: does not mark implementation delivered or a worker active merely because the ruling exists",
+        "recover_partial: retries missing notification and mirror update without overwriting newer record edits"
+      ],
+      "files": []
     }
   ]
 }

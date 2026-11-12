@@ -1,9 +1,9 @@
 - [ ] **<The question, in plain words, ending with a question mark?>**
-  - **Context:** <One sentence the owner can act on alone: what exists today and why it is a question.>
+  - **Context:** <What happens today, what would change, and why the owner needs to decide. Define project terms here.>
     - <Detail: what the code, data or meetings show, with file:line and counts.>
     - <Detail: what is already settled around it, so the owner rules on the open part only.>
   - **Sources checked:** <Source> (<citation: file:line, meeting and timestamp, or query and counts>); <next source> (<citation>). <Say which sources had nothing.> ([research](https://<research thread or report>))
   - **Options:** A: <first real alternative>. B: <second real alternative>.
-  - **Recommendation:** <The answer first, in one or two sentences. Name the option when there are options.>
+  - **Recommendation:** <The recommended answer and its effect, in one or two sentences. Spell it out even when naming an option.>
   - **Why:** <The reason the sources give for it.> **Tradeoff:** <What the recommendation gives up or risks.>
   - **Holding up:** <The ticket, lane or piece that waits on this ruling>, or "nothing yet".

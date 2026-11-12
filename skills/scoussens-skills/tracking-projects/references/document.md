@@ -13,8 +13,7 @@ them: a heading may add words after them, such as
 - **Editing rule:** one sentence naming the editor, saying workers read the
   mirror and report changes by message instead of editing.
 - **Mirror command:** the exact command a worker runs to read the mirror.
-- **`Last updated: YYYY-MM-DD`:** change it on every edit. A host's date
-  chip, such as Amp's `{{date:2026-11-05}}`, is fine.
+- **`Last updated: YYYY-MM-DD`:** change it on every edit. Host-specific date formatting belongs in its integration reference.
 - **Overview embed:** the overview visual, when the host can show one (see
   SKILL.md, step 5).
 
@@ -24,6 +23,8 @@ Three to five bullets the owner can read in ten seconds: the outcome so far,
 the delivery head with its CI result, how many decisions wait on the owner and
 the one holding up the most work, and where the mirror lives. Rewrite these
 bullets at each milestone; do not append to them.
+
+Include a **Feedback** bullet naming the manual or automatic review mode, a usable destination, the editor and what starts review. On a static host, this is the route to use instead of embedded form controls. Keep it current when the route changes.
 
 ## Lanes
 
@@ -58,16 +59,18 @@ The decision item has these fields:
 | Field | Holds | Required |
 | --- | --- | --- |
 | Title | The question in plain words, ending with `?` | yes |
-| Context | One sentence that stands alone, then detail as nested bullets | yes |
+| Context | What happens today, what would change, and why a decision is needed, then supporting detail as nested bullets | yes |
 | Sources checked | Each source with a citation: `file:line`, meeting and timestamp or cue, or the query and its counts. Name the sources that had nothing. Link the research thread | yes |
 | Options | The real alternatives, lettered. Leave it out when there is only one sensible answer | when there are alternatives |
-| Recommendation | The answer, outcome first. "None yet" with the reason when research could not form one | yes |
+| Recommendation | The answer and its effect, spelled out rather than only an option letter. "None yet" with the reason when research could not form one | yes |
 | Why | The reason the sources give, then `**Tradeoff:**` and what it accepts | yes |
 | Holding up | The ticket, lane or piece that waits on the ruling, or "nothing yet" | yes |
 
 Context is expandable: the first sentence is all a busy owner needs. Detail
 goes in nested bullets under it, which rich editors can fold. On a host that
 renders HTML, `<details>` works too.
+
+When feedback arrives, keep its identity, original words, receipt and follow-up in the decision's native discussion or nested Context bullets. For a host without stable item IDs, put a permanent decision label there too. These are content in the existing format, not a new submission API. SKILL.md routes feedback processing to its host-independent workflow.
 
 ### Decisions already approved
 
@@ -95,14 +98,17 @@ it waits on. Check an item off when it is delivered, and add a Done row for it.
 
 ## Done
 
-A table, newest first: `Date | What | Where`.
+A history table, newest first: `Date | Kind | What | Where`.
 
 - **Date:** `YYYY-MM-DD`, or `earlier` for rows carried over from before the
   record existed.
+- **Kind:** `Delivery` for work pushed or merged, `Ruling` for an owner's decision, `Other` for other recorded events, or `Unclassified` when the evidence does not establish the kind. Classify the event, not words in its description or the presence of a commit link. A docs delivery can implement a ruling; merely recording approval is still a ruling.
 - **What:** what landed, in one sentence. Then the checks that were run, with
   their counts, and the CI result with a link to the run. Say "CI green on
   the first run", or say exactly what failed and whether a rerun passed.
 - **Where:** the commit, linked to its page. A ruling that has no commit names
   the lane or thread that carries it.
 
-Rulings get a Done row too, so the table is the project's history.
+Rulings get a `Ruling` row too, so the table is the project's history. Delivered counts and CI totals include only `Delivery` rows. Owner ruled counts decision items, not their history rows; its tab also shows ruling history. The History tab retains every row.
+
+When updating an older three-column table, add Kind and classify each row from its recorded evidence without changing its content or order. Leave uncertain rows `Unclassified`. Missing or blank Kind renders as Unclassified, remains visible in History, and does not count as delivered work; the overview flags these entries for review.

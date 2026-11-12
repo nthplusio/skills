@@ -18,6 +18,7 @@ Last updated: <YYYY-MM-DD>
 - **Delivery head:** <branch> at [`<short sha>`](<commit URL>). <CI result, with a link to the run.>
 - **Waiting on <Owner>:** <N decisions. The one holding up the most work is ….>
 - **Mirror:** `STATUS.md` on branch `<project>-status`, committed only by <Editor>. It has no pull request and is never merged.
+- **Feedback:** <Manual or verified automatic review. Where the owner responds, who reviews it, and the exact action that starts review.>
 
 ## Lanes
 
@@ -61,6 +62,6 @@ Each open question first goes to a research thread with its sources, which retur
 
 ## Done
 
-| Date | What | Where |
-| --- | --- | --- |
-| <YYYY-MM-DD> | <What landed, in one sentence.> Checks: <names and counts>. CI: <green or failed, with a link to the run> | [`<short sha>`](<commit URL>) |
+| Date | Kind | What | Where |
+| --- | --- | --- | --- |
+| <YYYY-MM-DD> | Delivery | <What landed, in one sentence.> Checks: <names and counts>. CI: <green or failed, with a link to the run> | [`<short sha>`](<commit URL>) |

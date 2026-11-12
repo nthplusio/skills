@@ -16,6 +16,7 @@ Last updated: 2026-11-05
 - **Delivery head:** `layout-rebuild-plan` at [`ab5d078`](https://example.org/commit/ab5d078). [Hosted CI](https://example.org/runs/42017580376) green on the first run.
 - **Waiting on the owner:** 2 decisions. The ID question holds up lane 2's write-back step.
 - **Mirror:** `STATUS.md` on branch `layout-rebuild-status`, committed only by the orchestrator. It has no pull request and is never merged.
+- **Feedback:** manual review. Comment on the decision in this record, then [ask the editor to review it](https://example.org/threads/T-orchestrator). Comments alone do not start review.
 
 ## Lanes
 
@@ -42,11 +43,12 @@ Each open question first goes to a research thread with its sources, which retur
 
 - [ ] **Which ID does a document's object link hold?**
   - **Context:** the local column points at the Object, but the current system writes the ID of the object's source record instead.
+    - An Object is the shared item used by documents, deliveries and jobs. A source record is the original imported row. The decision is whether to keep these as separate links or change every reader to use the original row.
     - Local schema: the column references the Object (`baseline/schema.sql:5010`); lane 2's registration code follows it (`stores/registration.ts:110-125`).
     - Current system: writes the source-record ID (`services/dimensions/write/node.py:2166-2177`). The development database's two assigned documents hold source-record IDs that are not Object IDs.
   - **Sources checked:** meetings and the design reference don't address the column; the local schema and registration code; the existing API; the development database (2 of 32 documents linked). ([research](https://example.org/threads/T-research-k10))
   - **Options:** A: keep the column pointing at the Object, and add a separate reference to the source record. B: change the column to hold the source-record ID, and update its key and every reader.
-  - **Recommendation:** A.
+  - **Recommendation:** A: keep the document linked to the shared Object and store the original source record in a separate column.
   - **Why:** the Object link is what Document, delivery and Job references need, and a separate column keeps the existing lineage without mixing two kinds of ID in one column. **Tradeoff:** one more column to fill on write.
   - **Holding up:** lane 2's write-back step. The rest of that piece is being built.
 - [ ] **Should bars change from 4 cards to 6 that snap only to 0, 1 or 6?**
@@ -81,9 +83,9 @@ Each open question first goes to a research thread with its sources, which retur
 
 ## Done
 
-| Date | What | Where |
-| --- | --- | --- |
-| 2026-11-05 | Ticket 27: the importer registers each delivery through the atomic apply. Checks: check 476, DB 306, importer 16, fixture 429, gitleaks clean. CI green on the first run ([run 42017580376](https://example.org/runs/42017580376)) | [`ab5d078`](https://example.org/commit/ab5d078) |
-| 2026-11-05 | Lane 3: ticket 60 live walk and the drum order fix. Checks: check 476, DB 286, fixture 429. CI green on the first run ([run 41995484614](https://example.org/runs/41995484614)) | [`084daf3`](https://example.org/commit/084daf3) |
-| 2026-11-05 | The fill-down rule pushed (docs only). Checks: check 470, DB 286. Hosted lab-1 failed on a known startup flake; the one authorized rerun failed the same way, so it is pushed but not CI-green | [`a4cbe1e`](https://example.org/commit/a4cbe1e) |
-| 2026-11-04 | The owner approved building ticket 96 | Lane 3 |
+| Date | Kind | What | Where |
+| --- | --- | --- | --- |
+| 2026-11-05 | Delivery | Ticket 27: the importer registers each delivery through the atomic apply. Checks: check 476, DB 306, importer 16, fixture 429, gitleaks clean. CI green on the first run ([run 42017580376](https://example.org/runs/42017580376)) | [`ab5d078`](https://example.org/commit/ab5d078) |
+| 2026-11-05 | Delivery | Lane 3: ticket 60 live walk and the drum order fix. Checks: check 476, DB 286, fixture 429. CI green on the first run ([run 41995484614](https://example.org/runs/41995484614)) | [`084daf3`](https://example.org/commit/084daf3) |
+| 2026-11-05 | Delivery | The fill-down rule pushed (docs only). Checks: check 470, DB 286. Hosted lab-1 failed on a known startup flake; the one authorized rerun failed the same way, so it is pushed but not CI-green | [`a4cbe1e`](https://example.org/commit/a4cbe1e) |
+| 2026-11-04 | Ruling | The owner approved building ticket 96 | Lane 3 |

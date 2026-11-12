@@ -29,7 +29,7 @@ Check it off in place, put the ruling first, and keep the reasoning beneath it.
   - **Why:** …unchanged…
 ```
 
-Then add a Done row: `| 2026-11-05 | The owner ruled A on Book versions | Lane 5 |`.
+Then add a Done row: `| 2026-11-05 | Ruling | The owner ruled A on Book versions | Lane 5 |`.
 
 ## A ruling that changes the recommendation
 

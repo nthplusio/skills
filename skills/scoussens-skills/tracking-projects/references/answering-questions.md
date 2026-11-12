@@ -49,8 +49,9 @@ Sources, in this order: <the ladder, with the specific meetings, files, apps,
   or tables to start from>
 Rules: read only. SELECT-only queries. Do not contact anyone. Do not edit the
   record or any branch.
-Reply with send_thread_message to <editor thread ID> (or as your final
-  message), containing:
+Return the findings to <editor> through <configured report route>. If the
+  calling agent receives your final result directly, use that result.
+Include:
   - the question
   - the recommendation, outcome first
   - why, and the tradeoff it accepts
