@@ -44,6 +44,9 @@ def fixture(number=17):
                "headRefOid": "a" * 40, "baseRefOid": "b" * 40,
                "createdAt": "2026-10-01T00:00:00Z", "mergedAt": "2026-10-05T00:00:00Z",
                "additions": 200, "reviews": [], "comments": [], "files": [], "commits": commits},
+        "requests": [{"users": [], "teams": []}],
+        "request-fallback": [{"data": {"repository": {"pullRequest": {"reviewRequests": {
+            "nodes": [], "pageInfo": {"hasNextPage": False, "endCursor": None}}}}}}],
         "reviews": [[review("custom-reviewer[bot]", "Bot", "DISMISSED"),
                      review("author", "User", "COMMENTED")],
                     [review("reviewer", "User", "CHANGES_REQUESTED")]],
@@ -164,6 +167,42 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(gathered["omittedSources"], ["files", "commits", "check-runs"])
         self.assertEqual(len(gathered["pr"]["reviews"]), 3)
         self.assertEqual(len(gathered["threads"][0]["comments"]["nodes"]), 102)
+
+    def test_late_page_team_request_and_removal_preserve_targets_and_identity(self):
+        data = fixture()
+        data["timeline"][1] += [{"id": 101, "event": "review_requested", "actor": {"login": "author"},
+                                  "created_at": "2026-10-04T12:00:00Z", "requested_team": {"slug": "data-reviewers"}},
+                                 {"id": 102, "event": "review_request_removed", "actor": {"login": "maintainer"},
+                                  "created_at": "2026-10-04T13:00:00Z", "requested_reviewer": {"login": "reviewer"}}]
+        data["requests"] = [{"users": [], "teams": []}, {"users": [], "teams": [{"slug": "data-reviewers"}]}]
+        gathered = self.gather(data, "--history")
+        self.assertEqual(gathered["requestedReviewers"], ["team:data-reviewers"])
+        self.assertEqual(gathered["timeline"][-2]["id"], 101)
+        self.assertEqual(gathered["timeline"][-2]["requestedTeam"], "data-reviewers")
+        self.assertEqual(gathered["timeline"][-1]["requestedReviewer"], "reviewer")
+
+    def test_request_fetch_fallback_failures_and_truncation_remain_visible(self):
+        data = fixture()
+        data["fail"] = ["requests"]
+        gathered = self.gather(data, "--history")
+        self.assertEqual(gathered["requestedReviewers"], [])
+        self.assertEqual(gathered["failedFetches"], [])
+        self.assertEqual(gathered["requestFetchAttempts"][0]["source"], "requests-rest")
+        data["fail"].append("request-fallback")
+        gathered = self.gather(data, "--history")
+        self.assertIsNone(gathered["requestedReviewers"])
+        self.assertIn("review-requests", gathered["failedFetches"])
+        data["fail"] = ["requests"]
+        data["request-fallback"][0]["data"]["repository"]["pullRequest"]["reviewRequests"]["pageInfo"]["hasNextPage"] = True
+        gathered = self.gather(data, "--history")
+        self.assertIsNone(gathered["requestedReviewers"])
+        self.assertIn("review-requests", gathered["failedFetches"])
+
+    def test_same_head_handoff_change_during_collection_is_unknown(self):
+        data = fixture()
+        data["pr"]["updatedAt"] = "2026-10-04T12:00:00Z"
+        data["final_updated_at"] = "2026-10-04T13:00:00Z"
+        self.assertIn("snapshot-consistency", self.gather(data, "--history")["failedFetches"])
 
     def test_head_movement_during_collection_is_disclosed(self):
         data = fixture()

@@ -23,8 +23,9 @@ if args[:2] == ["pr", "view"]:
     if fixture.get("forbid_full"):
         assert not {"files", "commits", "statusCheckRollup"}.intersection(flag("--json").split(","))
     key, pages = "pr", [fixture["pr"]]
-    if flag("--json") == "headRefOid,baseRefOid" and fixture.get("final_head"):
-        pages = [{**fixture["pr"], "headRefOid": fixture["final_head"]}]
+    if flag("--json") == "headRefOid,baseRefOid,updatedAt":
+        pages = [{**fixture["pr"], "headRefOid": fixture.get("final_head", fixture["pr"]["headRefOid"]),
+                  "updatedAt": fixture.get("final_updated_at", fixture["pr"].get("updatedAt"))}]
 elif args[:2] == ["api", "graphql"]:
     query = next(arg[6:] for arg in args if arg.startswith("query="))
     if "node(id:" in query:
@@ -33,7 +34,7 @@ elif args[:2] == ["api", "graphql"]:
         owner, repo = fixture["repo"].split("/")
         assert f"o={owner}" in args and f"r={repo}" in args
         assert f'n={fixture["pr"]["number"]}' in args
-        key = "threads" if "reviewThreads(" in query else "counts"
+        key = "request-fallback" if "reviewRequests(" in query else "threads" if "reviewThreads(" in query else "counts"
     pages = fixture[key]
     if "--paginate" in args:
         assert "$endCursor:String" in query and "after:$endCursor" in query
@@ -42,7 +43,9 @@ elif args[:1] == ["api"]:
     prefix = f'repos/{fixture["repo"]}/'
     assert args[1].startswith(prefix), "wrong target repository"
     endpoint = args[1][len(prefix):].split("?")[0]
-    if endpoint.endswith("/reviews"):
+    if endpoint.endswith("/requested_reviewers"):
+        key = "requests"
+    elif endpoint.endswith("/reviews"):
         key = "reviews"
     elif endpoint.endswith("/comments"):
         key = "comments"

@@ -25,6 +25,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from review_requests import effective_reviews
 
 # Fallback only: some bots post through a token that reports a stale commit_id
 # and print the SHA they actually read into the body instead.
@@ -95,8 +96,8 @@ def main():
 
     listed = gh(["gh", "pr", "list", "--base", base, "--state", "open", "--limit", "200",
                  "--json", "number,isDraft,createdAt,headRefOid,reviewDecision"])
-    if listed is None:
-        sys.exit("could not list PRs")
+    if listed is None or len(listed) >= 200:
+        sys.exit("queue unavailable or at collection limit; coverage unknown")
     prs = sorted((p for p in listed if not p["isDraft"]), key=lambda p: p["createdAt"])
 
     print(f"staleness sweep over {len(prs)} open non-draft PR(s) on {base}\n")
@@ -109,11 +110,12 @@ def main():
 
     for p in prs:
         num, head = p["number"], p["headRefOid"]
-        reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"])
-        if not isinstance(reviews, list):
+        pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews?per_page=100", "--paginate", "--slurp"])
+        if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
             print(f'#{num:<6}{"(fetch failed -- re-check by hand)":<60}')
             continue
-        blocking = [r for r in reviews if r.get("state") == "CHANGES_REQUESTED"]
+        reviews = [review for page in pages for review in page]
+        blocking = [r for r in effective_reviews(reviews).values() if r.get("state") == "CHANGES_REQUESTED"]
         if not blocking:
             clean.append(num)
             continue

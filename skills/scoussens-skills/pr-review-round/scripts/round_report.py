@@ -44,6 +44,28 @@ from pathlib import Path
 from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
+from review_requests import reconcile
+from ledger import assessment_history, assessment_current, validate_assessment
+
+
+def requirement_gaps(ticket):
+    """Compare direct requirement excerpts with the supplied Spec matrix."""
+    gaps = []
+    if ticket.get("tickets") and not ticket.get("requirements"):
+        gaps.append("requirements-source-not-collected")
+    for source in ticket.get("requirements", []):
+        if not all(source.get(k) for k in ("source", "retrieved_at")) or "acceptance_text" not in source:
+            gaps.append("requirements-source-unavailable")
+            continue
+        criteria = source.get("criteria", [])
+        text = source["acceptance_text"].strip()
+        if text and not criteria:
+            gaps.append("requirements-extraction-mismatch:" + source["source"])
+        mapped = {row.get("criterion_id") for row in source.get("matrix", [])}
+        if any(c["id"] not in mapped or c["quote"] not in text for c in criteria):
+            gaps.append("requirements-matrix-incomplete:" + source["source"])
+    return gaps
+
 
 LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,state,mergedAt")
@@ -119,6 +141,7 @@ def main():
     tickets_path = None
     scope_path = None
     config_path = None
+    assessments_path = None
     for i, a in enumerate(argv):
         if a == "--since" and i + 1 < len(argv):
             since = argv[i + 1]
@@ -128,6 +151,8 @@ def main():
             tickets_path = Path(argv[i + 1])
         if a == "--scope" and i + 1 < len(argv):
             scope_path = Path(argv[i + 1])
+        if a == "--assessments" and i + 1 < len(argv):
+            assessments_path = Path(argv[i + 1])
         if a == "--review-config" and i + 1 < len(argv):
             config_path = argv[i + 1]
     try:
@@ -158,6 +183,16 @@ def main():
     tickets = json.loads(tickets_path.read_text()) if tickets_path else {"repository": slug, "prs": {}}
     if tickets["repository"] != slug:
         sys.exit("tracker evidence belongs to a different repository")
+
+    saved = assessment_history(slug)
+    if assessments_path:
+        supplied = json.loads(assessments_path.read_text())
+        if supplied["repository"] != slug:
+            sys.exit("assessments belong to a different repository")
+        for assessment in supplied["assessments"]:
+            validate_assessment(assessment)
+        saved += supplied["assessments"]
+    latest = {a["number"]: a for a in saved}
 
     openq = gh(["gh", "pr", "list", "--base", base, "--state", "open",
                 "--limit", "200", "--json", LIST_FIELDS])
@@ -196,7 +231,7 @@ def main():
                             if p.get("state") == "OPEN" else "not_queued")
         evidence = history_evidence(slug, p)
         # Collection is later than enumeration; keep its lifecycle state too.
-        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "baseRefOid"):
+        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "headRefOid", "baseRefOid"):
             if key in evidence.get("pr", {}):
                 p[key] = evidence["pr"][key]
         if p.get("state") != "OPEN":
@@ -264,6 +299,17 @@ def main():
                 and (c.get("createdAt") or "") >= since
             ],
         }
+        proposal = latest.get(n)
+        rec["assessment"] = proposal
+        rec["requirements_gaps"] = requirement_gaps(evidence.get("ticketEvidence", {}))
+        matches = (proposal and not rec["requirements_gaps"] and not evidence.get("failedFetches")
+                   and not evidence.get("truncatedSources")
+                   and assessment_current(proposal, rec["head"], rec["base"], rec["evidence_inputs"]))
+        rec["handoffs"] = reconcile(evidence, proposal.get("request_events", []) if matches else ())
+        assessed_heads = {a["head"] for a in saved if a["number"] == n}
+        rec["merge_review_gap"] = p.get("state") == "MERGED" and rec["head"] not in assessed_heads
+        if rec["merge_review_gap"]:
+            print(f'MERGED AT UNREVIEWED HEAD: #{n} {rec["head"]}; retain local/unposted findings, not a reviewed-merge claim', file=sys.stderr)
         out.append(rec)
 
     json.dump(out, sys.stdout, indent=2)
@@ -273,6 +319,9 @@ def main():
         counts[r["verdict"]] = counts.get(r["verdict"], 0) + 1
     summary = " ".join(f"{k}={v}" for k, v in sorted(counts.items()))
     print(f"\n{len(out)} PR(s) in this round ({summary})", file=sys.stderr)
+    print(f'Request reconciliation: {sum(r["handoffs"]["unhandled"] for r in out)} unhandled; '
+          f'{sum(r["handoffs"]["coverage"] != "complete" for r in out)} PR(s) with unknown coverage. '
+          'Local dispositions are not posted responses.', file=sys.stderr)
     unreviewed = [r["number"] for r in out if not r["reviews"] and not r["comments"]]
     if unreviewed:
         # A PR reviewed in an earlier round is a different situation from one

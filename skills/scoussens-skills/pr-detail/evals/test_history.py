@@ -88,6 +88,18 @@ class HistoryTests(unittest.TestCase):
         self.assertIn("Unassociated inline objection", source)
         self.assertIn("review association unknown", source)
 
+    def test_user_and_team_request_targets_and_removals_remain_visible(self):
+        raw = evidence()
+        raw["timeline"] += [{"id": 40, "event": "review_requested", "actor": "author",
+                             "at": "2026-11-03T15:00:00Z", "requestedTeam": "data-reviewers"},
+                            {"id": 41, "event": "review_request_removed", "actor": "maintainer",
+                             "at": "2026-11-03T15:30:00Z", "requestedReviewer": "reviewer"}]
+        history = normalize(raw)
+        self.assertEqual(history["events"][-1]["requestedReviewer"], "reviewer")
+        source = render(history)
+        for text in ("Team target: data-reviewers", "Review request removed", "Reviewer target: reviewer"):
+            self.assertIn(text, source)
+
     def test_hostile_bodies_and_links_remain_inert(self):
         raw = evidence()
         raw["pr"]["reviews"][0]["body"] = '<script>alert(1)</script> [unsafe](javascript:alert)'

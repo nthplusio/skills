@@ -57,7 +57,8 @@ Build from the bundled template, using a run-specific directory:
 
 ```bash
 RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pr-round.XXXXXX")
-python3 "$S/round_report.py" <base> --scope <initial-pr-numbers.json> --tickets <tickets.json> > "$RUN_DIR/round.json" &&
+python3 "$S/round_report.py" <base> --scope <initial-pr-numbers.json> --tickets <tickets.json> \
+    --assessments <assessments.json> > "$RUN_DIR/round.json" &&
   python3 "$S/render_round.py" "$RUN_DIR/round.json" --base <base> \
     --timezone <IANA-zone> --assessments <assessments.json> > "$RUN_DIR/report.html"
 ```
@@ -65,6 +66,10 @@ python3 "$S/round_report.py" <base> --scope <initial-pr-numbers.json> --tickets 
 Omit `--tickets` or `--assessments` when not supplied. The timezone defaults to
 UTC. Use the reader's known timezone when available. Rendering is offline and
 makes no forge changes. Retain the JSON beside the HTML for later inspection.
+
+`round_report.py` includes saved ledger assessments by default; `--assessments` overlays the supplied local records. Pass that same file to collection and rendering so request reconciliation and the visible assessment use the same inputs. The collected JSON retains these assessments even for merged/closed PRs. Flag a merge at an unassessed source head and retain earlier unposted findings without claiming they apply to unseen code.
+
+Request-event markers, user/team targets, unknown coverage and configured human approval gates follow `references/review-handoffs.md`. Reconcile request counts separately from PR counts and substantive completion. Refresh this same artifact after final action readback; a proposed local assessment never answers a request on the forge.
 
 The optional assessment file is local evidence, never a claim that a review was
 posted. Use this shape, with one entry per assessed PR:
@@ -90,6 +95,8 @@ posted. Use this shape, with one entry per assessed PR:
 Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined in `writing-reviews.md`. A clean assessment has one `ready` record, not an empty decision list. Persist it with `ledger.record_assessment`; optional detailed findings remain in `ledger.record`. This extends the round's existing ledger, not a second issue tracker. Legacy SHA-only proposals must be reconciled into this schema before reuse.
 
 `evidence_inputs` comes from a fresh `round_report.py` collection. Include issue descriptions, relevant comments/decisions, criteria and source update times in `ticketEvidence`; its content hash makes external changes invalidate a recommendation. `policy` hashes the resolved profile and all directly referenced policy/checklist contents, including bundled defaults; changed rules invalidate reuse and guarded writes. Files linked from those policies still require source refresh and explicit provenance; this is not a transitive documentation crawler. Supply `round_report.py --review-config <repository-relative-path>` for an alternate profile and carry the same path as top-level `review_config` in the assessment bundle; omit it for the standard profile. Run write helpers from the target repository root so they can recompute the policy revision. Preserve the original `assessed_at` when reusing code checks and describe their scope/limits in `provenance`. Add `posted_action: {action, url, at}` only after an actual write/readback, never for a proposed action. For an accepted evidence/owner gap add `waiver: {actor, source, at, scope, criterion}`; `criterion` must exactly match this record. Preserve waivers across new heads only after confirming their scope still applies; they cannot waive code verification or unfinished review.
+
+For directly fetched requirements, include `requirements` in the PR's `ticketEvidence`. Each source supplies `source`, `retrieved_at`, `acceptance_text` (the original acceptance section), `criteria: [{id, quote}]` and `matrix: [{criterion_id, result, ...}]`. Populate each matrix row with the implemented path, evidence/source/time and limit as above. A genuine source with no criteria uses an empty acceptance section and empty lists; a failed lookup is unavailable, not empty. The collector flags nonempty acceptance text with zero extracted criteria, missing source metadata, missing matrix rows or quotes absent from the source. These checks catch extraction/mapping mismatches, not every possible natural-language omission; compare the original source yourself. Linked tickets supplied without requirement evidence leave Spec coverage incomplete. The same contract accepts local requirement files and agreed untracked contracts, without a hosted tracker dependency.
 
 Every write additionally takes `--authority authority.json`:
 

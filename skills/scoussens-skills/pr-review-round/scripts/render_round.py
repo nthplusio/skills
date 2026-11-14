@@ -16,6 +16,8 @@ REPORT_BUDGET = 100_000
 def render(records, base, timezone="UTC", assessments=None, compact=False):
     rows = []
     complete = 0
+    unhandled_requests = 0
+    unknown_requests = 0
     identities = [(record["repository"], record["number"]) for record in records]
     if len(set(identities)) != len(identities):
         raise ValueError("duplicate PRs in round report")
@@ -28,7 +30,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         raise ValueError("assessment refers to a PR outside the report")
     for record in records:
         number = record["number"]
-        proposal = proposals.get(number)
+        proposal = proposals.get(number) or record.get("assessment")
         current = ""
         matches = False
         posted_urls = {r.get("url") for r in record["reviews"]
@@ -36,7 +38,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         posted_urls.update(c["url"] for c in record["comments"] if c.get("url") and record["head"] in c.get("body", ""))
         if proposal:
             validate_assessment(proposal)
-            matches = assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")) and not any(
+            matches = not record.get("requirements_gaps") and assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")) and not any(
                 gap in record["history"]["gaps"] for gap in
                 ("snapshot-consistency", "queue-head-changed", "history-collection"))
             blockers = unresolved(proposal)
@@ -90,6 +92,34 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             else:
                 owner = "Reviewer to check the code again. The earlier recommendation is out of date."
                 status = "Review again"
+        handoffs = record.get("handoffs", {"coverage": "unknown", "requests": [], "gaps": ["request-evidence-not-collected"]})
+        request_notes = []
+        unknown_requests += handoffs["coverage"] != "complete"
+        for request in handoffs["requests"]:
+            disposition = request["disposition"]
+            if disposition in ("assessed-locally", "awaiting-owner-decision", "reviewer-incomplete") and not matches:
+                disposition = "unhandled · previous local disposition is stale"
+            unhandled_requests += disposition.startswith("unhandled")
+            request_notes.append(f'<p>Request {escape(request["event_id"])} · {escape(request["requester"] or "Unknown requester")} → '
+                                 f'{escape(request["target"])} · {escape(request["at"])} · {escape(disposition)}. '
+                                 'A local assessment is not an approval or a posted response.</p>')
+        waiting = [r for r in handoffs["requests"] if r["outstanding"]]
+        if waiting and verdict not in ("MERGED", "CLOSED"):
+            request_notes.insert(0, '<p><strong>Review requested again</strong></p>' if any(r["renewed"] for r in waiting)
+                                 else '<p><strong>Review requested</strong></p>')
+            if not proposal or not matches:
+                owner = "Reviewer to reconcile the outstanding request; code, CI and conflicts remain separate."
+        if handoffs["coverage"] != "complete":
+            request_notes.append('<p>Review request coverage unknown: ' + escape(', '.join(handoffs["gaps"])) + '</p>')
+        if record.get("requirements_gaps"):
+            request_notes.append('<p>Spec coverage incomplete: ' + escape(', '.join(record["requirements_gaps"])) + '</p>')
+        if record.get("merge_review_gap"):
+            status = "Merged · head not assessed by this round"
+            owner = "Maintainer to reconcile the merged head and retained unposted findings; no review coverage is implied."
+        gate = record.get("approval_gate") or (proposal or {}).get("approval_gate")
+        if gate:
+            request_notes.append(f'<p>Approval gate · {escape(gate["owner"])}: {escape(gate["reason"])} · '
+                                 f'{escape(gate["source"])}</p>')
         bodies = []
         for review in record["reviews"]:
             bodies.append(f'<section><p>Posted review · {escape(review["submitted_at"])} · '
@@ -114,7 +144,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                     f'<p class="muted">{escape(record["repository"])} · Developer {escape(record["author"] or "Unknown")} · '
                     f'Code version <code>{escape(record["head"] or "Unknown")}</code></p>'
                     f'<p class="muted">{escape(stamp)} · Technical risk {escape(risk)} · '
-                    f'GitHub status {escape(verdict)}</p>{current}'
+                    f'GitHub status {escape(verdict)}</p>{"".join(request_notes)}{current}'
                     '<details><summary>Reviews and comments posted in this round</summary>'
                     f'{"".join(bodies) or "<p>No review or comment posted by this reviewer in this round.</p>"}</details>')
         summary = record.get("summary") or record["title"]
@@ -127,20 +157,25 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             detail = ('<details><summary>Evidence and limits</summary>'
                       '<p>Full history omitted to keep this report within its publication budget. '
                       'Read the linked PR and retained round JSON; this is not additional verification.</p>'
-                      f'<a href="{escape(url, quote=True)}">Original evidence on GitHub</a>{current}</details>')
+                      f'<a href="{escape(url, quote=True)}">Original evidence on GitHub</a>{"".join(request_notes)}{current}</details>')
         else:
             detail = history_html(record["history"], timezone, evidence)
+        request_summary = ('Review requested again' if any(r["renewed"] for r in waiting) else 'Review requested') if waiting else 'No outstanding request'
+        if handoffs["coverage"] != "complete":
+            request_summary = request_summary + ' · Request coverage unknown' if waiting else 'Request coverage unknown'
+        if gate:
+            request_summary += ' · ' + gate["owner"] + ': ' + gate["reason"]
         rows.append(f'<article class="pr-row" data-pr="{number}"><div class="row-heading">'
                     f'<h2><a href="{escape(url, quote=True)}">#{number}</a> {escape(summary)}</h2>'
                     f'<span class="verdict">{escape(status)}</span></div>'
                     f'<p class="current-action"><strong>Next</strong> {escape(owner)}<span class="muted">{basis}</span></p>'
-                    f'{detail}</article>')
+                    f'<p class="muted">{escape(request_summary)}</p>{detail}</article>')
     assets = Path(__file__).resolve().parents[1] / "assets"
     result = Template((assets / "report-template.html").read_text()).substitute(
         base=escape(base), timezone=escape(timezone), count=len(records),
         merged=sum(record["state"] == "MERGED" for record in records), rows="".join(rows),
         collected=escape(max((r["history"].get("collectedAt") or "Unknown" for r in records), default="No PR evidence")),
-        complete=complete,
+        complete=complete, unhandled=unhandled_requests, unknown=unknown_requests,
         bounded="Full history is linked, not embedded, to meet the report budget." if compact else "",
         synthesis=f'<p>{escape(assessments["synthesis"])}</p>' if not compact and assessments and assessments.get("synthesis") else "",
         history_css=(assets / "pr-history.css").read_text())

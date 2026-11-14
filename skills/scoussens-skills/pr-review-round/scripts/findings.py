@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 import time
+from review_requests import effective_reviews
 
 
 def gh(args, tries=3):
@@ -37,27 +38,27 @@ def main():
     repo = (gh(["gh", "repo", "view", "--json", "nameWithOwner",
                 "-q", ".nameWithOwner"]) or "").strip()
 
-    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"])
-    if not isinstance(reviews, list):
+    pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews?per_page=100", "--paginate", "--slurp"])
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
         # A failed fetch and a PR with no reviews produce the same empty list.
         # Saying "no blocking reviews" on a fetch failure invents a clean bill
         # of health, so refuse instead.
         sys.exit(f"could not read reviews for #{num} -- re-check by hand rather "
                  f"than treating this as 'no blocking reviews'")
-    if isinstance(reviews, str):
-        reviews = []
+    reviews = [review for page in pages for review in page]
     if wanted is None:
-        targets = [r for r in reviews if r.get("state") == "CHANGES_REQUESTED"]
+        targets = [r for r in effective_reviews(reviews).values() if r.get("state") == "CHANGES_REQUESTED"]
     else:
         targets = [r for r in reviews if r.get("id") in wanted]
     if not targets:
         print("no blocking reviews on this PR")
         return
 
-    comments = gh(["gh", "api", f"repos/{repo}/pulls/{num}/comments?per_page=100",
-                   "--paginate"]) or []
-    if isinstance(comments, str):
-        comments = []
+    pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/comments?per_page=100",
+                "--paginate", "--slurp"])
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        sys.exit(f"could not read inline findings for #{num}; coverage unknown")
+    comments = [comment for page in pages for comment in page]
 
     for r in targets:
         who = (r.get("user") or {}).get("login", "?")

@@ -10,6 +10,8 @@ the oldest PRs have the most accumulated review history to reconcile, and
 merging them first is what stops the queue growing.
 """
 import json, subprocess, sys, time
+from review_requests import collect, reconcile
+from ledger import handled_requests, repo_slug
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
 # whole PR list makes GitHub's GraphQL endpoint 504 once the queue gets big --
@@ -17,7 +19,7 @@ import json, subprocess, sys, time
 # time, where a single failure degrades one row instead of the whole run.
 LIST_FIELDS = ("number,title,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,changedFiles,"
-               "autoMergeRequest")
+               "autoMergeRequest,headRefOid,baseRefOid,updatedAt")
 DETAIL_FIELDS = "files,statusCheckRollup"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
@@ -119,14 +121,22 @@ def gh_json(args, tries=3):
     return None
 
 
+def request_label(state):
+    active = [r for r in state["requests"] if r["outstanding"]]
+    label = "Review requested again" if any(r["renewed"] for r in active) else "Review requested" if active else "No request"
+    if state["coverage"] != "complete":
+        return label + " · UNKNOWN" if active else "Request coverage UNKNOWN"
+    return label
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: queue.py <base-branch>")
     base = sys.argv[1]
     listed = gh_json(["gh", "pr", "list", "--base", base, "--state", "open",
                       "--limit", "200", "--json", LIST_FIELDS])
-    if listed is None:
-        sys.exit("could not list PRs (gh failed after retries) -- check auth and network")
+    if listed is None or len(listed) >= 200:
+        sys.exit("queue unavailable or at collection limit; coverage unknown -- check auth, network or paginate the scope")
     prs = [p for p in listed if not p["isDraft"]]
     prs.sort(key=lambda p: p["createdAt"])
     for p in prs:
@@ -134,10 +144,21 @@ def main():
         p.update(detail or {"files": [], "statusCheckRollup": []})
         p["_degraded"] = detail is None
 
+    slug = repo_slug()
+    if not slug:
+        sys.exit("repository unavailable; request coverage unknown")
+    saved = handled_requests(slug)
+    request_states = {}
+    for p in prs:
+        evidence = collect(slug, p["number"])
+        final = gh_json(["gh", "pr", "view", str(p["number"]), "--json", "headRefOid,baseRefOid,updatedAt"])
+        if not final or any(p.get(k) != final.get(k) for k in ("headRefOid", "baseRefOid", "updatedAt")):
+            evidence["failedFetches"].append("snapshot-consistency")
+        request_states[p["number"]] = reconcile(evidence)
     tiers = load_overrides()
     print(f"{len(prs)} open non-draft PR(s) targeting {base}, oldest first\n")
     hdr = (f'{"PR":<7}{"OPENED":<12}{"AUTHOR":<18}{"RISK":<7}'
-           f'{"SIZE":<13}{"BLOCKER":<22}{"CI":<9}{"AUTO":<6}TITLE')
+           f'{"SIZE":<13}{"BLOCKER":<22}{"CI":<9}{"AUTO":<6}{"REVIEW STATE":<20}{"REQUEST STATE":<24}TITLE')
     print(hdr)
     print("-" * len(hdr))
     for p in prs:
@@ -153,7 +174,21 @@ def main():
         size = f'+{p["additions"]}/-{p["deletions"]}'
         print(f'#{p["number"]:<6}{p["createdAt"][:10]:<12}{p["author"]["login"][:17]:<18}'
               f'{tier(paths, tiers):<7}{size:<13}{blocker_of(p, red):<22}{ci:<9}'
-              f'{auto_of(p):<6}{p["title"][:46]}')
+              f'{auto_of(p):<6}{p.get("reviewDecision") or "UNKNOWN":<20}'
+              f'{request_label(request_states[p["number"]]):<24}{p["title"][:46]}')
+        requests = request_states[p["number"]]
+        for request in requests["requests"]:
+            if request["outstanding"]:
+                print(f'       Request {request["event_id"]}: {request["requester"] or "unknown requester"} -> '
+                      f'{request["target"]} at {request["at"]}; {request["disposition"]}')
+        for marker in (m for m in saved if m["number"] == p["number"]):
+            print(f'       Previously handled {marker["event_id"]} for {marker["target"]}: '
+                  f'{marker["disposition"]} at {marker["at"]}; refresh inputs before reuse')
+        if requests["gaps"]:
+            print('       Request coverage UNKNOWN: ' + ', '.join(requests["gaps"]))
+
+    print(f'\nUnhandled review requests: {sum(s["unhandled"] for s in request_states.values())}; '
+          f'unknown coverage on {sum(s["coverage"] != "complete" for s in request_states.values())} PR(s).')
 
     others = [p["number"] for p in prs
               if tier([f["path"] for f in (p.get("files") or [])], tiers) == "OTHER"]

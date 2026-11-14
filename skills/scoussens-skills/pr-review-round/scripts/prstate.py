@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import time
+from review_requests import effective_reviews
 
 SHA_RE = re.compile(r"reviewed=([0-9a-f]{7,40})")
 
@@ -69,8 +70,8 @@ def main():
     print(f"  head {head}")
     print(f'  {pr["url"]}')
 
-    reviews = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews", "--paginate"])
-    if not isinstance(reviews, list):
+    pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews?per_page=100", "--paginate", "--slurp"])
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
         # A failed fetch and a PR with no reviews are the same empty list. The
         # message below would then read as "nothing is blocking this" -- a clean
         # bill of health manufactured from an error. Refuse instead.
@@ -78,14 +79,15 @@ def main():
                  f"than treating this as 'no blocking reviews'")
 
     # Only these states gate a merge. COMMENTED/DISMISSED reviews are history.
-    active = [r for r in reviews if r.get("state") in ("CHANGES_REQUESTED", "APPROVED")]
+    reviews = [review for page in pages for review in page]
+    active = [r for r in effective_reviews(reviews).values() if r.get("state") in ("CHANGES_REQUESTED", "APPROVED")]
 
     print(f"\n  review history ({len(reviews)} total, {len(active)} still in force):")
     for r in reviews:
         state = r.get("state", "?")
         if state == "COMMENTED":
             continue
-        mark = "*" if state in ("CHANGES_REQUESTED", "APPROVED") else " "
+        mark = "*" if r in active else " "
         who = (r.get("user") or {}).get("login", "?")
         print(f'   {mark} {r["id"]:<12} {who:<28} {state:<18} {(r.get("submitted_at") or "")[:16]}')
     print("     (* = still in force; anything else is superseded history)")

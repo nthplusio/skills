@@ -76,6 +76,7 @@ def normalize(evidence):
                            body=comment.get("body") or "", url=comment.get("url"), returned=False,
                            head=None, findings=[]))
     labels = {"ready_for_review": "Ready for review", "review_requested": "Review requested",
+              "review_request_removed": "Review request removed",
               "convert_to_draft": "Returned to draft", "review_dismissed": "Review dismissed",
               "head_ref_force_pushed": "Branch force-pushed", "merged": "Merged", "closed": "Closed",
               "reopened": "Reopened"}
@@ -85,7 +86,9 @@ def normalize(evidence):
         events.append(dict(id=f'event-{item.get("id")}', kind=item["event"], at=item.get("at"),
                            actor=item.get("actor"), actorType=item.get("actorType") or "Unknown",
                            label=labels[item["event"]], body="", url=item.get("url") or pr.get("url"),
-                           returned=False, head=item.get("sha"), findings=[]))
+                           returned=False, head=item.get("sha"), findings=[],
+                           requestedReviewer=item.get("requestedReviewer"),
+                           requestedTeam=item.get("requestedTeam"), reviewRequester=item.get("reviewRequester")))
     ticket = evidence.get("ticketEvidence") or {"status": "unavailable", "tickets": [], "events": []}
     for item in ticket.get("events", []):
         if not item.get("url") or not item.get("at"):
@@ -154,6 +157,10 @@ def render(history, timezone="UTC", review_detail=""):
         body = f'<div class="md">{markdown(reason)}</div>'
         if event["kind"] == "comment" and reason:
             body = f'<details><summary>Read comment</summary>{body}</details>'
+        target = event.get("requestedReviewer") or event.get("requestedTeam")
+        if target:
+            kind = "Team" if event.get("requestedTeam") else "Reviewer"
+            body += f'<p>{kind} target: {escape(target)}</p>'
         body += "".join(findings)
         if event["kind"] in ("review", "feedback") and (reason or findings):
             label = "Why changes were requested" if event["returned"] else "Read review and code comments"

@@ -145,10 +145,14 @@ jq '[.[][] | {id, event, url: .html_url,
                 actorType: (.actor.type // .user.type // null),
                 dismissedReview: .dismissed_review,
                 requestedReviewer: .requested_reviewer.login,
+                requestedTeam: .requested_team.slug,
+                reviewRequester: .review_requester.login,
                 state, label: .label.name,
                 sha: (.sha // .commit_id),
                 message: (.message // null),
                 ref: (.source.issue.number // null)}]' "$TMP/timeline-pages.json" > "$TMP/timeline.json"
+
+python3 "$(dirname "$0")/review_requests.py" "$REPO" "$NUM" --requests-only > "$TMP/requests.json"
 
 echo '[]' > "$TMP/truncated.json"
 echo '[]' > "$TMP/checks.json"
@@ -194,11 +198,12 @@ done < "$TMP/shas"
 jq -s '.' "$TMP/checks.jsonl" > "$TMP/checks.json"
 fi
 
-gh pr view "$NUM" --repo "$REPO" --json headRefOid,baseRefOid > "$TMP/final-head.json" \
+gh pr view "$NUM" --repo "$REPO" --json headRefOid,baseRefOid,updatedAt > "$TMP/final-head.json" \
   || fetch_failed snapshot "$TMP/final-head.json"
 if ! jq -e --slurpfile final "$TMP/final-head.json" \
   '.headRefOid != null and .baseRefOid != null and
-   .headRefOid == $final[0].headRefOid and .baseRefOid == $final[0].baseRefOid' \
+   .headRefOid == $final[0].headRefOid and .baseRefOid == $final[0].baseRefOid and
+   .updatedAt == $final[0].updatedAt' \
   "$TMP/pr.json" >/dev/null; then
   FAILED_FETCHES="$FAILED_FETCHES snapshot-consistency"
 fi
@@ -209,6 +214,7 @@ jq -n \
   --slurpfile timeline "$TMP/timeline.json" \
   --slurpfile checks   "$TMP/checks.json" \
   --slurpfile accounts "$TMP/accounts.json" \
+  --slurpfile requests "$TMP/requests.json" \
   --slurpfile truncated "$TMP/truncated.json" \
   --arg repo "$REPO" --arg collected "$COLLECTED_AT" --arg profile "$PROFILE" \
   --arg failed "$FAILED_FETCHES" \
@@ -216,5 +222,7 @@ jq -n \
     omittedSources: (if $profile == "history" then ["files", "commits", "check-runs"] else [] end),
     pr: $pr[0], threads: $threads[0], timeline: $timeline[0], checkRuns: $checks[0],
     accountTypes: $accounts[0],
+    requestedReviewers: $requests[0].requestedReviewers,
+    requestFetchAttempts: $requests[0].requestFetchAttempts,
     truncatedSources: $truncated[0],
-    failedFetches: ($failed | split(" ") | map(select(length > 0)))}'
+    failedFetches: (($failed | split(" ") | map(select(length > 0))) + $requests[0].failedFetches)}'

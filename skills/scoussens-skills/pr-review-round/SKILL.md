@@ -130,6 +130,8 @@ they argue with.
 
 ### 2. Triage the whole queue
 
+Read [review handoffs](references/review-handoffs.md). Overlay outstanding user/team requests and their event identities independently of review status, CI, conflicts and auto-merge. A same-head re-request is fresh reviewer work, not proof a prior objection is fixed. Reconcile collection gaps as unknown, and fold decisive reviews per reviewer rather than treating every historical return as a live block.
+
 `queue.py <base>` lists every open non-draft PR oldest first, with a risk tier
 and — most usefully — **who is blocking**. Oldest first is deliberate: those PRs
 have the most review history to reconcile and are the ones the queue is waiting
@@ -193,7 +195,7 @@ For every PR, in this order:
 ### 4. Reconcile the count before moving on
 
 `queue.py` prints how many open non-draft PRs it found. Before you land anything,
-check that your verdict list has an entry for **every one of them** and say the
+check that your verdict list has an entry for **every one of them** and every renewed request has an explicit disposition. Report unhandled requests and unknown request coverage separately from PR coverage and review completion. Say the
 number out loud in your summary: "14 found, 14 recorded; 11 substantive reviews complete, 3 incomplete". Queue coverage is not acceptance certification. Save the original scope as a JSON list of PR numbers for the final `round_report.py --scope` reconciliation, including PRs that close during review.
 
 A dropped PR is worse than an unreviewed one, because the summary asserts the
@@ -242,7 +244,7 @@ nobody re-checks it. Full guidance: [`writing-reviews.md`](references/writing-re
 
 ### 7. Record, sweep again, then report
 
-**Record every PR assessment** with `ledger.record_assessment`, including clean reviews. Keep detailed findings with `ledger.record` — each with `status`,
+**Record every PR assessment** with `ledger.record_assessment`, including clean reviews and the request-event markers it handles. A local assessment is not a posted response or approval. Keep detailed findings with `ledger.record` — each with `status`,
 `file:line`, the `head` you found it at, and its `unblock`. That is what makes
 the next round open with the open findings instead of re-deriving them.
 
@@ -251,11 +253,11 @@ work; a round that ignores them is not finished. In one round this surfaced a PR
 that had left draft an hour earlier carrying the batch's most consequential
 finding.
 
-**Then `round_report.py <base> --scope <initial-pr-numbers.json>`** and build the single report and chat
+**After the final action readback, run `round_report.py <base> --scope <initial-pr-numbers.json> --assessments <assessments.json>`** (omit the assessment file to use saved ledger assessments) and refresh the same report artifact and chat
 summary from its output,
 never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
-PRs that merged during the round and have already left `queue.py`'s list.
+PRs that merged during the round and have already left `queue.py`'s list. Flag merges at source heads the round never assessed; preserve earlier unposted findings and their limits instead of calling the merge reviewed. Keep required human approval from configured bot limits separate from source readiness.
 
 The same pass collects lifetime history from all reviewers through the bundled
 collector's `--history` profile. It skips source files and per-commit CI. The

@@ -78,6 +78,19 @@ def validate_assessment(assessment):
             raise ValueError("waiver must name actor, source, time, scope and this exact criterion")
         if waiver and decision["kind"] not in ("evidence", "decision"):
             raise ValueError("a waiver cannot substitute for code verification or unfinished review")
+    gate = assessment.get("approval_gate")
+    if gate and not all(gate.get(k) for k in ("owner", "source", "reason")):
+        raise ValueError("approval gate requires owner, source and reason from repository setup/policy")
+    from review_requests import DISPOSITIONS
+    request_keys = []
+    for request in assessment.get("request_events", []):
+        if not all(request.get(k) for k in ("event_id", "target", "at", "disposition")):
+            raise ValueError("request event requires event_id, target, at and disposition")
+        if request["disposition"] not in DISPOSITIONS or not request["target"].startswith(("user:", "team:")):
+            raise ValueError("use a local request disposition and a user/team target; forge responses come from readback")
+        request_keys.append((str(request["event_id"]), request["target"]))
+    if len(request_keys) != len(set(request_keys)):
+        raise ValueError("duplicate handled request event")
     ids = [d["id"] for d in assessment["decisions"]]
     if len(set(ids)) != len(ids):
         raise ValueError("duplicate decision IDs")
@@ -102,8 +115,22 @@ def record_assessment(rid, assessment, repo=None):
     _append("assessments", {**assessment, "round": rid, "recorded_at": _now()}, repo)
 
 
+def assessment_history(repo=None):
+    return _read("assessments", repo)
+
+
 def assessments(repo=None):
-    return {a["number"]: a for a in _read("assessments", repo)}
+    return {a["number"]: a for a in assessment_history(repo)}
+
+
+def handled_requests(repo=None):
+    """Last handled event per PR/target, retaining its original evidence identity."""
+    latest = {}
+    for assessment in assessment_history(repo):
+        for marker in assessment.get("request_events", []):
+            latest[(assessment["number"], marker["target"])] = {
+                **marker, **{k: assessment[k] for k in ("number", "head", "base", "evidence_inputs", "assessed_at")}}
+    return list(latest.values())
 
 
 def check_authority(authority, repo, number, action, possible_landing=False):
@@ -190,7 +217,14 @@ def round_start(base, repo=None):
     return rid
 
 
-def round_end(rid, prs, repo=None):
+def round_end(rid, prs, repo=None, *, reconciliation):
+    """Close only a fully accounted round; incomplete reviews stay explicit."""
+    if len(reconciliation) != len(prs) or {r["number"] for r in reconciliation} != set(prs):
+        raise ValueError("reconcile every scoped PR before closing the round")
+    for row in reconciliation:
+        state = row.get("handoffs", {})
+        if state.get("coverage") != "complete" or state.get("unhandled") != 0:
+            raise ValueError(f'PR #{row["number"]}: unhandled requests or unknown handoff coverage; round remains unfinished')
     rounds = _read("rounds", repo)
     for r in rounds:
         if r.get("round") == rid:
