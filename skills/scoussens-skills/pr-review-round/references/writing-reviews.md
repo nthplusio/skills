@@ -150,7 +150,7 @@ reconcile the posted action and review the new head before further writes.
 A preflight and postflight check can detect movement, not undo a write that
 raced it. Review `commit_id` pins the review's subject, not all concurrent
 approval or auto-merge changes. If the requested guarantee needs an atomic
-gate the API cannot supply, hold the action for a human. Never describe these
+gate the API cannot supply, hold the action for a human. The helpers independently re-read the actual target branch before writes and compare it with saved `evidence_inputs.target`; a PR's `baseRefOid` alone is insufficient. Target movement or an unreadable target requires refreshed integration evidence. Postflight reads detect movement but cannot undo a raced write or pin the merged result atomically. Never describe these
 checks as eliminating the race. On a permission denial or uncertain response,
 inspect remote state before retrying; the helper does not retry mutations.
 

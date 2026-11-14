@@ -17,7 +17,7 @@ import subprocess
 import time
 
 from merge_queue import queue_state
-from ledger import check_authority, check_clearance
+from ledger import check_authority, check_clearance, target_state
 
 POLL_SECONDS = 30
 MAX_POLLS = 40
@@ -26,7 +26,7 @@ MAX_POLLS = 40
 def state_of(num, repo=None):
     result = subprocess.run([
         "gh", "pr", "view", str(num), *(["--repo", repo] if repo else []), "--json",
-        "id,state,headRefOid,baseRefOid,updatedAt,isDraft,mergeStateStatus,reviewDecision,mergedAt",
+        "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeStateStatus,reviewDecision,mergedAt",
     ], capture_output=True, text=True)
     if result.returncode:
         return {}
@@ -37,6 +37,7 @@ def state_of(num, repo=None):
     except ValueError:
         return {}
     state["queue_state"] = queue_state(state.get("id"), state.get("headRefOid"))
+    state["target"] = target_state(repo, state.get("baseRefName"))
     return state
 
 
@@ -103,7 +104,7 @@ def main():
                     check_authority(json.loads(args.authority.read_text()), args.repo, number,
                                     "enable-auto-merge" if args.enable_auto_merge else "enqueue", True)
                     check_clearance(json.loads(args.assessments.read_text()), args.repo, number,
-                                    state.get("headRefOid"), state.get("baseRefOid"), state.get("updatedAt"))
+                                    state.get("headRefOid"), state.get("baseRefOid"), state.get("updatedAt"), state.get("target"))
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     outcome = f"HELD: {error}"
             if outcome:
@@ -126,8 +127,9 @@ def main():
                 if observed.get("state") == "MERGED":
                     outcomes[number] = "MERGED"
                     pending.remove(number)
-                elif observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED":
-                    outcomes[number] = "HELD: post-write head or approval changed; reconcile before further writes"
+                elif (observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED"
+                      or observed.get("target") != state.get("target")):
+                    outcomes[number] = "HELD: post-write head or approval changed, or target moved; reconcile before further writes"
                     pending.remove(number)
                     print(f"#{number} {outcomes[number]}")
                 if not ok:

@@ -40,12 +40,12 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             validate_assessment(proposal)
             matches = not record.get("requirements_gaps") and assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")) and not any(
                 gap in record["history"]["gaps"] for gap in
-                ("snapshot-consistency", "queue-head-changed", "history-collection"))
+                ("snapshot-consistency", "queue-head-changed", "history-collection", "target-ref-changed-or-unavailable"))
             blockers = unresolved(proposal)
             if matches and not any(d["kind"] == "reviewer-incomplete" for d in proposal["decisions"]):
                 complete += 1
             decision = (blockers or proposal["decisions"])[0]
-            label = "Report recommendation · not posted to GitHub" if matches else "Earlier recommendation · source or evidence changed; review again"
+            label = "Report recommendation · not posted to GitHub" if matches else "Earlier recommendation · inputs changed or incomplete; review again"
             current = (f'<section class="proposal"><h3>{label} · {escape(DECISIONS[decision["kind"]])}</h3>'
                        f'<p class="muted">Assessed {escape(proposal["assessed_at"])} at '
                        f'<code>{escape(proposal["head"])}</code></p>'
@@ -66,13 +66,14 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                             else '<p>Proposed, not posted</p>')
             current += '</section>'
         verdict = record["verdict"]
-        status = {
-            "MERGED": "Merged", "CLOSED": "Closed", "CHANGES_REQUESTED": "Changes requested",
-            "APPROVED_QUEUED": "Waiting to merge", "APPROVED_QUEUE_UNKNOWN": "Approved · merge queue unknown",
-            "APPROVED": "Approved", "APPROVED_CONFLICTING": "Branch conflict",
-            "CHANGES_REQUESTED_CONFLICTING": "Changes requested · branch conflict", "CONFLICTING": "Branch conflict",
-            "NEEDS_REVIEW": "Needs review", "DRAFT": "Draft",
+        forge_status = {
+            "MERGED": "Merged", "CLOSED": "Closed without merge", "CHANGES_REQUESTED": "GitHub changes requested",
+            "APPROVED_QUEUED": "Queued · not merged", "APPROVED_QUEUE_UNKNOWN": "GitHub approved · queue unknown",
+            "APPROVED": "GitHub approved · not merged", "APPROVED_CONFLICTING": "GitHub approved · branch conflict",
+            "CHANGES_REQUESTED_CONFLICTING": "GitHub changes requested · branch conflict", "CONFLICTING": "Branch conflict",
+            "NEEDS_REVIEW": "GitHub review needed", "DRAFT": "Draft",
         }.get(verdict, verdict.replace("_", " ").capitalize())
+        status = forge_status
         if verdict in ("MERGED", "CLOSED"):
             owner = "No review action needed."
         elif "CONFLICTING" in verdict:
@@ -88,10 +89,10 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         if proposal and verdict not in ("MERGED", "CLOSED"):
             if matches:
                 owner = f'{decision["owner"]} · {decision["unblock"]}'
-                status = DECISIONS[decision["kind"]] if blockers else "Ready · check forge gates"
+                status = DECISIONS[decision["kind"]] if blockers else "Source review complete · merge checks pending"
             else:
-                owner = "Reviewer to check the code again. The earlier recommendation is out of date."
-                status = "Review again"
+                owner = "Reviewer to refresh the changed code, target or evidence before reusing the recommendation."
+                status = "Review again · inputs changed or incomplete"
         handoffs = record.get("handoffs", {"coverage": "unknown", "requests": [], "gaps": ["request-evidence-not-collected"]})
         request_notes = []
         unknown_requests += handoffs["coverage"] != "complete"
@@ -113,9 +114,31 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             request_notes.append('<p>Review request coverage unknown: ' + escape(', '.join(handoffs["gaps"])) + '</p>')
         if record.get("requirements_gaps"):
             request_notes.append('<p>Spec coverage incomplete: ' + escape(', '.join(record["requirements_gaps"])) + '</p>')
+        if record["history"].get("ticketEvidence", {}).get("requirements"):
+            request_notes.append('<p>Requirement checks verify retained-source and matrix consistency, not extraction completeness.</p>')
+        if record.get("target"):
+            target = record["target"]
+            request_notes.append(f'<p>Independent target · {escape(target["ref"])} · '
+                                 f'<code>{escape(target.get("sha") or "Unknown")}</code> · '
+                                 f'PR-reported base <code>{escape(record.get("base") or "Unknown")}</code>. '
+                                 'A target read is not a tested merged result.</p>')
         if record.get("merge_review_gap"):
-            status = "Merged · head not assessed by this round"
-            owner = "Maintainer to reconcile the merged head and retained unposted findings; no review coverage is implied."
+            status = "Merged head has no saved local assessment"
+            owner = "Maintainer to reconcile saved records and linked assessments. Missing local records do not establish missing review."
+        merged_evidence = record.get("merge_evidence")
+        if merged_evidence:
+            request_notes.append('<p>Merge evidence · Observed reviews are not acceptance certification or landing authority.</p>')
+            if merged_evidence["review_coverage"] == "unknown":
+                request_notes.append('<p>Exact-head review coverage unknown.</p>')
+            for entry in merged_evidence["local_assessments"]:
+                request_notes.append(f'<p>Saved exact-head assessment · {escape(entry["at"])} · {escape(entry["timing"])} · '
+                                     f'{escape(entry["provenance"])}</p>')
+            for entry in merged_evidence["exact_head_reviews"]:
+                url = entry.get("url") or ""
+                link = f'<a href="{escape(url, quote=True)}">Review source</a>' if url.startswith(("https://", "http://")) else escape(url)
+                request_notes.append(f'<p>Observed exact-head review · {escape(entry.get("actor") or "Unknown actor")} · '
+                                     f'{escape(entry.get("actor_type") or "Unknown account type")} · {escape(entry["state"])} · '
+                                     f'{escape(entry.get("at") or "Unknown time")} · {escape(entry["timing"])} · {link}</p>')
         gate = record.get("approval_gate") or (proposal or {}).get("approval_gate")
         if gate:
             request_notes.append(f'<p>Approval gate · {escape(gate["owner"])}: {escape(gate["reason"])} · '
@@ -169,6 +192,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                     f'<h2><a href="{escape(url, quote=True)}">#{number}</a> {escape(summary)}</h2>'
                     f'<span class="verdict">{escape(status)}</span></div>'
                     f'<p class="current-action"><strong>Next</strong> {escape(owner)}<span class="muted">{basis}</span></p>'
+                    f'<p class="muted">Observed on GitHub · {escape(forge_status.removeprefix("GitHub "))}</p>'
                     f'<p class="muted">{escape(request_summary)}</p>{detail}</article>')
     assets = Path(__file__).resolve().parents[1] / "assets"
     result = Template((assets / "report-template.html").read_text()).substitute(

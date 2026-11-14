@@ -20,7 +20,7 @@ import stale_sweep
 import findings
 import prstate
 from render_round import render
-from decision_fixtures import assessment, HEAD, BASE, REVISION
+from decision_fixtures import assessment, HEAD, BASE, REVISION, TARGET
 from test_report import fixture
 
 spec = importlib.util.spec_from_file_location("round_queue", SKILL / "scripts/queue.py")
@@ -42,6 +42,11 @@ def evidence():
 
 
 class HandoffTests(unittest.TestCase):
+    def setUp(self):
+        target = patch.object(round_report, "target_state", return_value=TARGET)
+        target.start()
+        self.addCleanup(target.stop)
+
     def test_same_head_rerequest_is_independent_of_conflicts_ci_and_auto_merge(self):
         raw = evidence()
         p = {"number": 17, "title": "Keep saved filters", "author": {"login": "author"},
@@ -192,7 +197,8 @@ class HandoffTests(unittest.TestCase):
         source["criteria"] = [{"id": str(i), "quote": f"Requirement {i}"} for i in range(1, 9)]
         self.assertTrue(round_report.requirement_gaps({"requirements": [source]}))
         source["matrix"] = [{"criterion_id": str(i), "result": "missing evidence"} for i in range(1, 9)]
-        self.assertEqual(round_report.requirement_gaps({"requirements": [source]}), [])
+        self.assertEqual(round_report.requirement_gaps({"requirements": [source]}),
+                         ["requirements-original-source-not-retained:" + source["source"]])
         source["criteria"][0]["quote"] = "Invented requirement"
         self.assertTrue(round_report.requirement_gaps({"requirements": [source]}))
 
@@ -227,7 +233,7 @@ class HandoffTests(unittest.TestCase):
         item["approval_gate"] = {"owner": "Human approver", "reason": "Exceeds configured automation size limit",
                                  "source": ".github/review-policy.yml"}
         source = render([record], "main")
-        self.assertIn("Merged · head not assessed by this round", source)
+        self.assertIn("Merged head has no saved local assessment", source)
         self.assertIn(item["decisions"][0]["unblock"], source)
         self.assertIn("Proposed, not posted", source)
         self.assertIn("Human approver: Exceeds configured automation size limit", source)

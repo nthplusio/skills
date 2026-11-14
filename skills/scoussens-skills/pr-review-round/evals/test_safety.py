@@ -16,14 +16,14 @@ import merge_queue
 import review_write
 import round_report
 from md_to_html import render
-from decision_fixtures import assessment, authority, bundle, BASE, REVISION
+from decision_fixtures import assessment, authority, bundle, BASE, REVISION, TARGET
 
 HEAD = "a" * 40
 
 
 def state(**changes):
     return {"state": "OPEN", "headRefOid": HEAD,
-            "baseRefOid": BASE, "updatedAt": REVISION,
+            "baseRefOid": BASE, "baseRefName": "main", "target": TARGET, "updatedAt": REVISION,
             "reviewDecision": "APPROVED", "mergeStateStatus": "CLEAN",
             "queue_state": "not_queued", "isDraft": False, **changes}
 
@@ -50,6 +50,9 @@ class LandingTests(unittest.TestCase):
             if command[:3] == ["gh", "pr", "view"]:
                 current = next(snapshots, current)
                 payload = {"id": "PR_fixture", **current}
+            elif command[:2] == ["gh", "api"] and "/git/ref/heads/" in command[2]:
+                target = current.get("target") or {}
+                payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": target.get("sha")}}
             elif command[:3] == ["gh", "api", "graphql"]:
                 if current.get("queue_state") == "unknown":
                     return subprocess.CompletedProcess(command, 1, "", "queue unavailable")
@@ -161,6 +164,8 @@ class LandingTests(unittest.TestCase):
                 (state(), assessment(), authority(prs=[99])),
                 (state(), assessment(), authority(possible_landing=False)),
                 (state(updatedAt="new discussion"), assessment(), authority()),
+                (state(target={**TARGET, "sha": "f" * 40}), assessment(), authority()),
+                (state(target={**TARGET, "sha": None}), assessment(), authority()),
                 (state(), assessment(evidence_inputs={"forge": REVISION, "issues": "issue-revision-1", "policy": "outdated-rules"}), authority()),
             ]:
                 # Each invocation represents a first attempt or a later fresh retry.
@@ -207,13 +212,16 @@ class QueueReportTests(unittest.TestCase):
 
 
 class ReviewWriteTests(unittest.TestCase):
-    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None):
+    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None, target=TARGET):
         writes = []
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
-                                      "base": {"sha": BASE}, "updated_at": REVISION,
+                                      "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
                                       "draft": False, "auto_merge": None, "user": {"login": author}}] * 2)
 
         def forge(command, **kwargs):
+            if "/git/ref/heads/" in command[2]:
+                payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": (target or {}).get("sha")}}
+                return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
             method = command[command.index("--method") + 1]
             if method != "GET":
                 writes.append((command[2], json.loads(kwargs["input"])))
@@ -270,7 +278,7 @@ class ReviewWriteTests(unittest.TestCase):
 
     def test_auto_merge_requires_landing_authority_for_clearance(self):
         pr = {"head": {"sha": HEAD}, "state": "open", "draft": False,
-              "base": {"sha": BASE}, "updated_at": REVISION,
+              "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
               "auto_merge": {"enabled_by": "author"}, "user": {"login": "author"}}
         for action in ["approve", "dismiss"]:
             with self.subTest(action=action):
@@ -292,8 +300,16 @@ class ReviewWriteTests(unittest.TestCase):
         self.assertIn("inspect remote state", output)
         self.assertEqual(code, 1)
 
+    def test_changed_or_unknown_actual_target_blocks_all_review_writes(self):
+        for action in ("approve", "dismiss", "comment", "request-changes"):
+            for target in ({**TARGET, "sha": "f" * 40}, {**TARGET, "sha": None}):
+                with self.subTest(action=action, target=target):
+                    writes, output, code = self.run_write(action, flags=["--write"], target=target)
+                    self.assertEqual((writes, code), ([], 1), output)
+                    self.assertIn("actual target ref changed or unavailable", output)
+
     def test_head_movement_during_dismissal_is_not_reported_as_clearance(self):
-        pr = {"head": {"sha": HEAD}, "base": {"sha": BASE}, "updated_at": REVISION,
+        pr = {"head": {"sha": HEAD}, "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
               "state": "open", "draft": False, "auto_merge": None}
         writes, output, code = self.run_write("dismiss", flags=["--write"],
                                              snapshots=[pr, {"head": {"sha": "b" * 40}}])

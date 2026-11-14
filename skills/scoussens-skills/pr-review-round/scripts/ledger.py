@@ -40,7 +40,7 @@ STATUSES = ("open", "fixed", "overstated", "pre-existing", "withdrawn")
 DECISIONS = {
     "code": "Needs code changes", "evidence": "Needs evidence",
     "decision": "Needs owner decision", "reviewer-incomplete": "Review incomplete",
-    "ready": "Ready",
+    "ready": "Source review complete",
 }
 
 
@@ -104,9 +104,34 @@ def unresolved(assessment):
             and (d["severity"] == "blocking" or d["kind"] == "reviewer-incomplete")]
 
 
+def target_state(repo, ref):
+    """Read the actual target ref, independently of a PR's baseRefOid."""
+    from urllib.parse import quote
+    target = {"ref": ref, "sha": None}
+    if not repo or not ref:
+        return target
+    result = subprocess.run(["gh", "api", f"repos/{repo}/git/ref/heads/{quote(ref, safe='')}"],
+                            capture_output=True, text=True)
+    try:
+        data = json.loads(result.stdout)
+        if (result.returncode == 0 and data["ref"] == "refs/heads/" + ref
+                and data["object"]["type"] == "commit"
+                and re.fullmatch(r"[0-9a-f]{40}", data["object"]["sha"])):
+            target["sha"] = data["object"]["sha"]
+    except (ValueError, KeyError, TypeError):
+        pass
+    return target
+
+
+def target_matches(inputs, target):
+    return bool(target and target.get("ref") and re.fullmatch(r"[0-9a-f]{40}", target.get("sha") or "")
+                and inputs.get("target") == target)
+
+
 def assessment_current(assessment, head, base, evidence_inputs):
     validate_assessment(assessment)
     return (assessment["head"] == head and assessment["base"] == base
+            and target_matches(assessment["evidence_inputs"], evidence_inputs.get("target"))
             and assessment["evidence_inputs"] == evidence_inputs)
 
 
@@ -140,7 +165,7 @@ def check_authority(authority, repo, number, action, possible_landing=False):
         raise ValueError("out-of-scope authority: record instruction, repository, exact PRs, action and possible landing")
 
 
-def check_clearance(bundle, repo, number, head, base, forge_revision):
+def check_clearance(bundle, repo, number, head, base, forge_revision, target):
     if bundle.get("repository") != repo:
         raise ValueError("assessment belongs to a different repository")
     matches = [a for a in bundle.get("assessments", []) if a.get("number") == number]
@@ -153,6 +178,8 @@ def check_clearance(bundle, repo, number, head, base, forge_revision):
     if (assessment["head"] != head or assessment["base"] != base
             or assessment["evidence_inputs"]["forge"] != forge_revision):
         raise ValueError("assessment source or discussion changed; refresh evidence and review again")
+    if not target_matches(assessment["evidence_inputs"], target):
+        raise ValueError("actual target ref changed or unavailable; refresh integration evidence")
     blockers = unresolved(assessment)
     if blockers:
         raise ValueError("unresolved decisions: " + "; ".join(f'{d["owner"]}: {d["unblock"]}' for d in blockers))

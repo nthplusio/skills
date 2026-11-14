@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import ledger
-from decision_fixtures import assessment, bundle, HEAD, BASE, REVISION
+from decision_fixtures import assessment, bundle, HEAD, BASE, REVISION, TARGET
 
 
 class DecisionTests(unittest.TestCase):
@@ -62,14 +62,14 @@ class DecisionTests(unittest.TestCase):
     def test_clearance_requires_current_assessment_and_no_unresolved_decisions(self):
         for kind in ("code", "evidence", "decision", "reviewer-incomplete"):
             with self.assertRaisesRegex(ValueError, "unresolved decisions"):
-                ledger.check_clearance(bundle(assessment(kind=kind)), "owner/repo", 17, HEAD, BASE, REVISION)
-        self.assertEqual(ledger.check_clearance(bundle(), "owner/repo", 17, HEAD, BASE, REVISION)["number"], 17)
+                ledger.check_clearance(bundle(assessment(kind=kind)), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+        self.assertEqual(ledger.check_clearance(bundle(), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)["number"], 17)
 
     def test_nonblocking_code_advice_is_not_a_landing_blocker(self):
         item = assessment(kind="code")
         item["decisions"][0]["severity"] = "non-blocking"
         self.assertEqual(ledger.unresolved(item), [])
-        ledger.check_clearance(bundle(item), "owner/repo", 17, HEAD, BASE, REVISION)
+        ledger.check_clearance(bundle(item), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
 
     def test_changed_repository_reference_invalidates_clearance_at_unchanged_head(self):
         previous = Path.cwd()
@@ -82,10 +82,10 @@ class DecisionTests(unittest.TestCase):
                 item = assessment()
                 item["evidence_inputs"]["policy"] = ledger.review_config(".", "custom.json")["revision"]
                 saved = {**bundle(item), "review_config": "custom.json"}
-                ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION)
+                ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
                 Path("rules.md").write_text("A newly required compatibility check")
                 with self.assertRaisesRegex(ValueError, "review policy changed"):
-                    ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION)
+                    ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
                 self.assertFalse(ledger.assessment_current(item, HEAD, BASE, {
                     **item["evidence_inputs"], "policy": ledger.review_config(".", "custom.json")["revision"]}))
             finally:

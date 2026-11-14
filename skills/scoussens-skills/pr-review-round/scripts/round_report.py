@@ -45,26 +45,8 @@ from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile
-from ledger import assessment_history, assessment_current, validate_assessment
-
-
-def requirement_gaps(ticket):
-    """Compare direct requirement excerpts with the supplied Spec matrix."""
-    gaps = []
-    if ticket.get("tickets") and not ticket.get("requirements"):
-        gaps.append("requirements-source-not-collected")
-    for source in ticket.get("requirements", []):
-        if not all(source.get(k) for k in ("source", "retrieved_at")) or "acceptance_text" not in source:
-            gaps.append("requirements-source-unavailable")
-            continue
-        criteria = source.get("criteria", [])
-        text = source["acceptance_text"].strip()
-        if text and not criteria:
-            gaps.append("requirements-extraction-mismatch:" + source["source"])
-        mapped = {row.get("criterion_id") for row in source.get("matrix", [])}
-        if any(c["id"] not in mapped or c["quote"] not in text for c in criteria):
-            gaps.append("requirements-matrix-incomplete:" + source["source"])
-    return gaps
+from ledger import assessment_history, assessment_current, validate_assessment, target_state
+from requirements import requirement_gaps
 
 
 LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
@@ -131,6 +113,34 @@ def verdict_of(pr):
     return "NEEDS_REVIEW"
 
 
+def merge_evidence(pr, assessments, reviews, gaps):
+    """A missing local record is not evidence that nobody reviewed a head."""
+    merged_at = pr.get("mergedAt")
+    def timing(at):
+        try:
+            event = datetime.fromisoformat(at.replace("Z", "+00:00"))
+            merge = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+            if event.tzinfo is None or merge.tzinfo is None:
+                return "merge timing unknown"
+            if event == merge:
+                return "at recorded merge time · order unknown"
+            return "before merge" if event < merge else "after merge"
+        except (ValueError, AttributeError):
+            return "merge timing unknown"
+    head = pr.get("headRefOid")
+    return {
+        "local_assessments": [{"at": a["assessed_at"], "timing": timing(a["assessed_at"]),
+                               "provenance": a.get("provenance") or "Saved local assessment"}
+                              for a in assessments if a["head"] == head],
+        "exact_head_reviews": [{"actor": (r.get("author") or {}).get("login"),
+                                "actor_type": (r.get("author") or {}).get("type"),
+                                "state": r["state"], "at": r.get("submittedAt"), "url": r.get("url"),
+                                "timing": timing(r.get("submittedAt"))}
+                               for r in reviews if r.get("commitOid") == head and r.get("state") != "PENDING"],
+        "review_coverage": "unknown" if any(g in gaps for g in ("reviews", "history-collection")) else "observed",
+    }
+
+
 def main():
     argv = sys.argv[1:]
     if not argv:
@@ -192,7 +202,10 @@ def main():
         for assessment in supplied["assessments"]:
             validate_assessment(assessment)
         saved += supplied["assessments"]
+    saved.sort(key=lambda a: datetime.fromisoformat(a["assessed_at"].replace("Z", "+00:00")).timestamp())
     latest = {a["number"]: a for a in saved}
+    target = target_state(slug, base)
+    collected = []
 
     openq = gh(["gh", "pr", "list", "--base", base, "--state", "open",
                 "--limit", "200", "--json", LIST_FIELDS])
@@ -265,7 +278,9 @@ def main():
             "head": p.get("headRefOid"),
             "base": p.get("baseRefOid"),
             "review_config": config_path,
+            "target": target,
             "evidence_inputs": {
+                "target": target,
                 "forge": p.get("updatedAt"),
                 "issues": hashlib.sha256(json.dumps(evidence.get("ticketEvidence", {}), sort_keys=True).encode()).hexdigest(),
                 "policy": policy["revision"],
@@ -302,15 +317,25 @@ def main():
         proposal = latest.get(n)
         rec["assessment"] = proposal
         rec["requirements_gaps"] = requirement_gaps(evidence.get("ticketEvidence", {}))
+        rec["assessment_history"] = [a for a in saved if a["number"] == n]
+        if p.get("state") == "MERGED":
+            rec["merge_evidence"] = merge_evidence(p, rec["assessment_history"], reviews, evidence.get("failedFetches", []))
+            rec["merge_review_gap"] = not rec["merge_evidence"]["local_assessments"]
+            if rec["merge_review_gap"]:
+                print(f'Merged head has no saved local assessment: #{n} {rec["head"]}; check linked assessments and exact-head reviews', file=sys.stderr)
+        collected.append((rec, evidence, proposal))
+        out.append(rec)
+
+    final_target = target_state(slug, base)
+    for rec, evidence, proposal in collected:
+        if not target.get("sha") or final_target != target:
+            evidence.setdefault("failedFetches", []).append("target-ref-changed-or-unavailable")
+            rec["history"]["gaps"].append("target-ref-changed-or-unavailable")
+        rec["target_final"] = final_target
         matches = (proposal and not rec["requirements_gaps"] and not evidence.get("failedFetches")
                    and not evidence.get("truncatedSources")
                    and assessment_current(proposal, rec["head"], rec["base"], rec["evidence_inputs"]))
         rec["handoffs"] = reconcile(evidence, proposal.get("request_events", []) if matches else ())
-        assessed_heads = {a["head"] for a in saved if a["number"] == n}
-        rec["merge_review_gap"] = p.get("state") == "MERGED" and rec["head"] not in assessed_heads
-        if rec["merge_review_gap"]:
-            print(f'MERGED AT UNREVIEWED HEAD: #{n} {rec["head"]}; retain local/unposted findings, not a reviewed-merge claim', file=sys.stderr)
-        out.append(rec)
 
     json.dump(out, sys.stdout, indent=2)
     sys.stdout.write("\n")

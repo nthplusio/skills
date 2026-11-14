@@ -3,12 +3,13 @@ from review_config import resolve
 
 HEAD = "a" * 40
 BASE = "b" * 40
+TARGET = {"ref": "main", "sha": BASE}
 REVISION = "2026-11-11T20:00:00Z"
 
 
 def assessment(number=17, kind="ready", owner="Reviewer", **changes):
     return {"number": number, "head": HEAD, "base": BASE, "assessed_at": REVISION,
-            "evidence_inputs": {"forge": REVISION, "issues": "issue-revision-1", "policy": resolve(".")["revision"]},
+            "evidence_inputs": {"forge": REVISION, "issues": "issue-revision-1", "policy": resolve(".")["revision"], "target": TARGET},
             "decisions": [{"id": "criterion-1", "kind": kind, "axis": "Spec", "severity": "blocking",
                            "criterion": "Demonstrate the live workflow", "summary": "Live workflow acceptance",
                            "owner": owner, "unblock": "Run the live workflow and attach its result" if kind != "ready" else "Check mutable forge gates",

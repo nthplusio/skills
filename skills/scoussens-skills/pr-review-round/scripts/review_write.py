@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from ledger import check_authority, check_clearance, validate_assessment
+from ledger import check_authority, check_clearance, validate_assessment, target_state, target_matches
 from land import state_of
 from review_config import resolve as review_config
 
@@ -94,6 +94,9 @@ def main():
             raise RuntimeError("HELD: head changed, PR closed, or draft; review current state again")
         if (assessment["base"] != pr["base"]["sha"] or assessment["evidence_inputs"]["forge"] != pr["updated_at"]):
             raise ValueError("assessment source or discussion changed; refresh inputs before posting")
+        target = target_state(args.repo, pr["base"].get("ref"))
+        if not target_matches(assessment["evidence_inputs"], target):
+            raise ValueError("actual target ref changed or unavailable; refresh integration evidence")
         if args.action == "approve" and pr["user"]["login"] == login:
             raise RuntimeError("HELD: an author cannot approve their own PR")
         if args.action in ("approve", "dismiss") and not args.allow_landing:
@@ -102,7 +105,7 @@ def main():
         if args.action in ("approve", "dismiss"):
             possible_landing = pr.get("auto_merge") is not None or "auto_merge" not in pr
             check_authority(authority, args.repo, args.number, args.action, possible_landing)
-            check_clearance(bundle, args.repo, args.number, args.head, pr["base"]["sha"], pr["updated_at"])
+            check_clearance(bundle, args.repo, args.number, args.head, pr["base"]["sha"], pr["updated_at"], target)
 
         attempted = True
         if args.action == "dismiss":
@@ -125,7 +128,8 @@ def main():
               f"review={observed.get('reviewDecision', 'unknown')} / "
               f"queue={observed.get('queue_state', 'unknown')} / state={observed.get('state', 'unknown')}")
         if (observed.get("headRefOid") != args.head or not observed.get("reviewDecision")
-                or observed.get("queue_state", "unknown") == "unknown"):
+                or observed.get("queue_state", "unknown") == "unknown"
+                or (observed.get("state") != "MERGED" and observed.get("target") != target)):
             print("Post-write state uncertain or changed; reconcile before further writes")
             code = 1
     return code

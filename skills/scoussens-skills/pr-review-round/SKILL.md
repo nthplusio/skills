@@ -190,7 +190,7 @@ For every PR, in this order:
    commands, and API race limits are in
    [`references/writing-reviews.md`](references/writing-reviews.md). In
    assessment-only mode, retain the proposed verdict and evidence locally.
-   Map every acceptance criterion to its quoted requirement, implemented path, observed evidence/source/time, result and evidence limit. Distinguish independent verification, author claims, missing evidence and explicitly accepted gaps. Keep Standards and Spec outcomes separate; a pass on one never masks a failure on the other. For a documented tracking exception, say "no linked ticket" and assess the stated PR contract rather than inventing ticket criteria.
+   Before extracting criteria, retain complete requirement responses and comment pages with source/time/revision/coverage using `requirements.py` as `references/report.md` specifies. Compare the complete sources with the extracted criteria; zero matrix gaps proves consistency, not completeness. Map every acceptance criterion to its quoted requirement, implemented path, observed evidence/source/time, result and evidence limit. Distinguish independent verification, author claims, missing evidence and explicitly accepted gaps. Keep Standards and Spec outcomes separate; a pass on one never masks a failure on the other. For a documented tracking exception, say "no linked ticket" and assess the stated PR contract rather than inventing ticket criteria.
 
 ### 4. Reconcile the count before moving on
 
@@ -257,7 +257,7 @@ finding.
 summary from its output,
 never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
-PRs that merged during the round and have already left `queue.py`'s list. Flag merges at source heads the round never assessed; preserve earlier unposted findings and their limits instead of calling the merge reviewed. Keep required human approval from configured bot limits separate from source readiness.
+PRs that merged during the round and have already left `queue.py`'s list. Reconcile merged source heads against retained assessments and linked earlier rounds; a missing record is **Merged head has no saved local assessment**, not proof nobody reviewed it. Show later exact-head reviews/assessments with their original time relative to merge and preserve scoped owner decisions and unposted findings. Use the distinct local-review and observed-GitHub labels in `references/report.md`. Keep required human approval from configured bot limits separate from source readiness.
 
 The same pass collects lifetime history from all reviewers through the bundled
 collector's `--history` profile. It skips source files and per-commit CI. The

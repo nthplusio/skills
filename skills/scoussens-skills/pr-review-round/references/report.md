@@ -67,7 +67,7 @@ Omit `--tickets` or `--assessments` when not supplied. The timezone defaults to
 UTC. Use the reader's known timezone when available. Rendering is offline and
 makes no forge changes. Retain the JSON beside the HTML for later inspection.
 
-`round_report.py` includes saved ledger assessments by default; `--assessments` overlays the supplied local records. Pass that same file to collection and rendering so request reconciliation and the visible assessment use the same inputs. The collected JSON retains these assessments even for merged/closed PRs. Flag a merge at an unassessed source head and retain earlier unposted findings without claiming they apply to unseen code.
+`round_report.py` includes saved ledger assessments by default; `--assessments` overlays the supplied local records. Pass that same file to collection and rendering so request reconciliation and the visible assessment use the same inputs. The collected JSON retains these assessments even for merged/closed PRs. Use **Merged head has no saved local assessment** when the merged source head has no matching retained assessment. This describes this report's records, not whether anyone reviewed the PR. Show observed exact-head reviews with actor/type, verdict, source and time relative to merge. A post-merge assessment is retrospective evidence, not a pre-merge gate. Import linked assessments with their original head, time and owner decisions; keep earlier unposted findings without claiming they apply to unseen code.
 
 Request-event markers, user/team targets, unknown coverage and configured human approval gates follow `references/review-handoffs.md`. Reconcile request counts separately from PR counts and substantive completion. Refresh this same artifact after final action readback; a proposed local assessment never answers a request on the forge.
 
@@ -80,7 +80,7 @@ posted. Use this shape, with one entry per assessed PR:
   "assessments": [{
     "number": 482, "head": "<full-reviewed-head>", "base": "<full-reviewed-base>",
     "assessed_at": "2026-11-03T15:20:00Z", "risk": "DATA",
-    "evidence_inputs": {"forge": "<PR updatedAt>", "issues": "<hash from refreshed round JSON>", "policy": "<resolved review configuration revision>"},
+    "evidence_inputs": {"forge": "<PR updatedAt>", "issues": "<hash from refreshed round JSON>", "policy": "<resolved review configuration revision>", "target": {"ref": "main", "sha": "<independently fetched target SHA>"}},
     "decisions": [{
       "id": "rollback-filters", "kind": "code", "axis": "Spec", "severity": "blocking",
       "criterion": "Rollback preserves saved filters", "summary": "Rollback drops saved filters",
@@ -96,7 +96,19 @@ Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined 
 
 `evidence_inputs` comes from a fresh `round_report.py` collection. Include issue descriptions, relevant comments/decisions, criteria and source update times in `ticketEvidence`; its content hash makes external changes invalidate a recommendation. `policy` hashes the resolved profile and all directly referenced policy/checklist contents, including bundled defaults; changed rules invalidate reuse and guarded writes. Files linked from those policies still require source refresh and explicit provenance; this is not a transitive documentation crawler. Supply `round_report.py --review-config <repository-relative-path>` for an alternate profile and carry the same path as top-level `review_config` in the assessment bundle; omit it for the standard profile. Run write helpers from the target repository root so they can recompute the policy revision. Preserve the original `assessed_at` when reusing code checks and describe their scope/limits in `provenance`. Add `posted_action: {action, url, at}` only after an actual write/readback, never for a proposed action. For an accepted evidence/owner gap add `waiver: {actor, source, at, scope, criterion}`; `criterion` must exactly match this record. Preserve waivers across new heads only after confirming their scope still applies; they cannot waive code verification or unfinished review.
 
-For directly fetched requirements, include `requirements` in the PR's `ticketEvidence`. Each source supplies `source`, `retrieved_at`, `acceptance_text` (the original acceptance section), `criteria: [{id, quote}]` and `matrix: [{criterion_id, result, ...}]`. Populate each matrix row with the implemented path, evidence/source/time and limit as above. A genuine source with no criteria uses an empty acceptance section and empty lists; a failed lookup is unavailable, not empty. The collector flags nonempty acceptance text with zero extracted criteria, missing source metadata, missing matrix rows or quotes absent from the source. These checks catch extraction/mapping mismatches, not every possible natural-language omission; compare the original source yourself. Linked tickets supplied without requirement evidence leave Spec coverage incomplete. The same contract accepts local requirement files and agreed untracked contracts, without a hosted tracker dependency.
+Before extracting requirements, retain the complete fetched responses: issue description, all fetched comment pages and owner decisions, with source identity, retrieval time, revision and coverage. A full local requirement file or agreed untracked contract uses the same contract. Preserve each response independently of the extracted criteria; never reconstruct the source by joining criterion quotes. Mark partial or failed reads as `partial` or `unavailable`, not as an empty acceptance section.
+
+Run the offline snapshot helper once per response before extraction:
+
+```bash
+python3 "$S/requirements.py" <original-response.json> --source <source-URL-or-path> \
+    --retrieved-at <ISO-time> --revision <source-revision> --coverage complete \
+    --output <snapshot.json>
+```
+
+The helper preserves the response's exact UTF-8 bytes and SHA-256 inside an exclusively created JSON file. Include each output object in the PR's `ticketEvidence.source_snapshots`. Each entry in `ticketEvidence.requirements` supplies `source`, `retrieved_at`, `snapshot_sha256`, `acceptance_text`, `criteria: [{id, quote}]` and `matrix: [{criterion_id, result, ...}]`. For a JSON response, `source_path` is an array of object keys/list indexes selecting the original text, such as `["description"]`; omit it for a plain-text response. Optional `section: [start, end]` selects a complete original section by character offsets (end exclusive); otherwise use the entire selected text. Copy that section verbatim into `acceptance_text`. Keep the complete response even when selecting one section. Retain every relevant section or comment and check the selection against the original source, not just the extracted quotes.
+
+Populate matrix rows with the implemented path, evidence/source/time and limit. The collector flags missing/partial snapshots, changed hashes, section mismatches, nonempty acceptance text with no extracted criteria, missing matrix rows and quotes absent from the text. Zero gaps proves retained-source and matrix consistency, **not extraction completeness or acceptance**. Read the complete responses to check for omitted criteria and decisions. Genuine no-criteria sources use empty text/lists with a retained original response. Linked tickets without original-source evidence leave Spec coverage incomplete. Full snapshots participate in the issue-input hash, so a comment-only change invalidates reuse even at an unchanged code head.
 
 Every write additionally takes `--authority authority.json`:
 
@@ -106,7 +118,17 @@ Every write additionally takes `--authority authority.json`:
 
 Use only authorized actions (`approve`, `request-changes`, `comment`, `dismiss`, `enqueue`, `enable-auto-merge`). Approval/dismissal that can release auto-merge and both landing actions require `possible_landing: true` with permission covering that consequence. Record exact PRs rather than extending an old batch's authority. Files record permission; they do not grant it. Helpers refresh forge state, but the reviewer must refresh tracker evidence before invoking them.
 
-Changed head/base, discussion or issue inputs and inconsistent collection make a proposal stale. Reassess it
+`evidence_inputs.target` records the actual target branch name and SHA fetched independently of the PR's `baseRefOid`. Collection reads it before and after the round; a moved or unreadable target makes freshness unknown. Write helpers re-read it before mutation and reject a mismatch or unknown SHA. A target read does not prove integration tests passed. Older assessments without this field remain historical evidence, not current clearance.
+
+Use these labels in both the artifact and chat summary:
+
+- **Merged head has no saved local assessment**: this report lacks a matching local record; reconcile linked assessments and exact-head review evidence.
+- **Source review complete · merge checks pending**: local review has no unresolved blocking decisions; this is neither GitHub approval nor permission to merge.
+- **Needs code changes**, **Needs evidence**, **Needs owner decision**, **Review incomplete**: name the responsible person and specific next action. Do not replace them with a generic hold.
+- **Review again · inputs changed or incomplete**: the saved recommendation cannot supply current clearance.
+- **GitHub changes requested**, **GitHub approved · not merged**, **Queued · not merged**, **GitHub approved · queue unknown**: observed forge state, separate from local review and request handling. Keep it visible even when a local recommendation supplies the main label.
+
+Changed head/base, actual target, discussion or issue inputs and inconsistent collection make a proposal stale. Reassess it
 before treating it as current. Keep source reviews and proposed assessments in
 separate disclosures. A local proposal never acquires a submission timestamp.
 For reused assessments, include a `provenance` string that names the earlier

@@ -15,7 +15,7 @@ sys.path.insert(0, str(SKILL / "scripts"))
 import round_report
 from pr_history import normalize
 from render_round import render
-from decision_fixtures import assessment, REVISION
+from decision_fixtures import assessment, REVISION, TARGET
 
 
 def fixture():
@@ -61,6 +61,11 @@ class Tags(HTMLParser):
 
 
 class ReportTests(unittest.TestCase):
+    def setUp(self):
+        target = patch.object(round_report, "target_state", return_value=TARGET)
+        target.start()
+        self.addCleanup(target.stop)
+
     def test_renderer_works_from_an_independently_installed_skill(self):
         _, record = fixture()
         with tempfile.TemporaryDirectory() as tmp:
@@ -118,7 +123,25 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(Tags(source).rows, ["1", "2", "3"])
         self.assertIn("1 merged", source)
         self.assertIn("This change has not merged", source)
-        self.assertIn("Approved · merge queue unknown", source)
+        self.assertIn("GitHub approved · queue unknown", source)
+
+    def test_status_labels_separate_local_review_from_github_and_merge_gates(self):
+        _, record = fixture()
+        proposal = assessment(482, head=record["head"], base=record["base"])
+        page = render([record], "main", assessments={"repository": record["repository"], "assessments": [proposal]})
+        collapsed = page.split('<article class="pr-row"', 1)[1].split('<details class="history-detail">', 1)[0]
+        self.assertIn('Source review complete · merge checks pending', collapsed)
+        self.assertIn('Observed on GitHub · changes requested', collapsed)
+        self.assertIn('Report recommendation, not posted', collapsed)
+        for verdict, label in [('APPROVED', 'GitHub approved · not merged'),
+                               ('APPROVED_QUEUED', 'Queued · not merged'),
+                               ('APPROVED_QUEUE_UNKNOWN', 'GitHub approved · queue unknown')]:
+            record['verdict'] = verdict
+            self.assertIn(label, render([record], 'main'))
+        proposal['evidence_inputs'] = {**proposal['evidence_inputs'], 'target': {**TARGET, 'sha': None}}
+        stale = render([record], 'main', assessments={'repository': record['repository'], 'assessments': [proposal]})
+        self.assertIn('Review again · inputs changed or incomplete', stale)
+        self.assertNotIn('Source review complete · merge checks pending', stale)
 
     def test_dense_row_uses_product_summary_and_keeps_original_evidence_in_details(self):
         _, record = fixture()
@@ -127,7 +150,7 @@ class ReportTests(unittest.TestCase):
         row = source.split('<article class="pr-row"', 1)[1]
         collapsed, detail = row.split('<details class="history-detail">', 1)
         self.assertIn("Keep saved filters when upgrading", collapsed)
-        self.assertIn("Changes requested", collapsed)
+        self.assertIn("GitHub changes requested", collapsed)
         self.assertIn("↩ 2 returns", collapsed)
         self.assertNotIn(record["head"], collapsed)
         self.assertNotIn("Rollback drops saved filters", collapsed)
