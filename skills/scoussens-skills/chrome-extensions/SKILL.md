@@ -13,7 +13,7 @@ description: >-
 license: Apache-2.0
 metadata:
   upstream: https://github.com/GoogleChrome/modern-web-guidance/tree/4dd968349e54ca45a05dd5c818fb035c9054b022/skills/chrome-extensions
-  changes: Modified from upstream. Rewrites the description to this pack's format. The instructions and reference files are unchanged.
+  changes: Modified from upstream. Rewrites the description to this pack's format. Fixes the userScripts availability check in references/extensions/user-scripts.md and rule 18 to call getScripts(), as Chrome's API reference recommends, because chrome.userScripts is undefined rather than throwing when disabled.
 ---
 
 # Chrome Extensions
@@ -335,7 +335,7 @@ chrome.desktopCapture.chooseDesktopMedia(['screen', 'window'], tab, (streamId) =
 `chrome.userScripts` runs **user-provided code** at runtime. Use it for script managers and
 user automation — not for extension-bundled scripts.
 
-- **API throws on property access if not enabled.** Chrome 138+ requires the user to toggle "Allow User Scripts" on the extension's details page; Chrome < 138 requires Developer mode. Always call `isUserScriptsAvailable()` before any `chrome.userScripts.*` call and show an error UI when it returns false.
+- **API is undefined or throws if not enabled.** Chrome 138+ requires the user to toggle "Allow User Scripts" on the extension's details page; Chrome < 138 requires Developer mode. Always call `isUserScriptsAvailable()` before any `chrome.userScripts.*` call and show an error UI when it returns false.
 - **Registered scripts are cleared on extension update.** Persist configs in `chrome.storage`; re-register them in `runtime.onInstalled` for the `"update"` reason.
 - **Messaging requires explicit opt-in.** Call `configureWorld({ messaging: true })` first; listen on `runtime.onUserScriptMessage`, not `runtime.onMessage`.
 - **`ScriptSource` constraint:** each `js` entry must have exactly one of `code` or `file`. **`id` constraint:** cannot start with `_`.

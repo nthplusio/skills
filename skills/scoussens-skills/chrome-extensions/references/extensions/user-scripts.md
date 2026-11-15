@@ -26,8 +26,8 @@ feature where the user supplies JavaScript that should run on web pages.
 
 ## User Enablement — CRITICAL
 
-**The `chrome.userScripts` API requires explicit user opt-in. Without it, the API throws on
-property access.** Behavior differs by Chrome version:
+**The `chrome.userScripts` API requires explicit user opt-in. Without it, the API is
+undefined or its methods throw.** Behavior differs by Chrome version:
 
 | Chrome version | Requirement |
 |----------------|-------------|
@@ -42,7 +42,9 @@ await chrome.userScripts.register([{ id: 'foo', matches: [...], js: [...] }]);
 // ✅ CORRECT — always guard before any chrome.userScripts.* call
 function isUserScriptsAvailable() {
   try {
-    chrome.userScripts; // throws if not enabled
+    // Property access alone does not throw: the API is undefined when disabled
+    // on Chrome 138+. A method call throws in every disabled state.
+    chrome.userScripts.getScripts();
     return true;
   } catch {
     return false;
