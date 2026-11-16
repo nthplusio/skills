@@ -53,6 +53,8 @@ class LandingTests(unittest.TestCase):
             elif command[:2] == ["gh", "api"] and "/git/ref/heads/" in command[2]:
                 target = current.get("target") or {}
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": target.get("sha")}}
+            elif command[:3] == ["gh", "api", "graphql"] and "stackEntry" in command[4]:
+                payload = {"data": {"repository": {"pullRequest": {"stackEntry": current.get("stack_entry")}}}}
             elif command[:3] == ["gh", "api", "graphql"]:
                 if current.get("queue_state") == "unknown":
                     return subprocess.CompletedProcess(command, 1, "", "queue unavailable")

@@ -43,6 +43,9 @@ def evidence():
 
 class HandoffTests(unittest.TestCase):
     def setUp(self):
+        stacks = patch.object(round_report, "stack_of", return_value=None)
+        stacks.start()
+        self.addCleanup(stacks.stop)
         target = patch.object(round_report, "target_state", return_value=TARGET)
         target.start()
         self.addCleanup(target.stop)
@@ -59,6 +62,7 @@ class HandoffTests(unittest.TestCase):
                     "statusCheckRollup": [{"conclusion": "FAILURE"}]}, p]), \
                 patch.object(queue, "repo_slug", return_value="sample/product"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
+                patch.object(queue, "stack_of", return_value=None), \
                 patch.object(queue, "collect", return_value=raw), contextlib.redirect_stdout(output):
             queue.main()
         for text in ("Review requested again", "CHANGES_REQUESTED", "AUTHOR: conflicts", "1 RED", "AUTO",

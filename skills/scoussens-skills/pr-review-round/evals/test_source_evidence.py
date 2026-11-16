@@ -50,6 +50,7 @@ class SourceEvidenceTests(unittest.TestCase):
                 patch.object(round_report, 'assessment_history', return_value=list(saved)), \
                 patch.object(round_report, 'target_state', side_effect=targets or [TARGET, TARGET], create=True), \
                 patch.object(round_report, 'queue_state', return_value='not_queued'), \
+                patch.object(round_report, 'stack_of', return_value=None), \
                 patch.object(ledger, 'heads', return_value={}), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             round_report.main()

@@ -19,6 +19,15 @@ for its standards and specification checks, then complete the round's risk-tier
 checks and reconcile findings. If it is unavailable, perform those checks directly.
 Do not install or require an optional sibling to finish the caller's task.
 
+## Stacked PRs
+
+GitHub-native stacks (`gh stack`) chain PRs bottom to top. Only the bottom PR targets the stack's base branch; each higher PR targets the branch below it until that PR merges and GitHub retargets it. Read membership from the GraphQL `stackEntry { position stack { number baseRefName entries } }` field, not from branch names; a failed read is unknown membership, not "unstacked".
+
+- A `--base <branch>` listing misses upper layers. Include every open member of a stack rooted on the branch in queue, inventory and recap scope.
+- Review each layer's own diff against its parent branch. Do not attribute a lower layer's changes to a higher one, and name the PRs below and above it.
+- GitHub refuses per-PR auto-merge for any stack member, even after lower PRs merge. `gh stack merge <pr>` lands that PR plus every unmerged PR below it, so landing one layer needs review, approval and authority for each layer it carries.
+- A parent merge or restack moves a child's base and head. Treat that as new code to recheck, not a reviewed version.
+
 ## Language for product owners
 
 Write the report's summary and next action for a product owner. Use short

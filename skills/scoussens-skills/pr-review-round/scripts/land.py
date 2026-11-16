@@ -3,6 +3,15 @@
 
 land.py [--watch] <pr-number> [pr-number ...]
 land.py --enqueue <pr-number>:<reviewed-full-sha> [...]
+land.py --enqueue --stack-method squash <pr>:<sha> [<lower-pr>:<sha> ...]
+
+Stacked PRs (GitHub `gh stack`): GitHub refuses per-PR auto-merge for any stack
+member, so --enable-auto-merge holds them. --enqueue lands a stack member with
+`gh stack merge <pr> --yes --<method>`, which also lands every unmerged PR below
+it; every such lower PR must be named here with its reviewed head and pass the
+same gates. `gh stack merge` has no expected-head guard, so heads are re-read
+immediately before the write. Run from the repository root with the official
+`github/gh-stack` extension installed.
 
 Every write rechecks OPEN, non-draft, reviewed head, APPROVED, CLEAN, and actual
 queue membership. GitHub's --match-head-commit guards the merge request too.
@@ -18,6 +27,7 @@ import time
 
 from merge_queue import queue_state
 from ledger import check_authority, check_clearance, target_state
+from stacks import stack_of, below
 
 POLL_SECONDS = 30
 MAX_POLLS = 40
@@ -38,6 +48,7 @@ def state_of(num, repo=None):
         return {}
     state["queue_state"] = queue_state(state.get("id"), state.get("headRefOid"))
     state["target"] = target_state(repo, state.get("baseRefName"))
+    state["stack"] = stack_of(repo, num)
     return state
 
 
@@ -46,6 +57,13 @@ def enqueue(num, head, repo, auto=False):
         "gh", "pr", "merge", str(num), "--repo", repo, "--match-head-commit", head,
         *(["--auto"] if auto else []),
     ], capture_output=True, text=True)
+    return result.returncode == 0, (result.stdout + result.stderr).strip()
+
+
+def stack_merge(num, method):
+    if subprocess.run(["gh", "stack", "--help"], capture_output=True, text=True).returncode:
+        return False, "gh stack extension unavailable; a person can install it with `gh extension install github/gh-stack`"
+    result = subprocess.run(["gh", "stack", "merge", str(num), "--yes", f"--{method}"], capture_output=True, text=True)
     return result.returncode == 0, (result.stdout + result.stderr).strip()
 
 
@@ -58,6 +76,8 @@ def main():
     parser.add_argument("--repo")
     parser.add_argument("--authority", type=Path)
     parser.add_argument("--assessments", type=Path)
+    parser.add_argument("--stack-method", choices=("merge", "squash", "rebase"),
+                        help="merge method for stacked PRs; a merge queue on the base still chooses its own")
     parser.add_argument("prs", nargs="+")
     args = parser.parse_args()
     writing = args.enqueue or args.enable_auto_merge
@@ -81,6 +101,7 @@ def main():
     for poll in range(MAX_POLLS + 1):
         if poll:
             time.sleep(POLL_SECONDS)
+        ready = {}
         for number in sorted(pending):
             state = state_of(number, args.repo)
             status = state.get("state")
@@ -99,6 +120,16 @@ def main():
                 outcome = "HELD: open non-draft state not confirmed"
             elif writing and state.get("reviewDecision") != "APPROVED":
                 outcome = "HELD: current approval not confirmed"
+            elif writing and (state.get("stack") or {}).get("status") == "unknown":
+                outcome = "HELD: stack membership unknown; re-read before landing"
+            elif writing and state.get("stack") and args.enable_auto_merge:
+                outcome = ("HELD: GitHub refuses auto-merge for stacked PRs; use --enqueue --stack-method "
+                           "with every unmerged lower PR, or ask the author to unstack")
+            elif writing and state.get("stack") and not args.stack_method:
+                outcome = "HELD: stacked PR needs --stack-method; the last-used method is otherwise reused"
+            elif writing and state.get("stack") and any(e["number"] not in heads for e in below(state["stack"], number)):
+                lower = ", ".join(f'#{e["number"]}' for e in below(state["stack"], number) if e["number"] not in heads)
+                outcome = f"HELD: gh stack merge would also land {lower}; name each with its reviewed head and authority"
             if writing and not outcome:
                 try:
                     check_authority(json.loads(args.authority.read_text()), args.repo, number,
@@ -116,6 +147,9 @@ def main():
             print(f"#{number} pending -- state={status or 'unknown'} / "
                   f"merge={merge_state or 'unknown'} / queue={queue}")
             if (writing and poll < MAX_POLLS and merge_state == "CLEAN"
+                    and queue == "not_queued" and number not in submitted and state.get("stack")):
+                ready[number] = state
+            elif (writing and poll < MAX_POLLS and merge_state == "CLEAN"
                     and queue == "not_queued" and number not in submitted):
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
@@ -138,6 +172,42 @@ def main():
                     print(f"#{number} {outcomes[number]} -- {out}")
                 elif number in pending:
                     print(f"#{number} merge request accepted; awaiting observed queue/merge state")
+        # One `gh stack merge` per stack, from its highest named PR, only when
+        # every unmerged PR below it cleared every gate in this same poll.
+        tops = {}
+        for number, state in ready.items():
+            stack = state["stack"]
+            if all(e["number"] in ready for e in below(stack, number)):
+                if stack["position"] > tops.get(stack["number"], (0, None))[0]:
+                    tops[stack["number"]] = (stack["position"], number)
+        for _, number in tops.values():
+            covered = [e["number"] for e in below(ready[number]["stack"], number)] + [number]
+            fresh = {n: state_of(n, args.repo) for n in covered}
+            if any(fresh[n].get("headRefOid") != heads[n] or fresh[n].get("reviewDecision") != "APPROVED"
+                   or fresh[n].get("queue_state") != "not_queued" or fresh[n].get("target") != ready[n].get("target")
+                   for n in covered):
+                print(f"#{number} stack state changed before write; holding this poll")
+                continue
+            ok, out = stack_merge(number, args.stack_method)
+            submitted.update(covered)
+            for n in covered:
+                observed = state_of(n, args.repo)
+                print(f"#{n} post-write: head={observed.get('headRefOid', 'unknown')} / "
+                      f"review={observed.get('reviewDecision', 'unknown')} / "
+                      f"queue={observed.get('queue_state', 'unknown')} / state={observed.get('state', 'unknown')}")
+                if observed.get("state") == "MERGED":
+                    outcomes[n] = "MERGED"
+                    pending.discard(n)
+                elif not ok:
+                    outcomes[n] = "HELD: stack merge failed or outcome uncertain; inspect before retry"
+                    pending.discard(n)
+                    print(f"#{n} {outcomes[n]} -- {out}")
+                elif observed.get("headRefOid") != heads[n] or observed.get("target") != ready[n].get("target"):
+                    outcomes[n] = "HELD: post-write head changed or target moved; reconcile before further writes"
+                    pending.discard(n)
+                    print(f"#{n} {outcomes[n]}")
+                else:
+                    print(f"#{n} stack merge request accepted with #{number}; awaiting observed queue/merge state")
         if not pending:
             break
 

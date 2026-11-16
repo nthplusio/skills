@@ -52,7 +52,7 @@ requested repository, base, and scope:
 with no merge command from you. Approval and dismissal on such a PR also need
 merge authority. Re-read auto-merge immediately before either action.
 
-**Enabling auto-merge is a landing action.** Use `land.py --enable-auto-merge` with the same gates as enqueueing, from the first attempt. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires a saved authority record: repository, exact PR numbers, allowed actions, originating instruction and whether possible landing is included; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
+**Enabling auto-merge is a landing action.** GitHub refuses it for stacked PRs; land those with `land.py --enqueue --stack-method <method>` as step 5 describes. Otherwise use `land.py --enable-auto-merge` with the same gates as enqueueing, from the first attempt. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires a saved authority record: repository, exact PR numbers, allowed actions, originating instruction and whether possible landing is included; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
 
 Three rules hold regardless:
 
@@ -109,6 +109,7 @@ python3 $S/review_write.py --help   # head-bound, explicitly authorized review w
 python3 $S/land.py --help          # guarded enqueue/auto-merge; requires authority and assessments
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
+python3 $S/stacks.py <n> --repo <owner/repo> # stack membership and order, read-only
 python3 $S/round_report.py <base>   # report data: urls, review timestamps, bodies
 python3 $S/render_round.py <round.json> --base <base> --timezone <IANA-zone> # offline HTML
 python3 $S/md_to_html.py            # render a review body's markdown (import: `render`)
@@ -132,7 +133,7 @@ they argue with.
 
 Read [review handoffs](references/review-handoffs.md). Overlay outstanding user/team requests and their event identities independently of review status, CI, conflicts and auto-merge. A same-head re-request is fresh reviewer work, not proof a prior objection is fixed. Reconcile collection gaps as unknown, and fold decisive reviews per reviewer rather than treating every historical return as a live block.
 
-`queue.py <base>` lists every open non-draft PR oldest first, with a risk tier
+`queue.py <base>` lists every open non-draft PR oldest first, including upper stack layers that target a lower layer's branch instead of `<base>` (see Stacked PRs in `references/pr-family.md`), with a risk tier
 and — most usefully — **who is blocking**. Oldest first is deliberate: those PRs
 have the most review history to reconcile and are the ones the queue is waiting
 on.
@@ -214,6 +215,8 @@ Approval can change after the helper's read and before the merge request.
 `--match-head-commit` guards the head, not approval. Server-side branch
 protections are necessary to enforce approval at merge time; polling does not
 eliminate that race. Hold the merge if a required atomic guarantee is unavailable.
+
+For a stacked PR, `land.py --enqueue --stack-method <merge|squash|rebase>` runs one `gh stack merge <top> --yes`, which also lands every unmerged PR below it. Name each of those lower PRs with its reviewed head and authority; otherwise, or when membership is unknown, the helper holds without writing. `gh stack merge` has no expected-head guard, so the helper re-reads every covered head immediately before the write. It needs the official `github/gh-stack` extension; ask before installing it. Pass the method the repository uses for ordinary PRs, because the tool otherwise reuses the last method. A merge queue on the base chooses its own method and may land layers in separate groups.
 
 Without merge authority, or with `AUTO` set, use `land.py --watch <n>`.
 Bare PR numbers also default to read-only. Report **queued** only when

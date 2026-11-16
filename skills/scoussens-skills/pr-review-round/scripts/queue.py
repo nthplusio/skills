@@ -12,6 +12,7 @@ merging them first is what stops the queue growing.
 import json, subprocess, sys, time
 from review_requests import collect, reconcile
 from ledger import handled_requests, repo_slug
+from stacks import stack_of, label as stack_label, missing_members
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
 # whole PR list makes GitHub's GraphQL endpoint 504 once the queue gets big --
@@ -138,15 +139,24 @@ def main():
     if listed is None or len(listed) >= 200:
         sys.exit("queue unavailable or at collection limit; coverage unknown -- check auth, network or paginate the scope")
     prs = [p for p in listed if not p["isDraft"]]
+    slug = repo_slug()
+    if not slug:
+        sys.exit("repository unavailable; request coverage unknown")
+    # Upper stack layers target the branch below them, not <base>, so the
+    # listing above misses them. Add every open member of a stack rooted on <base>.
+    stacks = {p["number"]: stack_of(slug, p["number"]) for p in prs}
+    for number in missing_members(stacks.values(), set(stacks), base):
+        extra = gh_json(["gh", "pr", "view", str(number), "--json", LIST_FIELDS])
+        if not extra or extra.get("number") != number:
+            sys.exit(f"stacked PR #{number} unavailable; coverage unknown")
+        prs.append(extra)
+        stacks[number] = stack_of(slug, number)
     prs.sort(key=lambda p: p["createdAt"])
     for p in prs:
         detail = gh_json(["gh", "pr", "view", str(p["number"]), "--json", DETAIL_FIELDS])
         p.update(detail or {"files": [], "statusCheckRollup": []})
         p["_degraded"] = detail is None
 
-    slug = repo_slug()
-    if not slug:
-        sys.exit("repository unavailable; request coverage unknown")
     saved = handled_requests(slug)
     request_states = {}
     for p in prs:
@@ -156,7 +166,7 @@ def main():
             evidence["failedFetches"].append("snapshot-consistency")
         request_states[p["number"]] = reconcile(evidence)
     tiers = load_overrides()
-    print(f"{len(prs)} open non-draft PR(s) targeting {base}, oldest first\n")
+    print(f"{len(prs)} open non-draft PR(s) targeting {base} or a stack rooted on it, oldest first\n")
     hdr = (f'{"PR":<7}{"OPENED":<12}{"AUTHOR":<18}{"RISK":<7}'
            f'{"SIZE":<13}{"BLOCKER":<22}{"CI":<9}{"AUTO":<6}{"REVIEW STATE":<20}{"REQUEST STATE":<24}TITLE')
     print(hdr)
@@ -176,6 +186,11 @@ def main():
               f'{tier(paths, tiers):<7}{size:<13}{blocker_of(p, red):<22}{ci:<9}'
               f'{auto_of(p):<6}{p.get("reviewDecision") or "UNKNOWN":<20}'
               f'{request_label(request_states[p["number"]]):<24}{p["title"][:46]}')
+        stack = stacks.get(p["number"])
+        if stack:
+            print(f'       {stack_label(stack, p["number"])}'
+                  + (' · per-PR auto-merge unavailable; land with land.py --enqueue --stack-method'
+                     if stack.get("status") == "stacked" else ' -- re-read before approving or landing'))
         requests = request_states[p["number"]]
         for request in requests["requests"]:
             if request["outstanding"]:
@@ -212,6 +227,10 @@ AUTO            Approval or dismissal can release auto-merge, so either also
                 needs merge authority. Re-read auto-merge and the verified head
                 before writing. AUTO is not queue membership; confirm actual
                 queue/merge state with `land.py --watch <n>`, which only polls.
+
+STACK           Upper layers target the branch below them; review each layer's
+                own diff. GitHub refuses auto-merge for stack members, and
+                landing one also lands every unmerged PR below it.
 
 CI              'N RED' is not automatically the author's fault: a failing
                 review/lint job is sometimes the reviewer tooling erroring out,

@@ -47,6 +47,7 @@ from review_config import resolve as review_config
 from review_requests import reconcile
 from ledger import assessment_history, assessment_current, validate_assessment, target_state
 from requirements import requirement_gaps
+from stacks import stack_of, missing_members
 
 
 LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
@@ -235,6 +236,14 @@ def main():
         if not snapshot or snapshot.get("number") != number:
             sys.exit(f"could not reconcile scoped PR #{number}; coverage unknown")
         by_number[number] = snapshot
+    # Upper stack layers target the branch below them, so `--base` misses them.
+    stacks = {n: stack_of(slug, n) for n in by_number}
+    for number in missing_members(stacks.values(), set(by_number), base):
+        snapshot = gh(["gh", "pr", "view", str(number), "--repo", slug, "--json", LIST_FIELDS])
+        if not snapshot or snapshot.get("number") != number:
+            sys.exit(f"could not collect stacked PR #{number}; coverage unknown")
+        by_number[number] = snapshot
+        stacks[number] = stack_of(slug, number)
     prs = sorted(by_number.values(), key=lambda p: p["createdAt"])
 
     out = []
@@ -286,6 +295,7 @@ def main():
                 "policy": policy["revision"],
             },
             "queue_state": p["queue_state"],
+            "stack": stacks.get(n),
             "verdict": verdict_of(p),
             # The per-PR review timestamp the report asks for. None means you
             # left a comment but no formal review -- say so rather than

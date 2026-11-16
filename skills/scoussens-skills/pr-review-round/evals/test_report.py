@@ -62,6 +62,9 @@ class Tags(HTMLParser):
 
 class ReportTests(unittest.TestCase):
     def setUp(self):
+        stacks = patch.object(round_report, "stack_of", return_value=None)
+        stacks.start()
+        self.addCleanup(stacks.stop)
         target = patch.object(round_report, "target_state", return_value=TARGET)
         target.start()
         self.addCleanup(target.stop)

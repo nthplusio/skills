@@ -9,6 +9,7 @@ from string import Template
 from md_to_html import render as markdown
 from pr_history import format_time, render as history_html
 from ledger import DECISIONS, assessment_current, unresolved, validate_assessment
+from stacks import label as stack_label
 
 REPORT_BUDGET = 100_000
 
@@ -188,6 +189,8 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             request_summary = request_summary + ' · Request coverage unknown' if waiting else 'Request coverage unknown'
         if gate:
             request_summary += ' · ' + gate["owner"] + ': ' + gate["reason"]
+        if record.get("stack"):
+            request_summary += ' · ' + stack_label(record["stack"], number)
         rows.append(f'<article class="pr-row" data-pr="{number}"><div class="row-heading">'
                     f'<h2><a href="{escape(url, quote=True)}">#{number}</a> {escape(summary)}</h2>'
                     f'<span class="verdict">{escape(status)}</span></div>'
