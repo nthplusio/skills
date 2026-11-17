@@ -146,5 +146,101 @@ class CliMeasurements(unittest.TestCase):
         self.assertIn("classic   unknown", report)
 
 
+class FleetEvidence:
+    """Runs across workflows; jobs keyed by (run id, attempt). Attempt start
+    clocks are unreadable, so a fleet total that depended on them would fail."""
+
+    def __init__(self, runs, jobs, total=None):
+        self.runs = runs
+        self.jobs = jobs
+        self.total = len(runs) if total is None else total
+        self.job_errors = set()
+        self.pages = None
+
+    def gh(self, *args):
+        if args[:2] == ("repo", "view"):
+            return True, {"visibility": "PRIVATE", "defaultBranchRef": {"name": "main"}}
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    def api(self, path):
+        url = urlsplit(path)
+        query = parse_qs(url.query)
+        page = int(query.get("page", ["1"])[0])
+        if url.path.endswith("/actions/runs"):
+            assert query["created"][0].startswith(">="), query
+            batch = self.pages[page - 1] if self.pages else self.runs[(page - 1) * 100:page * 100]
+            return True, {"total_count": self.total, "workflow_runs": batch}
+        if "/attempts/" in url.path and url.path.endswith("/jobs"):
+            run_id = int(url.path.split("/runs/")[1].split("/")[0])
+            attempt = int(url.path.split("/attempts/")[1].split("/")[0])
+            if run_id in self.job_errors:
+                return False, "temporary API error"
+            jobs = self.jobs.get((run_id, attempt), [])
+            return True, {"total_count": len(jobs), "jobs": jobs[(page - 1) * 100:page * 100]}
+        if "/attempts/" in url.path:
+            return False, "Not Found"
+        raise AssertionError(f"unexpected evidence read: {path}")
+
+
+def fleet_run(identifier, path, event, attempt=1, conclusion="success"):
+    return {"id": identifier, "path": path, "name": path, "event": event,
+            "run_attempt": attempt, "conclusion": conclusion, "status": "completed"}
+
+
+class CliByWorkflow(unittest.TestCase):
+    def invoke(self, evidence, extra=(), json_output=True):
+        output = io.StringIO()
+        argv = [str(SCRIPT), "--repo", "example/repo", "--by-workflow", *extra]
+        with patch.object(baseline, "gh", side_effect=evidence.gh), \
+             patch.object(baseline, "api", side_effect=evidence.api), \
+             patch("sys.argv", argv + (["--json"] if json_output else [])), \
+             contextlib.redirect_stdout(output):
+            self.assertEqual(baseline.main(), 0)
+        return json.loads(output.getvalue()) if json_output else output.getvalue()
+
+    def test_totals_every_attempt_per_workflow_and_event(self):
+        ci, codeql = ".github/workflows/ci.yml", ".github/workflows/codeql.yml"
+        evidence = FleetEvidence(
+            [fleet_run(11, ci, "pull_request", attempt=2), fleet_run(12, ci, "push"),
+             fleet_run(13, ci, "pull_request", conclusion="failure"), fleet_run(14, codeql, "push")],
+            {(11, 1): [job(1, "test", 0, 61, "failure")],
+             (11, 2): [job(2, "test", 0, 61), job(3, "deploy", 61, 61, "skipped")],
+             (12, 1): [job(4, "matrix", 0, 600), job(5, "probe", 0, 300, labels=["self-hosted"])],
+             (13, 1): [job(6, "test", 0, 30, "failure")]})
+        evidence.job_errors = {14}
+        data = self.invoke(evidence)
+        rows = [(g["workflow"], g["event"], g["runs"], g["measured_runs"], g["re_runs"], g["jobs"],
+                 g["skipped_jobs"], g["runner_time"], g["rounded_minutes"]) for g in data["groups"]]
+        self.assertEqual(rows, [
+            (ci, "push", 1, 1, 0, 2, 0, 900, 10),
+            (ci, "pull_request", 2, 2, 1, 3, 1, 152, 5),
+            (codeql, "push", 1, 0, 0, 0, 0, 0, 0),
+        ])
+        self.assertEqual(data["groups"][1]["conclusions"], {"success": 1, "failure": 1})
+        self.assertEqual([item["run"] for item in data["incomplete_runs"]], [14])
+        report = self.invoke(evidence, json_output=False)
+        self.assertIn("coverage: 4 of 4 runs read", report)
+        self.assertNotIn("partial window", report)
+        self.assertIn("1 run(s) have incomplete job reads; their consumption is missing, not zero", report)
+        self.assertLess(report.index(f"{ci} / push"), report.index(f"{ci} / pull_request"))
+
+    def test_capped_window_is_reported_as_partial(self):
+        runs = [fleet_run(i, "ci.yml", "push") for i in range(1, 151)]
+        evidence = FleetEvidence(runs, {}, total=2500)
+        # A run created while paging pushes run 100 onto page 2 as well.
+        evidence.pages = [runs[:100], runs[99:150]]
+        data = self.invoke(evidence)
+        self.assertEqual((data["runs_read"], data["runs_in_window"]), (150, 2500))
+        self.assertEqual(data["groups"][0]["runs"], 150)
+        capped = self.invoke(evidence, ["--limit", "40"])
+        self.assertEqual(capped["runs_read"], 40)
+        self.assertIn("partial window", self.invoke(evidence, json_output=False))
+
+    def test_rejects_single_workflow_filters(self):
+        with patch("sys.argv", [str(SCRIPT), "--by-workflow", "--workflow", "ci.yml"]), \
+             contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            baseline.main()
+
+
 if __name__ == "__main__":
     unittest.main()

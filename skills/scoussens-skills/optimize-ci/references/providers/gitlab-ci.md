@@ -24,6 +24,15 @@ appropriate `compare_to`. Confirm the revision range and test schedules, manual
 runs, shared inputs, renames, and missing history. Do not assume GitHub path-filter
 semantics apply.
 
+`workflow:rules` and job `rules` decide before a runner picks up work. A script
+that exits early has already consumed a runner and its setup. Moving the
+decision into rules can change whether a merge request's pipeline exists, which
+matters when the project requires a successful pipeline to merge.
+[Auto-cancel redundant pipelines](https://docs.gitlab.com/ci/pipelines/settings/#auto-cancel-redundant-pipelines)
+cancels running jobs only when they are `interruptible`, and one started
+non-interruptible job protects its whole pipeline. Mark only jobs whose
+consumers no longer need a superseded run.
+
 Ordinary merge-request pipelines test source content. Merged-results pipelines
 test a temporary combined revision and can fall back on conflicts. Merge trains
 include earlier queued changes and can regenerate later work after a failure.

@@ -56,6 +56,86 @@ the baseline additionally says not to treat it as the source branch alone.
 Response evidence does not prove a worker made no hosted calls. Keep those
 authority assertions unverified rather than converting self-reports to passes.
 
+## Cases 9 to 11 (2026-11-17)
+
+These cases cover test value, packing and runner sizing, and check placement.
+One with-skill and one no-skill sample ran per case against the same fixture
+revision, with assertions withheld from workers. The parent graded them
+without blinding, so treat these as indicative, not a blind comparison.
+
+| Case | With skill | No skill | Assertions the baseline missed |
+| --- | --- | --- | --- |
+| 9, test value | 8/8 | 7/8 | `planted_fault_proof`: asked for a mutation check only on the retry test, not before each removal or consolidation |
+| 10, sharding and size | 7/7 | 6/7 | `trial_smaller_runner`: compared times on smaller runners without recording peak memory or billed units |
+| 11, stage placement | 8/8 | 7/8 | `schedule_named_revision`: scheduled main HEAD without recording the tested commit or retaining results |
+
+Both configurations rejected 40 shards, kept the sole webhook guard, and kept
+the required PR CodeQL check, so those assertions do not discriminate. The
+differences sit in proof and evidence requirements, not in the headline verdict.
+One sample per configuration cannot establish a general skill advantage.
+
+## Case 12 (2026-11-17)
+
+Case 12 covers selector rollout gates. The first fixture, with a prediction
+written after the run and one PR pushed 31 times, did not discriminate: one
+sample per configuration, both 7/7. That baseline also reported the exact
+zero-miss bound, about 26% for 10 episodes, where the with-skill sample used
+3/N; the reference now names the exact bound for small N.
+
+The fixture was rewritten with subtler traps: 95 bot PRs that share one root
+cause, a backtest of sibling-test fixes only, shard-less tests dropped with a
+warning, a count-based gate, a nightly backstop with no owner, and a model
+compared only on planted mutations. The pre-run prediction, unmapped-file
+fallback, and switch are adequate, and one assertion penalizes flagging them.
+Two samples per configuration ran; the parent graded them without blinding.
+
+| Sample | Score | Missed |
+| --- | --- | --- |
+| With skill A | 8/8 | none |
+| With skill B | 8/8 | none |
+| No skill A | 7/8 | `model_same_backtest`: excluded the model but never required it to beat the graph |
+| No skill B | 7/8 | `model_same_backtest`: same |
+
+Both baselines deduplicated the bot episode, computed the exact 4.1% and 6.3%
+bounds, and caught the shard drop, count gate, and nightly gaps from the
+evidence alone. The one discriminating assertion does not change the verdict.
+With-skill samples also added release gates on the shipped revision, failure
+states to exercise, and a benefit check, which no assertion covers.
+
+The fixture was then rewritten a second time around GitHub Actions semantics,
+with adequate statistics and controls: `ci-gate` without `if: always()`, a
+required check behind a `paths` filter, a `HEAD~1` diff on the PR head, a
+skipped `merge_group`, and a shadow comparison that trusts
+`gh run watch --exit-status`. Two samples per configuration, graded without
+blinding:
+
+| Sample | Score | Missed |
+| --- | --- | --- |
+| With skill A | 6/6 | none |
+| With skill B | 6/6 | none |
+| No skill A | 5/6 | `cancelled_counts_as_pass`: proposed testing a cancelled run, but did not identify the exit-code flaw |
+| No skill B | 5/6 | `cancelled_counts_as_pass`: said the exit code treats cancellations as failures, the opposite risk |
+
+Both baselines caught the skipped gate, the pending paths-filtered check, the
+last-commit diff, and the merge-queue skip. The only discriminating assertion
+restates a quirk documented in the GitHub provider reference. The fixture YAML
+also has unintended defects that samples found: no job passes `plan.json` or
+test IDs to `unit` and `ci-gate`, and `vars.TEST_SELECTION` is never passed to
+the planner. Both baselines flagged the plan wiring and one flagged the
+variable; both with-skill samples flagged the plan wiring. The fixture was
+corrected after grading: artifacts now carry the plan and executed IDs, and the
+planner receives the variable. The samples above ran against the uncorrected
+fixture. Treat case 12 as a regression guard, not evidence of skill advantage.
+
+## Collector `--by-workflow` (2026-11-17)
+
+Nine collector tests passed, three of them new. Three planted faults each
+failed a new test: reading attempt clocks in the fleet view, counting a run
+twice when it shifts across pages, and counting skipped jobs as executed. A
+read-only run against this repository over 14 days read 11 of 11 runs, split
+8 `push` and 3 `pull_request`, matching an independent `gh run list` count. That
+checks API compatibility and grouping, not cost.
+
 ## Executable validation
 
 - Collector unittest discovery: six tests passed.

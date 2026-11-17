@@ -40,6 +40,50 @@ class. For sharding, validate complete non-overlapping task assignment, shared
 setup cost, and diagnostic artifacts. Removing a supported platform changes
 assurance even when another platform passes.
 
+## Place each check at the stage that needs its answer
+
+Ask which decision consumes a check's result, then run it at the earliest
+event that decision needs and no more often. A typical split:
+
+| Stage | Answer it owes | Typical work |
+| --- | --- | --- |
+| Pull request or merge queue | Is this change safe to merge? | Selected tests, lint, types, required security checks |
+| Push to the default branch | Did the merge break something immediately? | Small regression and protocol guards, exact-commit deploy checks |
+| Scheduled validation | Does a named recent revision pass the broad suite? | Full matrix, slow integration, broad security analysis |
+| Release | Does the shipped version pass its release gates? | Release qualification on the exact release revision |
+
+Moving broad work from every main push to a schedule removes whole runs, but it
+creates obligations. The scheduled job must test a named revision, retain its
+results, and route failures to an owner who repairs them. An older green run is
+not proof for a newer commit. Keep release gates bound to the shipped revision.
+Moving a check changes when its answer arrives; it must not make a required
+answer optional. Name the defect-detection delay this introduces and who
+accepts it.
+
+For a schedule, reuse an unchanged prior result only when its inputs match and
+its writer is trusted, and expire it after a stated age. When superseding pushes
+are frequent, a short admission delay or concurrency group can cancel work
+before a runner starts. Apply it only to runs whose consumers no longer need
+them, per [reliability](reliability.md).
+
+Automated reviewers, maintenance bots, and agents that push are CI consumers
+too. Count their runs and pushes in the event inventory. Prefer one automatic
+review per pull request with later reviews on request, and a debounce or
+concurrency group for agents that push repeatedly. A requested review is not a
+passing review, and required review rules stay in place.
+
+## Decide skips before paying for the runner
+
+A skip decided at pipeline or job creation saves the runner, its startup, and
+its setup. A skip decided inside a step has already paid for all three. For each
+conditional task, record where its skip decision runs and move it to the
+earliest point that has enough information to decide correctly. A cheap
+planning job that emits the selection can gate many expensive jobs.
+
+Moving a skip earlier can change required-check behavior. A job skipped by its
+condition and a workflow or pipeline that never starts report differently. Read
+the provider reference before moving a decision that a required check depends on.
+
 ## Make selection depend on declared inputs
 
 Use changed inputs and transitive consumers, not only directory prefixes. Inspect
@@ -54,6 +98,32 @@ with the full gate before relying on a selector; shadow runs find omissions but
 do not prove graph completeness. Retain full verification at an appropriate
 integration point or cadence. See [Nx affected execution](https://nx.dev/docs/features/ci-features/affected)
 for one native implementation, not a requirement to adopt Nx.
+
+Before a selector may skip work, require these rollout gates:
+
+- **Backtest against real regressions.** Replay the revision before each past
+  fix through the selector. Confirm it selects the test that exposed the bug,
+  then run that test and see it fail. Include deleted files, shared helpers,
+  fixtures, and renames, not only sibling-test cases. A miss is a rule to
+  repair or a reason to widen the fallback.
+- **Record the prediction before the run.** In shadow mode, save the selected
+  set before any test starts and run the full set independently. A failure
+  outside the prediction is a miss. Nothing from the run may flow back into
+  that prediction.
+- **Size the evidence.** Zero misses across \(N\) independent faulty changes
+  still allows a miss rate near \(3/N\) at 95% confidence; for small \(N\),
+  report the exact bound \(1 - 0.05^{1/N}\). Count revisions from
+  one regression episode once. State the accepted miss budget before enabling
+  skips.
+- **Reject incomplete plans.** When a selected test has no known owner, shard,
+  or runtime, reject the narrowed plan and run the broader set. An empty
+  narrowed plan is never a successful test run.
+- **Keep a switch.** One setting, such as a repository variable, must restore
+  full selection without editing tests or workflows.
+
+A learned or model-ranked selector follows the same gates and has no skip
+authority until it beats the deterministic dependency graph on the same
+backtest.
 
 ## Bind artifacts to their consumers
 

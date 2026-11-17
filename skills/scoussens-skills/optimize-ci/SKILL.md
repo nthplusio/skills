@@ -62,9 +62,12 @@ cache evidence. On GitHub Actions, run the bundled read-only collector against
 the target repository, resolving its path relative to this skill:
 
 ```bash
-python3 <skill-directory>/scripts/gh_ci_baseline.py --repo owner/repo
+python3 <skill-directory>/scripts/gh_ci_baseline.py --repo owner/repo --by-workflow --days 7
 python3 <skill-directory>/scripts/gh_ci_baseline.py --repo owner/repo --workflow ci.yml --json
 ```
+
+For a cost or consumption question, start with `--by-workflow` to find which
+workflow and event concentrate runner time, then measure that workflow alone.
 
 The collector is evidence, not a verdict. Inspect its completeness indicators.
 It does not classify cache state, resolve the full effective workflow, reconstruct
@@ -84,9 +87,13 @@ Distinguish ordering edges from data transfers and resource locks. Name the
 consumer that justifies each task and dependency.
 
 Read [architecture](references/architecture.md) when designing or changing job
-boundaries, events, selection, matrices, concurrency, or artifact flow. Read
-[performance](references/performance.md) when queue, setup, computation, I/O,
-network, transfer, or test infrastructure limits the requested objective.
+boundaries, events, the stage at which a check runs, where skips are decided,
+selection, matrices, concurrency, or artifact flow. Read
+[performance](references/performance.md) when queue, setup, sharding, runner
+size, avoidable first-attempt failures, computation, I/O, network, transfer, or
+test infrastructure limits the requested objective. Read [test value](references/test-value.md) when test
+execution dominates or the suite grows faster than the code it covers; ask
+whether work should exist before tuning how it runs.
 
 For an audit, explain why the observed constraint dominates and what observation
 would disprove that explanation. For initial design, identify likely constraints
@@ -136,6 +143,10 @@ explicitly authorizes changing them:
   secrets out of caches and reports, and preserve least privilege and pinning.
 - Reuse native task results only with complete inputs, suitable test semantics,
   and trusted writers. An arbitrary cached "passed" flag is not verification.
+- Remove or consolidate a test only when a named retained test owns its
+  contract and a planted fault proves that owner fails. Moving a check to a
+  later stage must keep a named revision, an owner for failures, and release
+  gates bound to the shipped revision.
 
 Read [reliability](references/reliability.md) for retries, flakes, quarantine,
 aggregate gates, cancellation, cleanup, or external-service failures. Read

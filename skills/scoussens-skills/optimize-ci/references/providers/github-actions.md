@@ -41,6 +41,13 @@ new files, shared inputs, and missing history. Read current
 [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax)
 before relying on filters, expressions, matrices, or cancellation behavior.
 
+A job-level `if:` is evaluated before a runner is assigned, so a false
+condition costs no runner time. A step-level `if:` or an early `exit 0` runs
+after the runner started and checkout or setup may have run. A job skipped by
+its condition reports success to a required check, while a workflow filtered
+out by `paths` or `branches` leaves that check pending. Route required checks
+through an aggregate gate before moving a skip from steps to jobs or workflows.
+
 ## Treat collection as partial evidence
 
 List active workflows instead of treating old run history as current topology.

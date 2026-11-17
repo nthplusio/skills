@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """gh_ci_baseline.py --workflow <file-or-id> [--repo owner/name] [--branch B]
                     [--protected-branch B] [--limit N] [--json]
+gh_ci_baseline.py --by-workflow [--repo owner/name] [--days D] [--limit N] [--json]
+
+With --by-workflow it reads completed runs of every workflow created in the
+last D days and totals executed jobs, skipped jobs, raw runner time and rounded
+hosted minutes per workflow file and event, across all attempts. Use it first
+to find where consumption concentrates, then measure that workflow alone.
 
 The baseline and contract pass for GitHub Actions. For one workflow it prints:
 
@@ -20,7 +26,8 @@ Without --workflow it lists the repository's workflows and their state, and exit
 """
 import argparse, json, math, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 # Percentiles from a handful of runs are noise that reads like a measurement.
 # Below these sizes the report shows the individual values instead.
@@ -169,17 +176,20 @@ def workflow_blob(repo, path, ref, cache):
     return cache[ref]
 
 
-def fetch_run(repo, run):
+def fetch_run(repo, run, clocks=True):
+    """Every attempt's jobs. With clocks, also each attempt's start time, which
+    latency needs and consumption totals do not."""
     jobs = []
     notes = []
     attempt_starts = []
     for attempt in range(1, (run.get("attempt") or 1) + 1):
         path = f"repos/{repo}/actions/runs/{run['databaseId']}/attempts/{attempt}"
-        ok, metadata = api(path)
-        if not ok or not isinstance(metadata, dict) or not metadata.get("run_started_at"):
-            notes.append(f"cannot read start of attempt {attempt}")
-        else:
-            attempt_starts.append(metadata["run_started_at"])
+        if clocks:
+            ok, metadata = api(path)
+            if not ok or not isinstance(metadata, dict) or not metadata.get("run_started_at"):
+                notes.append(f"cannot read start of attempt {attempt}")
+            else:
+                attempt_starts.append(metadata["run_started_at"])
         rows, errors = paginated(f"{path}/jobs", "jobs")
         notes.extend(errors)
         for job in rows:
@@ -190,6 +200,20 @@ def fetch_run(repo, run):
                 notes.append(f"incomplete timing for attempt {attempt} job {job['id']}")
         jobs.extend(rows)
     return jobs, attempt_starts, notes
+
+
+def consumption(jobs):
+    """Executed jobs, raw runner seconds and rounded hosted minutes across the
+    jobs given. Skipped jobs never received a runner and are left out."""
+    executed = [j for j in jobs if j.get("conclusion") != "skipped"]
+    return {
+        "jobs": len(executed),
+        "runner_time": sum(seconds(j["started_at"], j["completed_at"]) for j in executed),
+        # GitHub bills each hosted job rounded up to the whole minute. This is
+        # the rounded figure before any OS multiplier, allowance or free tier.
+        "rounded_minutes": sum(math.ceil(seconds(j["started_at"], j["completed_at"]) / 60)
+                               for j in executed if "self-hosted" not in (j.get("labels") or [])),
+    }
 
 
 def measure(run, jobs, attempt_starts):
@@ -225,22 +249,110 @@ def measure(run, jobs, attempt_starts):
             "duration": duration,
             "steps": steps,
         })
-    executed = [j for j in jobs if j.get("conclusion") != "skipped"]
+    used = consumption(jobs)
     return {
         "elapsed": seconds(run.get("createdAt"), last_end),
         "attempt_elapsed": seconds(start, last_end),
         "initial_delay": seconds(run.get("createdAt"), attempt_starts[0]),
         "latest_attempt_delay": seconds(run.get("createdAt"), start),
         "attempt_runner_time": sum(r["duration"] for r in job_rows),
-        "runner_time": sum(seconds(j["started_at"], j["completed_at"]) for j in executed),
-        # GitHub bills each hosted job rounded up to the whole minute. This is
-        # the rounded figure before any OS multiplier, allowance or free tier.
-        "rounded_minutes": sum(math.ceil(seconds(j["started_at"], j["completed_at"]) / 60)
-                               for j in executed if "self-hosted" not in (j.get("labels") or [])),
+        "runner_time": used["runner_time"],
+        "rounded_minutes": used["rounded_minutes"],
         "queue": max((r["queue"] for r in job_rows if r["queue"] is not None), default=None),
         "jobs": job_rows,
         "skipped": skipped,
     }
+
+
+# --- fleet -------------------------------------------------------------------
+
+def window_runs(repo, since, limit):
+    """Completed runs created since `since`, newest first, up to `limit`.
+
+    Returns the runs, GitHub's count of matching runs, and notes. A run listing
+    filtered by creation time returns at most 1,000 runs, so a busy window can
+    only be read in part. Runs created while paging shift older runs onto the
+    next page; they are deduplicated by ID rather than counted twice.
+    """
+    created = quote(f">={since}")
+    runs, total, page = {}, None, 1
+    while len(runs) < limit:
+        ok, data = api(f"repos/{repo}/actions/runs?created={created}&status=completed"
+                       f"&exclude_pull_requests=true&per_page=100&page={page}")
+        if not ok or not isinstance(data, dict) or not isinstance(data.get("workflow_runs"), list) \
+                or not isinstance(data.get("total_count"), int):
+            return list(runs.values())[:limit], total, [f"cannot read runs page {page}: {data}"]
+        total = data["total_count"]
+        for run in data["workflow_runs"]:
+            runs.setdefault(run["id"], run)
+        if len(data["workflow_runs"]) < 100:
+            break
+        page += 1
+    return list(runs.values())[:limit], total, []
+
+
+def by_workflow(repo, runs):
+    """Consumption per (workflow file, event) across every attempt of each run.
+    A run whose jobs cannot all be read is listed as incomplete and left out of
+    the sums; missing evidence is not a zero-minute run."""
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        collected = list(pool.map(
+            lambda r: fetch_run(repo, {"databaseId": r["id"], "attempt": r.get("run_attempt")}, clocks=False),
+            runs))
+    groups, incomplete = {}, []
+    for run, (jobs, _, notes) in zip(runs, collected):
+        group = groups.setdefault((run["path"], run["event"]), {
+            "workflow": run["path"], "name": run.get("name"), "event": run["event"],
+            "runs": 0, "measured_runs": 0, "re_runs": 0, "conclusions": {},
+            "jobs": 0, "skipped_jobs": 0, "runner_time": 0, "rounded_minutes": 0})
+        group["runs"] += 1
+        group["re_runs"] += (run.get("run_attempt") or 1) > 1
+        conclusion = run.get("conclusion") or "unknown"
+        group["conclusions"][conclusion] = group["conclusions"].get(conclusion, 0) + 1
+        if notes:
+            incomplete.append({"run": run["id"], "workflow": run["path"], "notes": notes})
+            continue
+        used = consumption(jobs)
+        group["measured_runs"] += 1
+        group["jobs"] += used["jobs"]
+        group["skipped_jobs"] += len(jobs) - used["jobs"]
+        group["runner_time"] += used["runner_time"]
+        group["rounded_minutes"] += used["rounded_minutes"]
+    return sorted(groups.values(), key=lambda g: -g["runner_time"]), incomplete
+
+
+def print_by_workflow(repo, meta, since, runs, total, groups, incomplete, notes):
+    print(f"# {repo} — consumption by workflow and event")
+    print(f"completed runs created since {since}; visibility {meta['visibility'].lower()}")
+    if meta["visibility"] == "PUBLIC":
+        print("public repository: standard GitHub-hosted runners are not billed")
+    shown = "unknown" if total is None else total
+    print(f"coverage: {len(runs)} of {shown} runs read")
+    if total is None or len(runs) < total or notes:
+        print("  ! partial window: these are the newest runs only; shares describe them, not the window")
+    for note in notes:
+        print(f"  ! {note}")
+    if incomplete:
+        print(f"  ! {len(incomplete)} run(s) have incomplete job reads; their consumption is missing, not zero")
+
+    runner_total = sum(g["runner_time"] for g in groups) or 1
+    jobs_total = sum(g["jobs"] for g in groups) or 1
+    print(f"\n  {'runner%':>7} {'jobs%':>6} {'raw runner time':>15} {'rounded min':>11} "
+          f"{'jobs':>6} {'skipped':>7} {'runs':>9} {'re-run':>6}  workflow / event")
+    for g in groups:
+        runs_cell = f"{g['measured_runs']}/{g['runs']}"
+        print(f"  {100 * g['runner_time'] / runner_total:6.1f}% {100 * g['jobs'] / jobs_total:5.1f}% "
+              f"{fmt(g['runner_time']):>15} {g['rounded_minutes']:>11} {g['jobs']:>6} "
+              f"{g['skipped_jobs']:>7} {runs_cell:>9} {g['re_runs']:>6}  {g['workflow']} / {g['event']}")
+    print("\n  runs shows measured/read. Shares use measured runs only.")
+    for item in incomplete:
+        for note in item["notes"]:
+            print(f"    run {item['run']} ({item['workflow']}): {note}")
+
+    print("\n## Not measured here")
+    print("  latency — run this collector with --workflow for one workflow's clocks and required checks")
+    print("  billed dollars — rounded runner minutes are not dollar cost and exclude multipliers, allowances and free tiers")
+    print("  other repositories sharing the same runners or account")
 
 
 # --- report ------------------------------------------------------------------
@@ -312,9 +424,14 @@ def main():
     ap.add_argument("--workflow", help="workflow file name (ci.yml) or id")
     ap.add_argument("--branch", help="only runs on this head branch")
     ap.add_argument("--protected-branch", help="branch whose required checks to read; defaults to the default branch")
-    ap.add_argument("--limit", type=int, default=30, help="runs to fetch (default 30)")
+    ap.add_argument("--limit", type=int, help="runs to fetch (default 30; 300 with --by-workflow, at most 1000)")
+    ap.add_argument("--by-workflow", action="store_true",
+                    help="consumption across every workflow, grouped by workflow file and event")
+    ap.add_argument("--days", type=float, default=7, help="--by-workflow window in days (default 7)")
     ap.add_argument("--json", action="store_true", help="print the raw measurements as JSON")
     args = ap.parse_args()
+    if args.by_workflow and (args.workflow or args.branch):
+        ap.error("--by-workflow covers every workflow and branch; drop --workflow and --branch")
 
     repo = args.repo
     if not repo:
@@ -326,6 +443,19 @@ def main():
     if not ok:
         sys.exit(f"cannot read {repo}: {meta}")
     default_branch = meta["defaultBranchRef"]["name"]
+
+    if args.by_workflow:
+        since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        runs, total, notes = window_runs(repo, since, min(args.limit or 300, 1000))
+        groups, incomplete = by_workflow(repo, runs)
+        if args.json:
+            json.dump({"repo": repo, "visibility": meta["visibility"], "since": since,
+                       "runs_in_window": total, "runs_read": len(runs), "notes": notes,
+                       "groups": groups, "incomplete_runs": incomplete}, sys.stdout, indent=2)
+            print()
+        else:
+            print_by_workflow(repo, meta, since, runs, total, groups, incomplete, notes)
+        return 0
 
     workflows = list_workflows(repo)
     if not args.workflow:
@@ -342,7 +472,7 @@ def main():
         sys.exit(f"no workflow {args.workflow!r} in {repo}; run without --workflow to list them")
     workflow = match[0]
 
-    run_args = ["run", "list", "-R", repo, "--workflow", str(workflow["id"]), "--limit", str(args.limit),
+    run_args = ["run", "list", "-R", repo, "--workflow", str(workflow["id"]), "--limit", str(args.limit or 30),
                 "--json", "databaseId,event,headBranch,headSha,status,conclusion,createdAt,startedAt,attempt"]
     if args.branch:
         run_args += ["--branch", args.branch]

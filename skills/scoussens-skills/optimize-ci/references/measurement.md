@@ -24,6 +24,7 @@ Use quantities with named origins:
 | Critical-path execution | Longest dependency-respecting execution path, without queue or approvals |
 | Raw runner time | Sum of executed job durations across every attempt and conclusion |
 | Rounded hosted minutes | Per-job rounding applied to hosted execution, before rates and allowances |
+| Change cycle time | Pull request opened to merged, including checks, review, and revisions |
 
 Run completion is not necessarily required-gate latency. The longest job queue
 interval is not total queue delay. Do not sum overlapping queue and elapsed
@@ -67,10 +68,27 @@ gate. Inspect `attempt_elapsed`, `initial_delay`, job queues, and attempt covera
 before explaining delay. Read the output's completeness warnings and compare the
 current workflow file with other configuration inputs yourself.
 
+With `--by-workflow`, the collector totals executed jobs, skipped jobs, raw
+runner time, and rounded hosted minutes per workflow file and event for a
+window, across every attempt. GitHub returns at most 1,000 runs for such a
+listing, so read its coverage line: a partial window describes the newest runs
+read, not the whole window. Runs with incomplete job reads are excluded from
+the sums and listed. The fleet view locates consumption; it does not explain
+latency or establish cost.
+
 It does not infer cache hits, classify warm and cold workloads, expand expressions
 or reusable workflows, inspect runner utilization, reconstruct `needs:`, or
 calculate account charges. Read logs, configuration, and billing evidence for
 those facts. Job timestamps suggest concurrency, not proof of a dependency.
+
+## Measure delivery separately from CI time
+
+When the goal is finishing changes sooner, as with coding agents waiting on
+each other, report change cycle time beside CI clocks. Define the pull-request
+group, such as authors, labels, and dates. Report median and tail. Count open
+and abandoned pull requests apart so merged ones do not hide unfinished work.
+Compare change mix and volume before crediting a CI change; checks are one
+part of the interval, and review can dominate it.
 
 ## Bound and validate the improvement
 

@@ -9,7 +9,8 @@
 | Computation | CPU saturation, task concurrency, compiler or test profiles | Tune workers or trial a runner size under comparable workloads |
 | Memory or I/O | Memory pressure, swapping, disk wait, database and filesystem timing | Reduce contention or change disposable test infrastructure |
 | Transfer or network | Cache and artifact size, hit rate, download, compression, upload | Compare uncached and cached end-to-end work |
-| Uneven tests | Per-file or per-case durations, setup per worker, shard completion | Balance measured work rather than file counts |
+| Uneven tests | Per-file or per-case durations, setup per worker, shard completion | Pack small shards, then balance measured work rather than file counts |
+| Oversized runner | Peak CPU and memory against the runner class, billed units per job | Trial a smaller class on the identical workload |
 | External dependency | Service wait, throttling, transient errors, image and registry location | Isolate the dependency cost without changing integration semantics |
 
 Profile inside a dominant command before changing the graph around it. Native
@@ -31,10 +32,41 @@ work, and \(C\) is slot capacity. This lower bound is not a prediction for
 heterogeneous runners, locks, autoscaling, or resource contention. Use observed
 arrival and duration distributions when shared demand matters.
 
+## Pack work into jobs, then balance the jobs
+
+Sharding divides work into jobs; parallelism decides how many run at once.
+Treat them as separate decisions. Each job repeats queueing, startup, checkout,
+install, and fixture setup, so more shards multiply that overhead and total
+runner time even when wall time falls.
+
+1. **Pack.** Measure each job's setup share. When setup rivals the useful work,
+   merge shards that share a toolchain, services, and trust level until setup
+   is a small share of each job. Keep apart suites that need isolation or
+   distinct diagnostics.
+2. **Balance.** Assign work by measured per-file or per-case duration, not by
+   file count, so jobs finish together. A job that finishes early cannot help
+   the straggler that owns the remaining work. Balancing can justify more jobs
+   when one straggler sets the critical path.
+
+Report both effects for any sharding change: critical-path time and total
+runner time, including billing rounding per job. Fewer jobs is not the
+objective, and neither is more.
+
+## Size runners to the work in both directions
+
 Reject a larger runner recommendation without evidence of the resource it fixes.
-Include prices, rounding, idle fleet cost, warmup, and maintenance from the
-account's actual policy. No provider bill for self-hosted execution does not
-mean free capacity.
+Question oversized runners the same way: a job that cannot use its cores or
+memory pays for idle capacity. Trial a smaller class on the identical workload
+and record elapsed time, peak memory, out-of-memory events, and billed units on
+both classes. A smaller runner can cut cost and lengthen the wait; report the
+tradeoff against the stated objective rather than either number alone.
+
+Qualify runner classes per job class. Serial tooling and lint often fit small
+runners; memory-heavy builds and analysis may need to stay large. Watch billing
+rounding: a small overhead that crosses a billed-minute boundary can erase a
+saving. Include prices, rounding, idle fleet cost, warmup, and maintenance from
+the account's actual policy. No provider bill for self-hosted execution does
+not mean free capacity.
 
 ## Reuse work with complete inputs
 
@@ -49,6 +81,21 @@ reruns changed tests and dependencies, external tests, repeated tests, and faile
 tests under its `auto` policy. Assess declared inputs, external state, trust in
 writers, and uncached validation. Never substitute an arbitrary saved "passed"
 flag for a gate. Move cache trust decisions to [security](security.md).
+
+## Catch cheap failures before the push
+
+A formatting or lint failure found in CI costs a runner, its setup, and a
+round trip for the author or agent. When first-attempt failures are often
+deterministic and cheap to detect, recommend a local path: formatting, lint,
+and a focused test command, plus type checking where its latency fits. Make the
+path one native command that people and agents both run, such as a pre-commit
+or pre-push hook. Keep the same checks required in CI; a skipped hook proves
+nothing.
+
+On the checks authors wait for, a faster equivalent tool can cut the wait.
+Qualify it against the canonical tool on the same inputs, keep the canonical
+tool at release or scheduled validation, and fall back to it where the faster
+tool lacks support.
 
 ## Improve test infrastructure without removing realism
 

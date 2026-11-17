@@ -154,6 +154,79 @@
         "skills/scoussens-skills/optimize-ci/evals/fixtures/implementation/gate.py",
         "skills/scoussens-skills/optimize-ci/evals/fixtures/implementation/check_gate.py"
       ]
+    },
+    {
+      "id": 9,
+      "name": "agent-grown-test-value",
+      "prompt": "Our test job keeps getting slower as agents add tests. Use the supplied evidence to recommend what to cut or keep. Do not change anything.",
+      "expected_output": "Judges each test by the contract it protects, removes only with a named retained owner and planted-fault proof, keeps sole guards, and does not equate removed lines with runtime savings.",
+      "assertions": [
+        "redundant_assertion: identifies the 'synthetic' assertion as implied by the sha256 format while keeping the disclosure test",
+        "implementation_mirror: flags the computeDelay call-order test as implementation-mirroring and names retry.behavior.test.ts as the retained owner",
+        "consolidate_keeps_unique: consolidates the duplicate config files without losing the 7 environment-override cases",
+        "planted_fault_proof: requires showing a retained test fails on the relevant planted fault before removing or consolidating",
+        "repair_sole_guard: repairs rather than deletes or quarantines delivery.test.ts because it is the only signature-rejection guard",
+        "keeps_slow_unique: does not cut invoice.e2e.test.ts merely for being slowest",
+        "savings_measured_not_lines: does not convert removed lines into a runtime saving without a before/after measurement",
+        "evaluate_no_edits: recommends without deleting files or changing configuration"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/test-suite-value.md"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "overshard-and-runner-size",
+      "prompt": "Our Actions bill is rising and PR feedback takes over 7 minutes. Use the supplied evidence to evaluate the proposal to go to 40 shards and recommend what to do instead, if anything.",
+      "expected_output": "Rejects more shards because setup dominates each shard, packs shards and balances by measured duration to fix the shard 7 straggler, and trials smaller runners on the identical workload while reporting cost and time together.",
+      "assertions": [
+        "setup_dominates: identifies per-shard setup as larger than most shards' test work",
+        "rejects_40_shards: rejects or heavily qualifies 40 shards because it multiplies setup and does not fix the straggler",
+        "pack_then_balance: packs into fewer shards and assigns work by measured duration, isolating or splitting report-render.test.ts",
+        "both_clocks: states both critical-path or gate time and total runner time or billed minutes for the recommendation",
+        "trial_smaller_runner: proposes a smaller runner trial on the identical workload recording elapsed time, peak memory, and billed units",
+        "lint_small_runner: moves the serial lint job to a small runner class",
+        "rounding_and_labels: applies per-job whole-minute rounding and labels savings as estimates or bounds, not measured results"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/overshard-runners.md"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "check-stage-placement",
+      "prompt": "Main-branch CI is most of our runner time. Use the supplied evidence to recommend how to restructure when checks run without slowing PR feedback. Do not change anything.",
+      "expected_output": "Moves the full main-push matrix to scheduled validation of a named revision with retained results and a failure owner, keeps smoke and exact-commit staging deploy on main, keeps release gates on the tag, and moves the docs skip before runner setup without breaking required checks.",
+      "assertions": [
+        "keeps_main_guards: keeps smoke and deploy-staging on every main push for the exact commit",
+        "schedule_named_revision: moves the full matrix to a schedule that tests a named revision and retains results",
+        "failure_owner: requires an owner or routing for scheduled failures and names the detection delay",
+        "release_on_tag: keeps the full release gate on the tag revision",
+        "skip_before_setup: moves the docs-only decision to a job condition or planning job so no runner or npm ci is paid",
+        "required_check_semantics: keeps ci-gate reporting correctly, not via a workflow path filter that leaves it pending",
+        "security_needs_authority: keeps PR CodeQL and treats reducing main CodeQL frequency as a decision for the maintainers",
+        "bounded_savings: bounds the saving by the main-push share and labels it an estimate"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/stage-placement.md"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "selector-rollout-gates",
+      "prompt": "Our test selector has been in shadow mode for eight weeks. Use the supplied evidence and proposed workflows to decide whether we can let it skip tests next week, and what must happen first. Do not change anything.",
+      "expected_output": "The statistical evidence and switch are adequate, but the proposed workflows are not. ci-gate is skipped, and so reports success, when plan or unit fails; a paths-filtered required check stays pending; the planner diffs only the last commit; merge_group skips testing a combined revision; and the shadow comparison can count a cancelled full suite as passing.",
+      "assertions": [
+        "skipped_gate_succeeds: ci-gate without if: always() is skipped when plan or unit fails, and a skipped job satisfies the required check; it must always run and inspect needs results",
+        "required_paths_pending: requiring the paths-filtered integration check leaves it pending on PRs that do not match; move the filter into a job condition under an aggregate",
+        "last_commit_diff: --base HEAD~1 on the PR head selects only the latest commit's changes; diff against the base or merge base with enough history, and single-commit agent PRs hid this in shadow",
+        "merge_group_combined: skipping tests in merge_group is unsafe because the queue tests a combined revision that differs from each PR's tested revision",
+        "cancelled_counts_as_pass: gh run watch --exit-status does not reliably separate cancelled runs; read the run conclusion and recheck shadow results",
+        "no_false_blockers: does not reject the rollout over sample size, miss budget, backtest coverage, shard handling, or the switch"
+      ],
+      "files": [
+        "skills/scoussens-skills/optimize-ci/evals/fixtures/selector-rollout.md"
+      ]
     }
   ],
   "history": [

@@ -1,6 +1,6 @@
 # optimize-ci evaluation suite
 
-Nine cases cover evaluate, design, and local implementation behavior. Evidence
+Thirteen cases cover evaluate, design, and local implementation behavior. Evidence
 is checked in under `fixtures/` and is explicitly synthetic; no scenario needs a
 live repository, hosted account, install, secret, or paid action. The first three
 cases retain their historical purposes and the original Iteration 1 record, but
@@ -52,6 +52,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
 
 These tests exercise the collector's CLI against synthetic API evidence. They
 cover retries, timestamp origins, more than 100 jobs, incomplete reads, unknown
-workflow revisions, and unreadable protection. They do not evaluate agent
+workflow revisions, and unreadable protection. The `--by-workflow` tests cover
+per-job rounding across attempts, skipped and self-hosted jobs, incomplete runs,
+capped windows, and runs repeated across pages. They do not evaluate agent
 behavior or establish hosted billing. See [results](results.md) for recorded
 agent samples and their limitations.
