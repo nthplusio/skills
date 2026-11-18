@@ -1,0 +1,4 @@
+interface:
+  display_name: modern-web-guidance
+policy:
+  allow_implicit_invocation: true

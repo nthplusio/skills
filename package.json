@@ -16,6 +16,7 @@
     "test:browser": "command -v agent-browser && BR_BROWSER_TEST=1 python3 -B -m unittest discover -s skills/scoussens-skills/business-rules-catalogue/evals -p test_explorer.py -v",
     "check:private": "node scripts/check-private-terms.mjs",
     "check:builder": "node scripts/check-builder-agrees.mjs",
+    "check:upstream-pins": "node scripts/check-upstream-pins.mjs",
     "test:skills": "node scripts/test-skills.mjs",
     "test:amp-plugins": "node --experimental-strip-types --test plugins/amp-skill-picker/tests/*.test.mjs",
     "test:doorbell": "claude plugin validate plugins/doorbell && claude plugin validate plugins/doorbell/skills && claude plugin test plugins/doorbell && node plugins/doorbell/tests/connected-mcp.mjs && tsc -p plugins/doorbell",
