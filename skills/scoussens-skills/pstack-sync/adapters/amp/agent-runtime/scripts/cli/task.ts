@@ -147,7 +147,7 @@ export function registerTaskCommands(program: Command): void {
     .option("--ref <ref>", "Starting git ref for the orb checkout", "main")
     .option(
       "--model <id>",
-      "Agent mode for the root planner (inherit, low, medium, high, ultra, or a plugin mode)",
+      "Model for the root planner: inherit, provider/name, or provider/name@effort",
       "high"
     )
     .option(
@@ -303,7 +303,7 @@ export function registerTaskCommands(program: Command): void {
       collect,
       [] satisfies string[]
     )
-    .option("--model <id>", "Agent mode override (default inherit)")
+    .option("--model <id>", "Model override: provider/name or provider/name@effort (default inherit)")
     .option(
       "--wait",
       "Block until the spawned task hands off (default: exit right after spawn)"

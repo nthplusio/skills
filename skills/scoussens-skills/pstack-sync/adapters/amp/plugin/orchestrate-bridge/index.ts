@@ -12,7 +12,10 @@
  * The loop (the pack's `agent-runtime.ts`) reads that file and sends
  *
  *   POST <url>   Authorization: Bearer <token>
- *   { "name", "prompt", "project", "mode", "labels", "parent"?, "nodeType"? }
+ *   { "name", "prompt", "project", "model", "effort"?, "labels", "parent"?, "nodeType"? }
+ *
+ * `model` is a `provider/name` model ID and `effort` one of its reasoning
+ * efforts. A request from an older loop sends a built-in `mode` instead.
  *
  * and gets `200 {"threadID": "T-...", "parent": "T-..."}`. A bad token is
  * `401 {"error"}`, bad input `400 {"error"}`, an Amp failure `500 {"error"}`,
@@ -38,7 +41,10 @@ export const description =
 export const BRIDGE_DIR = ".orchestrate";
 export const BRIDGE_FILE = "bridge.json";
 export const SPAWN_PATH = "/spawn";
+/** Legacy built-in agent modes; Amp now picks a model and effort instead. */
 export const MODES = ["low", "medium", "high", "ultra"] as const;
+export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const MODEL_PATTERN = /^[a-z0-9-]+\/[A-Za-z0-9._-]+$/;
 /** What the thread is in the orchestrate tree; optional, and a bridge without it ignores the field. */
 export const NODE_TYPES = ["planner", "subplanner", "worker", "verifier"] as const;
 export const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
@@ -51,6 +57,10 @@ export const MAX_BODY_BYTES = MAX_PROMPT_BYTES + 16 * 1024;
 export const THREAD_ID_PATTERN = /^T-[A-Za-z0-9-]+$/;
 
 export type Mode = (typeof MODES)[number];
+export type Effort = (typeof EFFORTS)[number];
+export type ModelID = `${string}/${string}`;
+/** What the thread runs: a model, optionally at an effort, or a legacy mode. */
+export type AgentChoice = { model: ModelID; effort?: Effort } | { mode: Mode };
 export type NodeType = (typeof NODE_TYPES)[number];
 export type ThreadID = `T-${string}`;
 
@@ -58,7 +68,7 @@ export interface SpawnRequest {
   name: string;
   prompt: string;
   project: string;
-  mode: Mode;
+  agent: AgentChoice;
   labels: string[];
   parent: ThreadID;
   nodeType?: NodeType;
@@ -100,7 +110,8 @@ export interface BridgeAgent {
 }
 export interface BridgeAPI {
   logger: { log: (...args: unknown[]) => void };
-  getBuiltinAgent(mode: Mode): BridgeAgent;
+  getBuiltinAgent(key: Mode | ModelID): BridgeAgent;
+  createAgent(config: { model: ModelID; reasoningEffort: Effort }): BridgeAgent;
 }
 
 export type Validation = { ok: true; value: SpawnRequest } | { ok: false; error: string };
@@ -129,9 +140,22 @@ export function validateSpawnRequest(body: unknown, defaultParent: ThreadID): Va
     return { ok: false, error: "project must be a non-empty string" };
   }
 
-  const mode = b.mode;
-  if (typeof mode !== "string" || !(MODES as readonly string[]).includes(mode)) {
-    return { ok: false, error: `mode must be one of ${MODES.join("|")}` };
+  let agent: AgentChoice;
+  if (b.model !== undefined) {
+    if (b.mode !== undefined) return { ok: false, error: "send model or mode, not both" };
+    if (typeof b.model !== "string" || !MODEL_PATTERN.test(b.model)) {
+      return { ok: false, error: "model must be a provider/name model ID" };
+    }
+    if (b.effort !== undefined && !(EFFORTS as readonly unknown[]).includes(b.effort)) {
+      return { ok: false, error: `effort must be one of ${EFFORTS.join("|")}` };
+    }
+    agent = { model: b.model as ModelID, ...(b.effort === undefined ? {} : { effort: b.effort as Effort }) };
+  } else {
+    if (b.effort !== undefined) return { ok: false, error: "effort needs a model" };
+    if (typeof b.mode !== "string" || !(MODES as readonly string[]).includes(b.mode)) {
+      return { ok: false, error: `model must be a provider/name model ID, or mode one of ${MODES.join("|")}` };
+    }
+    agent = { mode: b.mode as Mode };
   }
 
   const labels = b.labels === undefined ? [] : b.labels;
@@ -168,7 +192,7 @@ export function validateSpawnRequest(body: unknown, defaultParent: ThreadID): Va
       name,
       prompt,
       project,
-      mode: mode as Mode,
+      agent,
       labels: labels as string[],
       parent,
       ...(nodeType === undefined ? {} : { nodeType }),
@@ -183,7 +207,14 @@ export function validateSpawnRequest(body: unknown, defaultParent: ThreadID): Va
  * label `node-<type>` ahead of the request's labels, once.
  */
 export async function spawnThread(amp: BridgeAPI, request: SpawnRequest): Promise<SpawnResponse> {
-  const thread = await amp.getBuiltinAgent(request.mode).createThread({
+  const choice = request.agent;
+  const agent =
+    "mode" in choice
+      ? amp.getBuiltinAgent(choice.mode)
+      : choice.effort
+        ? amp.createAgent({ model: choice.model, reasoningEffort: choice.effort })
+        : amp.getBuiltinAgent(choice.model);
+  const thread = await agent.createThread({
     parentThreadID: request.parent,
     executor: "orb",
     project: request.project,

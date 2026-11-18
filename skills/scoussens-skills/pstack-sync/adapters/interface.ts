@@ -46,7 +46,7 @@ export interface SpawnArgs {
   repoUrl: string;
   /** Git ref the agent starts from. */
   startingRef: string;
-  /** Model or agent mode; `inherit` means the runtime's default. */
+  /** Model value; `inherit` means the runtime's default. */
   model: string;
   /** First message; the whole task brief. */
   prompt: string;

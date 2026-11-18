@@ -154,7 +154,7 @@ export function registerInspectCommands(program: Command): void {
     .command("models")
     .option(
       "--check",
-      "Validate each catalog entry against the agent modes the amp CLI accepts. Run after an amp upgrade or when kickoff/spawn rejects a mode."
+      "Validate each catalog entry against the models and efforts the amp CLI lists. Run after an amp upgrade or when kickoff/spawn rejects a model."
     )
     .description(
       "Print the model catalog. Planners consult this when setting `tasks[].model`."

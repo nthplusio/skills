@@ -54,7 +54,7 @@ function profile(slug: string, id = slug): Profile {
 }
 
 describe("models --check", () => {
-  test("marks modes the catalog does not list as failures, naming the known modes", async () => {
+  test("marks models the catalog does not list as failures, naming the known values", async () => {
     const catalog = [profile("high"), profile("opus", "claude-opus-4-8")];
     const modelCatalog: ModelCatalog = {
       models: async () => ["inherit", "high"],
@@ -66,7 +66,7 @@ describe("models --check", () => {
       {
         profile: catalog[1],
         ok: false,
-        error: "not an agent mode the amp CLI lists (known: inherit, high)",
+        error: "not a model or model@effort the amp CLI lists (known: inherit, high)",
       },
     ]);
   });
@@ -88,13 +88,25 @@ describe("models --check", () => {
     const dir = mkdtempSync(join(tmpdir(), "os4-fake-amp-"));
     chmodSync(join(FAKE_DIR, "amp"), 0o755);
     writeFileSync(join(dir, "calls.log"), "");
+    const efforts = ["low", "medium", "high", "xhigh", "max"];
+    const listed = ["anthropic/claude-haiku-5-5", "anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
+    writeFileSync(
+      join(dir, "agent-options.json"),
+      JSON.stringify({ models: listed.map(id => ({ id, capabilities: { efforts } })) })
+    );
     try {
       const env = { ...process.env, FAKE_AMP_DIR: dir, FAKE_AMP_LOG: join(dir, "calls.log") };
       const modelCatalog = createAmpModelCatalog({ env, bin: join(FAKE_DIR, "amp") });
       const results = await probe.probeModelCatalog({ catalog: models.MODEL_CATALOG, modelCatalog });
       expect(results.every(r => r.ok)).toBe(true);
-      expect(models.MODEL_CATALOG.map(m => m.slug)).toEqual(["inherit", "low", "medium", "high", "ultra"]);
-      expect(models.isKnownModel("ultra")).toBe(true);
+      expect(models.MODEL_CATALOG.map(m => m.slug)).toEqual([
+        "inherit",
+        "anthropic/claude-haiku-5-5@low",
+        "anthropic/claude-opus-5-5@medium",
+        "anthropic/claude-opus-5-5@xhigh",
+        "openai/gpt-6-astra@xhigh",
+      ]);
+      expect(models.isKnownModel("ultra")).toBe(false);
       expect(models.isKnownModel("claude-opus-4-8")).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -115,7 +127,7 @@ describe("models --check", () => {
       expect(probe.printProbeResults([{ profile: profile("bad"), ok: false, error: "not an agent mode" }])).toBe(1);
       expect(probe.printProbeResults([{ profile: profile("high"), ok: true }])).toBe(0);
       expect(lines.join("\n")).toContain("[FAIL] bad -> {\"id\":\"bad\"}  not an agent mode");
-      expect(lines.join("\n")).toContain("amp --help");
+      expect(lines.join("\n")).toContain("amp plugins show-agent-options");
     } finally {
       console.log = priorLog;
       console.error = priorError;
