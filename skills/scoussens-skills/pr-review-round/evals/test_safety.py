@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import branch_rules
 import land
 import merge_queue
 import review_write
@@ -195,6 +196,16 @@ class QueueReportTests(unittest.TestCase):
             (state(mergeStateStatus="DIRTY"), "APPROVED_CONFLICTING"),
             (state(mergeStateStatus="DIRTY", reviewDecision="REVIEW_REQUIRED"), "CONFLICTING"),
             (state(state="MERGED"), "MERGED"), (state(state="CLOSED"), "CLOSED"),
+            # A PR that went back to draft is not waiting on a reviewer.
+            (state(isDraft=True, reviewDecision="REVIEW_REQUIRED"), "DRAFT"),
+            (state(isDraft=True, state="MERGED"), "MERGED"),
+            # Your approval in force at head, and GitHub still wants a review: someone else is next.
+            (state(reviewDecision="REVIEW_REQUIRED", my_review={"state": "APPROVED", "at_head": True}),
+             "APPROVED_NEEDS_ANOTHER_REVIEWER"),
+            (state(reviewDecision="REVIEW_REQUIRED", my_review={"state": "APPROVED", "at_head": False}), "NEEDS_REVIEW"),
+            (state(reviewDecision="REVIEW_REQUIRED", my_review={"state": "DISMISSED", "at_head": True}), "NEEDS_REVIEW"),
+            (state(reviewDecision="REVIEW_REQUIRED", my_review=None), "NEEDS_REVIEW"),
+            (state(reviewDecision="CHANGES_REQUESTED", my_review={"state": "APPROVED", "at_head": True}), "CHANGES_REQUESTED"),
         ]:
             with self.subTest(snapshot=snapshot):
                 self.assertEqual(round_report.verdict_of(snapshot), expected)
@@ -214,7 +225,8 @@ class QueueReportTests(unittest.TestCase):
 
 
 class ReviewWriteTests(unittest.TestCase):
-    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None, target=TARGET):
+    def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
+                  target=TARGET, after=None, rules=None, pusher=None):
         writes = []
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
                                       "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
@@ -244,7 +256,9 @@ class ReviewWriteTests(unittest.TestCase):
                                            "--review-id", "9", "--authority", str(authority_file),
                                            "--assessments", str(assessment_file), *flags]), \
                     patch.object(subprocess, "run", side_effect=forge), \
-                    patch.object(review_write, "state_of", return_value=state()), contextlib.redirect_stdout(output):
+                    patch.object(review_write, "state_of", return_value=after or state()), \
+                    patch.object(review_write, "review_rules", return_value=rules), \
+                    patch.object(review_write, "last_pusher", return_value=pusher), contextlib.redirect_stdout(output):
                 code = review_write.main()
         return writes, output.getvalue(), code
 
@@ -302,6 +316,36 @@ class ReviewWriteTests(unittest.TestCase):
         self.assertIn("inspect remote state", output)
         self.assertEqual(code, 1)
 
+    def test_approval_that_cannot_clear_the_review_gate_is_held_or_reported(self):
+        rules = {"require_last_push_approval": True, "require_code_owner_review": True}
+        # The reviewer pushed the last commit: their approval cannot satisfy the last-push rule.
+        writes, output, code = self.run_write("approve", flags=["--write"], rules=rules, pusher="reviewer")
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("you pushed the last commit", output)
+        for options in ({"rules": rules, "pusher": "author"}, {"rules": rules, "pusher": None},
+                        {"rules": {"require_code_owner_review": True}, "pusher": "reviewer"},
+                        {"rules": None, "pusher": "reviewer"}):
+            with self.subTest(options=options):
+                writes, output, code = self.run_write("approve", flags=["--write"], **options)
+                self.assertEqual((len(writes), code), (1, 0), output)
+                self.assertNotIn("REVIEW GATE", output)
+        # Posted, and GitHub still requires a review: say so instead of exiting clean.
+        writes, output, code = self.run_write("approve", flags=["--write"], rules=rules, pusher="author",
+                                             after=state(reviewDecision="REVIEW_REQUIRED"))
+        self.assertEqual((len(writes), code), (1, 1), output)
+        for text in ("APPROVAL POSTED BUT THE REVIEW GATE DID NOT CLEAR", "GitHub reports REVIEW_REQUIRED",
+                     "a code owner must approve", "do not post it again"):
+            self.assertIn(text, output)
+        writes, output, code = self.run_write("approve", flags=["--write"], after=state(reviewDecision="REVIEW_REQUIRED"))
+        self.assertEqual((len(writes), code), (1, 1), output)
+        self.assertIn("review rules unreadable", output)
+        # Only an approval is expected to clear the gate.
+        for action in ("comment", "request-changes"):
+            writes, output, code = self.run_write(action, flags=["--write"], rules=rules, pusher="reviewer",
+                                                 after=state(reviewDecision="CHANGES_REQUESTED"))
+            self.assertEqual((len(writes), code), (1, 0), output)
+            self.assertNotIn("REVIEW GATE", output)
+
     def test_changed_or_unknown_actual_target_blocks_all_review_writes(self):
         for action in ("approve", "dismiss", "comment", "request-changes"):
             for target in ({**TARGET, "sha": "f" * 40}, {**TARGET, "sha": None}):
@@ -339,6 +383,42 @@ class ReviewWriteTests(unittest.TestCase):
                 writes, output, code = self.run_write(action, flags=["--write"], item=item)
                 self.assertEqual((writes, code), ([], 1), output)
                 self.assertIn("review policy changed", output)
+
+
+class BranchRuleTests(unittest.TestCase):
+    def reply(self, payload, code=0):
+        text = payload if isinstance(payload, str) else json.dumps(payload)
+        return patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], code, text, ""))
+
+    def test_rules_merge_across_rulesets_and_an_unreadable_answer_is_not_an_empty_one(self):
+        payload = [
+            # The stricter ruleset comes first: a later, looser one must not relax it.
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 2,
+                                                    "require_code_owner_review": True, "require_last_push_approval": True}},
+            {"type": "pull_request", "parameters": {"required_approving_review_count": 1, "require_code_owner_review": False}},
+            {"type": "deletion"}]
+        with self.reply(payload) as run:
+            rules = branch_rules.review_rules("owner/repo", "release/1.0")
+        self.assertEqual(run.call_args[0][0], ["gh", "api", "repos/owner/repo/rules/branches/release%2F1.0?per_page=100"])
+        self.assertEqual(rules, {"required_approving_review_count": 2, "require_code_owner_review": True,
+                                 "require_last_push_approval": True})
+        self.assertEqual(branch_rules.describe(rules), [
+            "2 approval(s) required", "a code owner must approve",
+            "the last push must be approved by someone other than its pusher"])
+        for payload, code in (("denied", 1), ("not json", 0), ({"message": "Not Found"}, 0), ([{"type": "pull_request"}] * 100, 0)):
+            with self.subTest(payload=str(payload)[:20]), self.reply(payload, code):
+                self.assertIsNone(branch_rules.review_rules("owner/repo", "main"))
+        self.assertEqual(branch_rules.describe(None), ["review rules unreadable"])
+        self.assertIn("classic branch protection is not readable", branch_rules.describe({})[0])
+
+    def test_last_pusher_is_the_latest_branch_activity_or_unknown(self):
+        with self.reply([{"actor": {"login": "reviewer"}}]) as run:
+            self.assertEqual(branch_rules.last_pusher("fork/repo", "feature/x"), "reviewer")
+        self.assertIn("repos/fork/repo/activity?ref=refs/heads/feature/x", run.call_args[0][0][2])
+        for payload, code in (([], 0), ("denied", 1), ([{"actor": None}], 0)):
+            with self.reply(payload, code):
+                self.assertIsNone(branch_rules.last_pusher("fork/repo", "feature/x"))
+        self.assertIsNone(branch_rules.last_pusher(None, "feature/x"))
 
 
 class RenderingTests(unittest.TestCase):

@@ -143,13 +143,21 @@ def reconcile(evidence, handled=()):
         else:
             disposition = "unhandled"
         # Outstanding requests remain work even if a later review is visible.
-        prior = effective_reviews([r for r in reviews if
-                                   (r.get("submittedAt") or r.get("submitted_at") or "") < event["at"]])
-        renewed = target.startswith("user:") and prior.get(target[5:], {}).get("state") == "CHANGES_REQUESTED"
+        # A request that follows the target user's own earlier review, whatever its verdict,
+        # or an earlier request to the same team, asks for another look.
+        if target.startswith("user:"):
+            own = [r for r in reviews if (r.get("author") or r.get("user") or {}).get("login") == target[5:]
+                   and (r.get("submittedAt") or r.get("submitted_at") or "") < event["at"]
+                   and r.get("state") in ("APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED")]
+            prior_state = (effective_reviews(own).get(target[5:]) or {}).get("state") or ("COMMENTED" if own else None)
+            renewed = bool(own)
+        else:
+            prior_state = None
+            renewed = any(e["event"] == "review_requested" and e["target"] == target for e in ordered[:index])
         actor = event.get("actor")
         result.append(dict(event_id=str(event["id"]), target=target,
                            requester=actor.get("login") if isinstance(actor, dict) else actor,
-                           at=event["at"], renewed=renewed, disposition=disposition,
+                           at=event["at"], renewed=renewed, prior_state=prior_state, disposition=disposition,
                            response_urls=[r.get("url") or r.get("html_url") for r in responses],
                            local=marker, outstanding=outstanding is not None and target in outstanding and not later))
     known = {r["target"] for r in result if r["outstanding"]}

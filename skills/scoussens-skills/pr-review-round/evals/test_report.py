@@ -2,6 +2,7 @@ import contextlib
 from html.parser import HTMLParser
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 SKILL = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL / "scripts"))
+import ledger
 import round_report
 from pr_history import normalize
 from render_round import render
@@ -281,6 +283,129 @@ class ReportTests(unittest.TestCase):
                 self.assertEqual([(r["number"], r["verdict"]) for r in rows], [(482, "CLOSED")])
                 revisions.append(rows[0]["evidence_inputs"]["issues"])
         self.assertNotEqual(*revisions)
+
+    def collect(self, reads, raw, argv=("--since", "2026-11-03T00:00:00Z"), heads=None, later=None):
+        """Drive round_report.main() against recorded reads; returns (rows by number, stderr, gh mock)."""
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.object(sys, "argv", ["round_report.py", "main", "--me", "Alex", *argv]), \
+                patch.object(round_report, "repo_slug", return_value="sample/product"), \
+                patch.object(round_report, "gh", side_effect=reads) as gh, \
+                patch.object(round_report, "history_evidence", side_effect=lambda slug, pr: {**raw, "pr": {**raw["pr"], **pr, **(later or {})}}), \
+                patch.object(round_report, "queue_state", return_value="not_queued"), \
+                patch.object(round_report, "target_state", return_value=TARGET), \
+                patch.object(round_report, "stack_of", return_value=None), \
+                patch.object(round_report, "assessment_history", return_value=[]), \
+                patch("ledger.heads", return_value=heads or {}), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            round_report.main()
+        return {r["number"]: r for r in json.loads(output.getvalue())}, errors.getvalue(), gh
+
+    def test_review_that_no_longer_covers_the_head_is_named_instead_of_counted(self):
+        raw, record = fixture()
+        head, old = record["head"], "a" * 40
+        mine = lambda state, commit, at="2026-11-03T15:20:00Z": [{
+            "id": 12, "state": state, "submittedAt": at, "author": {"login": "Alex", "type": "User"},
+            "commitOid": commit, "url": "https://example.test/review/12", "body": "Verified the migration."}]
+        opened = lambda **changes: {**raw["pr"], "id": "PR_482", "isDraft": False, "state": "OPEN",
+                                    "mergeStateStatus": "BLOCKED", "mergedAt": None,
+                                    "reviewDecision": "REVIEW_REQUIRED", **changes}
+        # A push dismissed the approval: it is in the round's reviews, and it must not read as current.
+        rows, errors, _ = self.collect([[opened(reviews=mine("DISMISSED", old))], []], raw)
+        row = rows[482]
+        self.assertEqual(row["my_review"], {"state": "DISMISSED", "commit_id": old, "at_head": False,
+                                            "dismissed": True, "submitted_at": "2026-11-03T15:20:00Z"})
+        self.assertEqual((row["verdict"], row["reviewed_at"]), ("NEEDS_REVIEW", "2026-11-03T15:20:00Z"))
+        self.assertIn("YOUR REVIEW NO LONGER COVERS THE HEAD: #482 (DISMISSED; reviewed aaaaaaaaa, head ccccccccc)", errors)
+        self.assertIn("that review was dismissed", render([row], "main"))
+        # Approved in an earlier round, pushed since: the saved head is compared for you.
+        rows, errors, _ = self.collect([[opened(reviews=mine("APPROVED", old, "2026-11-01T10:00:00Z"))], []], raw,
+                                       heads={482: old})
+        self.assertEqual(rows[482]["reviews"], [])
+        self.assertIn("#482 (APPROVED at an earlier commit; reviewed aaaaaaaaa, head ccccccccc)", errors)
+        self.assertIn("#482 (last head aaaaaaaaa, HEAD MOVED to ccccccccc)", errors)
+        rows, errors, _ = self.collect([[opened(reviews=mine("APPROVED", head, "2026-11-01T10:00:00Z"))], []], raw,
+                                       heads={482: head})
+        self.assertIn("#482 (last head ccccccccc, head unchanged)", errors)
+        # In force at head and GitHub still requires a review: the next reviewer is someone else.
+        self.assertEqual(rows[482]["verdict"], "APPROVED_NEEDS_ANOTHER_REVIEWER")
+        self.assertIn("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: #482", errors)
+        self.assertNotIn("NO LONGER COVERS", errors)
+        source = render([rows[482]], "main")
+        self.assertIn("Another eligible approver to review", source)
+        self.assertIn("GitHub still requires another review", source)
+        self.assertNotIn("Reviewer to check this change", source)
+        # An approval that cleared the gate, and a merged PR reviewed at an earlier commit, raise nothing.
+        cleared = opened(reviews=mine("APPROVED", head), reviewDecision="APPROVED", mergeStateStatus="CLEAN")
+        landed = opened(reviews=mine("APPROVED", old), state="MERGED", mergedAt="2026-11-03T16:00:00Z")
+        for reads in ([[cleared], []], [[], [landed]]):
+            rows, errors, _ = self.collect(reads, raw)
+            self.assertNotIn("NO LONGER COVERS", errors)
+            self.assertNotIn("STILL REVIEW_REQUIRED", errors)
+            self.assertNotIn("dismissed", render([rows[482]], "main"))
+        # Unreadable reviews are unknown, never "no review".
+        rows, _, _ = self.collect([[opened(reviews=mine("APPROVED", head))], []], {**raw, "failedFetches": ["reviews"]})
+        self.assertIsNone(rows[482]["my_review"])
+        self.assertEqual(rows[482]["verdict"], "NEEDS_REVIEW")
+
+    def test_gated_approval_with_a_ready_assessment_hands_off_to_another_approver(self):
+        _, record = fixture()
+        item = assessment(482, head=record["head"], base=record["base"])
+        proposals = {"repository": record["repository"], "assessments": [item]}
+        record["verdict"] = "APPROVED_NEEDS_ANOTHER_REVIEWER"
+        source = render([record], "main", assessments=proposals)
+        self.assertIn("<strong>Next</strong> Another eligible approver to review", source)
+        record["verdict"] = "NEEDS_REVIEW"
+        self.assertNotIn("Another eligible approver", render([record], "main", assessments=proposals))
+
+    def test_scope_marks_late_prs_and_a_pr_that_returned_to_draft(self):
+        raw, _ = fixture()
+        opened = {**raw["pr"], "id": "PR_482", "isDraft": False, "reviewDecision": "REVIEW_REQUIRED",
+                  "state": "OPEN", "mergeStateStatus": "BLOCKED", "mergedAt": None}
+        late = {**opened, "number": 483, "id": "PR_483", "createdAt": "2026-11-01T14:00:00Z"}
+        landed_late = {**opened, "number": 484, "id": "PR_484", "createdAt": "2026-11-02T14:00:00Z",
+                       "state": "MERGED", "mergedAt": "2026-11-03T16:00:00Z"}
+        redrafted = {**opened, "number": 485, "id": "PR_485", "createdAt": "2026-11-02T15:00:00Z", "isDraft": True}
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope.json"
+            scope.write_text("[482, 485]")
+            # The open listing drops drafts; the scope file is what keeps #485 in the report.
+            rows, errors, _ = self.collect([[opened, late, redrafted], [landed_late], opened, redrafted], raw,
+                                           argv=("--since", "2026-11-03T00:00:00Z", "--scope", str(scope)))
+            self.assertEqual({n: r["in_scope"] for n, r in rows.items()}, {482: True, 483: False, 484: False, 485: True})
+            self.assertEqual((rows[485]["verdict"], rows[485]["is_draft"], rows[482]["is_draft"]), ("DRAFT", True, False))
+            self.assertIn("JOINED AFTER THE SCOPE SNAPSHOT: #483, #484 (merged)", errors)
+            self.assertNotIn("NO --scope", errors)
+            source = render([rows[485]], "main")
+            self.assertIn("Developer to mark the change ready for review", source)
+            scope.write_text('{"prs": [482]}')
+            with self.assertRaisesRegex(SystemExit, "not a JSON list of PR numbers"):
+                self.collect([[opened], []], raw, argv=("--scope", str(scope), "--since", REVISION))
+        # A PR that returns to draft between the listing and its collection reports the later state.
+        rows, _, _ = self.collect([[{**opened}], []], raw, later={"isDraft": True})
+        self.assertEqual((rows[482]["verdict"], rows[482]["is_draft"]), ("DRAFT", True))
+        # Without a scope file membership is unknown, and the report says so.
+        rows, errors, _ = self.collect([[opened, late], []], raw)
+        self.assertEqual([r["in_scope"] for r in rows.values()], [None, None])
+        self.assertIn("NO --scope", errors)
+        self.assertNotIn("JOINED AFTER", errors)
+
+    def test_open_round_start_bounds_the_report_before_the_clock_fallback(self):
+        raw, _ = fixture()
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp), \
+                patch.object(ledger, "repo_slug", return_value="sample/product"):
+            _, errors, gh = self.collect([[], []], raw, argv=())
+            self.assertIn("falling back to a 12h window", errors)
+            rid = ledger.round_start("main", "sample/product")
+            ledger.round_start("release", "sample/product")
+            _, errors, gh = self.collect([[], []], raw, argv=())
+            self.assertIn(f"start of the open round ({rid})", errors)
+            self.assertIn(f"merged:>={rid}", gh.call_args_list[1][0][0])
+            # A completed round is still the better boundary.
+            ledger.round_end(rid, [], "sample/product", reconciliation=[])
+            ended = ledger.last_round("main", "sample/product")["ended_at"]
+            ledger.round_start("main", "sample/product")
+            _, errors, gh = self.collect([[], []], raw, argv=())
+            self.assertIn(f"previous round ended {ended}", errors)
 
 
 if __name__ == "__main__":

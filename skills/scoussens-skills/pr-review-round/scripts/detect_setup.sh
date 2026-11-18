@@ -18,7 +18,6 @@ echo
 echo "merge:"
 gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge \
   -q 'to_entries|map("  \(.key)=\(.value)")|.[]'
-MQ=$(gh api "repos/$REPO/branches/$BASE/protection" -q '.required_status_checks.checks|length' 2>/dev/null || echo "?")
 QUEUE=$(gh api graphql -f query="{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){mergeQueue(branch:\"$BASE\"){id}}}" \
   -q '.data.repository.mergeQueue.id' 2>/dev/null)
 if [ -n "$QUEUE" ] && [ "$QUEUE" != "null" ]; then
@@ -28,6 +27,10 @@ else
 fi
 echo "  recent merge style on $BASE:"
 git log --oneline -3 "origin/$BASE" --merges 2>/dev/null | sed 's/^/    /'
+
+echo
+echo "review rules on $BASE (what an approval has to satisfy before the review gate clears):"
+python3 "$(dirname "$0")/branch_rules.py" "$REPO" "$BASE" | sed 's/^/  /'
 
 echo
 echo "review bots (authors of CHANGES_REQUESTED in the last 20 PRs):"

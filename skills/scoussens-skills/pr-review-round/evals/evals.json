@@ -1,6 +1,6 @@
 {
   "skill_name": "pr-review-round",
-  "note": "All evals are READ-ONLY: subagents write intended GitHub mutations to files instead of posting. They run against a fixture repository whose base branch is main, seeded with open PRs in the states each eval names: an approved PR that now conflicts with its base, a PR with a changes-requested review followed by author commits and a base merge, a PR that renames a persisted field and adds an index without dropping the old one, and a PR whose only change since its changes-requested review is a merge of the base branch. A prompt's <n> is the fixture PR holding that eval's state; the runner substitutes its number. Iteration 2 replaced the tied eval and pruned assertions that passed in both configurations in iteration 1.",
+  "note": "All evals are READ-ONLY: subagents write intended GitHub mutations to files instead of posting. They run against a fixture repository whose base branch is main, seeded with open PRs in the states each eval names: an approved PR that now conflicts with its base, a PR with a changes-requested review followed by author commits and a base merge, a PR that renames a persisted field and adds an index without dropping the old one, a PR whose only change since its changes-requested review is a merge of the base branch, a draft PR marked ready after the first triage, and a PR whose approval from an earlier round a later push dismissed. A prompt's <n> is the fixture PR holding that eval's state; the runner substitutes its number. Iteration 2 replaced the tied eval and pruned assertions that passed in both configurations in iteration 1.",
   "evals": [
     {
       "id": 0,
@@ -119,6 +119,22 @@
         "no_forced_setup: does not request mandatory tracker or harness setup",
         "no_ticket_invention: uses the documented PR contract and records no linked ticket",
         "coverage_honest: reports actual serial coverage and evidence limits without claiming independent reviewers"
+      ],
+      "files": []
+    },
+    {
+      "id": 10,
+      "name": "round-bookkeeping-and-late-changes",
+      "prompt": "Run an assessment-only review round on this fixture queue against main. After your first triage, a draft PR is marked ready for review, and the author pushes a new commit to a PR you approved in an earlier round, which dismisses that approval. No writes are authorized.",
+      "expected_output": "Opens the round with ledger.py start, saves the scope from the first queue.py run, records an assessment for every scoped PR under the printed round id, reruns queue.py against the saved scope and gives the PR that joined a verdict or reports it as not reviewed, reviews the pushed PR at its new head instead of reusing the dismissed approval, builds the report from round_report.py --scope, and ends with ledger.py end, reporting either the closed round or each blocker it printed.",
+      "assertions": [
+        "round_started: runs ledger.py start before triage and uses the id it prints in every later ledger command; no invented round id",
+        "scope_saved_once: the first queue.py run uses --save-scope and the scope file is not rewritten later",
+        "assessments_recorded: runs ledger.py record for every scoped PR, including clean ones",
+        "late_pr_named: runs queue.py --scope before reporting and gives the PR that left draft a verdict or reports it as not reviewed in this round",
+        "moved_head_not_reused: treats the dismissed approval as no longer covering the head and reviews the new head",
+        "report_scoped: runs round_report.py with --scope and builds the summary from its output",
+        "round_closed_or_blockers_named: runs ledger.py end and reports the closed round or each blocker it printed"
       ],
       "files": []
     }

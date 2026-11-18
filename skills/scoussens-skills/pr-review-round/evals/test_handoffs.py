@@ -41,8 +41,35 @@ def evidence():
         "requestedReviewers": ["user:reviewer"], "timeline": [request()], "failedFetches": []}
 
 
+def queue_row(**changes):
+    return {"number": 17, "title": "Keep saved filters", "author": {"login": "author"},
+            "createdAt": "2026-11-01T12:00:00Z", "isDraft": False, "reviewDecision": "REVIEW_REQUIRED",
+            "headRefOid": HEAD, "baseRefOid": BASE, "updatedAt": REVISION, "mergeStateStatus": "CLEAN",
+            "additions": 8, "deletions": 3, "autoMergeRequest": None, **changes}
+
+
+def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer"):
+    """Drive queue.main() against recorded reads; returns what it printed."""
+    output = io.StringIO()
+    with patch.object(sys, "argv", ["queue.py", "main", *argv]), \
+            patch.object(queue, "gh_json", side_effect=reads), \
+            patch.object(queue, "repo_slug", return_value="sample/product"), \
+            patch.object(queue, "handled_requests", return_value=[]), \
+            patch.object(queue, "assessments", return_value=saved or {}), \
+            patch.object(queue, "me", return_value=login), \
+            patch.object(queue, "stack_of", return_value=None), \
+            patch.object(queue, "collect", side_effect=lambda slug, number: copy.deepcopy(raw)), \
+            contextlib.redirect_stdout(output):
+        queue.main()
+    return output.getvalue()
+
+
 class HandoffTests(unittest.TestCase):
     def setUp(self):
+        for name, value in (("me", "reviewer"), ("assessments", {})):
+            local = patch.object(queue, name, return_value=value)
+            local.start()
+            self.addCleanup(local.stop)
         stacks = patch.object(round_report, "stack_of", return_value=None)
         stacks.start()
         self.addCleanup(stacks.stop)
@@ -66,7 +93,8 @@ class HandoffTests(unittest.TestCase):
                 patch.object(queue, "collect", return_value=raw), contextlib.redirect_stdout(output):
             queue.main()
         for text in ("Review requested again", "CHANGES_REQUESTED", "AUTHOR: conflicts", "1 RED", "AUTO",
-                     "author -> user:reviewer", "Request 31", "1; unknown coverage on 0"):
+                     "author -> user:reviewer", "Request 31", "1; unknown coverage on 0",
+                     "unhandled; after an earlier CHANGES_REQUESTED review by reviewer"):
             self.assertIn(text, output.getvalue())
         self.assertEqual(review_requests.reconcile(raw)["unhandled"], 1)
         raw["timeline"] = []
@@ -82,6 +110,26 @@ class HandoffTests(unittest.TestCase):
             effective = review_requests.effective_reviews(raw["pr"]["reviews"])
             self.assertEqual(effective["reviewer"]["state"], "CHANGES_REQUESTED" if state == "COMMENTED" else state)
             self.assertEqual(len(raw["pr"]["reviews"]), 2)
+            # A request that follows any earlier review by its target asks for another look.
+            with self.subTest(prior=state):
+                asked = {**raw, "pr": {**raw["pr"], "reviews": [{**later, "submitted_at": "2026-11-03T11:00:00Z"}]}}
+                again = review_requests.reconcile(asked)["requests"][0]
+                self.assertEqual((again["renewed"], again["prior_state"]), (True, state))
+                self.assertIn("requested again", queue.request_label(review_requests.reconcile(asked)))
+        # A review submitted after the request answers it; it does not make the request a renewal.
+        first = {**raw, "pr": {**raw["pr"], "reviews": [{**original, "submitted_at": "2026-11-03T13:00:00Z"}]}}
+        self.assertEqual([(r["renewed"], r["prior_state"]) for r in review_requests.reconcile(first)["requests"]],
+                         [(False, None)])
+        # Team membership is never inferred: only an earlier request to the same team renews one.
+        team = {**raw, "requestedReviewers": ["team:data-reviewers"],
+                "timeline": [request(34, target="team:data-reviewers")]}
+        self.assertFalse(review_requests.reconcile(team)["requests"][0]["renewed"])
+        team["timeline"] = [request(34, target="team:data-reviewers", at="2026-11-03T10:00:00Z"),
+                            request(35, "review_request_removed", "team:data-reviewers", "2026-11-03T11:00:00Z"),
+                            request(36, target="team:data-reviewers"), request(37, target="team:other-reviewers")]
+        team["requestedReviewers"].append("team:other-reviewers")
+        self.assertEqual([(r["event_id"], r["renewed"]) for r in review_requests.reconcile(team)["requests"]],
+                         [("34", False), ("36", True), ("37", False)])
         # The actual sweep must ignore a superseded return, not just the pure fold.
         p = {"number": 17, "headRefOid": HEAD, "createdAt": REVISION, "isDraft": False}
         output = io.StringIO()
@@ -322,8 +370,148 @@ class HandoffTests(unittest.TestCase):
                     ledger.round_end(rid, [482], record["repository"], reconciliation=[row])
                     self.assertEqual(ledger.last_round("main", record["repository"])["prs"], [482])
                 else:
-                    with self.assertRaisesRegex(ValueError, "unhandled requests"):
+                    with self.assertRaisesRegex(ValueError, "unhandled request"):
                         ledger.round_end(rid, [482], record["repository"], reconciliation=[row])
+
+    def test_triage_shows_what_changed_since_the_last_look_and_where_my_review_stands(self):
+        details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
+        mine = lambda state, commit: {"id": 12, "state": state, "user": {"login": "reviewer"},
+                                      "submitted_at": "2026-11-04T12:00:00Z", "commit_id": commit}
+        moved = "f" * 40
+        cases = [
+            # live head, my latest decisive review, saved assessment, decision -> shown / not shown
+            ("pushed after my approval dismissed it", moved, mine("DISMISSED", HEAD), assessment(), "REVIEW_REQUIRED",
+             ("HEAD MOVED", "DISMISSED", "REVIEW: needs review", "Look again", "#17 (HEAD MOVED, DISMISSED)"),
+             ("another approver",)),
+            ("pushed and my approval still counts", moved, mine("APPROVED", HEAD), assessment(), "APPROVED",
+             ("approved at old head", "#17 (HEAD MOVED, approved at old head)"), ("another approver",)),
+            ("my changes request predates the head", moved, mine("CHANGES_REQUESTED", HEAD), None, "CHANGES_REQUESTED",
+             ("changes-req at old head", "#17 (changes-req at old head)", " new "), ("(HEAD MOVED",)),
+            ("approved at head, gate still closed", HEAD, mine("APPROVED", HEAD), assessment(), "REVIEW_REQUIRED",
+             ("approved at head", "unchanged", "REVIEW: another approver", "name another approver: #17"),
+             ("Look again", "REVIEW: needs review")),
+            ("approved at head and cleared", HEAD, mine("APPROVED", HEAD), assessment(), "APPROVED",
+             ("approved at head", "-> MERGEABLE NOW"), ("Look again", "another approver")),
+            ("same head, later discussion", HEAD, None, assessment(), "REVIEW_REQUIRED",
+             ("discussion changed", "REVIEW: needs review"), ("Look again", "another approver")),
+        ]
+        for name, head, review, saved, decision, shown, hidden in cases:
+            with self.subTest(name):
+                raw = evidence()
+                raw["pr"]["reviews"] = [review] if review else []
+                raw["timeline"], raw["requestedReviewers"] = [], []
+                updated = "2026-11-12T09:00:00Z" if name == "same head, later discussion" else REVISION
+                p = queue_row(headRefOid=head, reviewDecision=decision, updatedAt=updated)
+                text = run_queue([[p], details, p], raw, saved={17: saved} if saved else {})
+                text = text.split("\nRISK -> depth")[0]  # the legend names every label; judge the rows
+                for expected in shown:
+                    self.assertIn(expected, text)
+                for unexpected in hidden:
+                    self.assertNotIn(unexpected, text)
+        # Without a readable login the column says so; it never reads as "no review".
+        raw = evidence()
+        raw["pr"]["reviews"] = [mine("APPROVED", HEAD)]
+        p = queue_row()
+        text = run_queue([[p], details, p], raw, login=None)
+        self.assertIn("reviewer login unavailable", text)
+        self.assertNotIn("another approver", text)
+
+    def test_scope_file_is_written_once_and_names_what_joined_and_left(self):
+        details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
+        raw = evidence()
+        raw["timeline"], raw["requestedReviewers"], raw["pr"]["reviews"] = [], [], []
+        first, second = queue_row(number=16), queue_row(number=17, createdAt="2026-11-02T12:00:00Z")
+        late = queue_row(number=18, createdAt="2026-11-03T12:00:00Z")
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope.json"
+            text = run_queue([[first, second], details, details, first, second], raw, argv=["--save-scope", str(scope)])
+            self.assertEqual(json.loads(scope.read_text()), [16, 17])
+            self.assertIn("2 PR(s)", text)
+            # The first snapshot is the round's scope; a second save must not replace it.
+            with self.assertRaisesRegex(SystemExit, "already exists"):
+                run_queue([[second, late]], raw, argv=["--save-scope", str(scope)])
+            self.assertEqual(json.loads(scope.read_text()), [16, 17])
+            for departed, why in (({"number": 16, "state": "MERGED", "isDraft": False}, "#16 (merged)"),
+                                  ({"number": 16, "state": "OPEN", "isDraft": True}, "#16 (draft)"),
+                                  (None, "#16 (state unknown)")):
+                with self.subTest(why):
+                    text = run_queue([[second, late], details, details, second, late, departed], raw,
+                                     argv=["--scope", str(scope)])
+                    self.assertIn("JOINED after the scope snapshot: #18 ", text)
+                    self.assertIn("LEFT the queue: " + why, text)
+            text = run_queue([[first, second], details, details, first, second], raw, argv=["--scope", str(scope)])
+            self.assertIn("JOINED after the scope snapshot: none", text)
+            self.assertIn("LEFT the queue: none", text)
+            scope.write_text('{"prs": [16]}')
+            with self.assertRaisesRegex(SystemExit, "scope comparison unknown"):
+                run_queue([[first]], raw, argv=["--scope", str(scope)])
+
+    def run_ledger(self, *argv):
+        output = io.StringIO()
+        code = 0
+        with patch.object(sys, "argv", ["ledger.py", *argv]), \
+                patch.object(ledger, "repo_slug", return_value="sample/product"), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            try:
+                ledger.main()
+            except SystemExit as stop:
+                code = stop.code
+                if isinstance(code, str):
+                    output.write(code)
+                    code = 1
+        return output.getvalue(), code or 0
+
+    def test_round_commands_start_record_and_close_or_name_every_blocker(self):
+        marker = {"event_id": "31", "target": "user:reviewer", "at": REVISION, "disposition": "assessed-locally"}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp):
+            files = {name: Path(tmp) / f"{name}.json" for name in ("assessments", "scope", "report")}
+            files["assessments"].write_text(json.dumps({"repository": "sample/product",
+                                                        "assessments": [assessment(request_events=[marker])]}))
+            # An invented round id records nothing; the round has to be started.
+            text, code = self.run_ledger("record", "any-string", str(files["assessments"]))
+            self.assertEqual(code, 1)
+            self.assertIn("unknown round", text)
+            self.assertEqual(ledger.assessment_history("sample/product"), [])
+            rid, code = self.run_ledger("start", "main")
+            rid = rid.strip()
+            self.assertEqual((code, ledger.open_round("main", "sample/product")["round"]), (0, rid))
+            # One invalid assessment records none of the bundle.
+            broken = assessment(18)
+            del broken["decisions"]
+            files["report"].write_text(json.dumps({"repository": "sample/product",
+                                                   "assessments": [assessment(), broken]}))
+            text, code = self.run_ledger("record", rid, str(files["report"]))
+            self.assertEqual((code, ledger.assessment_history("sample/product")), (1, []), text)
+            text, code = self.run_ledger("record", rid, str(files["assessments"]))
+            self.assertEqual(code, 0, text)
+            self.assertEqual([m["event_id"] for m in ledger.handled_requests("sample/product")], ["31"])
+
+            row = lambda number, handoffs: {"repository": "sample/product", "number": number, "handoffs": handoffs}
+            handled = review_requests.reconcile(evidence(), [marker])
+            files["scope"].write_text("[17, 18]")
+            files["report"].write_text(json.dumps([
+                row(17, review_requests.reconcile(evidence())),
+                row(19, {"coverage": "unknown", "gaps": ["timeline"], "unhandled": 0, "requests": []})]))
+            text, code = self.run_ledger("end", rid, "--scope", str(files["scope"]), "--report", str(files["report"]))
+            self.assertEqual(code, 1)
+            for blocker in ("PR #18: not in the report", "PR #17: 1 unhandled request(s) (31 -> user:reviewer)"):
+                self.assertIn(blocker, text)
+            self.assertIsNone(ledger.last_round("main", "sample/product"))
+            files["report"].write_text(json.dumps([
+                row(17, handled), row(18, {"coverage": "unknown", "gaps": ["timeline"], "unhandled": 0, "requests": []})]))
+            text, code = self.run_ledger("end", rid, "--scope", str(files["scope"]), "--report", str(files["report"]))
+            self.assertEqual(code, 1)
+            self.assertIn("PR #18: request coverage unknown (timeline)", text)
+            self.assertNotIn("PR #17", text)
+            files["report"].write_text(json.dumps([row(17, handled), row(18, review_requests.reconcile(
+                {**evidence(), "timeline": [], "requestedReviewers": []})), row(19, handled)]))
+            text, code = self.run_ledger("end", "another-id", "--scope", str(files["scope"]), "--report", str(files["report"]))
+            self.assertEqual(code, 1)
+            self.assertIn("unknown round", text)
+            text, code = self.run_ledger("end", rid, "--scope", str(files["scope"]), "--report", str(files["report"]))
+            self.assertEqual(code, 0, text)
+            self.assertEqual(ledger.last_round("main", "sample/product")["prs"], [17, 18])
+            self.assertIsNone(ledger.open_round("main", "sample/product"))
 
 
 if __name__ == "__main__":
