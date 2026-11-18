@@ -361,6 +361,20 @@ drifts and the drift is silent. A hand-rolled reader here once accepted a
 description containing `": "` — which YAML reads as a nested mapping — and
 reported three valid skills while the pack shipped two.
 
+### The upstream-pins check
+
+```bash
+npm run check:upstream-pins
+```
+
+`modern-web-guidance` pins an exact CLI release and passes a `--skill-version`.
+The CLI compares that value with the `skill-version.txt` it ships, and tells
+agents to press the user for an upgrade when the skill is older. This check
+downloads the pinned release and requires the two values to match. Its
+hermetic half, in `npm run test:distribution`, requires every command in the
+skill to use the same pin and skill version. To resync from upstream, change
+both values together and run both checks.
+
 ### Descriptions cannot contain `": "`
 
 A colon followed by a space makes an unquoted YAML value ambiguous with a

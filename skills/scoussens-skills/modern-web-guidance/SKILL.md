@@ -14,7 +14,7 @@ description: >-
 license: Apache-2.0
 metadata:
   upstream: https://github.com/GoogleChrome/modern-web-guidance/blob/4dd968349e54ca45a05dd5c818fb035c9054b022/skills/modern-web-guidance/SKILL.md
-  changes: Modified from upstream. Pins the CLI to 1.0.0, disables CLI telemetry, rewrites the description, and replaces in-agent skill updates with a resync request.
+  changes: Modified from upstream. Pins the CLI version and its matching --skill-version, disables CLI telemetry, rewrites the description, and replaces in-agent skill updates with a resync request.
 ---
 
 # Modern Web Guidance
