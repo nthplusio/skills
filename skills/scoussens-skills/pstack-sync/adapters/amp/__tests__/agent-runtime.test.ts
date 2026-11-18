@@ -22,7 +22,7 @@ import {
   titleFor,
   withStartingRef,
 } from "../agent-runtime.ts";
-import { AMP_BUILTIN_MODES, createAmpModelCatalog, pluginModesFrom } from "../models.ts";
+import { createAmpModelCatalog, modelValuesFrom } from "../models.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FAKE_DIR = join(HERE, "fake-amp");
@@ -274,11 +274,24 @@ describe("spawn", () => {
     expect(titleFor("x".repeat(120))).toHaveLength(100);
   });
 
-  test("passes a non-inherit model as the agent mode", async () => {
+  test("passes a model@effort value as --model and --effort, with no mode", async () => {
     const rt = createAmpRuntime({ env });
-    await rt.spawn({ name: "n", repoUrl: REPO, startingRef: "main", model: "high", prompt: "p" });
+    await rt.spawn({ name: "n", repoUrl: REPO, startingRef: "main", model: "openai/gpt-6-astra@xhigh", prompt: "p" });
     const [call] = calls();
-    expect(call[call.indexOf("-m") + 1]).toBe("high");
+    expect(call[call.indexOf("--model") + 1]).toBe("openai/gpt-6-astra");
+    expect(call[call.indexOf("--effort") + 1]).toBe("xhigh");
+    expect(call).not.toContain("-m");
+  });
+
+  test("passes a bare model without --effort, and an old mode name as -m", async () => {
+    const rt = createAmpRuntime({ env });
+    await rt.spawn({ name: "n", repoUrl: REPO, startingRef: "main", model: "google-vertex/gemini-4-carbon", prompt: "p" });
+    await rt.spawn({ name: "n", repoUrl: REPO, startingRef: "main", model: "high", prompt: "p" });
+    const [bare, legacy] = calls().filter(c => c.includes("-ox"));
+    expect(bare[bare.indexOf("--model") + 1]).toBe("google-vertex/gemini-4-carbon");
+    expect(bare).not.toContain("--effort");
+    expect(legacy[legacy.indexOf("-m") + 1]).toBe("high");
+    expect(legacy).not.toContain("--model");
   });
 
   test("throws a retryable AgentRuntimeError when the CLI prints no thread URL", async () => {
@@ -334,11 +347,16 @@ describe("spawn through the bridge", () => {
     expect(label).toEqual(["threads", "label", ID, "orchestrate", "node-verifier", "run-ab12cd"]);
   });
 
-  test("maps a non-inherit model to the bridge's mode", async () => {
+  test("sends the bridge a model and effort, or an old mode name as mode", async () => {
     const bridge = await startBridge();
     const rt = createAmpRuntime({ env: { ...env, ORCHESTRATE_AMP_BRIDGE: bridge.path } });
+    await rt.spawn({ ...SPAWN, model: "openai/gpt-6-astra@xhigh" });
     await rt.spawn({ ...SPAWN, model: "low" });
-    expect(bridge.requests[0].body.mode).toBe("low");
+    expect(bridge.requests[0].body.model).toBe("openai/gpt-6-astra");
+    expect(bridge.requests[0].body.effort).toBe("xhigh");
+    expect(bridge.requests[0].body).not.toHaveProperty("mode");
+    expect(bridge.requests[1].body.mode).toBe("low");
+    expect(bridge.requests[1].body).not.toHaveProperty("model");
   });
 
   test("finds the file under the working directory, then under AMP_WORKING_DIRECTORY", async () => {
@@ -980,27 +998,45 @@ describe("argument injection", () => {
   });
 });
 
+const AGENT_OPTIONS = {
+  models: [
+    { id: "openai/gpt-6-astra", capabilities: { efforts: ["low", "medium", "high", "xhigh", "max"] } },
+    { id: "google-vertex/gemini-4-carbon", capabilities: { efforts: ["low", "medium", "high"] } },
+    { id: "xai/grok-4.5", capabilities: {} },
+  ],
+  builtinToolNames: ["Read"],
+};
+
 describe("models", () => {
-  test("lists the built-in modes when the CLI cannot list plugin modes", async () => {
+  test("lists inherit, each model, and each model@effort the CLI names", async () => {
+    writeFileSync(join(dir, "agent-options.json"), JSON.stringify(AGENT_OPTIONS));
     const catalog = createAmpModelCatalog({ env });
-    expect(await catalog.models()).toEqual([...AMP_BUILTIN_MODES]);
-    expect(await catalog.probe("high")).toBe(true);
-    expect(await catalog.probe("HIGH")).toBe(true);
-    expect(await catalog.probe("claude-opus-4-8")).toBe(false);
+    expect(await catalog.models()).toEqual([
+      "inherit",
+      "openai/gpt-6-astra",
+      "openai/gpt-6-astra@low",
+      "openai/gpt-6-astra@medium",
+      "openai/gpt-6-astra@high",
+      "openai/gpt-6-astra@xhigh",
+      "openai/gpt-6-astra@max",
+      "google-vertex/gemini-4-carbon",
+      "google-vertex/gemini-4-carbon@low",
+      "google-vertex/gemini-4-carbon@medium",
+      "google-vertex/gemini-4-carbon@high",
+      "xai/grok-4.5",
+    ]);
+    expect(await catalog.probe("OpenAI/GPT-6-Astra@XHigh")).toBe(true);
+    expect(await catalog.probe("google-vertex/gemini-4-carbon@xhigh")).toBe(false);
+    expect(await catalog.probe("high")).toBe(false);
   });
 
-  test("adds plugin modes the listing names", async () => {
-    writeFileSync(
-      join(dir, "agent-options.json"),
-      JSON.stringify({ models: [{ id: "openai/gpt-5" }], agentModes: [{ key: "grok46" }, "kimi-k3"] })
-    );
+  test("offers only inherit when the CLI cannot list models", async () => {
     const catalog = createAmpModelCatalog({ env });
-    expect(await catalog.models()).toEqual([...AMP_BUILTIN_MODES, "grok46", "kimi-k3"]);
-    expect(await catalog.probe("kimi-k3")).toBe(true);
+    expect(await catalog.models()).toEqual(["inherit"]);
   });
 
-  test("pluginModesFrom ignores payloads without a mode list", () => {
-    expect(pluginModesFrom({ models: [], builtinToolNames: [] })).toEqual([]);
-    expect(pluginModesFrom(null)).toEqual([]);
+  test("modelValuesFrom skips entries that are not provider/name models", () => {
+    expect(modelValuesFrom({ models: [{ id: "high" }, { name: "x" }, "openai/gpt-6-astra"] })).toEqual([]);
+    expect(modelValuesFrom(null)).toEqual([]);
   });
 });

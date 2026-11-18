@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Amp port: upstream probed each catalog entry by creating a cloud agent and
-// cancelling it. The Amp model catalog answers `probe(mode)` from the modes
-// the amp CLI accepts, so no thread is spawned.
+// cancelling it. The Amp model catalog answers `probe(model)` from the models
+// and efforts the amp CLI lists, so no thread is spawned.
 import type { ModelCatalog } from "../core/runtime.ts";
 import { loadModelCatalog } from "../core/runtime.ts";
 import { MODEL_CATALOG, type ModelProfile } from "../models.ts";
@@ -36,7 +36,7 @@ export async function probeModelCatalog(
         results.push({
           profile,
           ok: false,
-          error: `not an agent mode the amp CLI lists (known: ${known.join(", ")})`,
+          error: `not a model or model@effort the amp CLI lists (known: ${known.join(", ")})`,
         });
       }
     } catch (err) {
@@ -64,7 +64,7 @@ export function printProbeResults(results: ProbeResult[]): number {
   if (failures > 0) {
     console.error(`\n${failures} catalog entries failed validation.`);
     console.error(
-      "Compare against `amp --help` (-m, --mode) and update MODEL_CATALOG.selection."
+      "Compare against `amp plugins show-agent-options` (each model's id and efforts) and update MODEL_CATALOG.selection."
     );
   } else {
     console.log("\nAll catalog entries validate.");

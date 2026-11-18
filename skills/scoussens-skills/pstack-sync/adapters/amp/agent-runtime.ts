@@ -9,7 +9,8 @@
  *                 when that file exists and the bridge answers, so the thread
  *                 nests under the calling thread; otherwise
  *                 amp -ox --project <repoUrl> --visibility private
- *                     --no-archive-after-execute --title <title> [-m <mode>]
+ *                     --no-archive-after-execute --title <title>
+ *                     [--model <provider/name> [--effort <effort>]]
  *                 with the prompt on stdin and the thread id from the URL the
  *                 command prints, then amp threads label <id> <labels...>.
  *                 The first wait or stream poll that sees a message renames
@@ -38,6 +39,7 @@
 import { spawn as spawnProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseModelValue } from "./models.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   type AgentRuntime,
@@ -139,7 +141,7 @@ const RUN_ID_RE = /^m\d+$/;
 const TITLE_MAX_CHARS = 100;
 /** What `amp threads label` accepts, as probed: alphanumeric with hyphens, starting alphanumeric. */
 export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
-/** The mode the bridge runs when the caller says `inherit`. */
+/** The built-in agent the bridge runs when the caller says `inherit`; the plugin API needs one. */
 export const BRIDGE_DEFAULT_MODE = "high";
 
 /**
@@ -593,7 +595,9 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       name: string;
       prompt: string;
       project: string;
-      mode: string;
+      mode?: string;
+      model?: string;
+      effort?: string;
       labels: string[];
       nodeType?: NodeType;
     }
@@ -750,7 +754,11 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
       const requestedTitle = titleFor(args.title ?? args.name);
       const prefix = args.runTag ? `${args.runTag} ` : "";
       const title = titleFor(prefix && !requestedTitle.startsWith(prefix) ? prefix + requestedTitle : requestedTitle);
-      const mode = args.model && args.model !== "inherit" ? args.model : undefined;
+      // A `provider/name[@effort]` value runs that model; any other value is a
+      // legacy agent-mode name the CLI and plugin API still accept.
+      const value = args.model && args.model !== "inherit" ? args.model : undefined;
+      const chosen = value?.includes("/") ? parseModelValue(value) : undefined;
+      const legacyMode = value && !chosen ? value : undefined;
       const prompt = withStartingRef(args.prompt, args.startingRef);
 
       // Bridge first: the thread nests under the thread that wrote the file.
@@ -763,7 +771,9 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
             name: args.name,
             prompt,
             project: args.repoUrl,
-            mode: mode ?? BRIDGE_DEFAULT_MODE,
+            ...(chosen
+              ? { model: chosen.model, ...(chosen.effort ? { effort: chosen.effort } : {}) }
+              : { mode: legacyMode ?? BRIDGE_DEFAULT_MODE }),
             labels,
             ...(args.nodeType === undefined ? {} : { nodeType: args.nodeType }),
           });
@@ -786,7 +796,10 @@ export function createAmpRuntime(options: AmpRuntimeOptions = {}): AgentRuntime 
         "--title",
         title,
       ];
-      if (mode) argv.push("-m", mode);
+      if (chosen) {
+        argv.push("--model", chosen.model);
+        if (chosen.effort) argv.push("--effort", chosen.effort);
+      } else if (legacyMode) argv.push("-m", legacyMode);
       const result = await amp(argv, { stdin: prompt });
       if (result.code !== 0) throw failure("amp -ox", result);
       const match = THREAD_ID_RE.exec(result.stdout);

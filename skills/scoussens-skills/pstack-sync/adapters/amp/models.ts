@@ -1,22 +1,15 @@
 /**
- * `ModelCatalog` for Amp. A plan's `tasks[].model` is an Amp agent mode: one
- * of the built-in effort modes, `inherit` for the CLI's default, or a plugin
- * mode by key. No `amp` command lists plugin modes today;
- * `amp plugins show-agent-options --json` lists provider models and tools
- * for plugin agents, so this reads any `agentModes`, `modes`, or
- * `pluginModes` array it may grow and otherwise returns the built-ins.
+ * `ModelCatalog` for Amp. A plan's `tasks[].model` is `inherit` for the
+ * CLI's default, an Amp model as `provider/name` (such as
+ * `openai/gpt-6-astra`), or a model at a reasoning effort as
+ * `provider/name@effort` (such as `openai/gpt-6-astra@xhigh`). Amp has no
+ * agent modes for a plan to pick: `amp plugins show-agent-options --json`
+ * lists the models, each with the efforts it accepts, and this catalog is
+ * that list.
  */
 
 import { spawn as spawnProcess } from "node:child_process";
 import type { ModelCatalog } from "../interface.ts";
-
-export const AMP_BUILTIN_MODES: readonly string[] = [
-  "inherit",
-  "low",
-  "medium",
-  "high",
-  "ultra",
-];
 
 export interface AmpModelCatalogOptions {
   /** CLI binary; `ORCHESTRATE_AMP_BIN`, default `amp`. */
@@ -26,22 +19,30 @@ export interface AmpModelCatalogOptions {
   timeoutMs?: number;
 }
 
-/** Mode names found in a `show-agent-options --json` payload, if it carries any. */
-export function pluginModesFrom(payload: unknown): string[] {
+/** A model value split into the model and the effort after `@`, if any. */
+export function parseModelValue(value: string): { model: string; effort?: string } {
+  const at = value.lastIndexOf("@");
+  if (at <= 0) return { model: value };
+  return { model: value.slice(0, at), effort: value.slice(at + 1) };
+}
+
+/**
+ * The values a `show-agent-options --json` payload allows: each model's
+ * `id`, then `id@effort` for every effort in `capabilities.efforts`.
+ */
+export function modelValuesFrom(payload: unknown): string[] {
   if (typeof payload !== "object" || payload === null) return [];
-  const rec = payload as Record<string, unknown>;
+  const list = (payload as Record<string, unknown>).models;
+  if (!Array.isArray(list)) return [];
   const out: string[] = [];
-  for (const key of ["agentModes", "modes", "pluginModes"]) {
-    const list = rec[key];
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      if (typeof item === "string") out.push(item);
-      else if (typeof item === "object" && item !== null) {
-        const r = item as Record<string, unknown>;
-        const name = r.key ?? r.id ?? r.name;
-        if (typeof name === "string") out.push(name);
-      }
-    }
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.id !== "string" || !r.id.includes("/")) continue;
+    out.push(r.id);
+    const caps = r.capabilities as Record<string, unknown> | undefined;
+    const efforts = Array.isArray(caps?.efforts) ? caps.efforts : [];
+    for (const effort of efforts) if (typeof effort === "string") out.push(`${r.id}@${effort}`);
   }
   return out;
 }
@@ -52,7 +53,7 @@ export function createAmpModelCatalog(options: AmpModelCatalogOptions = {}): Mod
   const timeoutMs = options.timeoutMs ?? 30_000;
   let cached: Promise<string[]> | null = null;
 
-  function listPluginModes(): Promise<string[]> {
+  function listModels(): Promise<string[]> {
     return new Promise(resolvePromise => {
       let stdout = "";
       let child: ReturnType<typeof spawnProcess>;
@@ -84,7 +85,7 @@ export function createAmpModelCatalog(options: AmpModelCatalogOptions = {}): Mod
           return;
         }
         try {
-          resolvePromise(pluginModesFrom(JSON.parse(stdout)));
+          resolvePromise(modelValuesFrom(JSON.parse(stdout)));
         } catch {
           resolvePromise([]);
         }
@@ -94,15 +95,7 @@ export function createAmpModelCatalog(options: AmpModelCatalogOptions = {}): Mod
 
   const catalog: ModelCatalog = {
     async models(): Promise<string[]> {
-      if (!cached) {
-        cached = listPluginModes().then(plugin => {
-          const out = [...AMP_BUILTIN_MODES];
-          for (const mode of plugin) {
-            if (!out.some(m => m.toLowerCase() === mode.toLowerCase())) out.push(mode);
-          }
-          return out;
-        });
-      }
+      if (!cached) cached = listModels().then(models => ["inherit", ...models]);
       return cached;
     },
     async probe(model: string): Promise<boolean> {

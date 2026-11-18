@@ -24,12 +24,14 @@ An Amp plugin that gives the orchestrate loop a way to create threads nested und
    | `name` | Non-empty string, at most 200 characters. Logged, not sent to Amp (the plugin API has no rename; titles come from the first reply). |
    | `prompt` | Non-empty string under 200 kB. Appended as the thread's first user message. |
    | `project` | Non-empty string, as `amp --project` accepts it: a repository URL, `owner/repo`, `namespace/name`, or a project id. |
-   | `mode` | `low`, `medium`, `high`, or `ultra`. |
+   | `model` | A `provider/name` model ID, such as `openai/gpt-6-astra`. |
+   | `effort` | Optional: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Needs `model`. |
+   | `mode` | Legacy, from an older loop: `low`, `medium`, `high`, or `ultra`, in place of `model`. Sending both is a 400. |
    | `labels` | Array of strings matching `[A-Za-z0-9][A-Za-z0-9-]*`, each at most 32 characters, at most 20 of them. May be empty or omitted. |
    | `parent` | Optional thread id (`T-...`). Defaults to the session thread. |
    | `nodeType` | Optional: `planner`, `subplanner`, `worker`, or `verifier`, what the thread is in the orchestrate tree. Becomes the label `node-<type>` ahead of `labels` (once, when `labels` already holds it) and names the thread in the log line. A bridge built before this field ignores it, so the loop also sends the same label in `labels`. |
 
-   The plugin creates the thread with `getBuiltinAgent(mode).createThread({ parentThreadID, executor: 'orb', project, visibility: 'private' })`, adds the labels, appends the prompt, and answers `200 {"threadID": "T-...", "parent": "T-..."}`. Spawns run one at a time; a second request waits for the first.
+   The plugin creates the thread with `createAgent({ model, reasoningEffort: effort })` when the request names an effort, else `getBuiltinAgent(model)` (or `getBuiltinAgent(mode)`), then `.createThread({ parentThreadID, executor: 'orb', project, visibility: 'private' })`, adds the labels, appends the prompt, and answers `200 {"threadID": "T-...", "parent": "T-..."}`. Spawns run one at a time; a second request waits for the first.
 
 3. Refusals are JSON with one `error` string and never a stack: `401` for a missing or wrong token (checked before the route, so an unauthenticated caller learns nothing), `400` for bad input with the field named, `404` or `405` for a wrong path or method, and `500` with the message when Amp refuses the thread (for example a project the user cannot access).
 

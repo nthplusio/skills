@@ -12,9 +12,11 @@ import { join } from "node:path";
 import plugin, {
   type BridgeAPI,
   type BridgeFile,
+  type Effort,
   LABEL_PATTERN,
   MAX_PROMPT_BYTES,
   type Mode,
+  type ModelID,
   resolveWorkingDir,
   type SpawnRequest,
   startBridge,
@@ -56,9 +58,17 @@ function fakeAmp(workspaceRoot: string | null = null): FakeAmp {
       amp.disposers.push(fn);
       return { unsubscribe() {} };
     },
-    getBuiltinAgent(mode: Mode) {
-      amp.calls.push({ op: "getBuiltinAgent", args: mode });
-      return {
+    getBuiltinAgent(key: Mode | ModelID) {
+      amp.calls.push({ op: "getBuiltinAgent", args: key });
+      return fakeAgent();
+    },
+    createAgent(config: { model: ModelID; reasoningEffort: Effort }) {
+      amp.calls.push({ op: "createAgent", args: config });
+      return fakeAgent();
+    },
+  };
+  function fakeAgent() {
+    return {
         async createThread(options) {
           amp.calls.push({ op: "createThread", args: options });
           if (amp.failWith) throw amp.failWith;
@@ -74,8 +84,7 @@ function fakeAmp(workspaceRoot: string | null = null): FakeAmp {
           };
         },
       };
-    },
-  };
+  }
   return amp;
 }
 
@@ -84,7 +93,7 @@ function goodRequest(extra: Record<string, unknown> = {}): Record<string, unknow
     name: "th-e-child",
     prompt: "Reply with exactly the single word pong and nothing else.",
     project: PROJECT,
-    mode: "low",
+    model: "anthropic/claude-haiku-5-5",
     labels: ["orchestrate", "orch-probe"],
     ...extra,
   };
@@ -149,7 +158,7 @@ describe("the plugin's default export", () => {
     expect(status).toBe(200);
     expect(json).toEqual({ threadID: CHILD, parent: VEHICLE });
     expect(amp.calls).toEqual([
-      { op: "getBuiltinAgent", args: "low" },
+      { op: "getBuiltinAgent", args: "anthropic/claude-haiku-5-5" },
       { op: "createThread", args: { parentThreadID: VEHICLE, executor: "orb", project: PROJECT, visibility: "private" } },
       { op: "addLabels", args: ["orchestrate", "orch-probe"] },
       { op: "append", args: [{ type: "user-message", content: goodRequest().prompt }] },
@@ -242,11 +251,25 @@ describe("refusals", () => {
     expect(amp.calls).toEqual([]);
   });
 
-  test("a bad mode is 400", async () => {
-    const { status, json } = await post(file, goodRequest({ mode: "smart" }));
+  test("a bad model is 400", async () => {
+    const { status, json } = await post(file, goodRequest({ model: "smart" }));
     expect(status).toBe(400);
-    expect(json.error).toBe("mode must be one of low|medium|high|ultra");
+    expect(json.error).toBe("model must be a provider/name model ID");
     expect(amp.calls).toEqual([]);
+  });
+
+  test("a model with an effort runs a created agent at that effort, not the built-in one", async () => {
+    const { status } = await post(file, goodRequest({ model: "openai/gpt-6-astra", effort: "xhigh" }));
+    expect(status).toBe(200);
+    expect(amp.calls[0]).toEqual({ op: "createAgent", args: { model: "openai/gpt-6-astra", reasoningEffort: "xhigh" } });
+    expect(amp.calls.some((c) => c.op === "getBuiltinAgent")).toBe(false);
+  });
+
+  test("an older loop's mode still spawns the built-in agent", async () => {
+    const { model: _model, ...legacy } = goodRequest();
+    const { status } = await post(file, { ...legacy, mode: "low" });
+    expect(status).toBe(200);
+    expect(amp.calls[0]).toEqual({ op: "getBuiltinAgent", args: "low" });
   });
 
   test("an oversized prompt is 400, whether it is caught by the field check or the body cap", async () => {
@@ -293,7 +316,8 @@ describe("validateSpawnRequest", () => {
     const result = validateSpawnRequest(good, VEHICLE);
     expect(result.ok).toBe(true);
     const value = (result as { ok: true; value: SpawnRequest }).value;
-    expect(value).toEqual({ ...good, parent: VEHICLE } as SpawnRequest);
+    const { model, ...rest } = good;
+    expect(value).toEqual({ ...rest, agent: { model }, parent: VEHICLE } as SpawnRequest);
     const { labels: _omit, ...withoutLabels } = good;
     const defaulted = validateSpawnRequest(withoutLabels, VEHICLE) as { ok: true; value: SpawnRequest };
     expect(defaulted.value.labels).toEqual([]);
@@ -305,7 +329,11 @@ describe("validateSpawnRequest", () => {
       [{ ...good, name: "n".repeat(201) }, "name must be at most 200 characters"],
       [{ ...good, prompt: "   " }, "prompt must be a non-empty string"],
       [{ ...good, project: 7 }, "project must be a non-empty string"],
-      [{ ...good, mode: "LOW" }, "mode must be one of low|medium|high|ultra"],
+      [{ ...good, model: "gpt-6-astra" }, "model must be a provider/name model ID"],
+      [{ ...good, effort: "ultra" }, "effort must be one of none|minimal|low|medium|high|xhigh|max"],
+      [{ ...good, mode: "low" }, "send model or mode, not both"],
+      [{ name: good.name, prompt: good.prompt, project: good.project, mode: "LOW" }, "or mode one of low|medium|high|ultra"],
+      [{ name: good.name, prompt: good.prompt, project: good.project, mode: "low", effort: "high" }, "effort needs a model"],
       [{ ...good, labels: "orchestrate" }, "labels must be an array of strings"],
       [{ ...good, labels: ["-leading"] }, 'label "-leading" must match'],
       [{ ...good, labels: ["a".repeat(33)] }, "at most 32 characters"],
@@ -337,6 +365,7 @@ describe("startBridge", () => {
     const gate = new Promise<void>((r) => (release = r));
     const slow: BridgeAPI = {
       logger: amp.logger,
+      createAgent: (config) => amp.createAgent(config),
       getBuiltinAgent(mode) {
         const agent = amp.getBuiltinAgent(mode);
         return {
