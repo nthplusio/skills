@@ -1,0 +1,4 @@
+interface:
+  display_name: chrome-extensions
+policy:
+  allow_implicit_invocation: true
