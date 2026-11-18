@@ -45,7 +45,7 @@ from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile
-from ledger import assessment_history, assessment_current, validate_assessment, target_state
+from ledger import assessment_history, marker_current, validate_assessment, target_state
 from requirements import requirement_gaps
 from stacks import stack_of, missing_members
 
@@ -333,19 +333,20 @@ def main():
             rec["merge_review_gap"] = not rec["merge_evidence"]["local_assessments"]
             if rec["merge_review_gap"]:
                 print(f'Merged head has no saved local assessment: #{n} {rec["head"]}; check linked assessments and exact-head reviews', file=sys.stderr)
-        collected.append((rec, evidence, proposal))
+        collected.append((rec, evidence))
         out.append(rec)
 
     final_target = target_state(slug, base)
-    for rec, evidence, proposal in collected:
+    for rec, evidence in collected:
         if not target.get("sha") or final_target != target:
             evidence.setdefault("failedFetches", []).append("target-ref-changed-or-unavailable")
             rec["history"]["gaps"].append("target-ref-changed-or-unavailable")
         rec["target_final"] = final_target
-        matches = (proposal and not rec["requirements_gaps"] and not evidence.get("failedFetches")
-                   and not evidence.get("truncatedSources")
-                   and assessment_current(proposal, rec["head"], rec["base"], rec["evidence_inputs"]))
-        rec["handoffs"] = reconcile(evidence, proposal.get("request_events", []) if matches else ())
+        # A disposition is bound to its request event and the head it was assessed at,
+        # not to the stricter inputs that keep a recommendation current.
+        rec["handoffs"] = reconcile(evidence, [marker for item in rec["assessment_history"]
+                                               if marker_current(item, rec["head"])
+                                               for marker in item.get("request_events", [])])
 
     json.dump(out, sys.stdout, indent=2)
     sys.stdout.write("\n")

@@ -8,7 +8,7 @@ from string import Template
 
 from md_to_html import render as markdown
 from pr_history import format_time, render as history_html
-from ledger import DECISIONS, assessment_current, unresolved, validate_assessment
+from ledger import DECISIONS, assessment_current, marker_current, unresolved, validate_assessment
 from stacks import label as stack_label
 
 REPORT_BUDGET = 100_000
@@ -97,11 +97,16 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         handoffs = record.get("handoffs", {"coverage": "unknown", "requests": [], "gaps": ["request-evidence-not-collected"]})
         request_notes = []
         unknown_requests += handoffs["coverage"] != "complete"
+        # A local disposition holds at its assessed head even when the recommendation is stale.
+        handled_here = any(marker_current(item, record["head"])
+                           for item in (proposal, *record.get("assessment_history", [])))
+        open_request = False
         for request in handoffs["requests"]:
             disposition = request["disposition"]
-            if disposition in ("assessed-locally", "awaiting-owner-decision", "reviewer-incomplete") and not matches:
+            if disposition in ("assessed-locally", "awaiting-owner-decision", "reviewer-incomplete") and not handled_here:
                 disposition = "unhandled · previous local disposition is stale"
             unhandled_requests += disposition.startswith("unhandled")
+            open_request = open_request or (request["outstanding"] and disposition.startswith("unhandled"))
             request_notes.append(f'<p>Request {escape(request["event_id"])} · {escape(request["requester"] or "Unknown requester")} → '
                                  f'{escape(request["target"])} · {escape(request["at"])} · {escape(disposition)}. '
                                  'A local assessment is not an approval or a posted response.</p>')
@@ -109,7 +114,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         if waiting and verdict not in ("MERGED", "CLOSED"):
             request_notes.insert(0, '<p><strong>Review requested again</strong></p>' if any(r["renewed"] for r in waiting)
                                  else '<p><strong>Review requested</strong></p>')
-            if not proposal or not matches:
+            if open_request and (not proposal or not matches):
                 owner = "Reviewer to reconcile the outstanding request; code, CI and conflicts remain separate."
         if handoffs["coverage"] != "complete":
             request_notes.append('<p>Review request coverage unknown: ' + escape(', '.join(handoffs["gaps"])) + '</p>')

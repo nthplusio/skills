@@ -252,12 +252,78 @@ class HandoffTests(unittest.TestCase):
         source = render([record], "main", assessments={"repository": record["repository"], "assessments": [item]})
         self.assertIn("Spec coverage incomplete", source)
         self.assertIn("Substantive reviews complete: 0", source)
-        self.assertIn("1 unhandled", source)
+        # A Spec gap makes the recommendation stale; the request stays handled at its assessed head.
+        for text in ("Review again", "0 unhandled", "assessed-locally", "Reviewer to refresh the changed code"):
+            self.assertIn(text, source)
+        self.assertNotIn("previous local disposition is stale", source)
         del record["requirements_gaps"]
         record["head"] = "f" * 40
         source = render([record], "main", assessments={"repository": record["repository"], "assessments": [item]})
-        self.assertIn("Review again", source)
-        self.assertIn("previous local disposition is stale", source)
+        for text in ("Review again", "1 unhandled", "previous local disposition is stale", "Reviewer to reconcile the outstanding request"):
+            self.assertIn(text, source)
+
+    def test_triage_applies_a_saved_disposition_only_at_its_assessed_head(self):
+        saved = {"event_id": "31", "target": "user:reviewer", "at": REVISION, "disposition": "assessed-locally",
+                 "number": 17, "head": HEAD}
+        for live_head, expected, absent in (
+                (HEAD, ("user:reviewer at 2026-11-03T12:00:00Z; assessed-locally", "0; unknown coverage on 0"), "Previously handled"),
+                ("f" * 40, ("user:reviewer at 2026-11-03T12:00:00Z; unhandled", "Previously handled 31", "head moved",
+                            "1; unknown coverage on 0"), "; assessed-locally")):
+            p = {"number": 17, "title": "Keep saved filters", "author": {"login": "author"},
+                 "createdAt": "2026-11-01T12:00:00Z", "isDraft": False, "reviewDecision": "CHANGES_REQUESTED",
+                 "headRefOid": live_head, "baseRefOid": BASE, "updatedAt": "2026-11-12T09:00:00Z",
+                 "mergeStateStatus": "CLEAN", "additions": 8, "deletions": 3, "autoMergeRequest": None}
+            output = io.StringIO()
+            with self.subTest(head=live_head), patch.object(sys, "argv", ["queue.py", "main"]), \
+                    patch.object(queue, "gh_json", side_effect=[[p], {"files": [], "statusCheckRollup": []}, p]), \
+                    patch.object(queue, "repo_slug", return_value="sample/product"), \
+                    patch.object(queue, "handled_requests", return_value=[saved]), \
+                    patch.object(queue, "stack_of", return_value=None), \
+                    patch.object(queue, "collect", return_value=evidence()), contextlib.redirect_stdout(output):
+                queue.main()
+                for text in expected:
+                    self.assertIn(text, output.getvalue())
+                self.assertNotIn(absent, output.getvalue())
+
+    def test_disposition_survives_target_and_discussion_changes_but_not_a_new_head(self):
+        raw, record = fixture()
+        raw["requestedReviewers"] = ["user:Alex"]
+        raw["timeline"] = [{**raw["timeline"][0], "at": "2026-11-03T16:00:00Z", "requestedReviewer": "Alex"}]
+        marker = {"event_id": "51", "target": "user:Alex", "at": REVISION, "disposition": "assessed-locally"}
+        first = assessment(482, head=record["head"], base=record["base"], request_events=[marker])
+        first["evidence_inputs"]["target"] = {**TARGET, "sha": "e" * 40}  # the target branch has moved since
+        # Re-recorded at the same head without markers, as after a posted action.
+        later = assessment(482, head=record["head"], base=record["base"], assessed_at="2026-11-11T21:00:00Z")
+        for live_head, disposition, closes in ((record["head"], "assessed-locally", True), ("f" * 40, "unhandled", False)):
+            pr = {**raw["pr"], "id": "PR_482", "isDraft": False, "state": "OPEN", "reviewDecision": "CHANGES_REQUESTED",
+                  "mergeStateStatus": "CLEAN", "updatedAt": "2026-11-12T09:00:00Z", "headRefOid": live_head}
+            output = io.StringIO()
+            with self.subTest(head=live_head), tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp), \
+                    patch.object(sys, "argv", ["round_report.py", "main", "--since", REVISION, "--me", "Alex"]), \
+                    patch.object(round_report, "repo_slug", return_value=record["repository"]), \
+                    patch.object(round_report, "gh", side_effect=[[pr], []]), \
+                    patch.object(round_report, "queue_state", return_value="not_queued"), \
+                    patch.object(round_report, "history_evidence", return_value={**raw, "pr": pr}), \
+                    patch.object(round_report, "assessment_history", return_value=[first, later]), \
+                    patch("ledger.heads", return_value={}), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                round_report.main()
+                row = json.loads(output.getvalue())[0]
+                self.assertEqual((row["handoffs"]["requests"][0]["disposition"], row["handoffs"]["coverage"]),
+                                 (disposition, "complete"))
+                # The recommendation is stale either way; only the head decides the handoff.
+                for item in (first, later):
+                    self.assertFalse(ledger.assessment_current(item, row["head"], row["base"], row["evidence_inputs"]))
+                source = render([row], "main")
+                self.assertIn("Review again", source)
+                self.assertIn(f"{0 if closes else 1} unhandled", source)
+                rid = ledger.round_start("main", record["repository"])
+                if closes:
+                    ledger.round_end(rid, [482], record["repository"], reconciliation=[row])
+                    self.assertEqual(ledger.last_round("main", record["repository"])["prs"], [482])
+                else:
+                    with self.assertRaisesRegex(ValueError, "unhandled requests"):
+                        ledger.round_end(rid, [482], record["repository"], reconciliation=[row])
 
 
 if __name__ == "__main__":

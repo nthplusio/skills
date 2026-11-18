@@ -135,6 +135,15 @@ def assessment_current(assessment, head, base, evidence_inputs):
             and assessment["evidence_inputs"] == evidence_inputs)
 
 
+def marker_current(assessment, head):
+    """A request disposition holds for its request event at the assessed head.
+
+    Deliberately narrower than assessment_current. Discussion, requirement, policy
+    and target-branch movement make the recommendation stale, not the handoff.
+    """
+    return bool(assessment and head) and assessment.get("head") == head
+
+
 def record_assessment(rid, assessment, repo=None):
     validate_assessment(assessment)
     _append("assessments", {**assessment, "round": rid, "recorded_at": _now()}, repo)
