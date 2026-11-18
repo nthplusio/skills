@@ -159,12 +159,17 @@ def main():
 
     saved = handled_requests(slug)
     request_states = {}
+    stale = {}
     for p in prs:
         evidence = collect(slug, p["number"])
         final = gh_json(["gh", "pr", "view", str(p["number"]), "--json", "headRefOid,baseRefOid,updatedAt"])
         if not final or any(p.get(k) != final.get(k) for k in ("headRefOid", "baseRefOid", "updatedAt")):
             evidence["failedFetches"].append("snapshot-consistency")
-        request_states[p["number"]] = reconcile(evidence)
+        # A saved disposition holds for its request event at the assessed head.
+        head = (final or p).get("headRefOid")
+        markers = [m for m in saved if m["number"] == p["number"]]
+        stale[p["number"]] = [m for m in markers if m["head"] != head]
+        request_states[p["number"]] = reconcile(evidence, [m for m in markers if m["head"] == head])
     tiers = load_overrides()
     print(f"{len(prs)} open non-draft PR(s) targeting {base} or a stack rooted on it, oldest first\n")
     hdr = (f'{"PR":<7}{"OPENED":<12}{"AUTHOR":<18}{"RISK":<7}'
@@ -196,9 +201,9 @@ def main():
             if request["outstanding"]:
                 print(f'       Request {request["event_id"]}: {request["requester"] or "unknown requester"} -> '
                       f'{request["target"]} at {request["at"]}; {request["disposition"]}')
-        for marker in (m for m in saved if m["number"] == p["number"]):
+        for marker in stale[p["number"]]:
             print(f'       Previously handled {marker["event_id"]} for {marker["target"]}: '
-                  f'{marker["disposition"]} at {marker["at"]}; refresh inputs before reuse')
+                  f'{marker["disposition"]} at {marker["at"]} on {marker["head"][:9]}; head moved, assess the request again')
         if requests["gaps"]:
             print('       Request coverage UNKNOWN: ' + ', '.join(requests["gaps"]))
 
