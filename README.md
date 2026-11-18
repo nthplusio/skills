@@ -36,6 +36,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`agent-handoff`](skills/scoussens-skills/agent-handoff/SKILL.md) | Writes actionable handoffs with a state-checking preflight, essential context, and dependency-ordered actions with completion criteria. Use only when explicitly asked to write a handoff, brief the next session, or package work for a subagent or person. Not for conversation summaries, status or standup updates, plans for unstarted work, commit messages, or PR descriptions. |
 | [`auditing-business-rules`](skills/scoussens-skills/auditing-business-rules/SKILL.md) | Audits business-rule consistency, code conformance, and proposed changes against a versioned policy registry, with evidence and explicit gaps. Use when asked to audit business rules, assess a specification's policy impact, or review a code change against approved rules. Does not approve policy or claim unexamined code conforms. |
 | [`business-rules-catalogue`](skills/scoussens-skills/business-rules-catalogue/SKILL.md) | Derives code-enforced business rules, has a second reader check them, and builds an explorer for business owners to review and export corrections. Use only when explicitly asked to catalogue business logic, find where it lives, or refresh the rules explorer. Not for explaining one function, reviewing a PR, or documenting an API. |
+| [`chrome-extensions`](skills/scoussens-skills/chrome-extensions/SKILL.md) | Builds, debugs, and publishes Chrome extensions with Manifest V3 patterns, rules for the most common broken builds, chrome.* API references, and Chrome Web Store listing, permission-justification, and privacy-policy guidance. Use when creating or changing a Chrome or browser extension, manifest.json, content scripts, an extension service worker, popup, side panel, chrome.* APIs, declarativeNetRequest, omnibox, context menus, userScripts, DevTools panels, or tab capture, or when publishing to the Chrome Web Store, answering a review rejection, writing permission justifications, or drafting a privacy policy. Not for ordinary web pages; use modern-web-guidance for those. |
 | [`configuring-reviews`](skills/scoussens-skills/configuring-reviews/SKILL.md) | Configures repository-specific PR review references, execution preferences and ticket-policy pointers over portable defaults. Use when setting up or tailoring code reviews for a repository, or changing what reviewers check. Not for running a review, installing a tracker or changing lifecycle automation. |
 | [`dashboard`](skills/scoussens-skills/dashboard/SKILL.md) | Renders a producer-owned status file as a self-contained HTML page for non-technical readers and refreshes it at the user's chosen destination. Use for a run dashboard, thread status page, subagent progress view, or a coordinating skill's report. The producer determines status; this skill renders the record rather than judging it. |
 | [`designing-questionnaires`](skills/scoussens-skills/designing-questionnaires/SKILL.md) | Researches requirements, coordinates category research when needed, and reviews feedback through a concise questionnaire with a JSONL planning handoff. Can post owner-approved asks to a team chat channel (Microsoft Teams, Slack or another) and watch it for answers. Use when asked to collect team feedback on requirements, create a design questionnaire, apply responses and republish the same questionnaire, or post questionnaire asks to a channel and check it for replies. |
@@ -43,6 +44,7 @@ npx skills add nthplusio/skills --skill speak-clearly
 | [`harness-discovery`](skills/scoussens-skills/harness-discovery/SKILL.md) | Discovers agent capabilities and repository ticket conventions, saving sourced facts by harness. Covers sessions, subagents, wake-ups, skills, instructions, questions, models, and HTML destinations. Use when pstack-sync, dashboard, or another caller needs discovery, or for /harness-discovery. For one saved fact, read that field instead of starting a full survey. |
 | [`maintaining-business-rules`](skills/scoussens-skills/maintaining-business-rules/SKILL.md) | Captures business decisions from conversations and documents into a versioned, owner-approved rule registry, preserving proposals, sources, and history. Use when explicitly asked to capture or maintain business rules, or when a project's enabled specification workflow calls for it. Do not monitor ordinary conversations, treat discovered code as approval, or execute rules at runtime. |
 | [`meeting-index`](skills/scoussens-skills/meeting-index/SKILL.md) | Indexes recorded meetings across a period into shared themes, a searchable ledger, decisions, owners, and risks. Reads Plaud or another recordings-and-notes source. Use only when explicitly asked to index meetings, recap recordings, or digest calls across a period or topic. Not for a single-meeting summary, one factual lookup, live note-taking, or minutes. |
+| [`modern-web-guidance`](skills/scoussens-skills/modern-web-guidance/SKILL.md) | Searches Google Chrome's Modern Web Guidance for current HTML, CSS, and client-side JavaScript patterns, Baseline browser support, and fallbacks through a pinned offline CLI. Use before writing or changing web UI or browser code — dialogs, popovers, tables, forms, validation, autofill, dark mode, anchor positioning, container queries, view transitions, scroll-driven animations, accessibility, Core Web Vitals (LCP, INP, CLS), image loading, passkeys, HTML sanitization, web components, dates and time zones, built-in AI, or WebAssembly — including that code inside React, Vue, or other frameworks, or when asked to modernize legacy web code. Not for backend, SQL, API routes, CI, Docker, build or lint configuration, tests, or renames. |
 | [`optimize-ci`](skills/scoussens-skills/optimize-ci/SKILL.md) | Evaluates, designs, and improves a repository's CI architecture for trustworthy feedback, runner cost, and maintainability while preserving merge and release contracts. Use when the user asks to audit or speed up CI, reduce CI cost, redesign a pipeline, or design CI for a repository without an existing pipeline. Supports GitHub Actions, GitLab CI, and other providers. Do not load for one failing build, one flaky test, or a narrow workflow syntax question. |
 | [`picking-skills`](skills/scoussens-skills/picking-skills/SKILL.md) | Opens a reusable searchable skill picker and copies an exact-source loading instruction. Use for submitted /skills messages, a &lt;skill&gt; placeholder anywhere in a message, or requests to browse and choose skills. |
 | [`pr-detail`](skills/scoussens-skills/pr-detail/SKILL.md) | Produces an HTML retrospective on one PR with its timeline, reviewer feedback and outcomes, and an evidence-based execution score. Use only for explicit requests about how a PR went, its review process, or why it took so long. Not for teaching the code, judging an open PR's merge readiness, or recapping a period of merged work. |
@@ -76,7 +78,7 @@ discovery while keeping it available inside Claude Code.
 
 | Plugin | Description |
 | --- | --- |
-| [`nthplusio-coding-agent`](docs/installation.md) | Twenty-two skill candidates with required companions and Codex/Claude invocation metadata. Target-client behavior remains unverified. |
+| [`nthplusio-coding-agent`](docs/installation.md) | Twenty-four skill candidates with required companions and Codex/Claude invocation metadata. Target-client behavior remains unverified. |
 | [`context-statusline`](plugins/context-statusline/README.md) | A card above the prompt: the model, the context window in tapered colour bands, prompt cache warmth, and the git repo and branch, collapsing to fit any terminal width. |
 | [`doorbell`](plugins/doorbell/README.md) | Directory-bound messaging through Doorbell's public MCP connection, with local execution authority, explicit leases, and bounded optional Stop continuation. |
 | [`doorbell-grant`](plugins/doorbell-grant/README.md) | Approves doorbell's own read-only inbox calls at the permission check, so its background refresh works in auto mode. Installed with doorbell. |
@@ -359,6 +361,20 @@ must be parsed with the parser the builder uses, because a reimplementation
 drifts and the drift is silent. A hand-rolled reader here once accepted a
 description containing `": "` — which YAML reads as a nested mapping — and
 reported three valid skills while the pack shipped two.
+
+### The upstream-pins check
+
+```bash
+npm run check:upstream-pins
+```
+
+`modern-web-guidance` pins an exact CLI release and passes a `--skill-version`.
+The CLI compares that value with the `skill-version.txt` it ships, and tells
+agents to press the user for an upgrade when the skill is older. This check
+downloads the pinned release and requires the two values to match. Its
+hermetic half, in `npm run test:distribution`, requires every command in the
+skill to use the same pin and skill version. To resync from upstream, change
+both values together and run both checks.
 
 ### Descriptions cannot contain `": "`
 

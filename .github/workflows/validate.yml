@@ -101,3 +101,16 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Check the pack builder finds every skill
         run: npm run check:builder
+
+  # Networked like builder-agrees: downloads the pinned modern-web-guidance
+  # package and checks that it ships the --skill-version the skill passes.
+  # The hermetic half of this check runs in test:distribution.
+  upstream-pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check pinned CLI releases ship the skill version the skill passes
+        run: npm run check:upstream-pins
