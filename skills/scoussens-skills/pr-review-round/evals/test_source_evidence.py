@@ -32,7 +32,9 @@ def requirements():
 
 
 class SourceEvidenceTests(unittest.TestCase):
-    def collect(self, *, saved=(), ticket=None, targets=None, merged=True, reviews=None):
+    writes = ()
+
+    def collect(self, *, saved=(), ticket=None, targets=None, merged=True, reviews=None, changes=None, failed=()):
         raw, record = fixture()
         raw['timeline'], raw['requestedReviewers'] = [], []
         raw['ticketEvidence'] = ticket or {}
@@ -40,14 +42,18 @@ class SourceEvidenceTests(unittest.TestCase):
             raw['pr']['reviews'] = reviews
         pr = {**raw['pr'], 'id': 'PR_fixture', 'isDraft': False, 'state': 'MERGED' if merged else 'OPEN',
               'reviewDecision': 'APPROVED', 'mergeStateStatus': 'CLEAN', 'updatedAt': REVISION,
-              'mergedAt': '2026-11-03T16:00:00Z' if merged else None}
+              'mergedAt': '2026-11-03T16:00:00Z' if merged else None, **(changes or {})}
         raw['pr'] = pr
+        raw['failedFetches'] = list(failed)
+        # The queue listing has no mergedBy; only the per-PR collection does.
+        listed = {key: value for key, value in pr.items() if key != 'mergedBy'}
         output, errors = io.StringIO(), io.StringIO()
         with patch.object(sys, 'argv', ['round_report.py', 'main', '--since', '2026-11-03T00:00:00Z', '--me', 'Other']), \
                 patch.object(round_report, 'repo_slug', return_value=record['repository']), \
-                patch.object(round_report, 'gh', side_effect=[[] if merged else [pr], [pr] if merged else []]), \
+                patch.object(round_report, 'gh', side_effect=[[] if merged else [listed], [listed] if merged else []]), \
                 patch.object(round_report, 'history_evidence', return_value=raw), \
                 patch.object(round_report, 'assessment_history', return_value=list(saved)), \
+                patch.object(round_report, 'ledger_writes', return_value=list(self.writes)), \
                 patch.object(round_report, 'target_state', side_effect=targets or [TARGET, TARGET], create=True), \
                 patch.object(round_report, 'queue_state', return_value='not_queued'), \
                 patch.object(round_report, 'stack_of', return_value=None), \
@@ -105,6 +111,67 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertTrue(row['merge_review_gap'])
         self.assertEqual(row['merge_evidence']['exact_head_reviews'], [])
         self.assertEqual(row['head'], record['head'])
+
+    def test_merge_without_a_person_approving_the_merged_head_is_an_observed_fact(self):
+        raw, record = fixture()
+        head, merged_by = record['head'], {'mergedBy': {'login': 'Maintainer'}, 'reviewDecision': 'REVIEW_REQUIRED'}
+        review = lambda state, who='Alex', kind='User', commit=head, at='2026-11-03T15:00:00Z', identity=20: {
+            'id': identity, 'state': state, 'submittedAt': at, 'author': {'login': who, 'type': kind},
+            'commitOid': commit, 'url': f'https://example.test/review/{identity}', 'body': ''}
+        flag = 'MERGED WITH NO APPROVAL FROM A PERSON AT THE MERGED HEAD'
+        cases = [
+            ('a person approved the merged head', [review('APPROVED')], True, []),
+            ('no review at all', [], False, []),
+            ('only automation approved', [review('APPROVED', 'review-bot', 'Bot')], False, ['review-bot']),
+            ('the approval was for an earlier commit', [review('APPROVED', commit='e' * 40)], False, []),
+            ('the approver later requested changes', [review('APPROVED'), review('CHANGES_REQUESTED', at='2026-11-03T15:30:00Z', identity=21)], False, []),
+            ('the approval came after the merge', [review('APPROVED', at='2026-11-03T17:00:00Z')], False, []),
+            ('a comment after an approval keeps it', [review('APPROVED'), review('COMMENTED', at='2026-11-03T15:30:00Z', identity=21)], True, []),
+        ]
+        for name, reviews, expected, automation in cases:
+            with self.subTest(name):
+                row, errors = self.collect(reviews=reviews, changes=merged_by)
+                found = row['merge_evidence']
+                self.assertEqual((found['human_approval_at_head'], found['merged_by']), (expected, 'Maintainer'))
+                self.assertEqual([a['actor'] for a in found['approvers_at_head'] if a['actor_type'] != 'User'], automation)
+                page = render([row], 'main')
+                if expected:
+                    self.assertNotIn(flag, errors)
+                    self.assertNotIn('No approval from a person', page)
+                else:
+                    self.assertIn(flag + ': #482 (merged by Maintainer; GitHub reports REVIEW_REQUIRED', errors)
+                    self.assertIn('not a finding', errors)
+                    self.assertIn('No approval from a person observed at the merged head · Merged by Maintainer', page)
+                    self.assertIn('Repository policy decides', page)
+                self.assertEqual('automation only: review-bot' in errors, bool(automation))
+                self.assertEqual('automation only: review-bot' in page, bool(automation))
+        # Unreadable reviews are unknown, and an open PR has no merge to describe.
+        row, errors = self.collect(reviews=[], changes=merged_by, failed=['reviews'])
+        self.assertIsNone(row['merge_evidence']['human_approval_at_head'])
+        self.assertNotIn(flag, errors)
+        self.assertNotIn('No approval from a person', render([row], 'main'))
+        row, errors = self.collect(reviews=[], merged=False)
+        self.assertNotIn('merge_evidence', row)
+        self.assertNotIn(flag, errors)
+        # A merge with no recorded merger still reports, without inventing one.
+        row, errors = self.collect(reviews=[])
+        self.assertIsNone(row['merge_evidence']['merged_by'])
+        self.assertIn('#482 (merged by unknown; GitHub reports APPROVED)', errors)
+
+    def test_landing_requested_by_the_round_is_shown_only_for_the_merged_head(self):
+        _, record = fixture()
+        request = {'number': 482, 'action': 'enqueue', 'head': record['head'], 'url': None, 'at': '2026-11-03T15:50:00Z'}
+        self.writes = [request, {**request, 'head': 'e' * 40, 'at': '2026-11-01T00:00:00Z'},
+                       {**request, 'number': 483}, {**request, 'action': 'approve', 'url': 'https://example.test/review/9'},
+                       {**request, 'action': 'comment'}]
+        row, _ = self.collect()
+        self.assertEqual(row['merge_evidence']['landing_requests'], [{'action': 'enqueue', 'at': '2026-11-03T15:50:00Z'}])
+        self.assertIn("Landing requested through this round's helper · enqueue · 2026-11-03T15:50:00Z",
+                      render([row], 'main').replace('&#x27;', "'"))
+        self.writes = ()
+        row, _ = self.collect()
+        self.assertEqual(row['merge_evidence']['landing_requests'], [])
+        self.assertNotIn('Landing requested', render([row], 'main'))
 
     def test_complete_source_retains_omitted_criterion_but_reconstructed_excerpts_fail(self):
         ticket = requirements()

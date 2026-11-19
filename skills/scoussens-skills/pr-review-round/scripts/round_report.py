@@ -34,6 +34,12 @@ stderr. Without it a late PR cannot be told from a scoped one.
 with whether it is still in force at the reported head. A review GitHub
 dismissed, or one made at an earlier commit, is named on stderr.
 
+Each of your reviews and comments carries ``posted_by``: ``round`` when
+`review_write.py` recorded it in the ledger, otherwise ``outside the round``.
+A merged PR's ``merge_evidence`` says who merged it and whether a person's
+approval stood at the merged head. Both are observed facts, named on stderr;
+neither is a finding about the code.
+
 Usage:
     python3 round_report.py <base> --scope scope.json > /tmp/round.json
     python3 round_report.py <base> --since 2026-08-21T15:00:00Z
@@ -54,7 +60,7 @@ from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile, effective_reviews
-from ledger import assessment_history, marker_current, validate_assessment, target_state
+from ledger import assessment_history, marker_current, validate_assessment, target_state, writes as ledger_writes
 from requirements import requirement_gaps
 from stacks import stack_of, missing_members
 
@@ -141,7 +147,7 @@ def my_review_of(reviews, who, head):
             "at_head": bool(commit) and commit == head, "dismissed": review["state"] == "DISMISSED"}
 
 
-def merge_evidence(pr, assessments, reviews, gaps):
+def merge_evidence(pr, assessments, reviews, gaps, writes=()):
     """A missing local record is not evidence that nobody reviewed a head."""
     merged_at = pr.get("mergedAt")
     def timing(at):
@@ -156,7 +162,21 @@ def merge_evidence(pr, assessments, reviews, gaps):
         except (ValueError, AttributeError):
             return "merge timing unknown"
     head = pr.get("headRefOid")
+    unknown = any(g in gaps for g in ("reviews", "history-collection"))
+    # Each reviewer's latest decisive review that could have gated the merge:
+    # an approval withdrawn before the merge, or given after it, did not.
+    standing = [r for r in effective_reviews([r for r in reviews if timing(r.get("submittedAt")) != "after merge"]).values()
+                if r.get("state") == "APPROVED" and r.get("commitOid") == head]
+    merger = pr.get("mergedBy")
     return {
+        "merged_by": merger.get("login") if isinstance(merger, dict) else merger,
+        # None when reviews could not be read: unknown is not "nobody approved".
+        "human_approval_at_head": None if unknown else any((r.get("author") or {}).get("type") == "User" for r in standing),
+        "approvers_at_head": [{"actor": (r.get("author") or {}).get("login"), "actor_type": (r.get("author") or {}).get("type")}
+                              for r in standing],
+        "landing_requests": [{"action": w.get("action"), "at": w.get("at")} for w in writes
+                             if w.get("number") == pr.get("number") and w.get("head") == head
+                             and w.get("action") in ("enqueue", "enable-auto-merge", "stack-merge")],
         "local_assessments": [{"at": a["assessed_at"], "timing": timing(a["assessed_at"]),
                                "provenance": a.get("provenance") or "Saved local assessment"}
                               for a in assessments if a["head"] == head],
@@ -165,7 +185,7 @@ def merge_evidence(pr, assessments, reviews, gaps):
                                 "state": r["state"], "at": r.get("submittedAt"), "url": r.get("url"),
                                 "timing": timing(r.get("submittedAt"))}
                                for r in reviews if r.get("commitOid") == head and r.get("state") != "PENDING"],
-        "review_coverage": "unknown" if any(g in gaps for g in ("reviews", "history-collection")) else "observed",
+        "review_coverage": "unknown" if unknown else "observed",
     }
 
 
@@ -240,6 +260,10 @@ def main():
         saved += supplied["assessments"]
     saved.sort(key=lambda a: datetime.fromisoformat(a["assessed_at"].replace("Z", "+00:00")).timestamp())
     latest = {a["number"]: a for a in saved}
+    recorded = ledger_writes(slug)
+    # A dismissal's URL is the review it dismissed, which the helper did not post.
+    posted = {w["url"] for w in recorded if w.get("url") and w.get("action") != "dismiss"}
+    posted_by = lambda url: "round" if url in posted else "outside the round"
     target = target_state(slug, base)
     collected = []
 
@@ -291,7 +315,7 @@ def main():
                             if p.get("state") == "OPEN" else "not_queued")
         evidence = history_evidence(slug, p)
         # Collection is later than enumeration; keep its lifecycle state too.
-        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "headRefOid", "baseRefOid", "isDraft"):
+        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "headRefOid", "baseRefOid", "isDraft", "mergedBy"):
             if key in evidence.get("pr", {}):
                 p[key] = evidence["pr"][key]
         if p.get("state") != "OPEN":
@@ -355,6 +379,7 @@ def main():
                     "commit_id": r.get("commitOid"),
                     "submitted_at": r["submittedAt"],
                     "url": r.get("url"),
+                    "posted_by": posted_by(r.get("url")),
                     "body": r.get("body") or "",
                 }
                 for r in mine
@@ -363,6 +388,7 @@ def main():
                 {
                     "created_at": c["createdAt"],
                     "url": c.get("url"),
+                    "posted_by": posted_by(c.get("url")),
                     "body": c.get("body") or "",
                 }
                 for c in issue_comments
@@ -375,7 +401,7 @@ def main():
         rec["requirements_gaps"] = requirement_gaps(evidence.get("ticketEvidence", {}))
         rec["assessment_history"] = [a for a in saved if a["number"] == n]
         if p.get("state") == "MERGED":
-            rec["merge_evidence"] = merge_evidence(p, rec["assessment_history"], reviews, evidence.get("failedFetches", []))
+            rec["merge_evidence"] = merge_evidence(p, rec["assessment_history"], reviews, evidence.get("failedFetches", []), recorded)
             rec["merge_review_gap"] = not rec["merge_evidence"]["local_assessments"]
             if rec["merge_review_gap"]:
                 print(f'Merged head has no saved local assessment: #{n} {rec["head"]}; check linked assessments and exact-head reviews', file=sys.stderr)
@@ -429,6 +455,30 @@ def main():
         print("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: " + ", ".join(f"#{n}" for n in gated)
               + "\n  -> a branch rule needs another approver; `detect_setup.sh` lists the review rules.",
               file=sys.stderr)
+    unapproved = [r for r in out if (r.get("merge_evidence") or {}).get("human_approval_at_head") is False]
+    if unapproved:
+        def merged(r):
+            found = r["merge_evidence"]
+            bots = [a["actor"] or "unknown" for a in found["approvers_at_head"]]
+            return (f'#{r["number"]} (merged by {found["merged_by"] or "unknown"}; GitHub reports '
+                    f'{r["review_decision"] or "no review decision"}'
+                    + (f'; approved at head by automation only: {", ".join(bots)}' if bots else "") + ")")
+        print("MERGED WITH NO APPROVAL FROM A PERSON AT THE MERGED HEAD: " + ", ".join(merged(r) for r in unapproved)
+              + "\n  -> an observed GitHub fact, not a finding: repository policy may allow it, and a review at an "
+                "earlier commit or outside GitHub does not show here. Report it as observed.", file=sys.stderr)
+    outside = [f'#{r["number"]} {item.get("state", "comment")} {item["url"] or "(no URL)"}'
+               for r in out for item in (*r["reviews"], *r["comments"]) if item["posted_by"] != "round"]
+    helper_posted = any(w.get("url") and w.get("action") != "dismiss" and (w.get("at") or "") >= since for w in recorded)
+    if outside and not helper_posted:
+        # Listing every item when the helper posted nothing would be a warning nobody reads.
+        print(f"review_write.py RECORDED NO POST IN THIS ROUND'S WINDOW: all {len(outside)} review(s) and comment(s) from "
+              f"{who} since {since} were posted some other way, or under another ledger."
+              "\n  -> expected in an assessment-only round or with a new ledger; otherwise check them before "
+              "reporting any as this round's review.", file=sys.stderr)
+    elif outside:
+        print(f"POSTED FROM {who}'S ACCOUNT IN THIS ROUND'S WINDOW, NOT RECORDED BY review_write.py: " + ", ".join(outside)
+              + "\n  -> posted by hand, by another session, or under another ledger. Check each before reporting "
+                "it as this round's review.", file=sys.stderr)
     unreviewed = [r["number"] for r in out if not r["reviews"] and not r["comments"]]
     if unreviewed:
         # A PR reviewed in an earlier round is a different situation from one

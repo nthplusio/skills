@@ -3,6 +3,7 @@ import contextlib
 from html.parser import HTMLParser
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import branch_rules
 import land
+import ledger
 import merge_queue
 import review_write
 import round_report
@@ -81,9 +83,11 @@ class LandingTests(unittest.TestCase):
                         "--assessments", str(assessment_file)]
             with patch.object(sys, "argv", ["land.py", *argv]), \
                 patch.object(subprocess, "run", side_effect=forge), \
+                patch.dict(os.environ, XDG_STATE_HOME=tmp), \
                 patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), \
                 contextlib.redirect_stdout(output):
                 code = land.main()
+                self.recorded = ledger.writes("owner/repo")
         for command in writes:
             self.assertEqual(command[:8], ["gh", "pr", "merge", "17", "--repo", "owner/repo", "--match-head-commit", HEAD])
         return len(writes), output.getvalue(), code
@@ -93,6 +97,19 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(writes, 1, output)
         self.assertIn("post-write head or approval changed", output)
         self.assertEqual(code, 1)
+
+    def test_accepted_landing_requests_are_recorded_and_refused_ones_are_not(self):
+        self.run_land([state(), state(state="MERGED")])
+        self.assertEqual([(w["number"], w["action"], w["head"], w["url"]) for w in self.recorded],
+                         [(17, "enqueue", HEAD, None)])
+        self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual([w["action"] for w in self.recorded], ["enable-auto-merge"])
+        self.run_land([state(), state()], failure=True)
+        self.assertEqual(self.recorded, [])
+        self.run_land([state(headRefOid="b" * 40)])
+        self.assertEqual(self.recorded, [])
+        self.run_land([state()], ["--watch", "17"])
+        self.assertEqual(self.recorded, [])
 
     def test_conflict_is_not_landed(self):
         _, output, code = self.run_land([state(), state(mergeStateStatus="DIRTY")])
@@ -239,7 +256,9 @@ class ReviewWriteTests(unittest.TestCase):
             method = command[command.index("--method") + 1]
             if method != "GET":
                 writes.append((command[2], json.loads(kwargs["input"])))
-                return subprocess.CompletedProcess(command, int(failure), '{"id": 42}', "denied" if failure else "")
+                return subprocess.CompletedProcess(command, int(failure),
+                                                   '{"id": 42, "html_url": "https://example.test/posted/42"}',
+                                                   "denied" if failure else "")
             payload = {"login": "reviewer"} if command[2] == "user" else next(snapshots)
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
@@ -256,10 +275,12 @@ class ReviewWriteTests(unittest.TestCase):
                                            "--review-id", "9", "--authority", str(authority_file),
                                            "--assessments", str(assessment_file), *flags]), \
                     patch.object(subprocess, "run", side_effect=forge), \
+                    patch.dict(os.environ, XDG_STATE_HOME=directory), \
                     patch.object(review_write, "state_of", return_value=after or state()), \
                     patch.object(review_write, "review_rules", return_value=rules), \
                     patch.object(review_write, "last_pusher", return_value=pusher), contextlib.redirect_stdout(output):
                 code = review_write.main()
+                self.recorded = ledger.writes("owner/repo")
         return writes, output.getvalue(), code
 
     def test_assessment_mode_and_changed_heads_never_mutate(self):
@@ -315,6 +336,24 @@ class ReviewWriteTests(unittest.TestCase):
         self.assertEqual(len(writes), 1)
         self.assertIn("inspect remote state", output)
         self.assertEqual(code, 1)
+
+    def test_only_accepted_writes_are_recorded_for_the_report(self):
+        for action in ("approve", "request-changes", "comment", "dismiss"):
+            with self.subTest(action=action):
+                self.run_write(action, flags=["--write"])
+                self.assertEqual([{k: w[k] for k in ("number", "action", "head", "url")} for w in self.recorded],
+                                 [{"number": 17, "action": action, "head": HEAD, "url": "https://example.test/posted/42"}])
+                self.assertRegex(self.recorded[0]["at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        # Held, unauthorized and refused actions posted nothing, so they record nothing.
+        self.run_write("approve")
+        self.assertEqual(self.recorded, [])
+        self.run_write("approve", flags=["--write"], author="reviewer")
+        self.assertEqual(self.recorded, [])
+        self.run_write("comment", flags=["--write"], failure=True)
+        self.assertEqual(self.recorded, [])
+        # An approval that posts and leaves the gate closed still exists on GitHub.
+        self.run_write("approve", flags=["--write"], after=state(reviewDecision="REVIEW_REQUIRED"))
+        self.assertEqual(len(self.recorded), 1)
 
     def test_approval_that_cannot_clear_the_review_gate_is_held_or_reported(self):
         rules = {"require_last_push_approval": True, "require_code_owner_review": True}

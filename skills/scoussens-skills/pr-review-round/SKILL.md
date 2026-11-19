@@ -163,7 +163,7 @@ stale branch is the *author's* to fix and approving does not clear it. A missing
 approval is *yours*. Knowing which you are looking at prevents the most common
 wasted move: requesting changes because a branch needs a rebase.
 
-Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again.
+Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again. List the PRs it prints under "Review requested from you outside this table" in your summary; they target another base or are drafts, so they stay out of this round's scope.
 
 ### 3. Review each PR, at a depth matched to its risk
 
@@ -282,7 +282,7 @@ prints as JOINED, or report that PR as not reviewed in this round.
 summary from its output,
 never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
-PRs that merged during the round and have already left `queue.py`'s list. Then run checklist command 6. Reconcile merged source heads against retained assessments and linked earlier rounds; a missing record is **Merged head has no saved local assessment**, not proof nobody reviewed it. Show later exact-head reviews/assessments with their original time relative to merge and preserve scoped owner decisions and unposted findings. Use the distinct local-review and observed-GitHub labels in `references/report.md`. Keep required human approval from configured bot limits separate from source readiness.
+PRs that merged during the round and have already left `queue.py`'s list. Then run checklist command 6. Report a merge with no approval from a person at the merged head, and a review `posted_by` "outside the round", as the observed facts `round_report.py` prints; an outside review is not this round's review. Reconcile merged source heads against retained assessments and linked earlier rounds; a missing record is **Merged head has no saved local assessment**, not proof nobody reviewed it. Show later exact-head reviews/assessments with their original time relative to merge and preserve scoped owner decisions and unposted findings. Use the distinct local-review and observed-GitHub labels in `references/report.md`. Keep required human approval from configured bot limits separate from source readiness.
 
 The same pass collects lifetime history from all reviewers through the bundled
 collector's `--history` profile. It skips source files and per-commit CI. The

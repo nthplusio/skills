@@ -26,7 +26,7 @@ import subprocess
 import time
 
 from merge_queue import queue_state
-from ledger import check_authority, check_clearance, target_state
+from ledger import check_authority, check_clearance, record_write, target_state
 from stacks import stack_of, below
 
 POLL_SECONDS = 30
@@ -65,6 +65,14 @@ def stack_merge(num, method):
         return False, "gh stack extension unavailable; a person can install it with `gh extension install github/gh-stack`"
     result = subprocess.run(["gh", "stack", "merge", str(num), "--yes", f"--{method}"], capture_output=True, text=True)
     return result.returncode == 0, (result.stdout + result.stderr).strip()
+
+
+def remember(repo, number, action, head):
+    """Record an accepted landing request; a ledger failure must not hide the write that happened."""
+    try:
+        record_write(repo, number, action, head)
+    except OSError as error:
+        print(f"#{number} landing requested, but not recorded in the ledger ({error})")
 
 
 def main():
@@ -153,6 +161,8 @@ def main():
                     and queue == "not_queued" and number not in submitted):
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
+                if ok:
+                    remember(args.repo, number, "enable-auto-merge" if args.enable_auto_merge else "enqueue", heads[number])
                 # Read after even an uncertain write. Never retry on its response alone.
                 observed = state_of(number, args.repo)
                 print(f"#{number} post-write: head={observed.get('headRefOid', 'unknown')} / "
@@ -191,6 +201,8 @@ def main():
             ok, out = stack_merge(number, args.stack_method)
             submitted.update(covered)
             for n in covered:
+                if ok:
+                    remember(args.repo, n, "stack-merge", heads[n])
                 observed = state_of(n, args.repo)
                 print(f"#{n} post-write: head={observed.get('headRefOid', 'unknown')} / "
                       f"review={observed.get('reviewDecision', 'unknown')} / "
