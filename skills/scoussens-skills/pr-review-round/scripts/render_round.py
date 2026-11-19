@@ -147,6 +147,16 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             request_notes.append('<p>Merge evidence · Observed reviews are not acceptance certification or landing authority.</p>')
             if merged_evidence["review_coverage"] == "unknown":
                 request_notes.append('<p>Exact-head review coverage unknown.</p>')
+            if merged_evidence.get("human_approval_at_head") is False:
+                bots = ', '.join(a["actor"] or "Unknown actor" for a in merged_evidence.get("approvers_at_head", []))
+                request_notes.append('<p>No approval from a person observed at the merged head · Merged by '
+                                     f'{escape(merged_evidence.get("merged_by") or "Unknown")} · GitHub review decision '
+                                     f'{escape(record.get("review_decision") or "Unknown")}'
+                                     + (f' · Approved at head by automation only: {escape(bots)}' if bots else '')
+                                     + '. Repository policy decides whether that is allowed.</p>')
+            for entry in merged_evidence.get("landing_requests", []):
+                request_notes.append(f'<p>Landing requested through this round\'s helper · {escape(entry["action"] or "Unknown")} · '
+                                     f'{escape(entry["at"] or "Unknown time")}</p>')
             for entry in merged_evidence["local_assessments"]:
                 request_notes.append(f'<p>Saved exact-head assessment · {escape(entry["at"])} · {escape(entry["timing"])} · '
                                      f'{escape(entry["provenance"])}</p>')
@@ -161,13 +171,15 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             request_notes.append(f'<p>Approval gate · {escape(gate["owner"])}: {escape(gate["reason"])} · '
                                  f'{escape(gate["source"])}</p>')
         bodies = []
+        # Older report JSON has no posted_by; say nothing instead of guessing.
+        outside = lambda item: " · Not posted through this round's helper" if item.get("posted_by") == "outside the round" else ""
         for review in record["reviews"]:
             bodies.append(f'<section><p>Posted review · {escape(review["submitted_at"])} · '
-                          f'{escape(review["state"])}</p><p class="muted">Reviewed head '
+                          f'{escape(review["state"])}{outside(review)}</p><p class="muted">Reviewed head '
                           f'<code>{escape(review.get("commit_id") or "Unknown")}</code></p>'
                           f'<div class="md">{markdown(review["body"])}</div></section>')
         for comment in record["comments"]:
-            bodies.append(f'<section><p>Commented · {escape(comment["created_at"])}</p>'
+            bodies.append(f'<section><p>Commented · {escape(comment["created_at"])}{outside(comment)}</p>'
                           f'<div class="md">{markdown(comment["body"])}</div></section>')
         url = record["url"]
         if not url.startswith(("https://", "http://")):

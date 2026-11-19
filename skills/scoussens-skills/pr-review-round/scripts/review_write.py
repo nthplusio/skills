@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from ledger import check_authority, check_clearance, validate_assessment, target_state, target_matches
+from ledger import check_authority, check_clearance, record_write, validate_assessment, target_state, target_matches
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
 from review_config import resolve as review_config
@@ -128,6 +128,10 @@ def main():
                          {"event": event, "commit_id": args.head, "body": body})
         submitted = True
         print(f"Submitted {args.action}: {result.get('html_url') or result.get('id')}")
+        try:
+            record_write(args.repo, args.number, args.action, args.head, result.get("html_url"))
+        except OSError as error:
+            print(f"Posted, but not recorded in the ledger ({error}); round_report.py will list it as posted outside the round")
         if api(pull)["head"]["sha"] != args.head:
             raise RuntimeError("HEAD MOVED during write; action may already exist. Reconcile before further writes")
     except (RuntimeError, ValueError, OSError, KeyError, TypeError) as error:

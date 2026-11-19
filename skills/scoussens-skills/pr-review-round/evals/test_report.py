@@ -389,6 +389,62 @@ class ReportTests(unittest.TestCase):
         self.assertIn("NO --scope", errors)
         self.assertNotIn("JOINED AFTER", errors)
 
+    def test_reviews_posted_outside_the_round_helper_are_labelled_and_named(self):
+        raw, _ = fixture()
+        opened = {**raw["pr"], "id": "PR_482", "isDraft": False, "reviewDecision": "CHANGES_REQUESTED",
+                  "state": "OPEN", "mergeStateStatus": "CLEAN", "mergedAt": None,
+                  "comments": [{"id": 70, "author": {"login": "Alex", "type": "User"}, "body": "Checked the rollback.",
+                                "createdAt": "2026-11-03T15:40:00Z", "url": "https://example.test/comment/70"},
+                               {"id": 71, "author": {"login": "Maya", "type": "User"}, "body": "Thanks.",
+                                "createdAt": "2026-11-03T15:45:00Z", "url": "https://example.test/comment/71"}]}
+        named = "POSTED FROM Alex'S ACCOUNT IN THIS ROUND'S WINDOW, NOT RECORDED BY review_write.py"
+        label = "Not posted through this round's helper"
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp):
+            # Nothing recorded: the review and the comment from this account came from somewhere else.
+            rows, errors, _ = self.collect([[opened], []], raw)
+            row = rows[482]
+            self.assertEqual([(r["id"], r["posted_by"]) for r in row["reviews"]], [(11, "outside the round")])
+            self.assertEqual([c["posted_by"] for c in row["comments"]], ["outside the round"])
+            # With no post recorded in the window, one line says so instead of listing every item.
+            self.assertIn("review_write.py RECORDED NO POST IN THIS ROUND'S WINDOW: all 2 review(s) and comment(s) from Alex", errors)
+            self.assertNotIn(named, errors)
+            # A post recorded before the window is not one of this round's either.
+            ledger.record_write("sample/product", 400, "comment", "e" * 40, "https://example.test/comment/1")
+            with patch.object(ledger, "_now", return_value="2026-11-01T00:00:00Z"):
+                ledger.record_write("sample/product", 401, "comment", "e" * 40, "https://example.test/comment/2")
+            ledger_file = Path(tmp) / "pr-review-round/sample__product/writes.jsonl"
+            earlier = [line for line in ledger_file.read_text().splitlines() if "comment/2" in line]
+            ledger_file.write_text("\n".join(earlier) + "\n")
+            _, errors, _ = self.collect([[opened], []], raw)
+            self.assertIn("RECORDED NO POST IN THIS ROUND'S WINDOW", errors)
+            # Once the helper posted in the window, each outside item is named.
+            ledger.record_write("sample/product", 400, "comment", "e" * 40, "https://example.test/comment/1")
+            _, errors, _ = self.collect([[opened], []], raw)
+            self.assertNotIn("RECORDED NO POST", errors)
+            self.assertIn(named + ": #482 CHANGES_REQUESTED https://example.test/review/11, "
+                          "#482 comment https://example.test/comment/70", errors)
+            self.assertNotIn("comment/71", errors)
+            self.assertEqual(render([row], "main").replace("&#x27;", "'").count(label), 2)
+            # Dismissing a review through the helper does not make the helper its author.
+            ledger.record_write("sample/product", 482, "dismiss", row["head"], "https://example.test/review/11")
+            rows, _, _ = self.collect([[opened], []], raw)
+            self.assertEqual([r["posted_by"] for r in rows[482]["reviews"]], ["outside the round"])
+            # The helper recorded the review; only the hand-posted comment is left.
+            ledger.record_write("sample/product", 482, "request-changes", row["head"], "https://example.test/review/11")
+            rows, errors, _ = self.collect([[opened], []], raw)
+            row = rows[482]
+            self.assertEqual([r["posted_by"] for r in row["reviews"]], ["round"])
+            self.assertIn(named + ": #482 comment https://example.test/comment/70", errors)
+            self.assertNotIn("review/11", errors.split(named)[1].split("\n")[0])
+            self.assertEqual(render([row], "main").replace("&#x27;", "'").count(label), 1)
+            ledger.record_write("sample/product", 482, "comment", row["head"], "https://example.test/comment/70")
+            rows, errors, _ = self.collect([[opened], []], raw)
+            self.assertNotIn(named, errors)
+            self.assertNotIn(label, render([rows[482]], "main").replace("&#x27;", "'"))
+        # Report JSON written before this field existed renders without a guess.
+        _, record = fixture()
+        self.assertNotIn(label, render([record], "main").replace("&#x27;", "'"))
+
     def test_open_round_start_bounds_the_report_before_the_clock_fallback(self):
         raw, _ = fixture()
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp), \

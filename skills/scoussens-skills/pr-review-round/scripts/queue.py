@@ -7,6 +7,9 @@ author), whether CI is even meaningful yet, how risky the changed paths are,
 where your own review stands against the live head, and what changed since
 your last saved assessment.
 
+The last lines name open PRs that request your review and are not in the table,
+because they target another base or are still drafts. They are not in scope.
+
 Run it at the start of a round with --save-scope, and again before the report
 with --scope: drafts get marked ready and PRs open while you review, and the
 second run names the PRs that JOINED or LEFT. Reviewing in creation order
@@ -162,6 +165,17 @@ def gh_json(args, tries=3):
     return None
 
 
+def requested_elsewhere(shown, base):
+    """Open PRs asking for your review that the table cannot show: (other bases, drafts on <base>).
+    None when the search failed or hit its limit."""
+    found = gh_json(["gh", "pr", "list", "--state", "open", "--search", "review-requested:@me",
+                     "--limit", "100", "--json", "number,baseRefName,isDraft"])
+    if not isinstance(found, list) or len(found) >= 100:
+        return None
+    hidden = sorted((p for p in found if p["number"] not in shown), key=lambda p: p["number"])
+    return ([p for p in hidden if p["baseRefName"] != base], [p for p in hidden if p["baseRefName"] == base])
+
+
 def request_label(state):
     active = [r for r in state["requests"] if r["outstanding"]]
     label = "Review requested again" if any(r["renewed"] for r in active) else "Review requested" if active else "No request"
@@ -311,6 +325,22 @@ def main():
         print("JOINED after the scope snapshot: " + (", ".join(joined) + " -- give each a verdict, or report it as "
               "not reviewed" if joined else "none"))
         print("LEFT the queue: " + (", ".join(left) if left else "none"))
+
+    elsewhere = requested_elsewhere(set(numbers), base)
+    if elsewhere is None:
+        print("\n!! could not list review requests outside this table (search failed or hit its limit); coverage unknown")
+    elif any(elsewhere):
+        other, drafts = elsewhere
+        print("\nReview requested from you outside this table -- not in this round's scope; report them, do not review them here:")
+        if other:
+            print("  other base: " + ", ".join(f'#{p["number"]} -> {p["baseRefName"]}' + (" (draft)" if p["isDraft"] else "")
+                                               for p in other))
+        if drafts:
+            print(f"  not listed on {base}: " + ", ".join(
+                f'#{p["number"]} ' + ("(draft)" if p["isDraft"] else "(ready since the listing; run queue.py again)")
+                for p in drafts))
+    else:
+        print("\nReview requested from you outside this table: none")
 
     others = [p["number"] for p in prs
               if tier([f["path"] for f in (p.get("files") or [])], tiers) == "OTHER"]

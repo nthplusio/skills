@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import land
+import ledger
 import stacks
 from decision_fixtures import assessment, authority, HEAD, BASE, REVISION, TARGET
 
@@ -79,7 +81,7 @@ class StackQueueTests(unittest.TestCase):
                  "pr": {"reviews": []}}
         output = io.StringIO()
         with patch.object(sys, "argv", ["queue.py", "main"]), \
-                patch.object(queue, "gh_json", side_effect=[[lower], upper, details, details, lower, upper]), \
+                patch.object(queue, "gh_json", side_effect=[[lower], upper, details, details, lower, upper, []]), \
                 patch.object(queue, "repo_slug", return_value="owner/repo"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "stack_of", side_effect=lambda repo, n: {**stack, "position": n - 15}), \
@@ -132,8 +134,10 @@ class StackLandingTests(unittest.TestCase):
             argv = [*args, *(f"{n}:{HEAD}" for n in named), "--repo", "owner/repo",
                     "--authority", str(permission), "--assessments", str(assessments)]
             with patch.object(sys, "argv", ["land.py", *argv]), patch.object(subprocess, "run", side_effect=forge), \
+                    patch.dict(os.environ, XDG_STATE_HOME=tmp), \
                     patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), contextlib.redirect_stdout(output):
                 code = land.main()
+                self.recorded = ledger.writes("owner/repo")
         return writes, output.getvalue(), code
 
     def test_auto_merge_is_held_before_github_rejects_it(self):
@@ -154,6 +158,9 @@ class StackLandingTests(unittest.TestCase):
         self.assertEqual(writes, [["gh", "stack", "merge", "17", "--yes", "--squash"]], output)
         self.assertEqual(code, 0, output)
         self.assertIn("all watched PRs landed", output)
+        # One command landed both layers; each is recorded at its reviewed head.
+        self.assertEqual([(w["number"], w["action"], w["head"]) for w in self.recorded],
+                         [(16, "stack-merge", HEAD), (17, "stack-merge", HEAD)])
 
     def test_failed_stack_write_and_missing_extension_hold_every_covered_layer(self):
         for options in ({"merge_ok": False}, {"extension": False}):
@@ -162,6 +169,7 @@ class StackLandingTests(unittest.TestCase):
                 self.assertLessEqual(len(writes), 1)
                 self.assertEqual(code, 1)
                 self.assertIn("#16 HELD: stack merge failed", output)
+                self.assertEqual(self.recorded, [])
                 self.assertIn("#17 HELD: stack merge failed", output)
         self.assertIn("gh extension install github/gh-stack", output)
 

@@ -48,11 +48,13 @@ def queue_row(**changes):
             "additions": 8, "deletions": 3, "autoMergeRequest": None, **changes}
 
 
-def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer"):
-    """Drive queue.main() against recorded reads; returns what it printed."""
+def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()):
+    """Drive queue.main() against recorded reads; returns what it printed.
+
+    `elsewhere` is the last read: open PRs that request the reviewer, on any base."""
     output = io.StringIO()
     with patch.object(sys, "argv", ["queue.py", "main", *argv]), \
-            patch.object(queue, "gh_json", side_effect=reads), \
+            patch.object(queue, "gh_json", side_effect=[*reads, elsewhere if elsewhere is None else list(elsewhere)]), \
             patch.object(queue, "repo_slug", return_value="sample/product"), \
             patch.object(queue, "handled_requests", return_value=[]), \
             patch.object(queue, "assessments", return_value=saved or {}), \
@@ -86,7 +88,7 @@ class HandoffTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(sys, "argv", ["queue.py", "main"]), \
                 patch.object(queue, "gh_json", side_effect=[[p], {"files": [{"path": "src/store.py"}],
-                    "statusCheckRollup": [{"conclusion": "FAILURE"}]}, p]), \
+                    "statusCheckRollup": [{"conclusion": "FAILURE"}]}, p, []]), \
                 patch.object(queue, "repo_slug", return_value="sample/product"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "stack_of", return_value=None), \
@@ -323,7 +325,7 @@ class HandoffTests(unittest.TestCase):
                  "mergeStateStatus": "CLEAN", "additions": 8, "deletions": 3, "autoMergeRequest": None}
             output = io.StringIO()
             with self.subTest(head=live_head), patch.object(sys, "argv", ["queue.py", "main"]), \
-                    patch.object(queue, "gh_json", side_effect=[[p], {"files": [], "statusCheckRollup": []}, p]), \
+                    patch.object(queue, "gh_json", side_effect=[[p], {"files": [], "statusCheckRollup": []}, p, []]), \
                     patch.object(queue, "repo_slug", return_value="sample/product"), \
                     patch.object(queue, "handled_requests", return_value=[saved]), \
                     patch.object(queue, "stack_of", return_value=None), \
@@ -445,6 +447,33 @@ class HandoffTests(unittest.TestCase):
             scope.write_text('{"prs": [16]}')
             with self.assertRaisesRegex(SystemExit, "scope comparison unknown"):
                 run_queue([[first]], raw, argv=["--scope", str(scope)])
+
+    def test_requests_the_base_listing_cannot_show_are_named_and_stay_out_of_scope(self):
+        details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
+        raw = evidence()
+        raw["timeline"], raw["requestedReviewers"], raw["pr"]["reviews"] = [], [], []
+        p = queue_row()
+        asked = lambda number, base="main", draft=False: {"number": number, "baseRefName": base, "isDraft": draft}
+        with tempfile.TemporaryDirectory() as tmp:
+            scope = Path(tmp) / "scope.json"
+            text = run_queue([[p], details, p], raw, argv=["--save-scope", str(scope)], elsewhere=[
+                asked(17), asked(31, "feature/filters"), asked(30, "feature/filters", True), asked(40, draft=True), asked(41)])
+            # A request the table already shows is not repeated, and none of these joins the scope.
+            self.assertEqual(json.loads(scope.read_text()), [17])
+        self.assertIn("1 open non-draft PR(s)", text)
+        self.assertIn("not in this round's scope", text)
+        self.assertIn("  other base: #30 -> feature/filters (draft), #31 -> feature/filters\n", text)
+        self.assertIn("  not listed on main: #40 (draft), #41 (ready since the listing; run queue.py again)\n", text)
+        self.assertNotIn("#17 ->", text)
+        text = run_queue([[p], details, p], raw, elsewhere=[asked(17)])
+        self.assertIn("Review requested from you outside this table: none", text)
+        self.assertNotIn("other base", text)
+        # A failed or truncated search is unknown, never "none".
+        for unread in (None, [asked(n, "feature/filters") for n in range(100, 200)]):
+            text = run_queue([[p], details, p], raw, elsewhere=unread)
+            self.assertIn("could not list review requests outside this table", text)
+            self.assertNotIn("outside this table: none", text)
+            self.assertNotIn("other base", text)
 
     def run_ledger(self, *argv):
         output = io.StringIO()

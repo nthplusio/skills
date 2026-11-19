@@ -32,11 +32,14 @@ ledger, and per-author or per-week aggregates deliberately are not recorded.
                  overstated has the wrong depth in the risk table.
     unblock   -> the smallest change that makes the finding false, carried
                  forward so a blocked PR's next round opens with the path off it.
+    writes    -> what review_write.py posted and land.py requested. The report
+                 uses it to tell the round's own reviews from ones posted from
+                 the same account some other way, which step 7 must not claim.
 
 State lives outside the repository, so git worktrees share one ledger and
 nothing is ever committed:
 
-    ~/.local/state/pr-review-round/<owner>__<repo>/{findings,assessments,rounds}.jsonl
+    ~/.local/state/pr-review-round/<owner>__<repo>/{findings,assessments,rounds,writes}.jsonl
 """
 import json
 import os
@@ -249,6 +252,17 @@ def _read(name, repo=None):
 def _append(name, rec, repo=None):
     with open(_path(name, repo), "a") as f:
         f.write(json.dumps(rec, separators=(",", ":")) + "\n")
+
+
+# ---------------------------------------------------------------- writes
+
+def record_write(repo, number, action, head, url=None):
+    """One accepted write by a helper. Never a proposed action or a failed request."""
+    _append("writes", {"number": number, "action": action, "head": head, "url": url, "at": _now()}, repo)
+
+
+def writes(repo=None):
+    return _read("writes", repo)
 
 
 # ---------------------------------------------------------------- rounds
