@@ -57,7 +57,7 @@ Build from the bundled template, using a run-specific directory:
 
 ```bash
 RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pr-round.XXXXXX")
-python3 "$S/round_report.py" <base> --scope <initial-pr-numbers.json> --tickets <tickets.json> \
+python3 "$S/round_report.py" <base> --scope <scope.json> --tickets <tickets.json> \
     --assessments <assessments.json> > "$RUN_DIR/round.json" &&
   python3 "$S/render_round.py" "$RUN_DIR/round.json" --base <base> \
     --timezone <IANA-zone> --assessments <assessments.json> > "$RUN_DIR/report.html"
@@ -92,7 +92,7 @@ posted. Use this shape, with one entry per assessed PR:
 }
 ```
 
-Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined in `writing-reviews.md`. A clean assessment has one `ready` record, not an empty decision list. Persist it with `ledger.record_assessment`; optional detailed findings remain in `ledger.record`. This extends the round's existing ledger, not a second issue tracker. Legacy SHA-only proposals must be reconciled into this schema before reuse.
+Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined in `writing-reviews.md`. A clean assessment has one `ready` record, not an empty decision list. Persist it with `ledger.py record <round-id> <assessments.json>`; optional detailed findings remain in `ledger.record`. This extends the round's existing ledger, not a second issue tracker. Legacy SHA-only proposals must be reconciled into this schema before reuse.
 
 `evidence_inputs` comes from a fresh `round_report.py` collection. Include issue descriptions, relevant comments/decisions, criteria and source update times in `ticketEvidence`; its content hash makes external changes invalidate a recommendation. `policy` hashes the resolved profile and all directly referenced policy/checklist contents, including bundled defaults; changed rules invalidate reuse and guarded writes. Files linked from those policies still require source refresh and explicit provenance; this is not a transitive documentation crawler. Supply `round_report.py --review-config <repository-relative-path>` for an alternate profile and carry the same path as top-level `review_config` in the assessment bundle; omit it for the standard profile. Run write helpers from the target repository root so they can recompute the policy revision. Preserve the original `assessed_at` when reusing code checks and describe their scope/limits in `provenance`. Add `posted_action: {action, url, at}` only after an actual write/readback, never for a proposed action. For an accepted evidence/owner gap add `waiver: {actor, source, at, scope, criterion}`; `criterion` must exactly match this record. Preserve waivers across new heads only after confirming their scope still applies; they cannot waive code verification or unfinished review.
 

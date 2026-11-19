@@ -14,6 +14,7 @@ import subprocess
 
 from ledger import check_authority, check_clearance, validate_assessment, target_state, target_matches
 from land import state_of
+from branch_rules import review_rules, describe, last_pusher
 from review_config import resolve as review_config
 
 
@@ -65,6 +66,8 @@ def main():
     body = f"Reviewed head: `{args.head}`\n\n{body}"
     pull = f"repos/{args.repo}/pulls/{args.number}"
     attempted = False
+    submitted = False
+    rules = None
     code = 0
     try:
         authority = json.loads(args.authority.read_text())
@@ -99,6 +102,13 @@ def main():
             raise ValueError("actual target ref changed or unavailable; refresh integration evidence")
         if args.action == "approve" and pr["user"]["login"] == login:
             raise RuntimeError("HELD: an author cannot approve their own PR")
+        if args.action == "approve":
+            # Your approval cannot clear a last-push rule on a commit you pushed.
+            rules = review_rules(args.repo, pr["base"].get("ref"))
+            if (rules or {}).get("require_last_push_approval") and login and last_pusher(
+                    (pr["head"].get("repo") or {}).get("full_name"), pr["head"].get("ref")) == login:
+                raise RuntimeError(f'HELD: you pushed the last commit, and {pr["base"].get("ref")} requires approval '
+                                   "of the last push by someone else; name another approver")
         if args.action in ("approve", "dismiss") and not args.allow_landing:
             if "auto_merge" not in pr or pr["auto_merge"] is not None:
                 raise RuntimeError("HELD: auto-merge enabled or unknown; merge authority required")
@@ -116,6 +126,7 @@ def main():
             event = "APPROVE" if args.action == "approve" else "REQUEST_CHANGES"
             result = api(f"{pull}/reviews", "POST",
                          {"event": event, "commit_id": args.head, "body": body})
+        submitted = True
         print(f"Submitted {args.action}: {result.get('html_url') or result.get('id')}")
         if api(pull)["head"]["sha"] != args.head:
             raise RuntimeError("HEAD MOVED during write; action may already exist. Reconcile before further writes")
@@ -131,6 +142,13 @@ def main():
                 or observed.get("queue_state", "unknown") == "unknown"
                 or (observed.get("state") != "MERGED" and observed.get("target") != target)):
             print("Post-write state uncertain or changed; reconcile before further writes")
+            code = 1
+        if (args.action == "approve" and submitted and observed.get("state") == "OPEN"
+                and observed.get("reviewDecision") not in (None, "", "APPROVED")):
+            print(f'APPROVAL POSTED BUT THE REVIEW GATE DID NOT CLEAR: GitHub reports {observed["reviewDecision"]}. '
+                  "The approval exists; do not post it again.")
+            print(f'Review rules on {observed.get("baseRefName") or "the base"}: ' + "; ".join(describe(rules)))
+            print("Name another eligible approver, or the reviewer whose changes request is still in force.")
             code = 1
     return code
 

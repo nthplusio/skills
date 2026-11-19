@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""round_report.py <base-branch> [--since ISO8601] [--me LOGIN]
+"""round_report.py <base-branch> [--scope scope.json] [--since ISO8601] [--me LOGIN]
 
 The report pass. Emits one JSON record per PR touched this round, carrying the
 three things a report needs and a review round reliably forgets:
@@ -22,11 +22,20 @@ round's rather than a previous one's.
 The default is the **previous round's end time**, read from the ledger. A fixed
 clock window is wrong in both directions: too wide and it reports PRs that
 landed before the round opened (and then warns you never reviewed them), too
-narrow and it drops a long round's earliest merges. With no ledger history yet
-it falls back to 12h and says so on stderr.
+narrow and it drops a long round's earliest merges. With no completed round it
+uses the start of the round `ledger.py start` opened, and only with neither
+does it fall back to 12h and say so on stderr.
+
+``--scope`` is the file `queue.py --save-scope` wrote. With it every record
+carries ``in_scope``, and the PRs that joined after that snapshot are named on
+stderr. Without it a late PR cannot be told from a scoped one.
+
+``my_review`` is your latest approval, changes request or dismissal on the PR,
+with whether it is still in force at the reported head. A review GitHub
+dismissed, or one made at an earlier commit, is named on stderr.
 
 Usage:
-    python3 round_report.py <base> > /tmp/round.json
+    python3 round_report.py <base> --scope scope.json > /tmp/round.json
     python3 round_report.py <base> --since 2026-08-21T15:00:00Z
 
 Piping the result into the artifact build is the point; read it with jq to spot
@@ -44,7 +53,7 @@ from pathlib import Path
 from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
-from review_requests import reconcile
+from review_requests import reconcile, effective_reviews
 from ledger import assessment_history, marker_current, validate_assessment, target_state
 from requirements import requirement_gaps
 from stacks import stack_of, missing_members
@@ -100,6 +109,8 @@ def verdict_of(pr):
         return "MERGED"
     if pr.get("state") == "CLOSED":
         return "CLOSED"
+    if pr.get("isDraft"):
+        return "DRAFT"
     ms = pr.get("mergeStateStatus")
     rd = pr.get("reviewDecision")
     if ms in ("DIRTY", "CONFLICTING"):
@@ -111,7 +122,23 @@ def verdict_of(pr):
         if queue == "queued":
             return "APPROVED_QUEUED"
         return "APPROVED" if queue == "not_queued" else "APPROVED_QUEUE_UNKNOWN"
+    mine = pr.get("my_review") or {}
+    if rd == "REVIEW_REQUIRED" and mine.get("state") == "APPROVED" and mine.get("at_head"):
+        # Your approval stands at this head and GitHub still wants a review:
+        # the next reviewer is someone else, so this is not NEEDS_REVIEW.
+        return "APPROVED_NEEDS_ANOTHER_REVIEWER"
     return "NEEDS_REVIEW"
+
+
+def my_review_of(reviews, who, head):
+    """Your latest decisive review and whether it still covers the reported head."""
+    review = effective_reviews(reviews).get(who) if who else None
+    if not review:
+        return None
+    commit = review.get("commitOid") or review.get("commit_id")
+    return {"state": review["state"], "commit_id": commit,
+            "submitted_at": review.get("submittedAt") or review.get("submitted_at"),
+            "at_head": bool(commit) and commit == head, "dismissed": review["state"] == "DISMISSED"}
 
 
 def merge_evidence(pr, assessments, reviews, gaps):
@@ -178,10 +205,18 @@ def main():
             prev = ledger.last_round(base)
         except Exception:
             prev = None
+        try:
+            started = ledger.open_round(base)
+        except Exception:
+            started = None
         if prev and prev.get("ended_at"):
             since = prev["ended_at"]
             print(f"[since] previous round ended {since} -- using that as the "
                   f"round boundary", file=sys.stderr)
+        elif started and started.get("started_at"):
+            since = started["started_at"]
+            print(f"[since] no completed round in the ledger; using the start of the open "
+                  f"round ({since}) as the round boundary", file=sys.stderr)
         else:
             since = (datetime.now(timezone.utc) - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ")
             print(f"[since] no completed round in the ledger; falling back to a "
@@ -231,7 +266,10 @@ def main():
     by_number = {p["number"]: p for p in openq if not p["isDraft"]}
     by_number.update((p["number"], p) for p in mergedq)
     # Persist the initial queue as a JSON list of numbers; closed PRs must not vanish.
-    for number in json.loads(scope_path.read_text()) if scope_path else []:
+    scope = json.loads(scope_path.read_text()) if scope_path else None
+    if scope is not None and (not isinstance(scope, list) or any(type(n) is not int for n in scope)):
+        sys.exit(f"{scope_path} is not a JSON list of PR numbers; coverage unknown")
+    for number in scope or []:
         snapshot = gh(["gh", "pr", "view", str(number), "--repo", slug, "--json", LIST_FIELDS])
         if not snapshot or snapshot.get("number") != number:
             sys.exit(f"could not reconcile scoped PR #{number}; coverage unknown")
@@ -253,7 +291,7 @@ def main():
                             if p.get("state") == "OPEN" else "not_queued")
         evidence = history_evidence(slug, p)
         # Collection is later than enumeration; keep its lifecycle state too.
-        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "headRefOid", "baseRefOid"):
+        for key in ("state", "mergedAt", "closedAt", "reviewDecision", "updatedAt", "headRefOid", "baseRefOid", "isDraft"):
             if key in evidence.get("pr", {}):
                 p[key] = evidence["pr"][key]
         if p.get("state") != "OPEN":
@@ -269,6 +307,10 @@ def main():
                 and r.get("state") != "PENDING"]
         # Latest first: the report wants this round's verdict, not the history.
         mine.sort(key=lambda r: r.get("submittedAt") or "", reverse=True)
+        # Not bounded by the round: an approval from an earlier round that a push
+        # dismissed is exactly the review this has to notice.
+        p["my_review"] = (None if "reviews" in evidence.get("failedFetches", [])
+                          else my_review_of(reviews, who, p.get("headRefOid")))
 
         rec = {
             "repository": slug,
@@ -280,6 +322,9 @@ def main():
             "additions": p.get("additions"),
             "deletions": p.get("deletions"),
             "state": p.get("state"),
+            "is_draft": bool(p.get("isDraft")),
+            # None when no scope file was supplied: membership is unknown, not false.
+            "in_scope": (n in scope) if scope is not None else None,
             "merged_at": p.get("mergedAt"),
             "mergeable": p.get("mergeable"),
             "merge_state": p.get("mergeStateStatus"),
@@ -297,6 +342,7 @@ def main():
             "queue_state": p["queue_state"],
             "stack": stacks.get(n),
             "verdict": verdict_of(p),
+            "my_review": p["my_review"],
             # The per-PR review timestamp the report asks for. None means you
             # left a comment but no formal review -- say so rather than
             # implying a review happened.
@@ -358,6 +404,31 @@ def main():
     print(f'Request reconciliation: {sum(r["handoffs"]["unhandled"] for r in out)} unhandled; '
           f'{sum(r["handoffs"]["coverage"] != "complete" for r in out)} PR(s) with unknown coverage. '
           'Local dispositions are not posted responses.', file=sys.stderr)
+    if scope is None:
+        print("NO --scope: PRs that joined after the first queue.py run cannot be told from the ones "
+              "the round started with.\n  -> pass the file `queue.py <base> --save-scope` wrote.", file=sys.stderr)
+    else:
+        joined = [r for r in out if not r["in_scope"]]
+        if joined:
+            print("JOINED AFTER THE SCOPE SNAPSHOT: "
+                  + ", ".join(f'#{r["number"]}' + ("" if r["state"] == "OPEN" else f' ({r["state"].lower()})')
+                              for r in joined)
+                  + "\n  -> give each a verdict, or report it as not reviewed in this round.", file=sys.stderr)
+    lapsed = [r for r in out if r["state"] == "OPEN" and r["my_review"]
+              and (r["my_review"]["dismissed"] or not r["my_review"]["at_head"])]
+    if lapsed:
+        def lapse(r):
+            mine = r["my_review"]
+            what = "DISMISSED" if mine["dismissed"] else f'{mine["state"]} at an earlier commit'
+            return (f'#{r["number"]} ({what}; reviewed {(mine["commit_id"] or "unknown")[:9]}, '
+                    f'head {(r["head"] or "unknown")[:9]})')
+        print("YOUR REVIEW NO LONGER COVERS THE HEAD: " + ", ".join(lapse(r) for r in lapsed)
+              + "\n  -> review the current head before reporting these as reviewed.", file=sys.stderr)
+    gated = [r["number"] for r in out if r["verdict"] == "APPROVED_NEEDS_ANOTHER_REVIEWER"]
+    if gated:
+        print("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: " + ", ".join(f"#{n}" for n in gated)
+              + "\n  -> a branch rule needs another approver; `detect_setup.sh` lists the review rules.",
+              file=sys.stderr)
     unreviewed = [r["number"] for r in out if not r["reviews"] and not r["comments"]]
     if unreviewed:
         # A PR reviewed in an earlier round is a different situation from one
@@ -379,10 +450,13 @@ def main():
                     "unreviewed one, because the summary asserts the round is complete.",
                   file=sys.stderr)
         if prior:
+            live = {r["number"]: r["head"] for r in out}
             print("REVIEWED IN AN EARLIER ROUND, not this one: "
-                  + ", ".join(f"#{n} (last head {seen[n][:9]})" for n in prior)
+                  + ", ".join(f"#{n} (last head {seen[n][:9]}, "
+                              + ("head unchanged" if seen[n] == live[n]
+                                 else f'HEAD MOVED to {(live[n] or "unknown")[:9]}') + ")" for n in prior)
                   + "\n  -> run `ledger.py open` for the findings still recorded "
-                    "against these, and `prstate.py <n>` to see whether the head moved.",
+                    "against these; HEAD MOVED means the saved assessment's code claims are stale.",
                   file=sys.stderr)
 
 

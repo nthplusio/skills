@@ -12,6 +12,7 @@ from ledger import DECISIONS, assessment_current, marker_current, unresolved, va
 from stacks import label as stack_label
 
 REPORT_BUDGET = 100_000
+ANOTHER_APPROVER = "Another eligible approver to review. This reviewer's approval did not clear the branch's review rules."
 
 
 def render(records, base, timezone="UTC", assessments=None, compact=False):
@@ -73,6 +74,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             "APPROVED": "GitHub approved · not merged", "APPROVED_CONFLICTING": "GitHub approved · branch conflict",
             "CHANGES_REQUESTED_CONFLICTING": "GitHub changes requested · branch conflict", "CONFLICTING": "Branch conflict",
             "NEEDS_REVIEW": "GitHub review needed", "DRAFT": "Draft",
+            "APPROVED_NEEDS_ANOTHER_REVIEWER": "Approved by this reviewer · GitHub still requires another review",
         }.get(verdict, verdict.replace("_", " ").capitalize())
         status = forge_status
         if verdict in ("MERGED", "CLOSED"):
@@ -83,6 +85,10 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             owner = "Developer to address the changes requested on GitHub."
         elif verdict == "APPROVED_QUEUED":
             owner = "Wait for the merge queue. This change has not merged."
+        elif verdict == "APPROVED_NEEDS_ANOTHER_REVIEWER":
+            owner = ANOTHER_APPROVER
+        elif verdict == "DRAFT":
+            owner = "Developer to mark the change ready for review."
         elif verdict.startswith("APPROVED"):
             owner = "Maintainer to confirm it is safe to merge."
         else:
@@ -91,6 +97,9 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             if matches:
                 owner = f'{decision["owner"]} · {decision["unblock"]}'
                 status = DECISIONS[decision["kind"]] if blockers else "Source review complete · merge checks pending"
+                if not blockers and verdict == "APPROVED_NEEDS_ANOTHER_REVIEWER":
+                    # The reviewer has nothing left to do here; the next move is someone else's approval.
+                    owner = ANOTHER_APPROVER
             else:
                 owner = "Reviewer to refresh the changed code, target or evidence before reusing the recommendation."
                 status = "Review again · inputs changed or incomplete"
@@ -108,7 +117,9 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
             unhandled_requests += disposition.startswith("unhandled")
             open_request = open_request or (request["outstanding"] and disposition.startswith("unhandled"))
             request_notes.append(f'<p>Request {escape(request["event_id"])} · {escape(request["requester"] or "Unknown requester")} → '
-                                 f'{escape(request["target"])} · {escape(request["at"])} · {escape(disposition)}. '
+                                 f'{escape(request["target"])} · {escape(request["at"])} · {escape(disposition)}'
+                                 + (f' · after an earlier {escape(request["prior_state"])} review'
+                                    if request.get("prior_state") else '') + '. '
                                  'A local assessment is not an approval or a posted response.</p>')
         waiting = [r for r in handoffs["requests"] if r["outstanding"]]
         if waiting and verdict not in ("MERGED", "CLOSED"):
@@ -166,6 +177,10 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         stamp = "No review posted this round"
         if record["reviewed_at"]:
             stamp = "Reviewed " + format_time(record["reviewed_at"], timezone)
+            lapsed = record.get("my_review") or {}
+            if (record.get("state") == "OPEN" and lapsed.get("submitted_at") == record["reviewed_at"]
+                    and (lapsed.get("dismissed") or not lapsed.get("at_head"))):
+                stamp += " · that review was dismissed" if lapsed.get("dismissed") else " · the code changed after that review"
         elif record["comments"]:
             stamp = "Commented " + format_time(max(c["created_at"] for c in record["comments"]), timezone)
         risk = (proposal or {}).get("risk") or "not assessed"

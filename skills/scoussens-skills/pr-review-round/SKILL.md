@@ -62,8 +62,10 @@ Three rules hold regardless:
   for merges. These helpers do not grant authority. Merge only an open,
   non-draft PR that still has that head and is `APPROVED` + `CLEAN` before every
   enqueue, including retries. An unknown state holds the write.
-- Never approve your own PR. GitHub forbids it; on your own work, resolve the
-  conflicts and name a reviewer.
+- Never approve your own PR; GitHub forbids it. Do not approve a PR whose last
+  push was yours when the base requires the last push to be approved by someone
+  else; GitHub accepts that approval and does not count it. `review_write.py`
+  holds both. On such work, resolve the conflicts and name a reviewer.
 - When a permission gate denies a merge command, record the denial and the
   observed readiness separately, give the head-bound command a human can run
   after rechecking the head and approval, confirm state with
@@ -99,30 +101,48 @@ S=<this skill's directory>/scripts
 
 $S/detect_setup.sh [base]           # once per repo: review bot, merge queue, conventions
 python3 $S/review_config.py --root <repository> # resolved review/policy references
-python3 $S/queue.py <base>          # triage: every PR, risk tier, who is blocking, AUTO
+python3 $S/queue.py <base> [--save-scope <f> | --scope <f>] # triage: every PR, risk tier, who is
+                                    # blocking, AUTO, your review against the head, changes since your last look
 python3 $S/stale_sweep.py <base>    # staleness across the WHOLE queue, one pass
 python3 $S/prstate.py <n>           # review state + head sha + staleness, one PR
 python3 $S/findings.py <n>          # blocking review bodies + their inline comments
 python3 $S/test_reach.py <n>        # added symbols with no test referencing them
-python3 $S/ledger.py open|heads     # findings and heads carried in from earlier rounds
+python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
+python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
+python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
 python3 $S/land.py --help          # guarded enqueue/auto-merge; requires authority and assessments
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
 python3 $S/stacks.py <n> --repo <owner/repo> # stack membership and order, read-only
-python3 $S/round_report.py <base>   # report data: urls, review timestamps, bodies
+python3 $S/round_report.py <base> --scope <scope.json> # report data: urls, review timestamps, bodies
 python3 $S/render_round.py <round.json> --base <base> --timezone <IANA-zone> # offline HTML
 python3 $S/md_to_html.py            # render a review body's markdown (import: `render`)
 ```
 
 ## The loop
 
+### Round checklist
+
+Run these six commands in this order, once per round. The numbered steps below say what to do between them. `$RUN` is a directory you create for this round's files. A command that refuses prints what is missing: fix that and run the command again.
+
+```bash
+RID=$(python3 $S/ledger.py start <base>)                  # 1. before triage; use the id it prints, never an invented one
+python3 $S/queue.py <base> --save-scope $RUN/scope.json   # 2. triage (step 2); writes the round's scope once
+python3 $S/ledger.py record $RID $RUN/assessments.json    # 3. after reviewing (steps 3-4); every scoped PR, clean ones too
+python3 $S/queue.py <base> --scope $RUN/scope.json        # 4. before reporting (step 7); names PRs that JOINED or LEFT
+python3 $S/round_report.py <base> --scope $RUN/scope.json > $RUN/round.json    # 5. after the last write is read back
+python3 $S/ledger.py end $RID --scope $RUN/scope.json --report $RUN/round.json # 6. closes the round, or prints each blocker
+```
+
+`assessments.json` is `{"repository": "<owner/repo>", "assessments": [...]}`, with the assessment schema in [`references/report.md`](references/report.md). Run command 3 again after reviewing a JOINED PR or changing an assessment. When command 6 prints a blocker you cannot clear in this round, report the round as unfinished and name that blocker.
+
 ### 1. Resolve configuration and detect the setup
 
 Resolve the review profile first. `detect_setup.sh` supplements its pointers with observed forge state: which bot posts blocking reviews, whether a merge
-queue is in play, and which conventions docs exist. All three change your
+queue is in play, which review rules an approval has to satisfy on the base, and which conventions docs exist. Each changes your
 behaviour: the bot login is what you will be dismissing, a merge queue changes
-how you merge, and the conventions docs are what let you ground a severity claim
+how you merge, a code-owner or last-push rule decides whether your approval can clear the review gate, and the conventions docs are what let you ground a severity claim
 in a rule the team already agreed to rather than your own taste.
 
 Read configured references and applicable conventions/ADR docs it finds. Detection does not replace setup output or invent ticket policy. A finding that cites the repo's own
@@ -142,6 +162,8 @@ The blocker column separates two situations people conflate. A conflicting or
 stale branch is the *author's* to fix and approving does not clear it. A missing
 approval is *yours*. Knowing which you are looking at prevents the most common
 wasted move: requesting changes because a branch needs a rebase.
+
+Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again.
 
 ### 3. Review each PR, at a depth matched to its risk
 
@@ -169,9 +191,9 @@ For every PR, in this order:
    pushed work that may have fixed the finding, so read those commits first.
    `LIVE` means no author commits were found; refresh evidence and owner decisions before retaining a finding. The `AGE` column is
    what catches your own three-week-old block.
-2. **`ledger.py open`** for findings carried forward from earlier rounds, and
-   `ledger.py heads` for the head each PR carried when you last reviewed it. A
-   matching head **and base** permit reuse of code checks, not the verdict. Refresh relevant comments, reviews, issue updates and accepted owner decisions first. Keep original assessment time, scope and exclusions when reusing checks. New evidence can clear an unchanged-head evidence decision; new code invalidates affected code claims without deleting unrelated owner decisions. Never ask an owner to accept the same unchanged gap twice.
+2. **`ledger.py open`** for findings carried forward from earlier rounds. Only
+   `unchanged` or `discussion changed` in `queue.py`'s `SINCE LAST LOOK` column,
+   which mean the same head **and base**, permit reuse of code checks, not the verdict. Refresh relevant comments, reviews, issue updates and accepted owner decisions first. Keep original assessment time, scope and exclusions when reusing checks. New evidence can clear an unchanged-head evidence decision; new code invalidates affected code claims without deleting unrelated owner decisions. Never ask an owner to accept the same unchanged gap twice.
 3. **`findings.py <n>`** for the open blocking reviews. The substance is in the
    inline comments, not the body.
 4. **Verify each finding at the head SHA yourself** (`git show <sha>:<path>`).
@@ -195,13 +217,14 @@ For every PR, in this order:
 
 ### 4. Reconcile the count before moving on
 
-`queue.py` prints how many open non-draft PRs it found. Before you land anything,
-check that your verdict list has an entry for **every one of them** and every renewed request has an explicit disposition. Report unhandled requests and unknown request coverage separately from PR coverage and review completion. Say the
-number out loud in your summary: "14 found, 14 recorded; 11 substantive reviews complete, 3 incomplete". Queue coverage is not acceptance certification. Save the original scope as a JSON list of PR numbers for the final `round_report.py --scope` reconciliation, including PRs that close during review.
+`queue.py` prints how many open non-draft PRs it found, and `--save-scope` wrote their numbers. Before you land anything,
+check that `assessments.json` has an entry for **every one of them** and a `request_events` disposition for every request `queue.py` printed as unhandled, then run checklist command 3. Report unhandled requests and unknown request coverage separately from PR coverage and review completion. Say the
+number out loud in your summary: "14 found, 14 recorded; 11 substantive reviews complete, 3 incomplete". Queue coverage is not acceptance certification.
 
 A dropped PR is worse than an unreviewed one, because the summary asserts the
 round is complete. `round_report.py` names any PR you left no review or comment
-on, and separates never-reviewed from reviewed-in-an-earlier-round. In an
+on, separates never-reviewed from reviewed-in-an-earlier-round, and names a
+review of yours that was dismissed or made at an earlier commit. In an
 assessment-only round, reconcile those warnings against your local verdicts;
 absence of a posted review is expected, not a reason to post one.
 
@@ -247,20 +270,19 @@ nobody re-checks it. Full guidance: [`writing-reviews.md`](references/writing-re
 
 ### 7. Record, sweep again, then report
 
-**Record every PR assessment** with `ledger.record_assessment`, including clean reviews and the request-event markers it handles. A local assessment is not a posted response or approval. Keep detailed findings with `ledger.record` — each with `status`,
+**Record every PR assessment** with checklist command 3, including clean reviews and the request-event markers it handles. A local assessment is not a posted response or approval. Keep detailed findings with `ledger.record` — each with `status`,
 `file:line`, the `head` you found it at, and its `unblock`. That is what makes
 the next round open with the open findings instead of re-deriving them.
 
-**Re-run `queue.py`.** Drafts get marked ready mid-round and PRs open while you
-work; a round that ignores them is not finished. In one round this surfaced a PR
-that had left draft an hour earlier carrying the batch's most consequential
-finding.
+**Run checklist command 4.** Drafts get marked ready mid-round and PRs open while you
+work; a round that ignores them is not finished. Review and record each PR it
+prints as JOINED, or report that PR as not reviewed in this round.
 
-**After the final action readback, run `round_report.py <base> --scope <initial-pr-numbers.json> --assessments <assessments.json>`** (omit the assessment file to use saved ledger assessments) and refresh the same report artifact and chat
+**After the final action readback, run checklist command 5** (add `--assessments <assessments.json>` to overlay records not yet saved to the ledger) and refresh the same report artifact and chat
 summary from its output,
 never from memory: it returns each PR's `url`, the `reviewed_at` of the review
 you submitted, and the full body of every review and comment you left, plus the
-PRs that merged during the round and have already left `queue.py`'s list. Reconcile merged source heads against retained assessments and linked earlier rounds; a missing record is **Merged head has no saved local assessment**, not proof nobody reviewed it. Show later exact-head reviews/assessments with their original time relative to merge and preserve scoped owner decisions and unposted findings. Use the distinct local-review and observed-GitHub labels in `references/report.md`. Keep required human approval from configured bot limits separate from source readiness.
+PRs that merged during the round and have already left `queue.py`'s list. Then run checklist command 6. Reconcile merged source heads against retained assessments and linked earlier rounds; a missing record is **Merged head has no saved local assessment**, not proof nobody reviewed it. Show later exact-head reviews/assessments with their original time relative to merge and preserve scoped owner decisions and unposted findings. Use the distinct local-review and observed-GitHub labels in `references/report.md`. Keep required human approval from configured bot limits separate from source readiness.
 
 The same pass collects lifetime history from all reviewers through the bundled
 collector's `--history` profile. It skips source files and per-commit CI. The

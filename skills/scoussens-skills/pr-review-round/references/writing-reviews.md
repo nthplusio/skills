@@ -83,7 +83,7 @@ Record an owned decision, not a "hold". Decision kind, severity, axis and GitHub
 - `reviewer-incomplete`: the reviewer owes unfinished review work. This is not an author defect and cannot be waived into completed review.
 - `ready`: independent review is complete; mutable forge gates still apply. A rebase belongs to the author as a forge next action, not a code defect.
 
-Save every assessment, including clean ones, through `ledger.record_assessment`. Use the schema in `report.md`: head/base, original assessment time and scope, input revisions, and decisions with criterion/rule, source/time/observation, severity, axis, owner, smallest unblock, effort and proposed action. Record an actual posted action/URL/time only after readback. An accepted gap keeps its actor, source, time, exact criterion and scope; it does not clear unrelated requirements.
+Save every assessment, including clean ones, with `ledger.py record <round-id> <assessments.json>`. Use the schema in `report.md`: head/base, original assessment time and scope, input revisions, and decisions with criterion/rule, source/time/observation, severity, axis, owner, smallest unblock, effort and proposed action. Record an actual posted action/URL/time only after readback. An accepted gap keeps its actor, source, time, exact criterion and scope; it does not clear unrelated requirements.
 
 The table names proposed actions. In assessment-only mode, keep them local.
 Execute each action only with authority for that action and PR; approval or

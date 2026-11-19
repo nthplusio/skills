@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 """ledger.py -- what one round remembers for the next one.
 
+Run a round:
+
+    python3 ledger.py start <base>                          # open a round; prints its id
+    python3 ledger.py record <round-id> <assessments.json>  # save every assessment, clean ones too
+    python3 ledger.py end <round-id> --scope <scope.json> --report <round.json>
+
+`record` refuses a round id that `start` did not print. `end` closes the round
+only when every scoped PR is in the report with complete request coverage and
+no unhandled request; otherwise it prints each blocker and exits 1.
+
 Read a round's history:
 
-    python3 ledger.py open <base>        # findings still open, per PR
-    python3 ledger.py heads <base>       # head SHA each PR carried last round
+    python3 ledger.py open               # findings still open, per PR
+    python3 ledger.py heads              # head SHA each PR carried at its last review
     python3 ledger.py precision          # how often my findings were overstated
     python3 ledger.py rounds             # round history, newest first
 
@@ -26,7 +36,7 @@ ledger, and per-author or per-week aggregates deliberately are not recorded.
 State lives outside the repository, so git worktrees share one ledger and
 nothing is ever committed:
 
-    ~/.local/state/pr-review-round/<owner>__<repo>/{findings,rounds}.jsonl
+    ~/.local/state/pr-review-round/<owner>__<repo>/{findings,assessments,rounds}.jsonl
 """
 import json
 import os
@@ -253,14 +263,40 @@ def round_start(base, repo=None):
     return rid
 
 
+def round_known(rid, repo=None):
+    return any(r.get("round") == rid for r in _read("rounds", repo))
+
+
+def open_round(base=None, repo=None):
+    """The most recent round that was started and never closed."""
+    pending = [r for r in _read("rounds", repo)
+               if not r.get("ended_at") and (base is None or r.get("base") == base)]
+    return sorted(pending, key=lambda r: r.get("started_at") or "")[-1] if pending else None
+
+
+def round_blockers(reconciliation):
+    """Every reason the collected records cannot close a round, one line per PR and cause."""
+    blockers = []
+    for row in reconciliation:
+        state = row.get("handoffs", {})
+        if state.get("coverage") != "complete":
+            blockers.append(f'PR #{row["number"]}: request coverage unknown '
+                            f'({", ".join(state.get("gaps") or ["not collected"])})')
+        if state.get("unhandled") != 0:
+            waiting = [f'{r["event_id"]} -> {r["target"]}' for r in state.get("requests", [])
+                       if r.get("disposition") == "unhandled"]
+            blockers.append(f'PR #{row["number"]}: {state.get("unhandled", "unknown")} unhandled request(s)'
+                            + (f' ({"; ".join(waiting)})' if waiting else ""))
+    return blockers
+
+
 def round_end(rid, prs, repo=None, *, reconciliation):
     """Close only a fully accounted round; incomplete reviews stay explicit."""
     if len(reconciliation) != len(prs) or {r["number"] for r in reconciliation} != set(prs):
         raise ValueError("reconcile every scoped PR before closing the round")
-    for row in reconciliation:
-        state = row.get("handoffs", {})
-        if state.get("coverage") != "complete" or state.get("unhandled") != 0:
-            raise ValueError(f'PR #{row["number"]}: unhandled requests or unknown handoff coverage; round remains unfinished')
+    blockers = round_blockers(reconciliation)
+    if blockers:
+        raise ValueError(blockers[0] + "; round remains unfinished")
     rounds = _read("rounds", repo)
     for r in rounds:
         if r.get("round") == rid:
@@ -341,6 +377,79 @@ def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     cmd = sys.argv[1]
+
+    if cmd == "start":
+        if len(sys.argv) != 3:
+            sys.exit("usage: ledger.py start <base>")
+        pending = open_round(sys.argv[2])
+        if pending:
+            print(f'note: round {pending["round"]} on {sys.argv[2]} was started and never closed', file=sys.stderr)
+        print(round_start(sys.argv[2]))
+        return
+
+    if cmd == "record":
+        if len(sys.argv) != 4:
+            sys.exit("usage: ledger.py record <round-id> <assessments.json>")
+        rid, repo = sys.argv[2], repo_slug()
+        if not repo:
+            sys.exit("could not determine the repo (is `gh` authenticated?)")
+        try:
+            with open(sys.argv[3]) as f:
+                bundle = json.load(f)
+        except (OSError, ValueError) as error:
+            sys.exit(f"could not read the assessments: {error}")
+        if (not isinstance(bundle, dict) or bundle.get("repository") != repo
+                or not isinstance(bundle.get("assessments"), list)):
+            sys.exit(f'expected {{"repository": "{repo}", "assessments": [...]}}; nothing recorded')
+        if not round_known(rid, repo):
+            sys.exit(f"unknown round {rid!r}; run `ledger.py start <base>` and pass the id it prints. Nothing recorded")
+        # Validate every assessment before writing any, so a bad one records nothing.
+        for item in bundle["assessments"]:
+            try:
+                validate_assessment(item)
+            except (ValueError, KeyError, TypeError, AttributeError) as error:
+                number = item.get("number") if isinstance(item, dict) else "?"
+                sys.exit(f"PR #{number}: {error}; nothing recorded")
+        for item in bundle["assessments"]:
+            record_assessment(rid, item, repo)
+        print(f'recorded {len(bundle["assessments"])} assessment(s) in round {rid}')
+        return
+
+    if cmd == "end":
+        rid, rest = (sys.argv[2] if len(sys.argv) > 2 else None), sys.argv[3:]
+        options = dict(zip(rest[::2], rest[1::2]))
+        if not rid or len(rest) != 4 or set(options) != {"--scope", "--report"}:
+            sys.exit("usage: ledger.py end <round-id> --scope <scope.json> --report <round.json>")
+        repo = repo_slug()
+        if not repo:
+            sys.exit("could not determine the repo (is `gh` authenticated?)")
+        try:
+            with open(options["--scope"]) as f:
+                scope = json.load(f)
+            with open(options["--report"]) as f:
+                report = json.load(f)
+        except (OSError, ValueError) as error:
+            sys.exit(f"could not read the scope or report: {error}")
+        if (not isinstance(scope, list) or any(type(n) is not int for n in scope) or not isinstance(report, list)
+                or any(not isinstance(r, dict) or r.get("repository") != repo for r in report)):
+            sys.exit(f"expected a JSON list of PR numbers and round_report.py output for {repo}; round remains unfinished")
+        if not round_known(rid, repo):
+            sys.exit(f"unknown round {rid!r}; run `ledger.py rounds` for the ids on file")
+        rows = {r.get("number"): r for r in report}
+        blockers = [f"PR #{n}: not in the report; run round_report.py again with --scope" for n in scope if n not in rows]
+        blockers += round_blockers([rows[n] for n in scope if n in rows])
+        if not blockers:
+            try:
+                round_end(rid, scope, repo, reconciliation=[rows[n] for n in scope])
+            except ValueError as error:
+                blockers.append(str(error))
+        if blockers:
+            print(f"round {rid} remains unfinished: {len(blockers)} blocker(s)")
+            for blocker in blockers:
+                print("  " + blocker)
+            sys.exit(1)
+        print(f"round {rid} closed with {len(scope)} PR(s)")
+        return
 
     if cmd == "open":
         o = open_findings()
