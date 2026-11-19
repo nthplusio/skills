@@ -3,6 +3,7 @@
 import argparse
 from html import escape
 import json
+import sys
 from pathlib import Path
 from string import Template
 
@@ -28,8 +29,10 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
     proposals = {item["number"]: item for item in (assessments or {}).get("assessments", [])}
     if len(proposals) != len((assessments or {}).get("assessments", [])):
         raise ValueError("duplicate assessments for one PR")
-    if set(proposals) - {record["number"] for record in records}:
-        raise ValueError("assessment refers to a PR outside the report")
+    stray = sorted(set(proposals) - {record["number"] for record in records})
+    if stray:
+        raise ValueError("assessments refer to PR(s) outside the report: " + ", ".join(f"#{n}" for n in stray)
+                         + ". A report covers one base; a PR on another base is rendered from its own round's report")
     for record in records:
         number = record["number"]
         proposal = proposals.get(number) or record.get("assessment")
@@ -252,5 +255,8 @@ if __name__ == "__main__":
     parser.add_argument("--timezone", default="UTC")
     parser.add_argument("--assessments", type=Path)
     args = parser.parse_args()
-    print(render(json.loads(args.report.read_text()), args.base, args.timezone,
-                 json.loads(args.assessments.read_text()) if args.assessments else None))
+    try:
+        print(render(json.loads(args.report.read_text()), args.base, args.timezone,
+                     json.loads(args.assessments.read_text()) if args.assessments else None))
+    except ValueError as error:
+        sys.exit(f"render_round.py: {error}. Nothing rendered")

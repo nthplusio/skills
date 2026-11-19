@@ -8,7 +8,9 @@ where your own review stands against the live head, and what changed since
 your last saved assessment.
 
 The last lines name open PRs that request your review and are not in the table,
-because they target another base or are still drafts. They are not in scope.
+because they target another base or are still drafts. They are not in scope: a
+round covers one base, and the lines give the command that starts a round on
+each other base.
 
 Run it at the start of a round with --save-scope, and again before the report
 with --scope: drafts get marked ready and PRs open while you review, and the
@@ -16,10 +18,11 @@ second run names the PRs that JOINED or LEFT. Reviewing in creation order
 matters -- the oldest PRs have the most accumulated review history to
 reconcile, and merging them first is what stops the queue growing.
 """
-import argparse, json, subprocess, sys, time
+import argparse, json, shlex, subprocess, sys, time
 from pathlib import Path
 from review_requests import collect, reconcile, effective_reviews
-from ledger import assessments, handled_requests, repo_slug
+from ledger import assessments, gh_said, handled_requests, repo_slug
+from branch_rules import gate_lines
 from stacks import stack_of, label as stack_label, missing_members
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
@@ -28,7 +31,7 @@ from stacks import stack_of, label as stack_label, missing_members
 # time, where a single failure degrades one row instead of the whole run.
 LIST_FIELDS = ("number,title,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,changedFiles,"
-               "autoMergeRequest,headRefOid,baseRefOid,updatedAt")
+               "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository")
 DETAIL_FIELDS = "files,statusCheckRollup"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
@@ -150,11 +153,16 @@ def since_last_look(saved, head, base, updated):
     return "unchanged" if saved["evidence_inputs"].get("forge") == updated else "discussion changed"
 
 
+_gh_error = ""
+
+
 def gh_json(args, tries=3):
     """gh with a retry. The API 504s under load often enough that a single
     transient failure should not abort a review round."""
+    global _gh_error
     for attempt in range(tries):
         r = subprocess.run(args, capture_output=True, text=True)
+        _gh_error = r.stderr
         if r.returncode == 0:
             try:
                 return json.loads(r.stdout)
@@ -204,8 +212,10 @@ def main():
             sys.exit(f"{args.scope} is not a readable JSON list of PR numbers; scope comparison unknown")
     listed = gh_json(["gh", "pr", "list", "--base", base, "--state", "open",
                       "--limit", "200", "--json", LIST_FIELDS])
-    if listed is None or len(listed) >= 200:
-        sys.exit("queue unavailable or at collection limit; coverage unknown -- check auth, network or paginate the scope")
+    if listed is None:
+        sys.exit(f"queue unavailable: {gh_said(_gh_error)}; coverage unknown -- check auth and network")
+    if len(listed) >= 200:
+        sys.exit("queue at collection limit; coverage unknown -- paginate the scope")
     prs = [p for p in listed if not p["isDraft"]]
     slug = repo_slug()
     if not slug:
@@ -299,10 +309,14 @@ def main():
     if again:
         print("Look again -- the head moved since your saved assessment, or your review no longer "
               "covers the head: " + ", ".join(again))
-    gated = [f'#{p["number"]}' for p in prs
+    gated = [p for p in prs
              if mine[p["number"]] == "approved at head" and p.get("reviewDecision") == "REVIEW_REQUIRED"]
     if gated:
-        print("Approved by you at head and still REVIEW_REQUIRED -- name another approver: " + ", ".join(gated))
+        print("Approved by you at head and still REVIEW_REQUIRED -- name another approver: "
+              + ", ".join(f'#{p["number"]}' for p in gated))
+        for line in gate_lines(slug, base, login, {p["number"]: p.get("headRefName") for p in gated
+                                                   if not p.get("isCrossRepository")}):
+            print("  " + line)
     if login is None:
         print("!! reviewer login unavailable (`gh api user` failed); MY REVIEW is unknown, check your reviews by hand")
 
@@ -331,10 +345,15 @@ def main():
         print("\n!! could not list review requests outside this table (search failed or hit its limit); coverage unknown")
     elif any(elsewhere):
         other, drafts = elsewhere
-        print("\nReview requested from you outside this table -- not in this round's scope; report them, do not review them here:")
+        print("\nReview requested from you outside this table -- not in this round's scope; report them:")
         if other:
             print("  other base: " + ", ".join(f'#{p["number"]} -> {p["baseRefName"]}' + (" (draft)" if p["isDraft"] else "")
                                                for p in other))
+            # A round covers one base, so a ready PR on another base gets a round of its own.
+            for branch in sorted({p["baseRefName"] for p in other if not p["isDraft"]}):
+                ready = ", ".join(f'#{p["number"]}' for p in other if p["baseRefName"] == branch and not p["isDraft"])
+                print(f"    -> review {ready} in a round on that base, with its own scope and assessments file: "
+                      f"ledger.py start {shlex.quote(branch)}")
         if drafts:
             print(f"  not listed on {base}: " + ", ".join(
                 f'#{p["number"]} ' + ("(draft)" if p["isDraft"] else "(ready since the listing; run queue.py again)")

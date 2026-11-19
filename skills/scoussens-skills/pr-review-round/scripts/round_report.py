@@ -60,13 +60,14 @@ from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile, effective_reviews
-from ledger import assessment_history, marker_current, validate_assessment, target_state, writes as ledger_writes
+from ledger import assessment_history, gh_said, marker_current, validate_assessment, target_state, writes as ledger_writes
+from branch_rules import gate_lines
 from requirements import requirement_gaps
 from stacks import stack_of, missing_members
 
 
 LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
-               "mergeable,mergeStateStatus,additions,deletions,state,mergedAt")
+               "mergeable,mergeStateStatus,additions,deletions,state,mergedAt,headRefName,isCrossRepository")
 
 
 def history_evidence(slug, pr):
@@ -82,11 +83,16 @@ def history_evidence(slug, pr):
     return evidence
 
 
+_gh_error = ""
+
+
 def gh(args, tries=3):
     """gh with a retry -- the API 504s under load often enough that one
     transient failure should not lose the report."""
+    global _gh_error
     for attempt in range(tries):
         r = subprocess.run(args, capture_output=True, text=True)
+        _gh_error = r.stderr
         if r.returncode == 0:
             try:
                 return json.loads(r.stdout)
@@ -245,12 +251,15 @@ def main():
     who = who or me()
     slug = repo_slug()
     if not slug:
-        sys.exit("could not resolve repo (gh failed) -- check auth and network")
+        sys.exit(f"could not resolve repo: {gh_said(_gh_error)} -- check auth and network")
     tickets = json.loads(tickets_path.read_text()) if tickets_path else {"repository": slug, "prs": {}}
     if tickets["repository"] != slug:
         sys.exit("tracker evidence belongs to a different repository")
 
     saved = assessment_history(slug)
+    # Assessed in this round: recorded since the boundary, or supplied as this round's file.
+    assessed_now = {a["number"] for a in saved if (a.get("recorded_at") or "") >= since}
+    supplied_numbers = set()
     if assessments_path:
         supplied = json.loads(assessments_path.read_text())
         if supplied["repository"] != slug:
@@ -258,6 +267,8 @@ def main():
         for assessment in supplied["assessments"]:
             validate_assessment(assessment)
         saved += supplied["assessments"]
+        supplied_numbers = {a["number"] for a in supplied["assessments"]}
+        assessed_now |= supplied_numbers
     saved.sort(key=lambda a: datetime.fromisoformat(a["assessed_at"].replace("Z", "+00:00")).timestamp())
     latest = {a["number"]: a for a in saved}
     recorded = ledger_writes(slug)
@@ -307,6 +318,16 @@ def main():
         by_number[number] = snapshot
         stacks[number] = stack_of(slug, number)
     prs = sorted(by_number.values(), key=lambda p: p["createdAt"])
+    stray = sorted(supplied_numbers - set(by_number))
+    if stray:
+        sys.exit(f"{assessments_path} holds assessments for PR(s) outside this report: "
+                 + ", ".join(f"#{n}" for n in stray)
+                 + f". The report covers PRs on {base}: open and not draft, merged since {since}, or listed in "
+                   "--scope (which keeps a PR that closed or returned to draft). "
+                   "A PR on another base belongs to a round on that base (`ledger.py start <that base>`), "
+                   "with its own assessments file. Nothing reported")
+    # Head branches in this repository, for the last-push check on a gated approval.
+    branches = {p["number"]: p.get("headRefName") for p in prs if p.get("headRefName") and not p.get("isCrossRepository")}
 
     out = []
     for p in prs:
@@ -453,7 +474,8 @@ def main():
     gated = [r["number"] for r in out if r["verdict"] == "APPROVED_NEEDS_ANOTHER_REVIEWER"]
     if gated:
         print("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: " + ", ".join(f"#{n}" for n in gated)
-              + "\n  -> a branch rule needs another approver; `detect_setup.sh` lists the review rules.",
+              + "".join(f"\n  -> {line}" for line in gate_lines(slug, base, who, {n: branches[n] for n in gated if n in branches}))
+              + "\n  -> GitHub does not report which rule holds the gate; name another eligible approver.",
               file=sys.stderr)
     unapproved = [r for r in out if (r.get("merge_evidence") or {}).get("human_approval_at_head") is False]
     if unapproved:
@@ -488,11 +510,20 @@ def main():
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import ledger
-            seen = ledger.heads()
+            seen = ledger.heads(slug, before=since)
         except Exception:
             seen = {}
-        fresh = [n for n in unreviewed if n not in seen]
-        prior = [n for n in unreviewed if n in seen]
+        assessed = [n for n in unreviewed if n in assessed_now]
+        fresh = [n for n in unreviewed if n not in assessed_now and n not in seen]
+        prior = [n for n in unreviewed if n not in assessed_now and n in seen]
+        live = {r["number"]: r["head"] for r in out}
+        moved = lambda n, was: "head unchanged" if was == live[n] else f'HEAD MOVED to {(live[n] or "unknown")[:9]}'
+        if assessed:
+            print(f"ASSESSED IN THIS ROUND, NO REVIEW OR COMMENT POSTED IN IT FROM {who}: "
+                  + ", ".join(f'#{n} (assessed at {latest[n]["head"][:9]}, {moved(n, latest[n]["head"])})' for n in assessed)
+                  + "\n  -> a saved assessment is a local record, not a posted review. Report these as assessed "
+                    "and not posted; `my_review` shows a review from an earlier round that still stands.",
+                  file=sys.stderr)
         if fresh:
             print(f"NO POSTED REVIEW OR COMMENT FROM {who} IN THIS ROUND: "
                   + ", ".join(f"#{n}" for n in fresh)
@@ -500,11 +531,8 @@ def main():
                     "unreviewed one, because the summary asserts the round is complete.",
                   file=sys.stderr)
         if prior:
-            live = {r["number"]: r["head"] for r in out}
             print("REVIEWED IN AN EARLIER ROUND, not this one: "
-                  + ", ".join(f"#{n} (last head {seen[n][:9]}, "
-                              + ("head unchanged" if seen[n] == live[n]
-                                 else f'HEAD MOVED to {(live[n] or "unknown")[:9]}') + ")" for n in prior)
+                  + ", ".join(f"#{n} (last head {seen[n][:9]}, {moved(n, seen[n])})" for n in prior)
                   + "\n  -> run `ledger.py open` for the findings still recorded "
                     "against these; HEAD MOVED means the saved assessment's code claims are stale.",
                   file=sys.stderr)

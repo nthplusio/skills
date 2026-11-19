@@ -108,6 +108,20 @@ class ReportTests(unittest.TestCase):
             render([record, record], "main")
         with self.assertRaises(ValueError):
             render([record], "main", assessments={**proposals, "repository": "other/repo"})
+        # An assessment for a PR the report does not hold is named, and the command prints no traceback.
+        stray = {**proposals, "assessments": [*proposals["assessments"], assessment(991), assessment(990)]}
+        with self.assertRaisesRegex(ValueError, "outside the report: #990, #991. A report covers one base"):
+            render([record], "main", assessments=stray)
+        with tempfile.TemporaryDirectory() as tmp:
+            report, supplied = Path(tmp) / "round.json", Path(tmp) / "assessments.json"
+            report.write_text(json.dumps([record]))
+            supplied.write_text(json.dumps(stray))
+            done = subprocess.run([sys.executable, "-B", str(SKILL / "scripts/render_round.py"), str(report), "--base", "main",
+                                   "--assessments", str(supplied)], capture_output=True, text=True)
+        self.assertEqual((done.returncode, done.stdout), (1, ""))
+        self.assertIn("render_round.py: assessments refer to PR(s) outside the report: #990, #991", done.stderr)
+        self.assertIn("Nothing rendered", done.stderr)
+        self.assertNotIn("Traceback", done.stderr)
 
     def test_unstable_snapshot_cannot_present_a_current_proposal(self):
         _, record = fixture()
@@ -284,21 +298,90 @@ class ReportTests(unittest.TestCase):
                 revisions.append(rows[0]["evidence_inputs"]["issues"])
         self.assertNotEqual(*revisions)
 
-    def collect(self, reads, raw, argv=("--since", "2026-11-03T00:00:00Z"), heads=None, later=None):
-        """Drive round_report.main() against recorded reads; returns (rows by number, stderr, gh mock)."""
+    def collect(self, reads, raw, argv=("--since", "2026-11-03T00:00:00Z"), heads=None, later=None, real_ledger=False):
+        """Drive round_report.main() against recorded reads; returns (rows by number, stderr, gh mock).
+
+        `real_ledger` reads saved assessments and heads from the ledger under XDG_STATE_HOME."""
         output, errors = io.StringIO(), io.StringIO()
-        with patch.object(sys, "argv", ["round_report.py", "main", "--me", "Alex", *argv]), \
-                patch.object(round_report, "repo_slug", return_value="sample/product"), \
-                patch.object(round_report, "gh", side_effect=reads) as gh, \
-                patch.object(round_report, "history_evidence", side_effect=lambda slug, pr: {**raw, "pr": {**raw["pr"], **pr, **(later or {})}}), \
-                patch.object(round_report, "queue_state", return_value="not_queued"), \
-                patch.object(round_report, "target_state", return_value=TARGET), \
-                patch.object(round_report, "stack_of", return_value=None), \
-                patch.object(round_report, "assessment_history", return_value=[]), \
-                patch("ledger.heads", return_value=heads or {}), \
-                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            round_report.main()
+        with contextlib.ExitStack() as stack:
+            if not real_ledger:
+                stack.enter_context(patch.object(round_report, "assessment_history", return_value=[]))
+                stack.enter_context(patch("ledger.heads", return_value=heads or {}))
+            with patch.object(sys, "argv", ["round_report.py", "main", "--me", "Alex", *argv]), \
+                    patch.object(round_report, "repo_slug", return_value="sample/product"), \
+                    patch.object(round_report, "gh", side_effect=reads) as gh, \
+                    patch.object(round_report, "history_evidence", side_effect=lambda slug, pr: {**raw, "pr": {**raw["pr"], **pr, **(later or {})}}), \
+                    patch.object(round_report, "queue_state", return_value="not_queued"), \
+                    patch.object(round_report, "target_state", return_value=TARGET), \
+                    patch.object(round_report, "stack_of", return_value=None), \
+                    patch.object(round_report, "gate_lines", side_effect=lambda repo, base, who, branches:
+                                 [f"rules for {repo}@{base}, {who}, {branches}"]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                round_report.main()
         return {r["number"]: r for r in json.loads(output.getvalue())}, errors.getvalue(), gh
+
+    def test_an_assessment_saved_in_this_round_is_not_called_an_earlier_round(self):
+        raw, record = fixture()
+        head, moved = record["head"], "e" * 40
+        opened = lambda number=482, **changes: {
+            **raw["pr"], "number": number, "id": f"PR_{number}", "isDraft": False, "state": "OPEN", "reviews": [],
+            "mergeStateStatus": "BLOCKED", "mergedAt": None, "reviewDecision": "REVIEW_REQUIRED", **changes}
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp):
+            # Both records are stamped with the time of this test run, so the boundary decides which round they are in.
+            ledger.record_assessment("round-1", assessment(482, head=head, base=record["base"]), "sample/product")
+            ledger.record("round-1", [{"pr": 483, "head": head, "summary": "Rollback drops rows", "status": "open"}],
+                          "sample/product")
+            run = lambda since, **changes: self.collect([[opened(**changes), opened(483)], []], raw,
+                                                        argv=("--since", since), real_ledger=True)[1]
+            now = run("2000-01-01T00:00:00Z")
+            self.assertIn("ASSESSED IN THIS ROUND, NO REVIEW OR COMMENT POSTED IN IT FROM Alex: "
+                          "#482 (assessed at ccccccccc, head unchanged)\n", now)
+            self.assertIn("a local record, not a posted review", now)
+            self.assertIn("NO POSTED REVIEW OR COMMENT FROM Alex IN THIS ROUND: #483\n", now)
+            self.assertNotIn("EARLIER ROUND", now)
+            self.assertIn("#482 (assessed at ccccccccc, HEAD MOVED to eeeeeeeee)", run("2000-01-01T00:00:00Z", headRefOid=moved))
+            earlier = run("2999-01-01T00:00:00Z")
+            self.assertIn("REVIEWED IN AN EARLIER ROUND, not this one: #482 (last head ccccccccc, head unchanged), "
+                          "#483 (last head ccccccccc, head unchanged)\n", earlier)
+            self.assertNotIn("ASSESSED IN THIS ROUND", earlier)
+            self.assertNotIn("NO POSTED REVIEW", earlier)
+
+    def test_assessments_for_a_pr_outside_the_report_are_named_and_nothing_is_reported(self):
+        raw, record = fixture()
+        opened = {**raw["pr"], "id": "PR_482", "isDraft": False, "state": "OPEN", "reviews": [],
+                  "mergeStateStatus": "BLOCKED", "mergedAt": None, "reviewDecision": "REVIEW_REQUIRED"}
+        mine = assessment(482, head=record["head"], base=record["base"])
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp):
+            supplied = Path(tmp) / "assessments.json"
+            argv = ("--since", "2026-11-03T00:00:00Z", "--assessments", str(supplied))
+            # #990 and #991 target another base, so neither listing returns them.
+            supplied.write_text(json.dumps({"repository": "sample/product", "assessments": [mine, assessment(991), assessment(990)]}))
+            output = io.StringIO()
+            with self.assertRaises(SystemExit) as stop, contextlib.redirect_stdout(output):
+                self.collect([[opened], []], raw, argv=argv)
+            message = str(stop.exception.code)
+            self.assertIn(f"{supplied} holds assessments for PR(s) outside this report: #990, #991. ", message)
+            self.assertIn("The report covers PRs on main", message)
+            self.assertIn("`ledger.py start <that base>`", message)
+            self.assertIn("Nothing reported", message)
+            self.assertEqual(output.getvalue(), "")
+            # The same file without them reports, and its assessment counts as this round's.
+            supplied.write_text(json.dumps({"repository": "sample/product", "assessments": [mine]}))
+            # It was also assessed in an earlier round, at another head; this round's assessment is the one named.
+            rows, errors, _ = self.collect([[opened], []], raw, argv=argv, heads={482: "a" * 40})
+            self.assertEqual(rows[482]["assessment"]["head"], record["head"])
+            self.assertIn("ASSESSED IN THIS ROUND, NO REVIEW OR COMMENT POSTED IN IT FROM Alex: "
+                          "#482 (assessed at ccccccccc, head unchanged)", errors)
+            self.assertNotIn("EARLIER ROUND", errors)
+            # A scoped PR that closed stays in the report, so its assessment is accepted.
+            closed, scope = {**opened, "state": "CLOSED"}, Path(tmp) / "scope.json"
+            scope.write_text("[482]")
+            rows, _, _ = self.collect([[], [], closed], raw, argv=(*argv, "--scope", str(scope)))
+            self.assertEqual(rows[482]["verdict"], "CLOSED")
+            with self.assertRaises(SystemExit) as stop:
+                self.collect([[], []], raw, argv=argv)
+            self.assertIn("outside this report: #482. ", str(stop.exception.code))
+            self.assertIn("--scope (which keeps a PR that closed or returned to draft)", str(stop.exception.code))
 
     def test_review_that_no_longer_covers_the_head_is_named_instead_of_counted(self):
         raw, record = fixture()
@@ -307,8 +390,8 @@ class ReportTests(unittest.TestCase):
             "id": 12, "state": state, "submittedAt": at, "author": {"login": "Alex", "type": "User"},
             "commitOid": commit, "url": "https://example.test/review/12", "body": "Verified the migration."}]
         opened = lambda **changes: {**raw["pr"], "id": "PR_482", "isDraft": False, "state": "OPEN",
-                                    "mergeStateStatus": "BLOCKED", "mergedAt": None,
-                                    "reviewDecision": "REVIEW_REQUIRED", **changes}
+                                    "mergeStateStatus": "BLOCKED", "mergedAt": None, "headRefName": "filters",
+                                    "isCrossRepository": False, "reviewDecision": "REVIEW_REQUIRED", **changes}
         # A push dismissed the approval: it is in the round's reviews, and it must not read as current.
         rows, errors, _ = self.collect([[opened(reviews=mine("DISMISSED", old))], []], raw)
         row = rows[482]
@@ -328,8 +411,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("#482 (last head ccccccccc, head unchanged)", errors)
         # In force at head and GitHub still requires a review: the next reviewer is someone else.
         self.assertEqual(rows[482]["verdict"], "APPROVED_NEEDS_ANOTHER_REVIEWER")
-        self.assertIn("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: #482", errors)
+        self.assertIn("APPROVED BY YOU AT HEAD AND STILL REVIEW_REQUIRED: #482\n"
+                      "  -> rules for sample/product@main, Alex, {482: 'filters'}\n"
+                      "  -> GitHub does not report which rule holds the gate", errors)
+        self.assertNotIn("detect_setup.sh", errors)
         self.assertNotIn("NO LONGER COVERS", errors)
+        # A fork's head branch is not a branch of this repository.
+        fork = opened(reviews=mine("APPROVED", head, "2026-11-01T10:00:00Z"), isCrossRepository=True)
+        self.assertIn("  -> rules for sample/product@main, Alex, {}\n", self.collect([[fork], []], raw)[1])
         source = render([rows[482]], "main")
         self.assertIn("Another eligible approver to review", source)
         self.assertIn("GitHub still requires another review", source)
@@ -341,6 +430,7 @@ class ReportTests(unittest.TestCase):
             rows, errors, _ = self.collect(reads, raw)
             self.assertNotIn("NO LONGER COVERS", errors)
             self.assertNotIn("STILL REVIEW_REQUIRED", errors)
+            self.assertNotIn("rules for", errors)
             self.assertNotIn("dismissed", render([rows[482]], "main"))
         # Unreadable reviews are unknown, never "no review".
         rows, _, _ = self.collect([[opened(reviews=mine("APPROVED", head))], []], {**raw, "failedFetches": ["reviews"]})
