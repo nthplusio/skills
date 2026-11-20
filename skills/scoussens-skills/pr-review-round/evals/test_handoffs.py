@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -45,7 +46,8 @@ def queue_row(**changes):
     return {"number": 17, "title": "Keep saved filters", "author": {"login": "author"},
             "createdAt": "2026-11-01T12:00:00Z", "isDraft": False, "reviewDecision": "REVIEW_REQUIRED",
             "headRefOid": HEAD, "baseRefOid": BASE, "updatedAt": REVISION, "mergeStateStatus": "CLEAN",
-            "additions": 8, "deletions": 3, "autoMergeRequest": None, **changes}
+            "additions": 8, "deletions": 3, "autoMergeRequest": None, "headRefName": "filters",
+            "isCrossRepository": False, **changes}
 
 
 def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()):
@@ -60,6 +62,8 @@ def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()
             patch.object(queue, "assessments", return_value=saved or {}), \
             patch.object(queue, "me", return_value=login), \
             patch.object(queue, "stack_of", return_value=None), \
+            patch.object(queue, "gate_lines", side_effect=lambda repo, base, who, branches:
+                         [f"rules for {repo}@{base}, {who}, {branches}"]), \
             patch.object(queue, "collect", side_effect=lambda slug, number: copy.deepcopy(raw)), \
             contextlib.redirect_stdout(output):
         queue.main()
@@ -390,10 +394,11 @@ class HandoffTests(unittest.TestCase):
             ("my changes request predates the head", moved, mine("CHANGES_REQUESTED", HEAD), None, "CHANGES_REQUESTED",
              ("changes-req at old head", "#17 (changes-req at old head)", " new "), ("(HEAD MOVED",)),
             ("approved at head, gate still closed", HEAD, mine("APPROVED", HEAD), assessment(), "REVIEW_REQUIRED",
-             ("approved at head", "unchanged", "REVIEW: another approver", "name another approver: #17"),
+             ("approved at head", "unchanged", "REVIEW: another approver", "name another approver: #17\n"
+              "  rules for sample/product@main, reviewer, {17: 'filters'}\n"),
              ("Look again", "REVIEW: needs review")),
             ("approved at head and cleared", HEAD, mine("APPROVED", HEAD), assessment(), "APPROVED",
-             ("approved at head", "-> MERGEABLE NOW"), ("Look again", "another approver")),
+             ("approved at head", "-> MERGEABLE NOW"), ("Look again", "another approver", "rules for")),
             ("same head, later discussion", HEAD, None, assessment(), "REVIEW_REQUIRED",
              ("discussion changed", "REVIEW: needs review"), ("Look again", "another approver")),
         ]
@@ -417,6 +422,9 @@ class HandoffTests(unittest.TestCase):
         text = run_queue([[p], details, p], raw, login=None)
         self.assertIn("reviewer login unavailable", text)
         self.assertNotIn("another approver", text)
+        # A fork's head branch is not a branch of this repository, so its last pusher is not looked up.
+        fork = queue_row(isCrossRepository=True)
+        self.assertIn("  rules for sample/product@main, reviewer, {}\n", run_queue([[fork], details, fork], raw))
 
     def test_scope_file_is_written_once_and_names_what_joined_and_left(self):
         details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
@@ -457,12 +465,20 @@ class HandoffTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             scope = Path(tmp) / "scope.json"
             text = run_queue([[p], details, p], raw, argv=["--save-scope", str(scope)], elsewhere=[
-                asked(17), asked(31, "feature/filters"), asked(30, "feature/filters", True), asked(40, draft=True), asked(41)])
+                asked(17), asked(31, "feature/filters"), asked(30, "feature/filters", True), asked(40, draft=True), asked(41),
+                asked(32, "fix/a&b"), asked(33, "feature/filters"), asked(34, "draft/only", True)])
             # A request the table already shows is not repeated, and none of these joins the scope.
             self.assertEqual(json.loads(scope.read_text()), [17])
         self.assertIn("1 open non-draft PR(s)", text)
         self.assertIn("not in this round's scope", text)
-        self.assertIn("  other base: #30 -> feature/filters (draft), #31 -> feature/filters\n", text)
+        self.assertIn("  other base: #30 -> feature/filters (draft), #31 -> feature/filters, #32 -> fix/a&b, "
+                      "#33 -> feature/filters, #34 -> draft/only (draft)\n", text)
+        # A round covers one base: each other base with a ready PR gets the command that starts its round.
+        handoff = "in a round on that base, with its own scope and assessments file: ledger.py start "
+        self.assertIn(f"    -> review #31, #33 {handoff}feature/filters\n", text)
+        self.assertIn(f"    -> review #32 {handoff}'fix/a&b'\n", text)
+        self.assertNotIn("ledger.py start draft/only", text)
+        self.assertNotIn("do not review them here", text)
         self.assertIn("  not listed on main: #40 (draft), #41 (ready since the listing; run queue.py again)\n", text)
         self.assertNotIn("#17 ->", text)
         text = run_queue([[p], details, p], raw, elsewhere=[asked(17)])
@@ -474,6 +490,37 @@ class HandoffTests(unittest.TestCase):
             self.assertIn("could not list review requests outside this table", text)
             self.assertNotIn("outside this table: none", text)
             self.assertNotIn("other base", text)
+
+    def test_a_failed_gh_read_names_the_gh_that_ran_and_what_it_said(self):
+        # A helper can run another `gh` than the shell does; "is gh authenticated?" sent a real round the wrong way.
+        denied = subprocess.CompletedProcess([], 1, "", "HTTP 401: Requires authentication (https://api.example.test/graphql)\n"
+                                                        "Try authenticating with:  gh auth login\n")
+        said = "/opt/tools/bin/gh said: HTTP 401: Requires authentication (https://api.example.test/graphql)"
+
+        def stopped(module, *argv):
+            with patch.object(sys, "argv", list(argv)), self.assertRaises(SystemExit) as stop:
+                module.main()
+            return str(stop.exception.code)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, XDG_STATE_HOME=tmp), \
+                patch("shutil.which", return_value="/opt/tools/bin/gh"), \
+                patch.object(subprocess, "run", return_value=denied), patch("time.sleep"), \
+                contextlib.redirect_stderr(io.StringIO()):
+            for argv in (("start", "main"), ("record", "round-1", "assessments.json"),
+                         ("end", "round-1", "--scope", "scope.json", "--report", "round.json")):
+                message = stopped(ledger, "ledger.py", *argv)
+                self.assertIn(f"could not determine the repo: {said}. ", message)
+                self.assertIn("runs a different `gh` or lacks its token", message)
+                self.assertNotIn("Try authenticating", message)
+            self.assertIn(f"queue unavailable: {said}; coverage unknown", stopped(queue, "queue.py", "main"))
+            self.assertIn(f"could not resolve repo: {said} ", stopped(
+                round_report, "round_report.py", "main", "--since", REVISION, "--me", "Alex"))
+            self.assertEqual(os.listdir(tmp), [])
+        with patch("shutil.which", return_value=None), patch.object(subprocess, "run", side_effect=FileNotFoundError("gh")):
+            self.assertIn("could not determine the repo: no `gh` on PATH. ", stopped(ledger, "ledger.py", "start", "main"))
+        # A full page is a different problem from a failed read, and says so.
+        with patch.object(queue, "gh_json", return_value=[queue_row()] * 200):
+            self.assertIn("queue at collection limit", stopped(queue, "queue.py", "main"))
 
     def run_ledger(self, *argv):
         output = io.StringIO()

@@ -76,6 +76,20 @@ def last_pusher(repo, branch):
         return None
 
 
+def gate_lines(repo, base, reviewer, branches):
+    """Why an approval at head can leave a PR REVIEW_REQUIRED: the review rules on <base>, and the
+    PRs whose last push was the reviewer's. GitHub does not report which rule holds the gate, so
+    these are the facts that narrow it. `branches` maps PR number -> head branch in <repo>."""
+    rules = review_rules(repo, base)
+    lines = [f"review rules on {base}: " + "; ".join(describe(rules))]
+    if (rules or {}).get("require_last_push_approval") and reviewer:
+        own = [f"#{number}" for number, branch in sorted(branches.items()) if last_pusher(repo, branch) == reviewer]
+        if own:
+            lines.append(f"{reviewer} pushed the last commit on {', '.join(own)}: the last-push rule needs "
+                         "an approval from someone else there")
+    return lines
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit(__doc__)

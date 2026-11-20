@@ -450,6 +450,29 @@ class BranchRuleTests(unittest.TestCase):
         self.assertEqual(branch_rules.describe(None), ["review rules unreadable"])
         self.assertIn("classic branch protection is not readable", branch_rules.describe({})[0])
 
+    def test_a_gated_approval_is_explained_by_the_rules_and_the_reviewers_own_last_push(self):
+        rules = {"required_approving_review_count": 1, "require_code_owner_review": True, "require_last_push_approval": True}
+        pushed = {"feature/a": "reviewer", "feature/b": "author", "feature/c": "reviewer"}
+        branches = {19: "feature/c", 17: "feature/a", 18: "feature/b"}
+        with patch.object(branch_rules, "review_rules", return_value=rules) as read, \
+                patch.object(branch_rules, "last_pusher", side_effect=lambda repo, branch: pushed.get(branch)) as pusher:
+            lines = branch_rules.gate_lines("owner/repo", "main", "reviewer", branches)
+            self.assertEqual(lines, [
+                "review rules on main: 1 approval(s) required; a code owner must approve; "
+                "the last push must be approved by someone other than its pusher",
+                "reviewer pushed the last commit on #17, #19: the last-push rule needs an approval from someone else there"])
+            read.assert_called_once_with("owner/repo", "main")
+            self.assertEqual(pusher.call_args_list[0][0], ("owner/repo", "feature/a"))
+            # Nobody's last push was the reviewer's: the rules are still named, and nothing is claimed about a push.
+            self.assertEqual(len(branch_rules.gate_lines("owner/repo", "main", "someone-else", branches)), 1)
+        # Without a last-push rule the pusher is not read; unreadable rules say so and are not "no rule".
+        for unread, text in (({"require_code_owner_review": True}, "review rules on main: a code owner must approve"),
+                             (None, "review rules on main: review rules unreadable")):
+            with patch.object(branch_rules, "review_rules", return_value=unread), \
+                    patch.object(branch_rules, "last_pusher") as pusher:
+                self.assertEqual(branch_rules.gate_lines("owner/repo", "main", "reviewer", branches), [text])
+                pusher.assert_not_called()
+
     def test_last_pusher_is_the_latest_branch_activity_or_unknown(self):
         with self.reply([{"actor": {"login": "reviewer"}}]) as run:
             self.assertEqual(branch_rules.last_pusher("fork/repo", "feature/x"), "reviewer")

@@ -28,6 +28,12 @@ class DecisionTests(unittest.TestCase):
             ledger.record_assessment("round-1", assessment(), "owner/repo")
             self.assertEqual(ledger.open_findings("owner/repo"), {})
             self.assertEqual(ledger.heads("owner/repo"), {17: HEAD})
+            # A boundary keeps only what was recorded before it: this record is stamped with the time of this run.
+            self.assertEqual(ledger.heads("owner/repo", before="2999-01-01T00:00:00Z"), {17: HEAD})
+            self.assertEqual(ledger.heads("owner/repo", before="2000-01-01T00:00:00Z"), {})
+            ledger.record("round-1", [{"pr": 18, "head": BASE, "summary": "Rollback drops rows", "status": "open"}], "owner/repo")
+            self.assertEqual(ledger.heads("owner/repo", before="2999-01-01T00:00:00Z"), {17: HEAD, 18: BASE})
+            self.assertEqual(ledger.heads("owner/repo", before="2000-01-01T00:00:00Z"), {})
             self.assertEqual(ledger.assessments("owner/repo")[17]["base"], BASE)
 
     def test_changed_evidence_invalidates_unchanged_code_and_waiver_is_scoped(self):

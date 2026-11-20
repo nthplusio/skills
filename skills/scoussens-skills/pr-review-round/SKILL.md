@@ -163,7 +163,7 @@ stale branch is the *author's* to fix and approving does not clear it. A missing
 approval is *yours*. Knowing which you are looking at prevents the most common
 wasted move: requesting changes because a branch needs a rebase.
 
-Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again. List the PRs it prints under "Review requested from you outside this table" in your summary; they target another base or are drafts, so they stay out of this round's scope.
+Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again; the lines under it give the base's review rules and any PR whose last push was yours. List the PRs it prints under "Review requested from you outside this table" in your summary. They target another base or are drafts, so keep them out of this round's scope and its assessments file. To review one on another base, run a second round on that base with the command `queue.py` prints.
 
 ### 3. Review each PR, at a depth matched to its risk
 

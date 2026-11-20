@@ -44,6 +44,7 @@ nothing is ever committed:
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -212,16 +213,40 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def gh_said(stderr=""):
+    """The `gh` a helper ran and the first line of its error. A helper can run a different `gh` than
+    the shell does, or run without the shell's token, so `gh auth status` passing there proves nothing here."""
+    path = shutil.which("gh")
+    if not path:
+        return "no `gh` on PATH"
+    lines = (stderr or "").strip().splitlines()
+    return f"{path} said: {lines[0]}" if lines else f"{path} failed without an error message"
+
+
+_repo_error = ""
+
+
 def repo_slug():
-    r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner",
-                        "-q", ".nameWithOwner"], capture_output=True, text=True)
+    global _repo_error
+    try:
+        r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner",
+                            "-q", ".nameWithOwner"], capture_output=True, text=True)
+    except OSError as error:
+        _repo_error = str(error)
+        return ""
+    _repo_error = r.stderr
     return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def no_repo():
+    return (f"could not determine the repo: {gh_said(_repo_error)}. If `gh auth status` passes in your shell, "
+            "this process runs a different `gh` or lacks its token")
 
 
 def state_dir(repo=None):
     repo = repo or repo_slug()
     if not repo:
-        raise SystemExit("could not determine the repo (is `gh` authenticated?)")
+        raise SystemExit(no_repo())
     base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     d = os.path.join(base, "pr-review-round", repo.replace("/", "__"))
     os.makedirs(d, exist_ok=True)
@@ -360,14 +385,17 @@ def open_findings(repo=None):
     return out
 
 
-def heads(repo=None):
-    """Head SHA each PR carried the last time it was reviewed."""
+def heads(repo=None, before=None):
+    """Head SHA each PR carried the last time it was reviewed. With `before`, only what was
+    recorded earlier than that time: a round's own records are not an earlier look."""
+    earlier = lambda record: before is None or (record.get("recorded_at") or "") < before
     out = {}
     for f in _read("findings", repo):
-        if f.get("pr") and f.get("head"):
+        if f.get("pr") and f.get("head") and earlier(f):
             out[f["pr"]] = f["head"]
-    for number, assessment in assessments(repo).items():
-        out[number] = assessment["head"]
+    for assessment in assessment_history(repo):
+        if earlier(assessment):
+            out[assessment["number"]] = assessment["head"]
     return out
 
 
@@ -406,7 +434,7 @@ def main():
             sys.exit("usage: ledger.py record <round-id> <assessments.json>")
         rid, repo = sys.argv[2], repo_slug()
         if not repo:
-            sys.exit("could not determine the repo (is `gh` authenticated?)")
+            sys.exit(no_repo())
         try:
             with open(sys.argv[3]) as f:
                 bundle = json.load(f)
@@ -436,7 +464,7 @@ def main():
             sys.exit("usage: ledger.py end <round-id> --scope <scope.json> --report <round.json>")
         repo = repo_slug()
         if not repo:
-            sys.exit("could not determine the repo (is `gh` authenticated?)")
+            sys.exit(no_repo())
         try:
             with open(options["--scope"]) as f:
                 scope = json.load(f)
