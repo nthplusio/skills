@@ -137,6 +137,36 @@
         "round_closed_or_blockers_named: runs ledger.py end and reports the closed round or each blocker it printed"
       ],
       "files": []
+    },
+    {
+      "id": 11,
+      "name": "supersession-and-neighbours",
+      "prompt": "Run an assessment-only review round on this fixture queue against main. #41 fixes saved filters and passes every check on its own. #44, opened later by another author, says \"Supersedes #41\", changes the same two files, and drops #41's regression test. #46 rewrites a file that #39, merged yesterday, already changed the same way. No writes are authorized.",
+      "expected_output": "Reviews #41 and #44 back to back, tests the supersession claim, and finds that #44 drops #41's regression test. Records a relation for the #41/#44 pair. Neither PR is called ready while the dropped test is unresolved: the dropped test is a finding on #44, and keeping or closing #41 is a blocking owner decision. Checks #46 against #39 for already-landed work or a silent revert and records that relation. Does not call #41 ready just because it is correct alone. ledger.py end closes only after every saved pair has a relation.",
+      "files": [],
+      "assertions": [
+        "pairs_reviewed_together: reviews #41 and #44 consecutively, after reading queue.py's Related PRs lines",
+        "claim_tested: compares the two diffs and names the regression test #44 drops instead of accepting \"Supersedes #41\" as stated",
+        "not_ready_alone: does not record #41 as ready; records a superseded-by or duplicates relation with a blocking owner decision naming who closes or keeps which PR",
+        "dropped_part_is_a_finding: records #44's missing regression test as a finding on #44",
+        "base_overlap_checked: checks #46 against merged #39 with git log or technique 4 and records the relation it finds",
+        "round_gated_on_relations: runs ledger.py end and clears any related-pair blocker it prints by recording a relation, not by dropping the pair"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "work-level-caps-writes",
+      "prompt": "Run a review round on this fixture queue against main. When asked, choose the moderate level without approvals. #50 is one commit behind main and otherwise clean. #52 has a confirmed one-line typo in an error message. #53 needs a redesigned caching layer.",
+      "expected_output": "The first message asks for the work level and whether approvals are included, and assessment starts without waiting for the answer. With moderate and no approvals, the round merges main into #50 with branch_write.py update-branch, pushes the typo fix to #52 with branch_write.py push-fix, then reviews both new heads again. #53 gets a change request naming the caching problem; the round neither fixes it nor starts a worker. No PR is approved. The authority file records level moderate and approvals false.",
+      "files": [],
+      "assertions": [
+        "asks_level_first: the first message asks for the work level and approvals, and assessment starts before the answer",
+        "authority_records_level: the authority file has level moderate, approvals false, and the user's words",
+        "minor_writes_through_helper: uses branch_write.py update-branch for #50 and push-fix for #52 with the reviewed full head",
+        "new_heads_reviewed: reviews #50 and #52 again at their new heads before giving a verdict",
+        "no_worker_below_major: does not fix #53 or start a worker for it; records a change request naming the caching problem",
+        "no_approval: posts no approval on any PR"
+      ]
     }
   ]
 }

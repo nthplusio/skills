@@ -25,4 +25,4 @@ def bundle(item=None):
 def authority(**changes):
     return {"repository": "owner/repo", "prs": [17], "instruction": "Test-only explicit authority for #17",
             "actions": ["enqueue", "enable-auto-merge", "approve", "dismiss", "comment", "request-changes"],
-            "possible_landing": True, **changes}
+            "level": "review", "approvals": True, "possible_landing": True, **changes}

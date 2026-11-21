@@ -162,6 +162,17 @@ class ReportTests(unittest.TestCase):
         self.assertIn('Review again · inputs changed or incomplete', stale)
         self.assertNotIn('Source review complete · merge checks pending', stale)
 
+    def test_superseded_pr_reads_as_an_owner_decision_naming_the_replacement(self):
+        _, record = fixture()
+        proposal = assessment(482, kind="decision", owner="Author", head=record["head"], base=record["base"],
+                              relations=[{"pr": 490, "kind": "superseded-by", "evidence": "#490 carries this fix and its test"}])
+        proposal["decisions"][0]["unblock"] = "Close #482 in favor of #490"
+        page = render([record], "main", assessments={"repository": record["repository"], "assessments": [proposal]})
+        self.assertIn("Needs owner decision", page)
+        self.assertIn("Close #482 in favor of #490", page)
+        self.assertIn("Superseded by #490 · #490 carries this fix and its test", page)
+        self.assertNotIn("Source review complete · merge checks pending", page)
+
     def test_dense_row_uses_product_summary_and_keeps_original_evidence_in_details(self):
         _, record = fixture()
         record["summary"] = "Keep saved filters when upgrading"

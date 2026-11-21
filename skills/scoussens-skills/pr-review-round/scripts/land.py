@@ -13,8 +13,10 @@ same gates. `gh stack merge` has no expected-head guard, so heads are re-read
 immediately before the write. Run from the repository root with the official
 `github/gh-stack` extension installed.
 
-Every write rechecks OPEN, non-draft, reviewed head, APPROVED, CLEAN, and actual
-queue membership. GitHub's --match-head-commit guards the merge request too.
+Every write rechecks OPEN, non-draft, reviewed head, APPROVED, and actual queue
+membership. --enqueue also waits for CLEAN. --enable-auto-merge is the preferred
+landing path: it turns auto-merge on while checks still run, leaves the wait to
+GitHub's required checks, and reports AUTO-MERGE ENABLED once GitHub shows it. GitHub's --match-head-commit guards the merge request too.
 No strategy flag: the queue owns the merge strategy. A successful request is
 not proof of queue membership or landing; only subsequent reads establish it.
 """
@@ -36,7 +38,8 @@ MAX_POLLS = 40
 def state_of(num, repo=None):
     result = subprocess.run([
         "gh", "pr", "view", str(num), *(["--repo", repo] if repo else []), "--json",
-        "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeStateStatus,reviewDecision,mergedAt",
+        "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeStateStatus,reviewDecision,mergedAt,"
+        "autoMergeRequest",
     ], capture_output=True, text=True)
     if result.returncode:
         return {}
@@ -146,6 +149,8 @@ def main():
                                     state.get("headRefOid"), state.get("baseRefOid"), state.get("updatedAt"), state.get("target"))
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     outcome = f"HELD: {error}"
+            if writing and not outcome and args.enable_auto_merge and state.get("autoMergeRequest"):
+                outcome = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
             if outcome:
                 outcomes[number] = outcome
                 pending.remove(number)
@@ -157,8 +162,9 @@ def main():
             if (writing and poll < MAX_POLLS and merge_state == "CLEAN"
                     and queue == "not_queued" and number not in submitted and state.get("stack")):
                 ready[number] = state
-            elif (writing and poll < MAX_POLLS and merge_state == "CLEAN"
-                    and queue == "not_queued" and number not in submitted):
+            elif (writing and poll < MAX_POLLS and queue == "not_queued" and number not in submitted
+                    and (merge_state == "CLEAN" or (args.enable_auto_merge
+                                                     and merge_state in ("BLOCKED", "UNSTABLE", "HAS_HOOKS", "BEHIND")))):
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
                 if ok:
@@ -171,6 +177,12 @@ def main():
                 if observed.get("state") == "MERGED":
                     outcomes[number] = "MERGED"
                     pending.remove(number)
+                elif (ok and args.enable_auto_merge and observed.get("autoMergeRequest")
+                      and observed.get("headRefOid") == heads[number] and observed.get("reviewDecision") == "APPROVED"
+                      and observed.get("target") == state.get("target")):
+                    outcomes[number] = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
+                    pending.remove(number)
+                    print(f"#{number} {outcomes[number]}")
                 elif (observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED"
                       or observed.get("target") != state.get("target")):
                     outcomes[number] = "HELD: post-write head or approval changed, or target moved; reconcile before further writes"
@@ -225,6 +237,9 @@ def main():
 
     if all(outcomes.get(number) == "MERGED" for number in heads):
         print("all watched PRs landed")
+        return 0
+    if all(outcomes.get(number, "").startswith(("MERGED", "AUTO-MERGE ENABLED")) for number in heads):
+        print("every PR merged or has auto-merge on; confirm merges later with land.py --watch")
         return 0
     for number in sorted(pending):
         print(f"#{number} timed out, not confirmed merged; last observed state above")

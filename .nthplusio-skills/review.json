@@ -3,6 +3,7 @@
   "guidance": ["README.md", "distribution/README.md"],
   "tracker": {"policy": ["docs/agents/issue-tracker.md"]},
   "execution": {"reviewers": "auto", "policy": []},
+  "round": {"level": "review", "approvals": true},
   "references": {
     "conventions": {"files": ["docs/writing-good-descriptions.md"]},
     "integration": {"files": ["docs/installation.md", "distribution/README.md"]},

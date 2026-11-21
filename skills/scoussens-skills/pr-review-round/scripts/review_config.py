@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 DEFAULTS = ("conventions", "data-layer", "integration", "security", "verification")
+LEVELS = ("assess", "review", "moderate", "major")
 
 
 def fields(value, allowed, location):
@@ -36,7 +37,7 @@ def resolve(root, config=None):
     if profile.exists() or profile.is_symlink() or config is not None:
         profile = Path(files(root, [name], "profile")[0])
         data = json.loads(profile.read_text())
-        fields(data, ("schema_version", "guidance", "tracker", "execution", "references"), "profile")
+        fields(data, ("schema_version", "guidance", "tracker", "execution", "references", "round"), "profile")
         if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
             raise ValueError("profile: schema_version must be 1")
     tracker = data.get("tracker", {})
@@ -46,6 +47,14 @@ def resolve(root, config=None):
     reviewers = execution.get("reviewers", "auto")
     if reviewers not in ("auto", "serial", "parallel"):
         raise ValueError("execution.reviewers: expected auto, serial or parallel")
+    # The repository's default work level for a review round; a request that names a level overrides it.
+    round_ = data.get("round", {})
+    fields(round_, ("level", "approvals"), "round")
+    level, approvals = round_.get("level"), round_.get("approvals", False)
+    if level is not None and level not in LEVELS:
+        raise ValueError("round.level: expected " + ", ".join(LEVELS))
+    if type(approvals) is not bool or (approvals and level in (None, "assess")):
+        raise ValueError("round.approvals: expected true or false, and true only with review, moderate or major")
     overrides = data.get("references", {})
     if not isinstance(overrides, dict) or any(not name.strip() for name in overrides):
         raise ValueError("references: expected an object keyed by category name")
@@ -76,6 +85,7 @@ def resolve(root, config=None):
         "guidance": files(root, data.get("guidance", []), "guidance"),
         "tracker": {"policy": files(root, tracker.get("policy", []), "tracker.policy")},
         "execution": {"reviewers": reviewers, "policy": files(root, execution.get("policy", []), "execution.policy")},
+        "round": {"level": level, "approvals": approvals},
         "references": references,
         "disabled": disabled,
     }

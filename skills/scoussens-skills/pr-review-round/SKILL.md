@@ -2,8 +2,11 @@
 name: pr-review-round
 description: >-
   Reviews every non-draft PR against a base branch, oldest first, with
-  risk-scaled depth and findings verified at the current head. Reports readiness;
-  approves, dismisses, or merges only within explicit authority. Use only when
+  risk-scaled depth and findings verified at the current head. Judges each PR
+  against the others too: supersession, duplicates, conflicts and work the base
+  already landed. Asks for a work level: assess, review with or without
+  approvals, minor fixes and base merges, or workers that bring failing PRs to
+  approval. Writes, merges and dismissals stay within explicit authority. Use only when
   asked for a review round, queue triage, or to clear the review queue. Not for
   a single-PR review, a merged-work recap, or explaining a change.
 disable-model-invocation: true
@@ -34,25 +37,43 @@ pass on, you own.
 
 ## Authority
 
-Invocation selects the workflow, not permission to write. Start with the
-requested repository, base, and scope:
+Invocation selects the workflow, not permission to write. The **work level**
+sets which writes the round may make. Take it from the request when it names
+one, otherwise from `round` in the resolved review profile: say in your first
+message which level the profile set, so the user can change it in one word.
+Ask for it only when neither sets one. Offer these choices, and for `review` and above
+ask whether approvals are included:
 
-- **Assessment-only** is the default for "review round", "which PRs are ready?",
-  and requests to explain blockers. Read, verify, and draft verdicts locally;
-  make no forge mutations, including comments, reviews, dismissals, or merges.
-- **Authorized writes** cover only the actions and PRs the user names. Permission
-  to post reviews does not authorize dismissing others' reviews or merging.
-  "Merge what's ready" authorizes eligible merges, not blanket approval or
-  dismissal. Finish the assessment and hold any missing action for approval.
+| Level | The round does | Writes it allows |
+|---|---|---|
+| `assess` | Reviews for mergeability; this is assessment-only mode | None: verdicts, blockers and who acts stay local |
+| `review` | Reviews for approval and posts the reviews | Comments and change requests; "with approvals" adds approvals, each followed by auto-merge |
+| `moderate` | `review`, plus minor fixes and base merges on PR branches | Adds `update-branch` and `push-fix` (up to 50 changed lines) |
+| `major` | `moderate`, plus a worker for each PR that fails approval, until it is approvable and mergeable | Adds `delegate`; worker fixes have no size cap |
+
+Assess while the answer is pending, because every level starts with the same
+review. Until the user answers, the level is `assess`. Record the level, the
+approvals choice and the user's words in the authority file; for a profile
+default, the instruction is the profile path and its `round` setting;
+`check_authority` refuses any write above the level. Dismissing others'
+reviews and landing stay separate at every level: "merge what's ready"
+authorizes eligible merges, not approval or dismissal. Finish the assessment
+and hold any missing action for approval.
 - **Publication** is separate: a selected destination or silence does not
   authorize uploading repository content to an external audience.
 
-**Approving can be the merge action.** When the author enables auto-merge —
-`queue.py`'s `AUTO` column — clearing the review gate can enqueue or merge it,
-with no merge command from you. Approval and dismissal on such a PR also need
-merge authority. Re-read auto-merge immediately before either action.
-
-**Enabling auto-merge is a landing action.** GitHub refuses it for stacked PRs; land those with `land.py --enqueue --stack-method <method>` as step 5 describes. Otherwise use `land.py --enable-auto-merge` with the same gates as enqueueing, from the first attempt. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires a saved authority record: repository, exact PR numbers, allowed actions, originating instruction and whether possible landing is included; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
+**Auto-merge is how approved PRs land.** Approving to merge includes
+auto-merge. When the user picks approvals, an approval may release an
+author's auto-merge (`queue.py`'s `AUTO` column), and the round turns
+auto-merge on for each PR it approves with `land.py --enable-auto-merge`. No
+separate merge permission is needed for either. Turn it on right after the
+approval, while checks still run; GitHub's required checks do the waiting.
+Prefer it to a direct merge, which waits for `CLEAN` and needs its own
+instruction. Re-read the head and auto-merge immediately before approving.
+Dismissing someone else's review on an auto-merge PR still needs merge
+authority (`--allow-landing`). GitHub refuses auto-merge for stacked PRs; land
+those with `land.py --enqueue --stack-method <method>` as step 5 describes,
+which needs its own merge instruction. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires a saved authority record: repository, exact PR numbers, allowed actions, originating instruction and whether possible landing is included; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
 
 Three rules hold regardless:
 
@@ -71,6 +92,25 @@ Three rules hold regardless:
   after rechecking the head and approval, confirm state with
   `land.py --watch <n>` (poll-only), and carry on with the round.
 
+**Branch writes.** At `moderate` and above, merge the base into a behind
+branch with `branch_write.py update-branch`, and push a small fix from a
+worktree at the reviewed head with `branch_write.py push-fix`. A fix is for a
+confirmed finding with an obvious smallest change: a failing check, a typo, a
+missed rename, a merge conflict. A design question or a fix over the cap is a
+finding for the author, or worker work at `major`. Either write makes a new
+head that this round must review again. After your push you are the last
+pusher, so a base that requires last-push approval needs another approver.
+
+**Workers at `major`.** For each PR whose verdict is not ready for a reason
+code can fix, start one worker with the harness's thread or subagent tool.
+Brief it with the repository, PR, reviewed head, the recorded decisions and
+their unblock lines, and an authority file scoped to that one PR: level
+`major`, `approvals: false`, actions `push-fix`, `update-branch` and `comment`.
+A worker never approves, dismisses, merges or starts workers, and stops at an
+owner or evidence decision it cannot settle. Ask it to report the new head and
+what it changed. A worker's report is a claim: review the new head yourself
+before any verdict. Fork branches and owner decisions stay with their owners.
+
 **Base branch.** Use whatever was passed as an argument. With no argument,
 detect the default, name the branch you picked in your first message, and carry
 on — many teams review onto `develop`/`staging`/`trunk` rather than the
@@ -78,7 +118,7 @@ repo default, and saying which you chose lets the user redirect you in one word
 instead of discovering it in the summary.
 
 **Destination.** The round report's page is a setting, and `explain-to` owns
-settings. In that same first message, load `explain-to` and run its step 1, the
+settings. In that same first message, which also asks for the work level, load `explain-to` and run its step 1, the
 settings sheet (`references/settings-sheet.md` there), passing the artifact (a
 round report: what came in, what landed, what is blocked and on whose desk),
 the settings this skill fixes (reader: a teammate who was not there; output:
@@ -102,7 +142,8 @@ S=<this skill's directory>/scripts
 $S/detect_setup.sh [base]           # once per repo: review bot, merge queue, conventions
 python3 $S/review_config.py --root <repository> # resolved review/policy references
 python3 $S/queue.py <base> [--save-scope <f> | --scope <f>] # triage: every PR, risk tier, who is
-                                    # blocking, AUTO, your review against the head, changes since your last look
+                                    # blocking, AUTO, your review against the head, changes since your last look,
+                                    # related pairs and files the base changed under each PR
 python3 $S/stale_sweep.py <base>    # staleness across the WHOLE queue, one pass
 python3 $S/prstate.py <n>           # review state + head sha + staleness, one PR
 python3 $S/findings.py <n>          # blocking review bodies + their inline comments
@@ -111,6 +152,7 @@ python3 $S/ledger.py start|record|end # open the round, save assessments, close 
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
 python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
+python3 $S/branch_write.py --help   # moderate/major: base merge or minor fix, leased on the reviewed head
 python3 $S/land.py --help          # guarded enqueue/auto-merge; requires authority and assessments
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
@@ -128,9 +170,9 @@ Run these six commands in this order, once per round. The numbered steps below s
 
 ```bash
 RID=$(python3 $S/ledger.py start <base>)                  # 1. before triage; use the id it prints, never an invented one
-python3 $S/queue.py <base> --save-scope $RUN/scope.json   # 2. triage (step 2); writes the round's scope once
+python3 $S/queue.py <base> --save-scope $RUN/scope.json   # 2. triage (step 2); writes the round's scope once, related pairs beside it
 python3 $S/ledger.py record $RID $RUN/assessments.json    # 3. after reviewing (steps 3-4); every scoped PR, clean ones too
-python3 $S/queue.py <base> --scope $RUN/scope.json        # 4. before reporting (step 7); names PRs that JOINED or LEFT
+python3 $S/queue.py <base> --scope $RUN/scope.json        # 4. before reporting (step 7); names PRs that JOINED or LEFT, adds their pairs
 python3 $S/round_report.py <base> --scope $RUN/scope.json > $RUN/round.json    # 5. after the last write is read back
 python3 $S/ledger.py end $RID --scope $RUN/scope.json --report $RUN/round.json # 6. closes the round, or prints each blocker
 ```
@@ -162,6 +204,8 @@ The blocker column separates two situations people conflate. A conflicting or
 stale branch is the *author's* to fix and approving does not clear it. A missing
 approval is *yours*. Knowing which you are looking at prevents the most common
 wasted move: requesting changes because a branch needs a rebase.
+
+Read the "Related PRs" lines before the first diff. Review each related pair back to back, even when other PRs sit between them in age order, so the second review starts with the first one's facts. The base-overlap lines name PRs whose files the base changed since they branched. Those are leads for a PR the base already landed and for silent reverts.
 
 Review the current head of every PR `queue.py` prints under "Look again". For `REVIEW: another approver`, name the other approver instead of approving again; the lines under it give the base's review rules and any PR whose last push was yours. List the PRs it prints under "Review requested from you outside this table" in your summary. They target another base or are drafts, so keep them out of this round's scope and its assessments file. To review one on another base, run a second round on that base with the command `queue.py` prints.
 
@@ -209,7 +253,17 @@ For every PR, in this order:
    what the diff does is reliably where the interesting finding is — including
    authors who have already written down the reason their own PR should not
    merge yet.
-7. **Decide, then apply the authority gate.** Verdict table, guarded write
+7. **Judge it against its neighbours.** A correct PR can still be the wrong
+   one to merge. For each pair `queue.py` printed with this PR, and each
+   base-overlap lead, decide whether one supersedes or duplicates the other,
+   they conflict, one depends on the other, or they are independent. Test a
+   supersession claim the way
+   [technique 13](references/verification-playbook.md) says: every behaviour
+   of the older PR is in the newer one or named as dropped. Record the
+   relation on the assessment. A superseded or duplicate PR gets a blocking
+   owner decision, never `ready`, and `ledger.py end` holds the round until
+   every saved pair has a relation.
+8. **Decide, then apply the authority gate.** Verdict table, guarded write
    commands, and API race limits are in
    [`references/writing-reviews.md`](references/writing-reviews.md). In
    assessment-only mode, retain the proposed verdict and evidence locally.
@@ -230,7 +284,9 @@ absence of a posted review is expected, not a reason to post one.
 
 ### 5. Land what is ready
 
-With merge authority, use `land.py --enqueue <n>:<reviewed-full-sha> [n:sha...] --repo <owner/repo> --authority <authority.json> --assessments <assessments.json>`; use `--enable-auto-merge` instead of `--enqueue` to enable auto-merge. The same path guards the first attempt and later retries. It checks unresolved decisions, scoped authority, approval, source/discussion revisions and mergeability, and passes
+Land related PRs in the order their relations give: a `depends-on` PR after the one it needs, and one side of a `conflicts` pair, then a fresh check of the other at its rebased head. Never land both sides of a duplicate pair.
+
+After each approval, run `land.py --enable-auto-merge <n>:<reviewed-full-sha> [n:sha...] --repo <owner/repo> --authority <authority.json> --assessments <assessments.json>`. It turns auto-merge on while checks run and reports **AUTO-MERGE ENABLED, not merged** once GitHub shows it. Confirm the merge later with `land.py --watch`. Use `--enqueue` only for a direct merge the user asked for. The same path guards the first attempt and later retries. It checks unresolved decisions, scoped authority, approval, source/discussion revisions and mergeability, and passes
 `--match-head-commit` to GitHub. Changed heads, lost approval, conflicts, and
 failed or uncertain writes stop that PR's writes. It submits at most once per PR per invocation and reads head, review state and queue membership after every write, even an uncertain response. Reconcile and refresh inputs before a new invocation; unknown membership holds writes. A local recommendation is not an enforced GitHub gate. Report any authorized acceptance of evidence/owner gaps explicitly.
 
@@ -241,7 +297,7 @@ eliminate that race. Hold the merge if a required atomic guarantee is unavailabl
 
 For a stacked PR, `land.py --enqueue --stack-method <merge|squash|rebase>` runs one `gh stack merge <top> --yes`, which also lands every unmerged PR below it. Name each of those lower PRs with its reviewed head and authority; otherwise, or when membership is unknown, the helper holds without writing. `gh stack merge` has no expected-head guard, so the helper re-reads every covered head immediately before the write. It needs the official `github/gh-stack` extension; ask before installing it. Pass the method the repository uses for ordinary PRs, because the tool otherwise reuses the last method. A merge queue on the base chooses its own method and may land layers in separate groups.
 
-Without merge authority, or with `AUTO` set, use `land.py --watch <n>`.
+Without approvals or merge authority, or when `AUTO` is already on, use `land.py --watch <n>`.
 Bare PR numbers also default to read-only. Report **queued** only when
 `mergeQueueEntry` exists, **merged** only when `state=MERGED`, and **pending,
 queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
@@ -318,6 +374,7 @@ specific decision the author got right. They also correct the record when a
 previous finding — automated or your own — turns out to be overstated, because
 the author is reading both and silence leaves them guessing.
 
-The round ends with an evidence-backed verdict for every PR and an accurate
-account of who is blocked on whom. When landing is authorized, it also reports
+The round ends with an evidence-backed verdict for every PR, a relation for
+every pair of PRs that touch the same code, and an accurate account of who is
+blocked on whom. When landing is authorized, it also reports
 which PRs actually merged and which still need action.

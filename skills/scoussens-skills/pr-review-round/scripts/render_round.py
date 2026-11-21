@@ -9,7 +9,7 @@ from string import Template
 
 from md_to_html import render as markdown
 from pr_history import format_time, render as history_html
-from ledger import DECISIONS, assessment_current, marker_current, unresolved, validate_assessment
+from ledger import DECISIONS, RELATIONS, assessment_current, marker_current, unresolved, validate_assessment
 from stacks import label as stack_label
 
 REPORT_BUDGET = 100_000
@@ -57,6 +57,9 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                        f'<p class="muted">{escape(proposal.get("provenance") or "Local assessment")}</p>'
                        f'<p>Recommended next person · {escape(decision["owner"])}</p>'
                        f'<p>{escape(decision["unblock"])}</p>')
+            for relation in proposal.get("relations", []):
+                current += (f'<p>{escape(RELATIONS[relation["kind"]])} #{relation["pr"]} · '
+                            f'{escape(relation["evidence"])}</p>')
             for item in proposal["decisions"]:
                 current += (f'<p>{escape(DECISIONS[item["kind"]])} · {escape(item["axis"])} · '
                             f'{escape(item["severity"])} · {escape(item["criterion"])}<br>'

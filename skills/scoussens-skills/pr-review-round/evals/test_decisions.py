@@ -96,3 +96,56 @@ class DecisionTests(unittest.TestCase):
                     **item["evidence_inputs"], "policy": ledger.review_config(".", "custom.json")["revision"]}))
             finally:
                 os.chdir(previous)
+
+
+class RelatedTests(unittest.TestCase):
+    """A correct PR can still be the wrong one to merge, so the round judges PRs against each other."""
+
+    def test_pairs_come_from_shared_files_and_mentions_of_scoped_prs_only(self):
+        import related
+        prs = [{"number": 12, "paths": ["src/a.py", "package-lock.json"], "text": "Fix filters\nCloses #45"},
+               {"number": 15, "paths": ["src/a.py", "src/b.py"], "text": "Filters, take two"},
+               {"number": 20, "paths": ["package-lock.json", "web/x.tsx"], "text": "Supersedes #9"},
+               {"number": 21, "paths": ["docs/y.md"], "text": "Replaces #20"}]
+        found = related.pairs(prs)
+        # A shared lockfile and a mention of an issue or out-of-round PR relate nothing; a one-way mention does.
+        self.assertEqual([(e["prs"], e["files"], e["mentions"]) for e in found],
+                         [([12, 15], ["src/a.py"], []), ([20, 21], [], ["#21 names #20"])])
+        self.assertEqual(related.outside_claims(prs), [(20, "Supersedes #9")])
+
+    def test_base_overlap_names_shared_files_and_the_prs_that_landed_since(self):
+        import related
+        compare = {"files": ["src/a.py", "yarn.lock", "src/c.py"],
+                   "commits": ["Rework filters (#9)", "Merge pull request #11 from team/x", "Mention #7 in docs"]}
+        self.assertEqual(related.base_overlap(["src/a.py", "yarn.lock", "src/b.py"], compare),
+                         {"files": ["src/a.py"], "prs": [9, 11], "truncated": False})
+
+    def test_superseded_or_duplicate_pr_cannot_be_ready(self):
+        for kind in ("superseded-by", "duplicates"):
+            with self.subTest(kind=kind):
+                relation = [{"pr": 15, "kind": kind, "evidence": "#15 carries every hunk of #17 plus the fix"}]
+                with self.assertRaisesRegex(ValueError, "cannot be ready"):
+                    ledger.validate_assessment(assessment(relations=relation))
+                waived = assessment(kind="decision", owner="Owner", relations=relation)
+                waived["decisions"][0]["waiver"] = {"actor": "Owner", "source": "url", "at": REVISION,
+                                                    "scope": "keep both", "criterion": "Demonstrate the live workflow"}
+                with self.assertRaisesRegex(ValueError, "cannot be ready"):
+                    ledger.validate_assessment(waived)
+                held = assessment(kind="decision", owner="Author", relations=relation)
+                ledger.validate_assessment(held)
+                with self.assertRaisesRegex(ValueError, "unresolved decisions"):
+                    ledger.check_clearance(bundle(held), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+        ledger.validate_assessment(assessment(relations=[{"pr": 15, "kind": "supersedes", "evidence": "x"}]))
+        with self.assertRaisesRegex(ValueError, "another PR number"):
+            ledger.validate_assessment(assessment(relations=[{"pr": 17, "kind": "independent", "evidence": "x"}]))
+
+    def test_round_holds_until_each_pair_has_a_relation_from_either_side(self):
+        pairs = [{"prs": [12, 15], "files": ["src/a.py"], "mentions": []},
+                 {"prs": [20, 21], "files": [], "mentions": ["#21 names #20"]}]
+        judged = [assessment(21, relations=[{"pr": 20, "kind": "independent", "evidence": "different screens"}]),
+                  assessment(12, relations=[{"pr": 99, "kind": "independent", "evidence": "elsewhere"}])]
+        self.assertEqual(ledger.relation_blockers(pairs, judged),
+                         ["PRs #12 and #15: related (src/a.py) but neither assessment records a relation to the other"])
+        # The latest assessment of a PR in the round is the one that counts.
+        dropped = judged + [assessment(21)]
+        self.assertEqual(len(ledger.relation_blockers(pairs, dropped)), 2)
