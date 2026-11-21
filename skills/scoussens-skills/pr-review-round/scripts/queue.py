@@ -7,6 +7,14 @@ author), whether CI is even meaningful yet, how risky the changed paths are,
 where your own review stands against the live head, and what changed since
 your last saved assessment.
 
+The "Related PRs" lines name pairs that share changed files or name each
+other. Judge each pair -- supersedes, duplicates, conflicts, depends on, or
+independent -- before giving either PR a verdict; the scope file's sibling
+`<scope>.related.json` keeps them, and `ledger.py end` holds the round until
+each pair has a relation on an assessment. The base-overlap lines name files
+the base changed since a PR branched: leads for a PR the base already landed
+and for silent reverts.
+
 The last lines name open PRs that request your review and are not in the table,
 because they target another base or are still drafts. They are not in scope: a
 round covers one base, and the lines give the command that starts a round on
@@ -24,6 +32,7 @@ from review_requests import collect, reconcile, effective_reviews
 from ledger import assessments, gh_said, handled_requests, repo_slug
 from branch_rules import gate_lines
 from stacks import stack_of, label as stack_label, missing_members
+import related
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
 # whole PR list makes GitHub's GraphQL endpoint 504 once the queue gets big --
@@ -32,7 +41,7 @@ from stacks import stack_of, label as stack_label, missing_members
 LIST_FIELDS = ("number,title,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,changedFiles,"
                "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository")
-DETAIL_FIELDS = "files,statusCheckRollup"
+DETAIL_FIELDS = "files,statusCheckRollup,body"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
 # a PR touching a migration and a stylesheet is a DATA PR, not a WEB one.
@@ -184,6 +193,13 @@ def requested_elsewhere(shown, base):
     return ([p for p in hidden if p["baseRefName"] != base], [p for p in hidden if p["baseRefName"] == base])
 
 
+def base_changes(slug, pr):
+    """Files and commit headlines on the base since this PR branched; None when unreadable."""
+    return gh_json(["gh", "api", f'repos/{slug}/compare/{pr["headRefOid"]}...{pr["baseRefOid"]}', "--jq",
+                    '{files: [.files[]?.filename], commits: [.commits[]?.commit.message | split("\\n")[0]],'
+                    ' truncated: ((.files | length) >= 300 or .total_commits > (.commits | length))}'])
+
+
 def request_label(state):
     active = [r for r in state["requests"] if r["outstanding"]]
     label = "Review requested again" if any(r["renewed"] for r in active) else "Review requested" if active else "No request"
@@ -300,6 +316,37 @@ def main():
           f'unknown coverage on {sum(s["coverage"] != "complete" for s in request_states.values())} PR(s).')
 
     numbers = [p["number"] for p in prs]
+    neighbours = [{"number": p["number"], "paths": [f["path"] for f in (p.get("files") or [])],
+                   "text": f'{p["title"]}\n{p.get("body") or ""}'} for p in prs]
+    found = related.pairs(neighbours)
+    print("\nRelated PRs -- judge each pair before either verdict, and record a relation on either PR's "
+          "assessment: " + ("none" if found else ""))
+    for entry in found:
+        print("  " + related.describe(entry))
+    for number, claim in related.outside_claims(neighbours):
+        print(f'  #{number} says "{claim}", outside this round -- verify the claim against that PR or issue')
+    leads = []
+    for p, n in zip(prs, neighbours):
+        if p.get("_degraded"):
+            leads.append(f'#{p["number"]}  files unknown; base overlap not checked')
+            continue
+        compare = base_changes(slug, p)
+        if compare is None:
+            leads.append(f'#{p["number"]}  base comparison unavailable; check by hand')
+            continue
+        overlap = related.base_overlap(n["paths"], compare)
+        if overlap["files"]:
+            leads.append(f'#{p["number"]}  {len(overlap["files"])} file(s): ' + ", ".join(overlap["files"][:3])
+                         + (" ..." if len(overlap["files"]) > 3 else "")
+                         + (" · merged since it branched: " + ", ".join(f"#{m}" for m in overlap["prs"][-5:])
+                            + (f' (+{len(overlap["prs"]) - 5})' if len(overlap["prs"]) > 5 else "")
+                            if overlap["prs"] else "")
+                         + (" · comparison truncated" if overlap["truncated"] else ""))
+    if leads:
+        print("Base changed these PRs' files since they branched -- check whether the base already did this "
+              "work, and for silent reverts:")
+        for lead in leads:
+            print("  " + lead)
     uncovered = ("DISMISSED", "approved at old head", "changes-req at old head")
     again = []
     for n in numbers:
@@ -323,6 +370,8 @@ def main():
     if args.save_scope:
         args.save_scope.write_text(json.dumps(numbers) + "\n")
         print(f"\nSaved the round's scope: {len(numbers)} PR(s) -> {args.save_scope}")
+    if args.save_scope or args.scope:
+        print(f"Related pairs to judge -> {related.save(args.save_scope or args.scope, found)}")
     if scoped is not None:
         joined = [f"#{n}" for n in numbers if n not in scoped]
         left = []
@@ -384,10 +433,16 @@ MY REVIEW       Your latest approval, changes request or dismissal against the
 SINCE LAST LOOK Compared with your last saved assessment. HEAD MOVED invalidates
                 its code claims; 'discussion changed' means refresh comments,
                 issue evidence and owner decisions before reusing the verdict.
-AUTO            Approval or dismissal can release auto-merge, so either also
-                needs merge authority. Re-read auto-merge and the verified head
+AUTO            Approval can release auto-merge; that is the intended path
+                when approvals are in scope. Dismissal still needs merge
+                authority. Re-read auto-merge and the verified head
                 before writing. AUTO is not queue membership; confirm actual
                 queue/merge state with `land.py --watch <n>`, which only polls.
+
+RELATED         A PR can be correct and still wrong to merge. Before either
+                verdict, decide whether one supersedes or duplicates the
+                other, they conflict, one depends on the other, or they are
+                independent. A superseded or duplicate PR is never ready.
 
 STACK           Upper layers target the branch below them; review each layer's
                 own diff. GitHub refuses auto-merge for stack members, and

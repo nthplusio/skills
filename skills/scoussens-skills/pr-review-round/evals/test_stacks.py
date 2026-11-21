@@ -82,6 +82,7 @@ class StackQueueTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(sys, "argv", ["queue.py", "main"]), \
                 patch.object(queue, "gh_json", side_effect=[[lower], upper, details, details, lower, upper, []]), \
+                patch.object(queue, "base_changes", return_value={"files": [], "commits": []}), \
                 patch.object(queue, "repo_slug", return_value="owner/repo"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "stack_of", side_effect=lambda repo, n: {**stack, "position": n - 15}), \

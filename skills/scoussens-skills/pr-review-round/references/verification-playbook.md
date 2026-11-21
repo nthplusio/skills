@@ -31,6 +31,7 @@ List untested lanes explicitly. Preserve coverage exclusions from the repository
 10. [Proving code is dead](#10-proving-code-is-dead)
 11. [The author's own admissions](#11-the-authors-own-admissions)
 12. [Two branches, one merged result](#12-two-branches-one-merged-result)
+13. [Superseded, duplicate and already-landed PRs](#13-superseded-duplicate-and-already-landed-prs)
 
 ---
 
@@ -325,5 +326,51 @@ array. Each was correct alone. Merged, the effect re-fires on the toggle's write
 and reverts it, so the button silently stops working. Two writers for one piece
 of state is the shape to look for.
 
-`queue.py` prints the files touched by more than one open PR, which is the same
-hazard before the conflict exists.
+`queue.py`'s "Related PRs" lines name the files touched by more than one open
+PR. That is the same hazard before the conflict exists.
+
+## 13. Superseded, duplicate and already-landed PRs
+
+A PR can pass every check on its own and still be the wrong one to merge.
+Merging both of two competing PRs ships the change twice or makes the second
+one revert the first. A PR whose change already landed is review time spent on
+nothing. Judge each related pair, not each PR alone.
+
+Treat "supersedes #N" as a claim to test, whether the PR body states it or you
+infer it. Supersession holds only when the newer PR carries every behaviour of
+the older one or drops part of it on purpose and says so:
+
+```bash
+git diff $(git merge-base origin/<base> <old-head>) <old-head> --stat
+git diff $(git merge-base origin/<base> <new-head>) <new-head> --stat
+git range-diff origin/<base> <old-head> <new-head>   # commit by commit, when one was rebuilt from the other
+```
+
+For each hunk or acceptance criterion of the older PR, find it in the newer
+one, or name it as dropped. A dropped test or criterion is the usual finding.
+When neither PR contains the other, they are duplicates, and choosing between
+them is an owner decision, not a review verdict.
+
+For a PR whose files the base changed since it branched, run technique 4 on
+those files and ask whether the base already did this work. If the merged
+change covers it, the PR is superseded by that merged PR. If the PR rewrites
+the same lines from an older starting point, it is a silent revert waiting to
+land.
+
+Record one relation per pair on either PR's assessment:
+
+| Relation | Meaning | What the verdict becomes |
+|---|---|---|
+| `superseded-by` | The other PR, open or merged, carries this one's change | Blocking `decision` owned by the author: close this PR, or say what it still adds |
+| `supersedes` | This PR carries the other one's change | Its own verdict, and the review names what it dropped from the other |
+| `duplicates` | Same goal, neither contains the other | Blocking `decision` owned by the product or code owner: which PR to keep, with your recommendation |
+| `conflicts` | Each works alone; together they break or collide | Technique 12; name the landing order and who rebases |
+| `depends-on` | This PR needs the other merged first | Land the other first, or stack them |
+| `independent` | Shared files, no interaction | Each PR keeps its own verdict |
+
+Give the superseded PR enough review to confirm the claim, not a full trace.
+`ledger.py` refuses `ready` for a PR that is superseded or a duplicate, and
+`ledger.py end` holds the round until every pair that `queue.py` saved has a
+relation. Same-ticket duplicates that share no file and do not name each other
+show up only in the tracker's list of PRs linked to the ticket. Check that list
+when a tracker is configured.

@@ -28,7 +28,16 @@ GitHub-native stacks (`gh stack`) chain PRs bottom to top. Only the bottom PR ta
 - GitHub refuses per-PR auto-merge for any stack member, even after lower PRs merge. `gh stack merge <pr>` lands that PR plus every unmerged PR below it, so landing one layer needs review, approval and authority for each layer it carries.
 - A parent merge or restack moves a child's base and head. Treat that as new code to recheck, not a reviewed version.
 
-## Language for product owners
+## Related PRs
+
+Judge a PR against the PRs around it, not only on its own. Another open or merged PR can supersede it, duplicate it, conflict with it or be a dependency. Signals: shared changed files, PRs that name each other, wording such as "supersedes", "replaces" or "in favor of", several PRs linked to one ticket, and files the base changed since the PR branched. A signal is a lead. Verify supersession by checking that the newer PR carries every behaviour of the older one or names what it drops.
+
+- `pr-review-round` records a relation for every related pair and never calls a superseded or duplicate PR ready. Its verification playbook (technique 13) owns the method.
+- `pr-digest` groups superseded and duplicate PRs together, counts them as one piece of work, and names the one still worth review.
+- `pr-detail` treats a PR closed in favor of another as superseded, not abandoned, and links the replacement. Waiting time spent on a superseded PR is review surface the team paid for twice.
+- `pr-teacher` says when a newer PR replaces the one it explains, and which parts carried over.
+
+
 
 Write the report's summary and next action for a product owner. Use short
 sentences and product terms from the ticket. Name the person or role who must

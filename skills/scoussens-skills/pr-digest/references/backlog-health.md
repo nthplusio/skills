@@ -94,6 +94,15 @@ Also watch for the same ticket ID extracted from two open PRs in your own
 Step 3 output. That's the same signal, free, and it can catch such pairs
 before any tracker call.
 
+## Superseded PRs
+
+A PR whose body says "supersedes #N", "replaces #N" or "in favor of #N", and
+two open PRs that change the same files, are often one piece of work counted
+twice. Open both and check whether the newer one carries the older one's
+change. If it does, list them as one row: the live PR, plus "supersedes #N,
+still open" when the older one was never closed. An old PR left open after its
+replacement merged is cleanup for its author, not backlog.
+
 ## Size and CI flags
 
 - **`changedFiles` in the thousands with near-zero deletions** is a

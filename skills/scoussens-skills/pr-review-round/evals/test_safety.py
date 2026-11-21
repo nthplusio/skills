@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import branch_rules
+import branch_write
 import land
 import ledger
 import merge_queue
@@ -182,7 +183,8 @@ class LandingTests(unittest.TestCase):
                 (state(headRefOid="c" * 40), assessment(), authority()),
                 (state(queue_state="unknown"), assessment(), authority()),
                 (state(), assessment(), authority(prs=[99])),
-                (state(), assessment(), authority(possible_landing=False)),
+                # Without approvals, landing needs its own landing authority; "with approvals" covers auto-merge.
+                (state(), assessment(), authority(possible_landing=False, approvals=False)),
                 (state(updatedAt="new discussion"), assessment(), authority()),
                 (state(target={**TARGET, "sha": "f" * 40}), assessment(), authority()),
                 (state(target={**TARGET, "sha": None}), assessment(), authority()),
@@ -194,6 +196,30 @@ class LandingTests(unittest.TestCase):
                         writes, output, code = self.run_land([snapshot] * 3, [mode, f"17:{HEAD}"], item=item, permission=permission)
                         self.assertEqual(writes, 0, output)
                         self.assertEqual(code, 1)
+
+    def test_auto_merge_turns_on_while_checks_run_and_counts_as_handed_to_github(self):
+        auto = {"enabledAt": REVISION}
+        for merge_state in ("BLOCKED", "UNSTABLE", "BEHIND"):
+            with self.subTest(merge_state=merge_state):
+                writes, output, code = self.run_land(
+                    [state(mergeStateStatus=merge_state), state(mergeStateStatus=merge_state, autoMergeRequest=auto)],
+                    ["--enable-auto-merge", f"17:{HEAD}"])
+                self.assertEqual((writes, code), (1, 0), output)
+                self.assertIn("AUTO-MERGE ENABLED, not merged", output)
+        # A direct merge still waits for CLEAN, and an author's auto-merge needs no second request.
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED")] * 3)
+        self.assertEqual((writes, code), (0, 1), output)
+        writes, output, code = self.run_land([state(autoMergeRequest=auto)], ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (0, 0), output)
+        # "With approvals" grants auto-merge without listing it; without approvals it is held.
+        bare = authority(actions=[], possible_landing=False)
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(autoMergeRequest=auto)],
+                                             ["--enable-auto-merge", f"17:{HEAD}"], permission=bare)
+        self.assertEqual((writes, code), (1, 0), output)
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED")],
+                                             ["--enable-auto-merge", f"17:{HEAD}"], permission={**bare, "approvals": False})
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("out-of-scope authority", output)
 
     def test_authorized_auto_merge_is_a_landing_write_and_reads_back_uncertainty(self):
         writes, output, code = self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])
@@ -317,7 +343,14 @@ class ReviewWriteTests(unittest.TestCase):
         pr = {"head": {"sha": HEAD}, "state": "open", "draft": False,
               "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
               "auto_merge": {"enabled_by": "author"}, "user": {"login": "author"}}
-        for action in ["approve", "dismiss"]:
+        # Approving to merge covers auto-merge when the user chose approvals.
+        writes, output, code = self.run_write("approve", flags=["--write"], snapshots=[pr, pr])
+        self.assertEqual((len(writes), code), (1, 0), output)
+        writes, output, code = self.run_write("approve", flags=["--write", "--allow-landing"], snapshots=[pr],
+                                              permission=authority(approvals=False, actions=["approve"]))
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("without approvals", output)
+        for action in ["dismiss"]:
             with self.subTest(action=action):
                 writes, output, code = self.run_write(action, flags=["--write"], snapshots=[pr])
                 self.assertEqual(writes, [])
@@ -509,6 +542,97 @@ class RenderingTests(unittest.TestCase):
                 self.assertEqual(set(attrs), {"href"})
                 self.assertTrue(attrs["href"].startswith("https://"))
         self.assertIn('href="https://example.test/a?x=1&amp;y=2"', source)
+
+
+
+class WorkLevelTests(unittest.TestCase):
+    """The level the user picked caps every write, and branch writes stay bound to the reviewed head."""
+
+    def test_levels_cap_actions_and_approval_is_its_own_choice(self):
+        cases = [("assess", True, "comment", False), ("assess", True, "approve", False),
+                 ("review", False, "approve", False), ("review", True, "approve", True),
+                 ("review", True, "push-fix", False), ("moderate", False, "update-branch", True),
+                 ("moderate", True, "delegate", False), ("major", False, "delegate", True),
+                 ("assess", False, "enqueue", True), (None, True, "comment", False)]
+        for level, approvals, action, allowed in cases:
+            with self.subTest(level=level, approvals=approvals, action=action):
+                permission = authority(level=level, approvals=approvals, actions=[action])
+                if allowed:
+                    ledger.check_authority(permission, "owner/repo", 17, action, possible_landing=True)
+                else:
+                    with self.assertRaises(ValueError):
+                        ledger.check_authority(permission, "owner/repo", 17, action, possible_landing=True)
+
+    def run_branch(self, action, *, lines=3, level="moderate", github_head=None, fork=False, race=False):
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = Path(tmp) / "owner" / "repo.git"
+            work = Path(tmp) / "work"
+            sh = lambda *a, cwd=work: subprocess.run(a, cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+            remote.mkdir(parents=True)
+            sh("git", "init", "-q", "--bare", cwd=remote)
+            sh("git", "init", "-q", "-b", "fix", str(work), cwd=tmp)
+            for key, value in (("user.email", "r@example.test"), ("user.name", "Reviewer")):
+                sh("git", "config", key, value)
+            (work / "a.py").write_text("x = 1\n")
+            sh("git", "add", "."); sh("git", "commit", "-qm", "base")
+            sh("git", "remote", "add", "origin", str(remote)); sh("git", "push", "-q", "origin", "fix")
+            reviewed = sh("git", "rev-parse", "HEAD")
+            if race:  # someone else pushes after GitHub was read
+                sh("git", "commit", "-q", "--allow-empty", "-m", "theirs"); sh("git", "push", "-q", "origin", "fix")
+                sh("git", "reset", "-q", "--hard", reviewed)
+            (work / "a.py").write_text("".join(f"y{i} = {i}\n" for i in range(lines)))
+            sh("git", "commit", "-qam", "fix")
+            local = sh("git", "rev-parse", "HEAD")
+            heads = iter([github_head or reviewed, local])
+            calls = []
+
+            def api(path, method="GET", payload=None):
+                calls.append((path, method, payload))
+                if method != "GET":
+                    return {"message": "Updating pull request branch."}
+                return {"state": "open", "head": {"sha": next(heads), "ref": "fix",
+                                                  "repo": {"full_name": "someone/repo" if fork else "owner/repo"}}}
+
+            permission = Path(tmp) / "authority.json"
+            permission.write_text(json.dumps(authority(level=level, actions=[action])))
+            output = io.StringIO()
+            previous = os.getcwd()
+            os.chdir(work)
+            try:
+                with patch.object(sys, "argv", ["branch_write.py", action, "17", "--repo", "owner/repo", "--head", reviewed,
+                                                "--authority", str(permission), "--write"]), \
+                        patch.object(branch_write, "api", side_effect=api), \
+                        patch.dict(os.environ, XDG_STATE_HOME=tmp), contextlib.redirect_stdout(output):
+                    code = branch_write.main()
+                    written = ledger.writes("owner/repo")
+            finally:
+                os.chdir(previous)
+            pushed = sh("git", "rev-parse", "fix", cwd=remote)
+            return code, output.getvalue(), calls, written, pushed == local, reviewed
+
+    def test_minor_fix_is_pushed_with_a_lease_on_the_reviewed_head(self):
+        code, output, _, written, pushed, _ = self.run_branch("push-fix")
+        self.assertEqual((code, pushed, [w["action"] for w in written]), (0, True, ["push-fix"]), output)
+        self.assertIn("You pushed last", output)
+
+    def test_branch_writes_hold_on_size_level_moved_head_fork_and_a_racing_push(self):
+        for changes, message in (({"lines": 60}, "more than a minor fix"),
+                                 ({"level": "review"}, "outside the review level"),
+                                 ({"github_head": "c" * 40}, "head changed"),
+                                 ({"fork": True}, "lives in a fork"),
+                                 ({"race": True}, "git push failed")):
+            with self.subTest(**changes):
+                code, output, _, written, pushed, _ = self.run_branch("push-fix", **changes)
+                self.assertEqual((code, pushed, written), (1, False, []), output)
+                self.assertIn(message, output)
+        code, output, _, _, pushed, _ = self.run_branch("push-fix", lines=60, level="major")
+        self.assertEqual((code, pushed), (0, True), output)
+
+    def test_base_merge_asks_github_to_refuse_a_moved_head(self):
+        code, output, calls, written, _, reviewed = self.run_branch("update-branch")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(calls[-1], ("repos/owner/repo/pulls/17/update-branch", "PUT", {"expected_head_sha": reviewed}))
+        self.assertEqual([w["action"] for w in written], ["update-branch"])
 
 
 if __name__ == "__main__":

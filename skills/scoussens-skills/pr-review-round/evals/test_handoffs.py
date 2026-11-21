@@ -72,7 +72,7 @@ def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()
 
 class HandoffTests(unittest.TestCase):
     def setUp(self):
-        for name, value in (("me", "reviewer"), ("assessments", {})):
+        for name, value in (("me", "reviewer"), ("assessments", {}), ("base_changes", {"files": [], "commits": []})):
             local = patch.object(queue, name, return_value=value)
             local.start()
             self.addCleanup(local.stop)
@@ -96,7 +96,7 @@ class HandoffTests(unittest.TestCase):
                 patch.object(queue, "repo_slug", return_value="sample/product"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "stack_of", return_value=None), \
-                patch.object(queue, "collect", return_value=raw), contextlib.redirect_stdout(output):
+                    patch.object(queue, "collect", return_value=raw), contextlib.redirect_stdout(output):
             queue.main()
         for text in ("Review requested again", "CHANGES_REQUESTED", "AUTHOR: conflicts", "1 RED", "AUTO",
                      "author -> user:reviewer", "Request 31", "1; unknown coverage on 0",
@@ -456,6 +456,28 @@ class HandoffTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "scope comparison unknown"):
                 run_queue([[first]], raw, argv=["--scope", str(scope)])
 
+    def test_triage_names_related_pairs_and_base_overlap_and_keeps_pairs_beside_the_scope(self):
+        raw = evidence()
+        raw["timeline"], raw["requestedReviewers"], raw["pr"]["reviews"] = [], [], []
+        older = queue_row(number=16, title="Fix saved filters")
+        newer = queue_row(number=17, createdAt="2026-11-02T12:00:00Z", title="Filters, take two")
+        lone = queue_row(number=18, createdAt="2026-11-03T12:00:00Z", title="Docs")
+        details = lambda paths, body="": {"files": [{"path": p} for p in paths], "statusCheckRollup": [], "body": body}
+        reads = [[older, newer, lone], details(["src/store.py", "yarn.lock"]),
+                 details(["src/store.py", "src/view.py"], "Supersedes #16; also replaces #9"),
+                 details(["docs/a.md", "yarn.lock"]), older, newer, lone]
+        base = {16: {"files": ["src/store.py"], "commits": ["Rework store (#12)"]}}
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(queue, "base_changes", side_effect=lambda slug, p: base.get(p["number"], {"files": []})):
+            scope = Path(tmp) / "scope.json"
+            text = run_queue(reads, raw, argv=["--save-scope", str(scope)])
+            saved = json.loads((Path(tmp) / "scope.related.json").read_text())
+        self.assertIn("  #16 + #17  shared: src/store.py · #17 names #16\n", text)
+        self.assertIn('#17 says "replaces #9", outside this round', text)
+        self.assertIn("  #16  1 file(s): src/store.py · merged since it branched: #12\n", text)
+        # A shared lockfile does not relate #18 to anything.
+        self.assertEqual([e["prs"] for e in saved], [[16, 17]])
+
     def test_requests_the_base_listing_cannot_show_are_named_and_stay_out_of_scope(self):
         details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
         raw = evidence()
@@ -565,6 +587,8 @@ class HandoffTests(unittest.TestCase):
             row = lambda number, handoffs: {"repository": "sample/product", "number": number, "handoffs": handoffs}
             handled = review_requests.reconcile(evidence(), [marker])
             files["scope"].write_text("[17, 18]")
+            related = files["scope"].with_name(files["scope"].stem + ".related.json")
+            related.write_text(json.dumps([{"prs": [17, 18], "files": ["src/store.py"], "mentions": []}]))
             files["report"].write_text(json.dumps([
                 row(17, review_requests.reconcile(evidence())),
                 row(19, {"coverage": "unknown", "gaps": ["timeline"], "unhandled": 0, "requests": []})]))
@@ -578,6 +602,9 @@ class HandoffTests(unittest.TestCase):
             text, code = self.run_ledger("end", rid, "--scope", str(files["scope"]), "--report", str(files["report"]))
             self.assertEqual(code, 1)
             self.assertIn("PR #18: request coverage unknown (timeline)", text)
+            self.assertIn("PRs #17 and #18: related (src/store.py) but neither assessment records a relation", text)
+            related.write_text("[]")
+            text, code = self.run_ledger("end", rid, "--scope", str(files["scope"]), "--report", str(files["report"]))
             self.assertNotIn("PR #17", text)
             files["report"].write_text(json.dumps([row(17, handled), row(18, review_requests.reconcile(
                 {**evidence(), "timeline": [], "requestedReviewers": []})), row(19, handled)]))

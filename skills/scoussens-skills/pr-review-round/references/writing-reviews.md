@@ -86,8 +86,9 @@ Record an owned decision, not a "hold". Decision kind, severity, axis and GitHub
 Save every assessment, including clean ones, with `ledger.py record <round-id> <assessments.json>`. Use the schema in `report.md`: head/base, original assessment time and scope, input revisions, and decisions with criterion/rule, source/time/observation, severity, axis, owner, smallest unblock, effort and proposed action. Record an actual posted action/URL/time only after readback. An accepted gap keeps its actor, source, time, exact criterion and scope; it does not clear unrelated requirements.
 
 The table names proposed actions. In assessment-only mode, keep them local.
-Execute each action only with authority for that action and PR; approval or
-dismissal that can release auto-merge also needs merge authority. Preserve the
+Execute each action only with authority for that action and PR. An authority
+"with approvals" covers an approval that releases auto-merge; a dismissal that
+can release it also needs merge authority. Preserve the
 independent risk-tier trace and evidence requirements before granting clearance.
 
 | Situation | Action |
@@ -100,6 +101,8 @@ independent risk-tier trace and evidence requirements before granting clearance.
 | Independent review is not finished | Review incomplete: reviewer owns finishing it; do not request author fixes |
 | Findings real but pre-existing and out of scope | Approve, note as follow-up |
 | Automated review is red because the tool errored | Say so in the review; do not treat it as a finding |
+| Another PR, open or merged, carries this change | Needs owner decision for the author: close in favor of #N, or say what this PR still adds. Name what the replacement drops |
+| Two PRs do the same work and neither contains the other | Needs owner decision: say which to keep and why, on both PRs |
 | You are the author | You cannot approve. Resolve conflicts, engage the findings honestly, ask for a named non-author reviewer |
 
 On your own PRs, resist the urge to wave findings through. Answer them — either
@@ -126,8 +129,8 @@ gate, so the author is not guessing.
 Use the guarded helper after verifying the full head SHA, not an unpinned
 `gh pr review` call. Supply `--authority <authority.json>` and `--assessments <assessments.json>` on every write (schema in `report.md`). The helper generates the required **Unblock** section with owner, smallest fix and effort from code decisions; it rejects changes-requested without a code decision. Evidence and owner requests use the proposed comment channel; reviewer-incomplete work stays local with the reviewer. `--write` selects execution; omit
 it when preparing a proposed action. `--allow-landing` additionally asserts
-merge authority and is required for approval or dismissal if auto-merge is
-enabled. Neither flag substitutes for the user's permission or for evidence.
+merge authority and is required for a dismissal if auto-merge is enabled, and
+for an approval only when the authority does not include approvals. Neither flag substitutes for the user's permission or for evidence.
 
 ```bash
 # Set S to this skill's scripts directory; HEAD is the full SHA already reviewed.

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Submit one authorized review action against a verified full head SHA.
 
-Without --write this only reports the held action. --allow-landing additionally
-asserts merge authority when approval or dismissal can release auto-merge.
+Without --write this only reports the held action. An authority "with approvals"
+covers an approval that releases auto-merge. --allow-landing asserts merge
+authority for a dismissal that can release auto-merge.
 Reviews carry commit_id. Comments and dismissals have no atomic head condition
 in GitHub's API, so the helper checks before and after and never retries writes.
 """
@@ -12,7 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from ledger import check_authority, check_clearance, record_write, validate_assessment, target_state, target_matches
+from ledger import approvals_granted, check_authority, check_clearance, record_write, validate_assessment, target_state, target_matches
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
 from review_config import resolve as review_config
@@ -109,7 +110,9 @@ def main():
                     (pr["head"].get("repo") or {}).get("full_name"), pr["head"].get("ref")) == login:
                 raise RuntimeError(f'HELD: you pushed the last commit, and {pr["base"].get("ref")} requires approval '
                                    "of the last push by someone else; name another approver")
-        if args.action in ("approve", "dismiss") and not args.allow_landing:
+        # Approving to merge covers auto-merge; dismissing someone else's review still needs --allow-landing.
+        lands_with_approval = args.action == "approve" and approvals_granted(authority)
+        if args.action in ("approve", "dismiss") and not args.allow_landing and not lands_with_approval:
             if "auto_merge" not in pr or pr["auto_merge"] is not None:
                 raise RuntimeError("HELD: auto-merge enabled or unknown; merge authority required")
         if args.action in ("approve", "dismiss"):

@@ -48,7 +48,8 @@ markdown links clickable, so a linked number costs nothing.
 landed. Use the returned `queue_state`: `queued` means an observed
 `mergeQueueEntry`, `not_queued` means observed absence, and `unknown` means the
 query failed, was unavailable, or saw a different head. `CLEAN` and auto-merge
-do not prove membership. Keep approved-but-not-queued and queue-unknown rows
+do not prove membership. Report a PR with auto-merge on as **Auto-merge on · not
+merged**, the expected state after an approval, and confirm merges later. Keep approved-but-not-queued and queue-unknown rows
 separate from queued rows. Conflicted and closed PRs are not merged.
 
 ## HTML artifact
@@ -92,6 +93,8 @@ posted. Use this shape, with one entry per assessed PR:
 }
 ```
 
+Add `relations: [{"pr": 490, "kind": "superseded-by", "evidence": "#490 carries both hunks and the test"}]` for every related pair `queue.py` printed. Kinds are `supersedes`, `superseded-by`, `duplicates`, `conflicts`, `depends-on` and `independent`, defined in technique 13 of `verification-playbook.md`. A pair needs a relation on only one of its two assessments. A `superseded-by` or `duplicates` relation requires a blocking, unwaived decision.
+
 Use `code`, `evidence`, `decision`, `reviewer-incomplete` or `ready` as defined in `writing-reviews.md`. A clean assessment has one `ready` record, not an empty decision list. Persist it with `ledger.py record <round-id> <assessments.json>`; optional detailed findings remain in `ledger.record`. This extends the round's existing ledger, not a second issue tracker. Legacy SHA-only proposals must be reconciled into this schema before reuse.
 
 `evidence_inputs` comes from a fresh `round_report.py` collection. Include issue descriptions, relevant comments/decisions, criteria and source update times in `ticketEvidence`; its content hash makes external changes invalidate a recommendation. `policy` hashes the resolved profile and all directly referenced policy/checklist contents, including bundled defaults; changed rules invalidate reuse and guarded writes. Files linked from those policies still require source refresh and explicit provenance; this is not a transitive documentation crawler. Supply `round_report.py --review-config <repository-relative-path>` for an alternate profile and carry the same path as top-level `review_config` in the assessment bundle; omit it for the standard profile. Run write helpers from the target repository root so they can recompute the policy revision. Preserve the original `assessed_at` when reusing code checks and describe their scope/limits in `provenance`. Add `posted_action: {action, url, at}` only after an actual write/readback, never for a proposed action. For an accepted evidence/owner gap add `waiver: {actor, source, at, scope, criterion}`; `criterion` must exactly match this record. Preserve waivers across new heads only after confirming their scope still applies; they cannot waive code verification or unfinished review.
@@ -113,10 +116,10 @@ Populate matrix rows with the implemented path, evidence/source/time and limit. 
 Every write additionally takes `--authority authority.json`:
 
 ```json
-{"repository":"owner/repo","prs":[482],"actions":["request-changes"],"instruction":"<link or exact originating instruction>","possible_landing":false}
+{"repository":"owner/repo","prs":[482],"level":"review","approvals":false,"actions":["request-changes"],"instruction":"<link or exact originating instruction>","possible_landing":false}
 ```
 
-Use only authorized actions (`approve`, `request-changes`, `comment`, `dismiss`, `enqueue`, `enable-auto-merge`). Approval/dismissal that can release auto-merge and both landing actions require `possible_landing: true` with permission covering that consequence. Record exact PRs rather than extending an old batch's authority. Files record permission; they do not grant it. Helpers refresh forge state, but the reviewer must refresh tracker evidence before invoking them.
+`level` is the work level the user picked (`assess`, `review`, `moderate` or `major`), and `approvals` is their yes or no on approving. `approvals: true` grants `approve` and `enable-auto-merge` without listing them, and covers the landing an approval or auto-merge causes. Use only authorized actions (`approve`, `request-changes`, `comment`, `dismiss`, `enqueue`, `enable-auto-merge`, `update-branch`, `push-fix`) that the level allows: `ledger.LEVELS` holds the table, and the helpers refuse the rest. Approval/dismissal that can release auto-merge and both landing actions require `possible_landing: true` with permission covering that consequence. Record exact PRs rather than extending an old batch's authority. Files record permission; they do not grant it. Helpers refresh forge state, but the reviewer must refresh tracker evidence before invoking them.
 
 `evidence_inputs.target` records the actual target branch name and SHA fetched independently of the PR's `baseRefOid`. Collection reads it before and after the round; a moved or unreadable target makes freshness unknown. Write helpers re-read it before mutation and reject a mismatch or unknown SHA. A target read does not prove integration tests passed. Older assessments without this field remain historical evidence, not current clearance.
 

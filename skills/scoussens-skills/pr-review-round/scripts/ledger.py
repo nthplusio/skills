@@ -9,7 +9,9 @@ Run a round:
 
 `record` refuses a round id that `start` did not print. `end` closes the round
 only when every scoped PR is in the report with complete request coverage and
-no unhandled request; otherwise it prints each blocker and exits 1.
+no unhandled request, and every related pair in `<scope>.related.json` has a
+relation on an assessment from this round; otherwise it prints each blocker
+and exits 1.
 
 Read a round's history:
 
@@ -55,6 +57,11 @@ DECISIONS = {
     "code": "Needs code changes", "evidence": "Needs evidence",
     "decision": "Needs owner decision", "reviewer-incomplete": "Review incomplete",
     "ready": "Source review complete",
+}
+# How a PR stands against another one. Superseded and duplicate PRs are never ready.
+RELATIONS = {
+    "supersedes": "Supersedes", "superseded-by": "Superseded by", "duplicates": "Duplicates",
+    "conflicts": "Conflicts with", "depends-on": "Depends on", "independent": "Overlaps, independent of",
 }
 
 
@@ -110,6 +117,16 @@ def validate_assessment(assessment):
         raise ValueError("duplicate decision IDs")
     if any(d["kind"] == "ready" for d in assessment["decisions"]) and len(ids) != 1:
         raise ValueError("ready cannot mask another decision")
+    for relation in assessment.get("relations", []):
+        if (type(relation.get("pr")) is not int or relation["pr"] == assessment["number"]
+                or relation.get("kind") not in RELATIONS or not relation.get("evidence")):
+            raise ValueError("relation requires another PR number, a kind from "
+                             + ", ".join(RELATIONS) + " and the evidence that decided it")
+        if relation["kind"] in ("superseded-by", "duplicates") and not any(
+                d["kind"] != "ready" and d["severity"] == "blocking" and not d.get("waiver")
+                for d in assessment["decisions"]):
+            raise ValueError(f'a PR {relation["kind"]} #{relation["pr"]} cannot be ready; record a blocking '
+                             "decision naming who closes or keeps which PR")
 
 
 def unresolved(assessment):
@@ -181,10 +198,44 @@ def handled_requests(repo=None):
     return list(latest.values())
 
 
+# The work level the user picked caps the writes. Approval is a separate yes/no at
+# every level above assess. Approving to merge includes auto-merge: "with approvals"
+# grants approve and enable-auto-merge, and an approval may release auto-merge.
+# Dismissal and direct merges still need their own instruction.
+LEVELS = {
+    "assess": (),
+    "review": ("comment", "request-changes"),
+    "moderate": ("comment", "request-changes", "update-branch", "push-fix"),
+    "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
+}
+SEPARATE = ("dismiss", "enqueue", "enable-auto-merge")
+
+
+def level_allows(authority, action):
+    level = authority.get("level")
+    if level not in LEVELS:
+        return False
+    if action in ("approve", "enable-auto-merge") and authority.get("approvals") is True and level != "assess":
+        return True
+    if action == "approve":
+        return False
+    return action in LEVELS[level] or action in SEPARATE
+
+
+def approvals_granted(authority):
+    return authority.get("level") in LEVELS and authority["level"] != "assess" and authority.get("approvals") is True
+
+
 def check_authority(authority, repo, number, action, possible_landing=False):
+    if authority.get("level") not in LEVELS:
+        raise ValueError("authority requires a work level: " + ", ".join(LEVELS))
+    if not level_allows(authority, action):
+        raise ValueError(f'{action} is outside the {authority["level"]} level'
+                         + (" without approvals" if action == "approve" else "") + "; ask before raising the level")
+    via_approval = action in ("approve", "enable-auto-merge") and approvals_granted(authority)
     if (authority.get("repository") != repo or number not in authority.get("prs", [])
-            or action not in authority.get("actions", []) or not authority.get("instruction")
-            or (possible_landing and authority.get("possible_landing") is not True)):
+            or (action not in authority.get("actions", []) and not via_approval) or not authority.get("instruction")
+            or (possible_landing and authority.get("possible_landing") is not True and not via_approval)):
         raise ValueError("out-of-scope authority: record instruction, repository, exact PRs, action and possible landing")
 
 
@@ -327,6 +378,15 @@ def round_blockers(reconciliation):
             blockers.append(f'PR #{row["number"]}: {state.get("unhandled", "unknown")} unhandled request(s)'
                             + (f' ({"; ".join(waiting)})' if waiting else ""))
     return blockers
+
+
+def relation_blockers(pairs, recorded):
+    """Each related pair needs a relation on either PR's assessment from this round."""
+    latest = {a["number"]: a for a in recorded}
+    judged = lambda n, other: any(r["pr"] == other for r in (latest.get(n) or {}).get("relations", []))
+    return [f'PRs #{a} and #{b}: related ({", ".join(pair["files"][:3] + pair["mentions"]) or "named"}) '
+            f"but neither assessment records a relation to the other"
+            for pair in pairs for a, b in [pair["prs"]] if not (judged(a, b) or judged(b, a))]
 
 
 def round_end(rid, prs, repo=None, *, reconciliation):
@@ -480,6 +540,14 @@ def main():
         rows = {r.get("number"): r for r in report}
         blockers = [f"PR #{n}: not in the report; run round_report.py again with --scope" for n in scope if n not in rows]
         blockers += round_blockers([rows[n] for n in scope if n in rows])
+        from related import related_path
+        try:
+            pairs = json.loads(related_path(options["--scope"]).read_text())
+        except (OSError, ValueError):
+            blockers.append(f'related pairs unknown: {related_path(options["--scope"])} unreadable; '
+                            "run queue.py <base> --scope <scope.json> again")
+        else:
+            blockers += relation_blockers(pairs, [a for a in assessment_history(repo) if a.get("round") == rid])
         if not blockers:
             try:
                 round_end(rid, scope, repo, reconciliation=[rows[n] for n in scope])
