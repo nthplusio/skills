@@ -597,6 +597,23 @@ class ReviewWriteTests(unittest.TestCase):
                 writes, output, code = self.run_write("approve", flags=["--write"], reviews=list(existing))
                 self.assertEqual((len(writes), code), (1, 0), output)
 
+    def test_a_comment_is_a_head_bound_review_and_is_not_posted_twice(self):
+        reviews = []
+        writes, output, code = self.run_write("comment", flags=["--write"], reviews=reviews)
+        self.assertEqual(code, 0, output)
+        [(path, payload)] = writes
+        self.assertEqual(path, "repos/owner/repo/pulls/17/reviews")
+        self.assertEqual((payload["event"], payload["commit_id"]), ("COMMENT", HEAD))
+        self.assertIn("store.py:42", payload["body"])
+        again, output, code = self.run_write("comment", flags=["--write"], reviews=reviews)
+        self.assertEqual((again, code), ([], 0), output)
+        self.assertIn("already exists", output)
+        # A different comment, or the same one at an older head, is new.
+        for existing in ({**reviews[0], "body": "Reviewed head: something else"}, {**reviews[0], "commit_id": "b" * 40}):
+            with self.subTest(existing=existing):
+                writes, output, code = self.run_write("comment", flags=["--write"], reviews=[existing])
+                self.assertEqual((len(writes), code), (1, 0), output)
+
     def test_existing_review_lookup_runs_after_every_check(self):
         approved = [{"id": 1, "user": {"login": "reviewer"}, "commit_id": HEAD, "state": "APPROVED", "body": "ok"}]
         writes, output, code = self.run_write("approve", flags=["--write"], reviews=approved, permission=authority(prs=[99]))

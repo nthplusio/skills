@@ -194,8 +194,10 @@ round's acting reviewer or start time. Follow `references/pr-family.md` for
 handoff semantics and tracker enrichment.
 
 **Original review body.** `render_round.py` renders original posted reviews and
-comments using the bundled Markdown renderer at build time. A comment has a
-comment timestamp, not a submitted-review timestamp. Keep historical findings
+comments using the bundled Markdown renderer at build time. `review_write.py`
+posts the round's comments as `COMMENT` reviews, which have a submitted-review
+timestamp and reviewed head. An issue comment has only a comment timestamp, not
+a submitted-review timestamp. Keep historical findings
 separate from a head-bound current assessment. A resolved thread flag alone is
 not a verified code fix.
 
