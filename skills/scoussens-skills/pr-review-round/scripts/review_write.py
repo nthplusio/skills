@@ -27,7 +27,7 @@ from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
 from reapprove import approved_head
-from findings import inline_comments, line_of, review_findings
+from findings import inline_comments, is_bot, line_of, review_findings
 
 # Each review action: the event GitHub takes and the state the posted review shows.
 REVIEWS = {"approve": ("APPROVE", "APPROVED"), "reapprove": ("APPROVE", "APPROVED"),
@@ -50,11 +50,6 @@ def api(path, method="GET", payload=None):
     if not isinstance(data, dict):
         raise RuntimeError(f"{method} returned unexpected data; inspect remote state before retry")
     return data
-
-
-def is_bot(user):
-    """A review bot by GitHub's account type or its `[bot]` login, never by the caller's say-so."""
-    return (user or {}).get("type") == "Bot" or ((user or {}).get("login") or "").endswith("[bot]")
 
 
 def verified_bot_findings(repo, number, review_id, assessment, granted):

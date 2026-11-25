@@ -30,6 +30,13 @@ KINDS = {
         "default": "ask", "actions": ("dismiss-human",), "with_approvals": False,
         "question": "After verifying at the head that a person's review findings are fixed, may the round dismiss "
                     "that person's review? A dismissal can let an auto-merge PR merge."},
+    # A PR the authenticated user authored, or last pushed under a last-push rule: the round cannot approve it.
+    "own-pr-landing": {
+        "default": "ask", "actions": ("land-own-pr",), "with_approvals": False,
+        "question": "For a PR you authored or last pushed, which you cannot approve, may the round turn on auto-merge "
+                    "or enqueue it when its required checks are green at the reviewed head, a review bot has reviewed "
+                    "it, nobody requests changes and the round's assessment at that head has nothing unresolved? "
+                    "GitHub still enforces any human approval the base requires."},
     # Its own action, so `never` here refuses only a carried approval and a fresh `approve` after review still works.
     "reapprove-base-only": {
         "default": "auto", "actions": ("reapprove",), "with_approvals": True,

@@ -1,4 +1,5 @@
 """Local forge doubles only; these tests never contact GitHub."""
+import base64
 import contextlib
 from html.parser import HTMLParser
 import io
@@ -76,7 +77,11 @@ class Elements(HTMLParser):
 
 
 class LandingTests(unittest.TestCase):
-    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None, prior=()):
+    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None, prior=(),
+                 rules=(), pusher=None, checks=(), reviews=(), codeowners=None):
+        """The last five answer an own-PR landing's reads: the base's rulesets, the branch's last pusher,
+        `gh pr checks --required`, the PR's reviews, and the base's CODEOWNERS (None: no file). The
+        authenticated user is `reviewer`."""
         output = io.StringIO()
         snapshots = iter(states)
         writes = []
@@ -90,6 +95,25 @@ class LandingTests(unittest.TestCase):
             elif command[:2] == ["gh", "api"] and "/git/ref/heads/" in command[2]:
                 target = current.get("target") or {}
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": target.get("sha")}}
+            elif command[:3] == ["gh", "api", "user"]:
+                payload = {"login": "reviewer"}
+            elif command[:2] == ["gh", "api"] and "/rules/branches/" in command[2]:
+                payload = list(rules)
+            elif command[:2] == ["gh", "api"] and "/activity?" in command[2]:
+                payload = [{"actor": {"login": pusher}}] if pusher else []
+            elif command[:3] == ["gh", "pr", "checks"]:
+                payload = list(checks)
+            elif command[:2] == ["gh", "api"] and "/pulls/17/reviews?" in command[2]:
+                payload = [list(reviews)]
+            elif command[:2] == ["gh", "api"] and command[2] == "repos/owner/repo/pulls/17":
+                payload = {"user": current.get("author"), "base": {"ref": "main"},
+                           "head": {"ref": "feature", "repo": {"full_name": "owner/repo"}}}
+            elif command[:2] == ["gh", "api"] and "/pulls/17/files?" in command[2] and "files" not in (reads or {}):
+                payload = [[{"filename": "src/app.py"}]]
+            elif command[:2] == ["gh", "api"] and "/contents/" in command[2]:
+                if codeowners is None or not command[2].startswith("repos/owner/repo/contents/CODEOWNERS?"):
+                    return subprocess.CompletedProcess(command, 1, "", "gh: Not Found (HTTP 404)")
+                payload = {"content": base64.b64encode(codeowners.encode()).decode()}
             elif command[:2] == ["gh", "api"] and freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
             elif command[:3] == ["gh", "api", "graphql"] and "stackEntry" in command[4]:
@@ -296,6 +320,80 @@ class LandingTests(unittest.TestCase):
         writes, output, code = self.run_land([moved] * 3, reads=overlap)
         self.assertEqual((writes, code), (0, 1), output)
         self.assertIn("base changed files this PR changes: src/app.py", output)
+
+    def test_own_pr_lands_under_auto_only_when_every_condition_holds_and_records_them(self):
+        auto = {"enabledAt": REVISION}
+        mine = state(reviewDecision="REVIEW_REQUIRED", mergeStateStatus="BLOCKED", author={"login": "reviewer"})
+        green = [{"name": "ci", "bucket": "pass"}, {"name": "docs", "bucket": "skipping"}]
+        bot_review = [{"id": 5, "user": BOT, "state": "COMMENTED", "submitted_at": REVISION}]
+        allowed = authority(grants=(), policies={"own-pr-landing": "auto"})
+        for mode in ("--enable-auto-merge", "--enqueue"):
+            with self.subTest(mode=mode):
+                writes, output, code = self.run_land([mine, {**mine, "autoMergeRequest": auto, "state": "MERGED"}],
+                                                     [mode, f"17:{HEAD}"], permission=allowed, checks=green,
+                                                     reviews=bot_review)
+                self.assertEqual((writes, code), (1, 0), output)
+                [write] = self.recorded
+                self.assertEqual((write["action"], write["head"]), ("land-own-pr", HEAD))
+                self.assertEqual(write["conditions"], {
+                    "own": "reviewer authored it", "assessment": f"saved at {HEAD} with nothing unresolved",
+                    "checks": "ci pass, docs skipping", "bot_review": "review-bot[bot]", "changes_requested": "none"})
+        # The user's last push under a last-push rule makes another author's PR theirs too.
+        pushed = {**mine, "author": {"login": "alex"}, "headRepositoryOwner": {"login": "owner"},
+                  "headRepository": {"name": "repo"}, "headRefName": "feature"}
+        last_push = [{"type": "pull_request", "parameters": {"require_last_push_approval": True}}]
+        writes, output, code = self.run_land([pushed, {**pushed, "autoMergeRequest": auto}], ["--enable-auto-merge",
+                                             f"17:{HEAD}"], permission=allowed, checks=green, reviews=bot_review,
+                                             rules=last_push, pusher="reviewer")
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("reviewer pushed the last commit", self.recorded[0]["conditions"]["own"])
+        # Each failed condition holds without writing and is named.
+        person = {"id": 6, "user": PERSON, "state": "CHANGES_REQUESTED", "submitted_at": REVISION}
+        for name, changes, held in [
+            ("red check", {"checks": [{"name": "ci", "bucket": "fail"}]}, "required checks not green: ci fail"),
+            ("pending check", {"checks": [{"name": "ci", "bucket": "pending"}]}, "required checks not green: ci pending"),
+            ("no required checks", {"checks": []}, "required checks unknown or none reported"),
+            ("no bot review", {"reviews": [{**bot_review[0], "user": PERSON}]}, "no review bot has reviewed this PR"),
+            ("changes requested", {"reviews": [*bot_review, person]}, "changes requested by alex"),
+            ("unresolved assessment", {"item": assessment(kind="evidence", owner="Operator")}, "unresolved decisions"),
+        ]:
+            with self.subTest(failed=name):
+                kwargs = {"permission": allowed, "checks": green, "reviews": bot_review, **changes}
+                writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], **kwargs)
+                self.assertEqual((writes, code), (0, 1), output)
+                self.assertIn(held, output)
+                self.assertEqual(self.recorded, [])
+        # Someone else's unapproved PR is not an own PR.
+        writes, output, code = self.run_land([{**mine, "author": {"login": "alex"}}] * 3, ["--enable-auto-merge",
+                                             f"17:{HEAD}"], permission=allowed, checks=green, reviews=bot_review)
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("current approval not confirmed", output)
+
+    def test_own_pr_landing_asks_naming_approvers_and_reports_a_refusal_without_bypassing(self):
+        mine = state(reviewDecision="REVIEW_REQUIRED", mergeStateStatus="BLOCKED", author={"login": "reviewer"})
+        green = [{"name": "ci", "bucket": "pass"}]
+        bot_review = [{"id": 5, "user": BOT, "state": "COMMENTED", "submitted_at": REVISION}]
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"],
+                                             permission=authority(grants=()), checks=green, reviews=bot_review,
+                                             codeowners="* @carol @reviewer\n")
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("own-pr-landing policy is ask", output)
+        self.assertIn("@carol  owns src/app.py", output)
+        self.assertIn("left out @reviewer: author", output)
+        # A yes for this PR lets it through, and a GitHub refusal names the head-bound command for a person.
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], failure=True,
+                                             permission=authority(grants=("land-own-pr",)), checks=green,
+                                             reviews=bot_review)
+        self.assertEqual((writes, code), (1, 1), output)
+        self.assertIn(f"a person with that right can run: gh pr merge 17 --repo owner/repo --match-head-commit {HEAD} "
+                      "--auto", output)
+        self.assertNotIn("--admin", output)
+        self.assertEqual(self.recorded, [])
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], checks=green,
+                                             reviews=bot_review,
+                                             permission=authority(grants=(), policies={"own-pr-landing": "never"}))
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("own-pr-landing policy is never", output)
 
     def test_authorized_auto_merge_is_a_landing_write_and_reads_back_uncertainty(self):
         writes, output, code = self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])

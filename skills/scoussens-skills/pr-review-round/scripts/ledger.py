@@ -220,7 +220,8 @@ LEVELS = {
     "moderate": ("comment", "request-changes", "update-branch", "push-fix"),
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
-SEPARATE = ("dismiss-bot", "dismiss-human", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove")
+SEPARATE = ("dismiss-bot", "dismiss-human", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove",
+            "land-own-pr")
 # Writes that can make a PR merge, directly or by releasing an author's auto-merge.
 LANDING = ("approve", *SEPARATE)
 GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}
@@ -370,11 +371,13 @@ def _append(name, rec, repo=None):
 
 # ---------------------------------------------------------------- writes
 
-def record_write(repo, number, action, head, url=None, accepted=None):
+def record_write(repo, number, action, head, url=None, accepted=None, conditions=None):
     """One accepted write by a helper. Never a proposed action or a failed request.
-    `accepted` is a Benign freshness record: the moved inputs the write went ahead on, and why."""
+    `accepted` is a Benign freshness record: the moved inputs the write went ahead on, and why.
+    `conditions` is what an own-PR landing observed for each condition it went ahead on."""
     _append("writes", {"number": number, "action": action, "head": head, "url": url, "at": _now(),
-                       **({"accepted": accepted} if accepted else {})}, repo)
+                       **({"accepted": accepted} if accepted else {}),
+                       **({"conditions": conditions} if conditions else {})}, repo)
 
 
 def writes(repo=None):

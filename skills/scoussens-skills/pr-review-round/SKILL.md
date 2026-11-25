@@ -68,6 +68,7 @@ The user can save their answers as the repository default through
 | `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
 | `dismiss-bot-review` | Dismisses a review bot's review, as action `dismiss-bot`, after verifying its findings at the head (step 6) | `ask` |
 | `dismiss-human-review` | Dismisses a person's review, as action `dismiss-human`, after verifying its findings are fixed | `ask` |
+| `own-pr-landing` | Lands, as action `land-own-pr`, a PR you authored or last pushed under a last-push rule, when the four conditions in step 5 hold; `ask` names who can approve | `ask` |
 | `reapprove-base-only` | Approves again, as action `reapprove`, a PR whose round approval was dismissed when the new head adds only clean base merges | `auto` |
 
 `ask` holds the write and the helper prints the question to ask; `never`
@@ -116,7 +117,8 @@ Three rules hold regardless:
 - Never approve your own PR; GitHub forbids it. Do not approve a PR whose last
   push was yours when the base requires the last push to be approved by someone
   else; GitHub accepts that approval and does not count it. `review_write.py`
-  holds both. On such work, resolve the conflicts and name a reviewer.
+  holds both. On such work, resolve the conflicts and name a reviewer; the
+  `own-pr-landing` policy decides whether the round may land it (step 5).
 - When a permission gate denies a merge command, record the denial and the
   observed readiness separately, give the head-bound command a human can run
   after rechecking the head and approval, confirm state with
@@ -337,6 +339,8 @@ Bare PR numbers also default to read-only. Report **queued** only when
 queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
 merge command are not evidence of queue membership. Conflicted, closed, held,
 or timed-out PRs never count as landed; the helper exits nonzero for them.
+
+**Land your own PRs.** The round cannot approve a PR you authored, or one whose last push was yours when the base requires another approver of the last push. For each such PR, run `approvers.py <n> --repo <owner/repo>`; it prints the code owners of the changed files who can approve, without you, and prints unknown when it cannot read an input. With `own-pr-landing` on `ask`, `land.py` holds and prints the same names: at `review` or above, request review from them with `gh pr edit <n> --add-reviewer <names>` and report them. With `auto`, run `land.py --enable-auto-merge <n>:<head>` (or `--enqueue`). For a PR without GitHub's `APPROVED` decision that is yours, it lands only when all four hold, and records each on the ledger write: the required checks (`gh pr checks --required`) are all pass or skipping at the reviewed head, at least one review on the PR is from a bot account, no reviewer's latest verdict is `CHANGES_REQUESTED`, and the round's saved assessment at that head is current with nothing unresolved. It holds naming each condition that fails. GitHub still enforces any human approval the base requires: when it refuses, record the denial and give the head-bound command a person can run, as for any permission denial. Never use `--admin` or another bypass.
 
 **Re-approve base-only heads.** When the base dismisses stale approvals on push, an author's base merge dismisses the round's approval. For each PR `queue.py` marks `REAPPROVE: base only`, with `reapprove-base-only` on `auto`, run `reapprove.py <n> --repo <owner/repo> --carry $RUN/assessments.json > $RUN/reapprove-<n>.json`. It checks that every commit since the approved head A is a clean merge from the base tip, compares each merge's tree with `git merge-tree --write-tree`, and carries the assessment at A to the live head H. Then run `review_write.py reapprove <n> --head <H> --assessments $RUN/reapprove-<n>.json` with a body naming A, H and the tree check; auto-merge follows per `auto-merge-on-approval`. Any other change, a conflict or a refused carry gets a normal re-review.
 

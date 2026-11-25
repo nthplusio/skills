@@ -30,6 +30,11 @@ def gh(args, tries=3):
     return None
 
 
+def is_bot(user):
+    """A review bot by GitHub's account type or its `[bot]` login, never by the caller's say-so."""
+    return (user or {}).get("type") == "Bot" or ((user or {}).get("login") or "").endswith("[bot]")
+
+
 def inline_comments(repo, num):
     """Every inline review comment on the PR, or None when unreadable."""
     pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/comments?per_page=100", "--paginate", "--slurp"])
