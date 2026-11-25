@@ -183,6 +183,7 @@ python3 $S/findings.py <n>          # blocking review bodies + their inline comm
 python3 $S/test_reach.py <n>        # added symbols with no test referencing them
 python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
+python3 $S/ledger.py waiting|decide # owner decisions across PRs in one batch; record each answer
 python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
 python3 $S/approvers.py <n> --repo <owner/repo> # code owners who can approve, minus author and last pusher, read-only
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
@@ -303,7 +304,7 @@ For every PR, in this order:
    commands, and API race limits are in
    [`references/writing-reviews.md`](references/writing-reviews.md). In
    assessment-only mode, retain the proposed verdict and evidence locally.
-   Before extracting criteria, retain complete requirement responses and comment pages with source/time/revision/coverage using `requirements.py` as `references/report.md` specifies. Compare the complete sources with the extracted criteria; zero matrix gaps proves consistency, not completeness. Map every acceptance criterion to its quoted requirement, implemented path, observed evidence/source/time, result and evidence limit. Distinguish independent verification, author claims, missing evidence and explicitly accepted gaps. Keep Standards and Spec outcomes separate; a pass on one never masks a failure on the other. For a documented tracking exception, say "no linked ticket" and assess the stated PR contract rather than inventing ticket criteria.
+   Before extracting criteria, retain complete requirement responses and comment pages with source/time/revision/coverage using `requirements.py` as `references/report.md` specifies. Compare the complete sources with the extracted criteria; zero matrix gaps proves consistency, not completeness. Map every acceptance criterion to its quoted requirement, implemented path, observed evidence/source/time, result and evidence limit. Distinguish independent verification, author claims, missing evidence and explicitly accepted gaps. Keep Standards and Spec outcomes separate; a pass on one never masks a failure on the other. For a documented tracking exception, say "no linked ticket" and assess the stated PR contract rather than inventing ticket criteria. Give an owner or evidence decision that gates several PRs (one ADR, one ticket's criteria) the same `subject` on each, and the round's `recommend`ed answer. Apply a standing owner ruling from the repository's guidance as a waiver with that file as `source`; do not ask it again.
 
 ### 4. Reconcile the count before moving on
 
@@ -319,6 +320,8 @@ assessment-only round, reconcile those warnings against your local verdicts;
 absence of a posted review is expected, not a reason to post one.
 
 ### 5. Land what is ready
+
+**Ask owner decisions once, then unblock.** Before landing, ask every decision `round_report.py` prints under WAITING ON YOU (also `ledger.py waiting`) in one message, with its recommendation. Record each answer with `ledger.py decide <key> --answer <accept|waive|rescope|reject> --instruction "<their exact words>" [--scope "..."] --assessments $RUN/assessments.json`; one answer covers every PR the key gates. For each PR it prints as clear, with approvals on, approve it with `review_write.py approve` and continue as below; the owner does not need to say "approve what that unblocks". Every guard of an ordinary approval still applies: authority, head, freshness, own-PR and last-push holds. A PR still blocked names its remaining gates. `reject` records the answer and keeps the PR blocked. An answer cannot settle a `code` or `reviewer-incomplete` decision.
 
 Land related PRs in the order their relations give: a `depends-on` PR after the one it needs, and one side of a `conflicts` pair, then a fresh check of the other at its rebased head. Never land both sides of a duplicate pair.
 
@@ -397,7 +400,7 @@ round boundary filters round outcomes, not earlier handoffs. Enrich linked
 ticket transitions using the shared contract and pass `--tickets tickets.json`.
 If history is unavailable, retain the PR events and display the gap.
 
-For tracked work, use the profile's existing ticket policy and setup output for evidence writeback, lifecycle milestones, completion gates and automation ownership. Return criterion-level evidence, remaining decisions and PR links only with tracker-write authority. Read back supported state at the configured milestones; flag mismatches instead of duplicating automation-owned transitions. Preserve metadata and discover supported operations in the active tools or file workflow. Propose a follow-up's owner and concrete criteria before authorized creation. Neither a development merge nor a deployment universally means Done; that mapping belongs to repository policy. An explicit no-tracker policy or tracking exception stays explicit, not invented ticket acceptance.
+For tracked work, use the profile's existing ticket policy and setup output for evidence writeback, lifecycle milestones, completion gates and automation ownership. Return criterion-level evidence, remaining decisions and PR links only with tracker-write authority. Read back supported state at the configured milestones; flag mismatches instead of duplicating automation-owned transitions. Preserve metadata and discover supported operations in the active tools or file workflow. Propose a follow-up's owner and concrete criteria before authorized creation. Resolve that owner in the tracker by forge login, then email, then display name, and record which matched; with no match, create it unassigned and name the person in the body. Neither a development merge nor a deployment universally means Done; that mapping belongs to repository policy. An explicit no-tracker policy or tracking exception stays explicit, not invented ticket acceptance.
 
 In assessment-only mode, combine that observed forge state with your local
 verdicts. Label them **proposed, not posted**, with the reviewed head and local

@@ -801,6 +801,33 @@ class ReviewWriteTests(unittest.TestCase):
         writes, output, code = self.run_write("comment", flags=["--write"], permission=authority(prs=[99]))
         self.assertEqual((writes, code), ([], 1), output)
 
+    def test_an_owner_answer_unblocks_the_normal_approval_and_a_stale_verdict_still_holds_it(self):
+        gated = assessment(kind="decision", owner="Product owner")
+        gated["decisions"][0]["subject"] = "adr:183"
+        writes, output, code = self.run_write("approve", flags=["--write"], item=gated)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("unresolved decisions", output)
+        with tempfile.TemporaryDirectory() as state, patch.dict(os.environ, XDG_STATE_HOME=state):
+            ledger.record_assessment("round-1", gated, "owner/repo")
+            answered = {"repository": "owner/repo", "assessments": [gated]}
+            ledger.decide("adr:183", "accept", "Accept ADR 183; approve what that unblocks", repo="owner/repo",
+                          bundle=answered)
+        unblocked = answered["assessments"][0]
+        writes, output, code = self.run_write("approve", flags=["--write"], item=unblocked)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        self.assertEqual(writes[0][1]["event"], "APPROVE")
+        # A person commented after the assessment: the answer does not make a stale review current.
+        talked = pull(updated_at=LATER)
+        person = [{"event": "commented", "created_at": "2026-11-11T20:30:00Z", "actor": PERSON, "user": PERSON}]
+        writes, output, code = self.run_write("approve", flags=["--write"], item=unblocked, snapshots=[talked, talked],
+                                              reads={"timeline": person})
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("commented by alex", output)
+        # Nor a moved head.
+        writes, output, code = self.run_write("approve", flags=["--write"], item=unblocked,
+                                              snapshots=[pull(head={"sha": "c" * 40})])
+        self.assertEqual((writes, code), ([], 1), output)
+
     def test_a_carried_assessment_reapproves_under_its_own_policy_and_a_fresh_approval_does_not_need_it(self):
         approved = "c" * 40
         carried = assessment(carried={"from_head": approved, "head": HEAD, "check": "git merge-tree --write-tree",
