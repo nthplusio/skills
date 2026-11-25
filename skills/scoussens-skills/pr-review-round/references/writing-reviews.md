@@ -165,6 +165,8 @@ approval or auto-merge changes. If the requested guarantee needs an atomic
 gate the API cannot supply, hold the action for a human. The helpers independently re-read the actual target branch before and after writes, and `scripts/freshness.py` judges any move against saved `evidence_inputs`. A base move that changes none of the PR's files while GitHub reports it mergeable, and new discussion that is only bot comments, automated events or this round's own writes, are benign: the write proceeds and records why. A new head, overlap, conflict, a person's comment or review, a bot's changes request, or any unreadable read holds it. Postflight reads detect movement but cannot undo a raced write or pin the merged result atomically. Never describe these
 checks as eliminating the race. On a permission denial or uncertain response,
 inspect remote state before retrying; the helper does not retry mutations.
+After a review write returns an error, `review_write.py` reads your reviews
+back once and reports a review it finds at the reviewed head as posted.
 
 ## Reporting the round
 

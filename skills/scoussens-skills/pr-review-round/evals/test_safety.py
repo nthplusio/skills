@@ -614,6 +614,22 @@ class ReviewWriteTests(unittest.TestCase):
                 writes, output, code = self.run_write("comment", flags=["--write"], reviews=[existing])
                 self.assertEqual((len(writes), code), (1, 0), output)
 
+    def test_an_errored_write_that_posted_is_read_back_as_posted_and_not_retried(self):
+        for action in ("approve", "request-changes", "comment"):
+            with self.subTest(action=action):
+                reviews = []
+                writes, output, code = self.run_write(action, flags=["--write"], reviews=reviews, lost_reply=True)
+                self.assertEqual((len(writes), code), (1, 0), output)
+                self.assertIn(f"Submitted {action}: {reviews[0]['html_url']}", output)
+                self.assertNotIn("uncertain", output)
+                self.assertEqual([w["url"] for w in self.recorded], [reviews[0]["html_url"]])
+                again, output, code = self.run_write(action, flags=["--write"], reviews=reviews)
+                self.assertEqual((again, code), ([], 0), output)
+        # Nothing at the head after the error: still reported as a failed write, once.
+        writes, output, code = self.run_write("approve", flags=["--write"], failure=True)
+        self.assertEqual((len(writes), code), (1, 1), output)
+        self.assertIn("inspect remote state", output)
+
     def test_existing_review_lookup_runs_after_every_check(self):
         approved = [{"id": 1, "user": {"login": "reviewer"}, "commit_id": HEAD, "state": "APPROVED", "body": "ok"}]
         writes, output, code = self.run_write("approve", flags=["--write"], reviews=approved, permission=authority(prs=[99]))

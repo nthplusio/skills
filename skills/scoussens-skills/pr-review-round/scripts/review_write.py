@@ -160,7 +160,17 @@ def main():
         if args.action == "dismiss":
             result = api(f"{pull}/reviews/{args.review_id}/dismissals", "PUT", {"message": body})
         else:
-            result = api(f"{pull}/reviews", "POST", {"event": event, "commit_id": args.head, "body": body})
+            try:
+                result = api(f"{pull}/reviews", "POST", {"event": event, "commit_id": args.head, "body": body})
+            except RuntimeError as error:
+                # An error or timeout can follow an accepted review. Read back once; never post again.
+                try:
+                    result = existing_review(pull, login, args.head, state, body)
+                except RuntimeError:
+                    result = None
+                if not result:
+                    raise error
+                print(f"The write returned an error, but reading back found your {args.action} at {args.head}")
         submitted = True
         print(f"Submitted {args.action}: {result.get('html_url') or result.get('id')}")
         try:
