@@ -38,11 +38,38 @@ pass on, you own.
 ## Authority
 
 Invocation selects the workflow, not permission to write. The **work level**
-sets which writes the round may make. Take it from the request when it names
-one, otherwise from `round` in the resolved review profile: say in your first
-message which level the profile set, so the user can change it in one word.
-Ask for it only when neither sets one. Offer these choices, and for `review` and above
-ask whether approvals are included:
+sets which writes the round may make, and **decision policies** settle the
+writes that would otherwise each need a chat message. Settle both once, in the
+first message:
+
+1. Write the request's explicit answers to `answers.json` (`level`, `approvals`,
+   `policies`, and `instruction`, the user's exact words), then run
+   `authority.py questions --root <repository> --answers answers.json`. It prints
+   only what the request and the profile's `round` block leave open, each with its
+   recommended answer, and which settings the profile set.
+2. Ask those questions in one batch with the base branch and destination below,
+   each with its recommended answer. Name the profile's settings so the user can
+   change one in a word.
+3. After the answers, update `answers.json`, run `authority.py init --repo
+   <owner/repo> --scope $RUN/scope.json --answers answers.json --root <repository>
+   --out $RUN/authority.json`, and show the user `authority.py show`. An
+   unanswered setting takes the profile's value, then the default.
+4. When the user grants a held write mid-round ("dismiss the bot's review on
+   #3614"), record it with `authority.py grant $RUN/authority.json --pr 3614
+   --action dismiss --instruction "<their words>"`. Never write or edit the
+   authority file by hand.
+
+The user can save their answers as the repository default through
+`configuring-reviews` (`round` in the profile); do not write the profile yourself.
+
+| Kind | The round, in mode `auto` | Default |
+|---|---|---|
+| `auto-merge-on-approval` | Turns on auto-merge right after its own approval | `auto` |
+| `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
+| `dismiss-review` | Dismisses another reviewer's review after verifying its findings are fixed | `ask` |
+
+`ask` holds the write and the helper prints the question to ask; `never`
+refuses it even with a grant. Both auto-merge kinds need approvals. The levels:
 
 | Level | The round does | Writes it allows |
 |---|---|---|
@@ -52,13 +79,11 @@ ask whether approvals are included:
 | `major` | `moderate`, plus a worker for each PR that fails approval, until it is approvable and mergeable | Adds `delegate`; worker fixes have no size cap |
 
 Assess while the answer is pending, because every level starts with the same
-review. Until the user answers, the level is `assess`. Record the level, the
-approvals choice and the user's words in the authority file; for a profile
-default, the instruction is the profile path and its `round` setting;
-`check_authority` refuses any write above the level. Dismissing others'
-reviews and landing stay separate at every level: "merge what's ready"
-authorizes eligible merges, not approval or dismissal. Finish the assessment
-and hold any missing action for approval.
+review. Until the user answers, the level is `assess`. `check_authority`
+refuses any write above the level, outside the scope file's PRs, or held by a
+policy. A direct merge (`enqueue`) needs its own grant at every level: "merge
+what's ready" authorizes eligible merges, not approval or dismissal. Finish the
+assessment and hold any missing action for approval.
 - **Publication** is separate: a selected destination or silence does not
   authorize uploading repository content to an external audience.
 
@@ -70,10 +95,10 @@ separate merge permission is needed for either. Turn it on right after the
 approval, while checks still run; GitHub's required checks do the waiting.
 Prefer it to a direct merge, which waits for `CLEAN` and needs its own
 instruction. Re-read the head and auto-merge immediately before approving.
-Dismissing someone else's review on an auto-merge PR still needs merge
-authority (`--allow-landing`). GitHub refuses auto-merge for stacked PRs; land
+A dismissal follows the `dismiss-review` policy, whose question names the
+merge it can release. GitHub refuses auto-merge for stacked PRs; land
 those with `land.py --enqueue --stack-method <method>` as step 5 describes,
-which needs its own merge instruction. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires a saved authority record: repository, exact PR numbers, allowed actions, originating instruction and whether possible landing is included; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
+which needs its own merge instruction. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires the authority file `authority.py init` wrote; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
 
 Three rules hold regardless:
 
@@ -106,8 +131,9 @@ pusher, so a base that requires last-push approval needs another approver.
 **Workers at `major`.** For each PR whose verdict is not ready for a reason
 code can fix, start one worker with the harness's thread or subagent tool.
 Brief it with the repository, PR, reviewed head, the recorded decisions and
-their unblock lines, and an authority file scoped to that one PR: level
-`major`, `approvals: false`, actions `push-fix`, `update-branch` and `comment`.
+their unblock lines, and an authority file scoped to that one PR, written by
+`authority.py init` with a one-number scope file and answers level `major`,
+`approvals: false` and every policy `never`.
 A worker never approves, dismisses, merges or starts workers, and stops at an
 owner or evidence decision it cannot settle. Ask it to report the new head and
 what it changed. A worker's report is a claim: review the new head yourself
@@ -120,7 +146,7 @@ repo default, and saying which you chose lets the user redirect you in one word
 instead of discovering it in the summary.
 
 **Destination.** The round report's page is a setting, and `explain-to` owns
-settings. In that same first message, which also asks for the work level, load `explain-to` and run its step 1, the
+settings. In that same first message, which also asks the authority questions, load `explain-to` and run its step 1, the
 settings sheet (`references/settings-sheet.md` there), passing the artifact (a
 round report: what came in, what landed, what is blocked and on whose desk),
 the settings this skill fixes (reader: a teammate who was not there; output:
@@ -155,6 +181,7 @@ python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in f
 python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
 python3 $S/branch_write.py --help   # moderate/major: base merge or minor fix, leased on the reviewed head
+python3 $S/authority.py questions|init|show|grant # the round's write permissions, settled at its start
 python3 $S/land.py --help          # guarded enqueue/auto-merge; requires authority and assessments
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
@@ -288,7 +315,7 @@ absence of a posted review is expected, not a reason to post one.
 
 Land related PRs in the order their relations give: a `depends-on` PR after the one it needs, and one side of a `conflicts` pair, then a fresh check of the other at its rebased head. Never land both sides of a duplicate pair.
 
-After each approval, run `land.py --enable-auto-merge <n>:<reviewed-full-sha> [n:sha...] --repo <owner/repo> --authority <authority.json> --assessments <assessments.json>`. It turns auto-merge on while checks run and reports **AUTO-MERGE ENABLED, not merged** once GitHub shows it. Confirm the merge later with `land.py --watch`. Use `--enqueue` only for a direct merge the user asked for. The same path guards the first attempt and later retries. It checks unresolved decisions, scoped authority, approval, the assessment's freshness (a harmless base or discussion move is accepted and recorded; see `references/report.md`) and mergeability, and passes
+After each approval, run `land.py --enable-auto-merge <n>:<reviewed-full-sha> [n:sha...] --repo <owner/repo> --authority <authority.json> --assessments <assessments.json>`. It turns auto-merge on while checks run and reports **AUTO-MERGE ENABLED, not merged** once GitHub shows it. With `auto-merge-sweep` on `auto`, run the same command for each PR `queue.py` lists as "Approved with auto-merge off" whose assessment at that head has nothing unresolved; the helper still requires GitHub's `APPROVED` decision. Confirm the merge later with `land.py --watch`. Use `--enqueue` only for a direct merge the user asked for. The same path guards the first attempt and later retries. It checks unresolved decisions, scoped authority, approval, the assessment's freshness (a harmless base or discussion move is accepted and recorded; see `references/report.md`) and mergeability, and passes
 `--match-head-commit` to GitHub. Changed heads, lost approval, conflicts, and
 failed or uncertain writes stop that PR's writes. It submits at most once per PR per invocation and reads head, review state and queue membership after every write, even an uncertain response. Reconcile before a new invocation, and review again only when a helper reports the assessment no longer holds; unknown membership holds writes. A local recommendation is not an enforced GitHub gate. Report any authorized acceptance of evidence/owner gaps explicitly.
 
@@ -299,7 +326,7 @@ eliminate that race. Hold the merge if a required atomic guarantee is unavailabl
 
 For a stacked PR, `land.py --enqueue --stack-method <merge|squash|rebase>` runs one `gh stack merge <top> --yes`, which also lands every unmerged PR below it. Name each of those lower PRs with its reviewed head and authority; otherwise, or when membership is unknown, the helper holds without writing. `gh stack merge` has no expected-head guard, so the helper re-reads every covered head immediately before the write. It needs the official `github/gh-stack` extension; ask before installing it. Pass the method the repository uses for ordinary PRs, because the tool otherwise reuses the last method. A merge queue on the base chooses its own method and may land layers in separate groups.
 
-Without approvals or merge authority, or when `AUTO` is already on, use `land.py --watch <n>`.
+Without approvals or a landing grant, or when `AUTO` is already on, use `land.py --watch <n>`.
 Bare PR numbers also default to read-only. Report **queued** only when
 `mergeQueueEntry` exists, **merged** only when `state=MERGED`, and **pending,
 queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
