@@ -14,6 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import branch_rules
 import branch_write
+import freshness
 import land
 import ledger
 import merge_queue
@@ -23,6 +24,30 @@ from md_to_html import render
 from decision_fixtures import assessment, authority, bundle, BASE, REVISION, TARGET
 
 HEAD = "a" * 40
+MOVED = {**TARGET, "sha": "f" * 40}
+LATER = "2026-11-11T21:00:00Z"
+BOT = {"login": "review-bot[bot]", "type": "Bot"}
+PERSON = {"login": "alex", "type": "User"}
+# The base moved without touching the PR's one file.
+BENIGN_BASE = {"compare": {"status": "ahead", "files": [{"filename": "docs/other.md"}]},
+               "files": [{"filename": "src/app.py"}]}
+
+
+def freshness_read(reads, command):
+    """Answer the freshness check's compare, PR-files and timeline reads; a read not in `reads` fails like the API."""
+    for key in ("compare", "files", "timeline"):
+        if f"/{key}" in command[2]:
+            if key not in reads:
+                return subprocess.CompletedProcess(command, 1, "", f"{key} unavailable")
+            payload = [reads[key]] if "--slurp" in command else reads[key]
+            return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+    return None
+
+
+def pull(**changes):
+    return {"head": {"sha": HEAD}, "state": "open", "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
+            "draft": False, "auto_merge": None, "user": {"login": "author"}, "mergeable": True,
+            "mergeable_state": "clean", **changes}
 
 
 def state(**changes):
@@ -43,7 +68,7 @@ class Elements(HTMLParser):
 
 
 class LandingTests(unittest.TestCase):
-    def run_land(self, states, args=None, failure=False, item=None, permission=None):
+    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None):
         output = io.StringIO()
         snapshots = iter(states)
         writes = []
@@ -57,6 +82,8 @@ class LandingTests(unittest.TestCase):
             elif command[:2] == ["gh", "api"] and "/git/ref/heads/" in command[2]:
                 target = current.get("target") or {}
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": target.get("sha")}}
+            elif command[:2] == ["gh", "api"] and freshness_read(reads or {}, command):
+                return freshness_read(reads or {}, command)
             elif command[:3] == ["gh", "api", "graphql"] and "stackEntry" in command[4]:
                 payload = {"data": {"repository": {"pullRequest": {"stackEntry": current.get("stack_entry")}}}}
             elif command[:3] == ["gh", "api", "graphql"]:
@@ -221,6 +248,17 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 1), output)
         self.assertIn("out-of-scope authority", output)
 
+    def test_landing_goes_ahead_on_a_benign_base_move_and_holds_when_it_overlaps(self):
+        moved = state(target=MOVED, baseRefOid=MOVED["sha"], mergeable="MERGEABLE")
+        writes, output, code = self.run_land([moved, {**moved, "state": "MERGED"}], reads=BENIGN_BASE)
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("#17 accepted moved inputs: main moved", output)
+        self.assertEqual(self.recorded[0]["accepted"]["target"], MOVED)
+        overlap = {**BENIGN_BASE, "compare": {"status": "ahead", "files": [{"filename": "src/app.py"}]}}
+        writes, output, code = self.run_land([moved] * 3, reads=overlap)
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("base changed files this PR changes: src/app.py", output)
+
     def test_authorized_auto_merge_is_a_landing_write_and_reads_back_uncertainty(self):
         writes, output, code = self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])
         self.assertEqual((writes, code), (1, 0), output)
@@ -269,7 +307,7 @@ class QueueReportTests(unittest.TestCase):
 
 class ReviewWriteTests(unittest.TestCase):
     def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
-                  target=TARGET, after=None, rules=None, pusher=None):
+                  target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=()):
         writes = []
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
                                       "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
@@ -279,6 +317,8 @@ class ReviewWriteTests(unittest.TestCase):
             if "/git/ref/heads/" in command[2]:
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": (target or {}).get("sha")}}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+            if freshness_read(reads or {}, command):
+                return freshness_read(reads or {}, command)
             method = command[command.index("--method") + 1]
             if method != "GET":
                 writes.append((command[2], json.loads(kwargs["input"])))
@@ -305,6 +345,8 @@ class ReviewWriteTests(unittest.TestCase):
                     patch.object(review_write, "state_of", return_value=after or state()), \
                     patch.object(review_write, "review_rules", return_value=rules), \
                     patch.object(review_write, "last_pusher", return_value=pusher), contextlib.redirect_stdout(output):
+                for write in prior:
+                    ledger.record_write("owner/repo", **write)
                 code = review_write.main()
                 self.recorded = ledger.writes("owner/repo")
         return writes, output.getvalue(), code
@@ -418,13 +460,80 @@ class ReviewWriteTests(unittest.TestCase):
             self.assertEqual((len(writes), code), (1, 0), output)
             self.assertNotIn("REVIEW GATE", output)
 
-    def test_changed_or_unknown_actual_target_blocks_all_review_writes(self):
+    def test_a_base_move_that_cannot_change_the_verdict_lets_every_write_through_and_says_why(self):
+        moved = pull(base={"sha": MOVED["sha"], "ref": "main"})
         for action in ("approve", "dismiss", "comment", "request-changes"):
-            for target in ({**TARGET, "sha": "f" * 40}, {**TARGET, "sha": None}):
-                with self.subTest(action=action, target=target):
-                    writes, output, code = self.run_write(action, flags=["--write"], target=target)
+            with self.subTest(action=action):
+                writes, output, code = self.run_write(action, flags=["--write"], snapshots=[moved, moved],
+                                                     target=MOVED, reads=BENIGN_BASE)
+                self.assertEqual((len(writes), code), (1, 0), output)
+                self.assertIn("Accepted moved inputs: main moved", output)
+                accepted = self.recorded[0]["accepted"]
+                self.assertEqual((accepted["target"], accepted["base"]), (MOVED, MOVED["sha"]))
+                self.assertIn("none changed by this PR", accepted["reasons"][0])
+
+    def test_a_base_move_holds_on_overlap_conflict_or_anything_unreadable(self):
+        moved = pull(base={"sha": MOVED["sha"], "ref": "main"})
+        many = [{"filename": f"docs/{n}.md"} for n in range(300)]
+        for case, snapshot, target, reads, reason in [
+            ("overlap", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "ahead", "files": [{"filename": "src/app.py"}]}},
+             "base changed files this PR changes: src/app.py"),
+            ("renamed overlap", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "ahead", "files": [
+                {"filename": "src/main.py", "previous_filename": "src/app.py"}]}}, "base changed files this PR changes"),
+            ("conflict", {**moved, "mergeable": False, "mergeable_state": "dirty"}, MOVED, BENIGN_BASE, "conflicting"),
+            ("mergeability unknown", {**moved, "mergeable": None}, MOVED, BENIGN_BASE, "has not reported the PR mergeable"),
+            ("unreadable target", pull(), {**TARGET, "sha": None}, BENIGN_BASE, "actual target ref unavailable"),
+            ("unreadable base change", moved, MOVED, {"files": BENIGN_BASE["files"]}, "unreadable, truncated or rewritten"),
+            ("truncated base change", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "ahead", "files": many}},
+             "unreadable, truncated or rewritten"),
+            ("rewritten base", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "diverged", "files": []}},
+             "unreadable, truncated or rewritten"),
+            ("unreadable PR files", moved, MOVED, {"compare": BENIGN_BASE["compare"]}, "files are unreadable"),
+        ]:
+            for action in ("approve", "comment"):
+                with self.subTest(case=case, action=action):
+                    writes, output, code = self.run_write(action, flags=["--write"], snapshots=[snapshot, snapshot],
+                                                         target=target, reads=reads)
                     self.assertEqual((writes, code), ([], 1), output)
-                    self.assertIn("actual target ref changed or unavailable", output)
+                    self.assertIn(reason, output)
+                    self.assertEqual(self.recorded, [])
+
+    def test_discussion_from_bots_automation_and_this_round_is_benign_and_people_are_not(self):
+        talked = pull(updated_at=LATER)
+        before = {"event": "commented", "created_at": "2026-11-11T19:00:00Z", "actor": PERSON}
+        ours = {"number": 17, "action": "comment", "head": HEAD, "url": "https://example.test/posted/7"}
+        for case, events, prior, reason in [
+            ("bot comment", [before, {"event": "commented", "created_at": "2026-11-11T20:30:00Z", "actor": BOT, "user": BOT},
+                             {"event": "labeled", "created_at": "2026-11-11T20:31:00Z", "actor": PERSON}], (), None),
+            ("bot comment review", [{"event": "reviewed", "submitted_at": "2026-11-11T20:30:00Z", "state": "commented",
+                                     "user": BOT}], (), None),
+            ("this round's comment", [{"event": "commented", "created_at": "2026-11-11T20:30:00Z",
+                                       "actor": {"login": "reviewer", "type": "User"}, "html_url": ours["url"]}], (ours,), None),
+            ("person comment", [{"event": "commented", "created_at": "2026-11-11T20:30:00Z", "actor": PERSON, "user": PERSON}],
+             (), "commented by alex"),
+            ("person review", [{"event": "reviewed", "submitted_at": "2026-11-11T20:30:00Z", "state": "commented",
+                                "user": PERSON}], (), "reviewed by alex (COMMENTED)"),
+            ("bot changes request", [{"event": "reviewed", "submitted_at": "2026-11-11T20:30:00Z",
+                                      "state": "changes_requested", "user": BOT}], (), "(CHANGES_REQUESTED)"),
+            ("unreadable timeline", None, (), "timeline is unreadable"),
+        ]:
+            for action in ("approve", "comment"):
+                with self.subTest(case=case, action=action):
+                    writes, output, code = self.run_write(action, flags=["--write"], snapshots=[talked, talked], prior=prior,
+                                                         reads={} if events is None else {"timeline": events})
+                    if reason:
+                        self.assertEqual((writes, code), ([], 1), output)
+                        self.assertIn(reason, output)
+                    else:
+                        self.assertEqual((len(writes), code), (1, 0), output)
+                        self.assertIn("Accepted moved inputs: discussion moved only by", output)
+
+    def test_a_new_head_is_stale_before_any_read_even_when_everything_else_is_benign(self):
+        live = {"head": "c" * 40, "base": BASE, "forge": REVISION, "target": TARGET, "conflicting": False}
+        with patch.object(subprocess, "run", side_effect=AssertionError("unexpected forge access")):
+            verdict = freshness.classify(assessment(), live, policy=assessment()["evidence_inputs"]["policy"],
+                                         repo="owner/repo", number=17, writes=[])
+        self.assertEqual(verdict, freshness.Stale(("head changed",)))
 
     def test_head_movement_during_dismissal_is_not_reported_as_clearance(self):
         pr = {"head": {"sha": HEAD}, "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,

@@ -37,6 +37,9 @@ ledger, and per-author or per-week aggregates deliberately are not recorded.
     writes    -> what review_write.py posted and land.py requested. The report
                  uses it to tell the round's own reviews from ones posted from
                  the same account some other way, which step 7 must not claim.
+                 The freshness check uses it so the round's own posts do not
+                 count as new discussion. `accepted` names a moved base or
+                 discussion the write judged benign.
 
 State lives outside the repository, so git worktrees share one ledger and
 nothing is ever committed:
@@ -154,23 +157,20 @@ def target_state(repo, ref):
     return target
 
 
-def target_matches(inputs, target):
-    return bool(target and target.get("ref") and re.fullmatch(r"[0-9a-f]{40}", target.get("sha") or "")
-                and inputs.get("target") == target)
-
-
 def assessment_current(assessment, head, base, evidence_inputs):
+    """Exact match of saved and collected inputs, for offline rendering of records nobody classified."""
     validate_assessment(assessment)
+    target = evidence_inputs.get("target") or {}
     return (assessment["head"] == head and assessment["base"] == base
-            and target_matches(assessment["evidence_inputs"], evidence_inputs.get("target"))
+            and bool(re.fullmatch(r"[0-9a-f]{40}", target.get("sha") or ""))
             and assessment["evidence_inputs"] == evidence_inputs)
 
 
 def marker_current(assessment, head):
     """A request disposition holds for its request event at the assessed head.
 
-    Deliberately narrower than assessment_current. Discussion, requirement, policy
-    and target-branch movement make the recommendation stale, not the handoff.
+    Deliberately narrower than the assessment's freshness. Discussion, requirement,
+    policy and target-branch movement can make the recommendation stale, not the handoff.
     """
     return bool(assessment and head) and assessment.get("head") == head
 
@@ -239,7 +239,9 @@ def check_authority(authority, repo, number, action, possible_landing=False):
         raise ValueError("out-of-scope authority: record instruction, repository, exact PRs, action and possible landing")
 
 
-def check_clearance(bundle, repo, number, head, base, forge_revision, target):
+def current_assessment(bundle, repo, number, live):
+    """The PR's one saved assessment and its freshness verdict; raises when the verdict is Stale."""
+    from freshness import Stale, classify
     if bundle.get("repository") != repo:
         raise ValueError("assessment belongs to a different repository")
     matches = [a for a in bundle.get("assessments", []) if a.get("number") == number]
@@ -247,17 +249,25 @@ def check_clearance(bundle, repo, number, head, base, forge_revision, target):
         raise ValueError("one current assessment required for this PR")
     assessment = matches[0]
     validate_assessment(assessment)
-    if assessment["evidence_inputs"]["policy"] != review_config(".", bundle.get("review_config"))["revision"]:
-        raise ValueError("review policy changed; resolve configuration and review affected checks again")
-    if (assessment["head"] != head or assessment["base"] != base
-            or assessment["evidence_inputs"]["forge"] != forge_revision):
-        raise ValueError("assessment source or discussion changed; refresh evidence and review again")
-    if not target_matches(assessment["evidence_inputs"], target):
-        raise ValueError("actual target ref changed or unavailable; refresh integration evidence")
+    discussed = assessment["evidence_inputs"]["forge"] != live.get("forge")
+    verdict = classify(assessment, live, policy=review_config(".", bundle.get("review_config"))["revision"],
+                       repo=repo, number=number, writes=writes(repo) if discussed else [])
+    if isinstance(verdict, Stale):
+        raise ValueError(verdict.message())
+    return assessment, verdict
+
+
+def require_resolved(assessment):
     blockers = unresolved(assessment)
     if blockers:
         raise ValueError("unresolved decisions: " + "; ".join(f'{d["owner"]}: {d["unblock"]}' for d in blockers))
-    return assessment
+
+
+def check_clearance(bundle, repo, number, live):
+    """Fresh or Benign verdict for a current assessment with no unresolved decisions; raises otherwise."""
+    assessment, verdict = current_assessment(bundle, repo, number, live)
+    require_resolved(assessment)
+    return verdict
 
 
 def _now():
@@ -332,9 +342,11 @@ def _append(name, rec, repo=None):
 
 # ---------------------------------------------------------------- writes
 
-def record_write(repo, number, action, head, url=None):
-    """One accepted write by a helper. Never a proposed action or a failed request."""
-    _append("writes", {"number": number, "action": action, "head": head, "url": url, "at": _now()}, repo)
+def record_write(repo, number, action, head, url=None, accepted=None):
+    """One accepted write by a helper. Never a proposed action or a failed request.
+    `accepted` is a Benign freshness record: the moved inputs the write went ahead on, and why."""
+    _append("writes", {"number": number, "action": action, "head": head, "url": url, "at": _now(),
+                       **({"accepted": accepted} if accepted else {})}, repo)
 
 
 def writes(repo=None):

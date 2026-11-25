@@ -13,10 +13,11 @@ from pathlib import Path
 import re
 import subprocess
 
-from ledger import approvals_granted, check_authority, check_clearance, record_write, validate_assessment, target_state, target_matches
+from ledger import (approvals_granted, check_authority, current_assessment, record_write, require_resolved,
+                    target_state, validate_assessment)
+from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
-from review_config import resolve as review_config
 
 
 def api(path, method="GET", payload=None):
@@ -81,8 +82,6 @@ def main():
             raise ValueError("one assessment required for this PR")
         assessment = matches[0]
         validate_assessment(assessment)
-        if assessment["evidence_inputs"]["policy"] != review_config(".", bundle.get("review_config"))["revision"]:
-            raise ValueError("review policy changed; resolve configuration and review affected checks again")
         if assessment["head"] != args.head:
             raise ValueError("assessment head differs from reviewed head")
         if args.action == "request-changes":
@@ -96,11 +95,12 @@ def main():
         pr = api(pull)
         if pr["head"]["sha"] != args.head or pr["state"] != "open" or pr["draft"] is not False:
             raise RuntimeError("HELD: head changed, PR closed, or draft; review current state again")
-        if (assessment["base"] != pr["base"]["sha"] or assessment["evidence_inputs"]["forge"] != pr["updated_at"]):
-            raise ValueError("assessment source or discussion changed; refresh inputs before posting")
         target = target_state(args.repo, pr["base"].get("ref"))
-        if not target_matches(assessment["evidence_inputs"], target):
-            raise ValueError("actual target ref changed or unavailable; refresh integration evidence")
+        # A moved base or discussion holds only when it could change the verdict; see freshness.py.
+        _, verdict = current_assessment(bundle, args.repo, args.number, live_from_rest(pr, target))
+        accepted = verdict.record() if isinstance(verdict, Benign) else None
+        if accepted:
+            print("Accepted moved inputs: " + "; ".join(accepted["reasons"]))
         if args.action == "approve" and pr["user"]["login"] == login:
             raise RuntimeError("HELD: an author cannot approve their own PR")
         if args.action == "approve":
@@ -118,7 +118,7 @@ def main():
         if args.action in ("approve", "dismiss"):
             possible_landing = pr.get("auto_merge") is not None or "auto_merge" not in pr
             check_authority(authority, args.repo, args.number, args.action, possible_landing)
-            check_clearance(bundle, args.repo, args.number, args.head, pr["base"]["sha"], pr["updated_at"], target)
+            require_resolved(assessment)
 
         attempted = True
         if args.action == "dismiss":
@@ -132,7 +132,7 @@ def main():
         submitted = True
         print(f"Submitted {args.action}: {result.get('html_url') or result.get('id')}")
         try:
-            record_write(args.repo, args.number, args.action, args.head, result.get("html_url"))
+            record_write(args.repo, args.number, args.action, args.head, result.get("html_url"), accepted)
         except OSError as error:
             print(f"Posted, but not recorded in the ledger ({error}); round_report.py will list it as posted outside the round")
         if api(pull)["head"]["sha"] != args.head:
@@ -145,10 +145,16 @@ def main():
         print(f"Post-write: head={observed.get('headRefOid', 'unknown')} / "
               f"review={observed.get('reviewDecision', 'unknown')} / "
               f"queue={observed.get('queue_state', 'unknown')} / state={observed.get('state', 'unknown')}")
+        drift = None
+        if observed.get("state") != "MERGED":
+            try:
+                current_assessment(bundle, args.repo, args.number, live_from_view(observed))
+            except ValueError as error:
+                drift = str(error)
         if (observed.get("headRefOid") != args.head or not observed.get("reviewDecision")
-                or observed.get("queue_state", "unknown") == "unknown"
-                or (observed.get("state") != "MERGED" and observed.get("target") != target)):
-            print("Post-write state uncertain or changed; reconcile before further writes")
+                or observed.get("queue_state", "unknown") == "unknown" or drift):
+            print("Post-write state uncertain or changed; reconcile before further writes"
+                  + (f" ({drift})" if drift else ""))
             code = 1
         if (args.action == "approve" and submitted and observed.get("state") == "OPEN"
                 and observed.get("reviewDecision") not in (None, "", "APPROVED")):

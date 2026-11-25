@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import ledger
 from decision_fixtures import assessment, bundle, HEAD, BASE, REVISION, TARGET
 
+LIVE = {"head": HEAD, "base": BASE, "forge": REVISION, "target": TARGET, "conflicting": False}
+
 
 class DecisionTests(unittest.TestCase):
     def test_audit_cases_have_distinct_owners_and_unblocks(self):
@@ -68,14 +70,14 @@ class DecisionTests(unittest.TestCase):
     def test_clearance_requires_current_assessment_and_no_unresolved_decisions(self):
         for kind in ("code", "evidence", "decision", "reviewer-incomplete"):
             with self.assertRaisesRegex(ValueError, "unresolved decisions"):
-                ledger.check_clearance(bundle(assessment(kind=kind)), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
-        self.assertEqual(ledger.check_clearance(bundle(), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)["number"], 17)
+                ledger.check_clearance(bundle(assessment(kind=kind)), "owner/repo", 17, LIVE)
+        self.assertEqual(ledger.check_clearance(bundle(), "owner/repo", 17, LIVE).record()["verdict"], "fresh")
 
     def test_nonblocking_code_advice_is_not_a_landing_blocker(self):
         item = assessment(kind="code")
         item["decisions"][0]["severity"] = "non-blocking"
         self.assertEqual(ledger.unresolved(item), [])
-        ledger.check_clearance(bundle(item), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+        ledger.check_clearance(bundle(item), "owner/repo", 17, LIVE)
 
     def test_changed_repository_reference_invalidates_clearance_at_unchanged_head(self):
         previous = Path.cwd()
@@ -88,10 +90,10 @@ class DecisionTests(unittest.TestCase):
                 item = assessment()
                 item["evidence_inputs"]["policy"] = ledger.review_config(".", "custom.json")["revision"]
                 saved = {**bundle(item), "review_config": "custom.json"}
-                ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+                ledger.check_clearance(saved, "owner/repo", 17, LIVE)
                 Path("rules.md").write_text("A newly required compatibility check")
                 with self.assertRaisesRegex(ValueError, "review policy changed"):
-                    ledger.check_clearance(saved, "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+                    ledger.check_clearance(saved, "owner/repo", 17, LIVE)
                 self.assertFalse(ledger.assessment_current(item, HEAD, BASE, {
                     **item["evidence_inputs"], "policy": ledger.review_config(".", "custom.json")["revision"]}))
             finally:
@@ -134,7 +136,7 @@ class RelatedTests(unittest.TestCase):
                 held = assessment(kind="decision", owner="Author", relations=relation)
                 ledger.validate_assessment(held)
                 with self.assertRaisesRegex(ValueError, "unresolved decisions"):
-                    ledger.check_clearance(bundle(held), "owner/repo", 17, HEAD, BASE, REVISION, TARGET)
+                    ledger.check_clearance(bundle(held), "owner/repo", 17, LIVE)
         ledger.validate_assessment(assessment(relations=[{"pr": 15, "kind": "supersedes", "evidence": "x"}]))
         with self.assertRaisesRegex(ValueError, "another PR number"):
             ledger.validate_assessment(assessment(relations=[{"pr": 17, "kind": "independent", "evidence": "x"}]))
