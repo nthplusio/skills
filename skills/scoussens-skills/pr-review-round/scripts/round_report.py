@@ -60,7 +60,8 @@ from merge_queue import queue_state
 from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile, effective_reviews
-from ledger import assessment_history, gh_said, marker_current, validate_assessment, target_state, writes as ledger_writes
+from ledger import (assessment_history, gh_said, marker_current, validate_assessment, target_state, waiting,
+                    waiting_lines, writes as ledger_writes)
 from freshness import classify, live_from_view
 from branch_rules import gate_lines
 from requirements import requirement_gaps
@@ -461,6 +462,14 @@ def main():
     print(f'Request reconciliation: {sum(r["handoffs"]["unhandled"] for r in out)} unhandled; '
           f'{sum(r["handoffs"]["coverage"] != "complete" for r in out)} PR(s) with unknown coverage. '
           'Local dispositions are not posted responses.', file=sys.stderr)
+    # One batch for the owner: each open owner or evidence decision once, with every PR it gates.
+    groups = waiting([r["assessment"] for r in out if r["state"] == "OPEN" and r.get("assessment")
+                      and (r.get("freshness") or {}).get("verdict") != "stale"])
+    if groups:
+        print(f"WAITING ON YOU: {len(groups)} decision(s); ask them in one message, then record each answer "
+              "with ledger.py decide", file=sys.stderr)
+        for line in waiting_lines(groups):
+            print("  " + line, file=sys.stderr)
     if scope is None:
         print("NO --scope: PRs that joined after the first queue.py run cannot be told from the ones "
               "the round started with.\n  -> pass the file `queue.py <base> --save-scope` wrote.", file=sys.stderr)

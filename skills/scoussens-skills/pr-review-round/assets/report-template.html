@@ -21,6 +21,8 @@ a { color: var(--link); overflow-wrap: anywhere; }
 .current-action { margin-block: 3px; font-size: 13px; }
 .current-action strong { font-weight: 500; margin-inline-end: 6px; }
 .proposal { margin-block: 12px; }
+.waiting { border-block-start: 1px solid var(--border); padding-block: 10px; }
+.waiting li { margin-block: 6px; }
 summary { cursor: pointer; min-block-size: 32px; padding-block: 4px; }
 summary:active, a:active { opacity: .7; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
@@ -37,6 +39,7 @@ $history_css
 <p class="muted">Read the summary and next action, then open Details for the reasons. ↩ marks a review that asked the developer for changes, not an unresolved problem.</p>
 <details class="report-notes"><summary>About this report · collected $collected</summary>
 <p>Times use $timezone. Recommendations in this report are not reviews posted to GitHub.</p>$synthesis</details></header>
+$waiting
 $rows
 <footer class="muted">Before merging, a maintainer must check the code version, required tests, and permission to merge. An earlier approval does not replace those checks.</footer>
 </main></body></html>

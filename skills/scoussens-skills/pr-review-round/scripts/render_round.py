@@ -9,7 +9,8 @@ from string import Template
 
 from md_to_html import render as markdown
 from pr_history import format_time, render as history_html
-from ledger import DECISIONS, RELATIONS, assessment_current, marker_current, unresolved, validate_assessment
+from ledger import (DECISIONS, RELATIONS, assessment_current, marker_current, unresolved, validate_assessment,
+                    waiting as waiting_on_owner)
 from stacks import label as stack_label
 
 REPORT_BUDGET = 100_000
@@ -33,6 +34,7 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
     if stray:
         raise ValueError("assessments refer to PR(s) outside the report: " + ", ".join(f"#{n}" for n in stray)
                          + ". A report covers one base; a PR on another base is rendered from its own round's report")
+    current_proposals = []
     for record in records:
         number = record["number"]
         proposal = proposals.get(number) or record.get("assessment")
@@ -52,6 +54,8 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                 gap in record["history"]["gaps"] for gap in
                 ("snapshot-consistency", "queue-head-changed", "history-collection", "target-ref-unavailable"))
             blockers = unresolved(proposal)
+            if matches and record["state"] == "OPEN":
+                current_proposals.append(proposal)
             if matches and not any(d["kind"] == "reviewer-incomplete" for d in proposal["decisions"]):
                 complete += 1
             decision = (blockers or proposal["decisions"])[0]
@@ -247,12 +251,29 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                     f'<p class="current-action"><strong>Next</strong> {escape(owner)}<span class="muted">{basis}</span></p>'
                     f'<p class="muted">Observed on GitHub · {escape(forge_status.removeprefix("GitHub "))}</p>'
                     f'<p class="muted">{escape(request_summary)}</p>{detail}</article>')
+    # One batch for the owner: each open owner or evidence decision once, with every PR it gates.
+    groups = waiting_on_owner(current_proposals)
+    waiting = ""
+    if groups:
+        waiting = ('<section class="waiting"><h2>Waiting on you · ' + str(len(groups)) + ' decision'
+                   + ("s" if len(groups) > 1 else "") + '</h2><p class="muted">Answer them in one message. '
+                   'Each answer is recorded with <code>ledger.py decide</code> and approves what it unblocks '
+                   'when approvals are on.</p><ul>')
+        for group in groups:
+            key = escape(group["key"])
+            waiting += (f'<li data-decision="{escape(group["key"], quote=True)}"><strong>{key}</strong> · '
+                        + ", ".join(f'#{n}' for n in group["prs"]) + f' · {escape(group["owner"])}: '
+                        f'{escape(group["question"])}<br><span class="muted">Recommended: '
+                        + (escape(group["recommend"]) + " · " if group["recommend"] else "")
+                        + f'{escape(group["unblock"])} · Answer: “accept {key}”, “waive {key}”, '
+                        f'“rescope {key} to …” or “reject {key}”</span></li>')
+        waiting += '</ul></section>'
     assets = Path(__file__).resolve().parents[1] / "assets"
     result = Template((assets / "report-template.html").read_text()).substitute(
         base=escape(base), timezone=escape(timezone), count=len(records),
         merged=sum(record["state"] == "MERGED" for record in records), rows="".join(rows),
         collected=escape(max((r["history"].get("collectedAt") or "Unknown" for r in records), default="No PR evidence")),
-        complete=complete, unhandled=unhandled_requests, unknown=unknown_requests,
+        complete=complete, waiting=waiting, unhandled=unhandled_requests, unknown=unknown_requests,
         bounded="Full history is linked, not embedded, to meet the report budget." if compact else "",
         synthesis=f'<p>{escape(assessments["synthesis"])}</p>' if not compact and assessments and assessments.get("synthesis") else "",
         history_css=(assets / "pr-history.css").read_text())

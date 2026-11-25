@@ -13,6 +13,16 @@ no unhandled request, and every related pair in `<scope>.related.json` has a
 relation on an assessment from this round; otherwise it prints each blocker
 and exits 1.
 
+Settle owner decisions in one batch:
+
+    python3 ledger.py waiting [--assessments <f>]  # open owner/evidence decisions across PRs, one line each
+    python3 ledger.py decide <key> --answer accept|waive|rescope|reject --instruction "<owner's words>"
+                             [--scope "<what it covers>"] [--actor <who>] [--assessments <f>]
+
+`decide` appends a new assessment for every PR whose latest saved assessment carries
+the decision `<key>` (its `subject`, or `<pr>/<decision id>`), and prints each PR as
+clear or still blocked by the gates it names.
+
 Read a round's history:
 
     python3 ledger.py open               # findings still open, per PR
@@ -61,6 +71,9 @@ DECISIONS = {
     "decision": "Needs owner decision", "reviewer-incomplete": "Review incomplete",
     "ready": "Source review complete",
 }
+# The decisions an owner's answer can settle, and the answers. Code and unfinished review need a new head or a review.
+OWNED = ("evidence", "decision")
+ANSWERS = ("accept", "waive", "rescope", "reject")
 # How a PR stands against another one. Superseded and duplicate PRs are never ready.
 RELATIONS = {
     "supersedes": "Supersedes", "superseded-by": "Superseded by", "duplicates": "Duplicates",
@@ -100,8 +113,17 @@ def validate_assessment(assessment):
         if waiver and (not all(waiver.get(field) for field in ("actor", "source", "at", "scope"))
                        or waiver.get("criterion") != decision["criterion"]):
             raise ValueError("waiver must name actor, source, time, scope and this exact criterion")
-        if waiver and decision["kind"] not in ("evidence", "decision"):
+        if waiver and decision["kind"] not in OWNED:
             raise ValueError("a waiver cannot substitute for code verification or unfinished review")
+        rejected = decision.get("rejected")
+        if rejected and (not all(rejected.get(field) for field in ("actor", "source", "at"))
+                         or waiver or decision["kind"] not in OWNED):
+            raise ValueError("a rejection names actor, source and time, on an unwaived evidence or owner decision")
+        subject = decision.get("subject")
+        if subject is not None and (not isinstance(subject, str) or not re.fullmatch(r"[a-z][a-z0-9-]*:\S+", subject)):
+            raise ValueError('subject is a shared key such as "adr:183", the same on every PR the decision gates')
+        if decision.get("recommend") not in (None, *ANSWERS):
+            raise ValueError("recommend is one of " + ", ".join(ANSWERS))
     carried = assessment.get("carried")
     if carried is not None and (
             not isinstance(carried, dict) or carried.get("head") != assessment["head"]
@@ -198,6 +220,100 @@ def assessment_history(repo=None):
 
 def assessments(repo=None):
     return {a["number"]: a for a in assessment_history(repo)}
+
+
+def decision_key(number, decision):
+    """What an owner's answer names: a `subject` shared across PRs (one ADR gating three PRs),
+    otherwise this PR's own decision id."""
+    return decision.get("subject") or f'{number}/{decision["id"]}'
+
+
+def waiting(items):
+    """Open owner and evidence decisions across PRs, one entry per key, in the order first seen.
+    A rejected decision still blocks but was answered, so it is not asked again."""
+    groups = {}
+    for item in items:
+        for decision in unresolved(item):
+            if decision["kind"] not in OWNED or decision.get("rejected"):
+                continue
+            key = decision_key(item["number"], decision)
+            group = groups.setdefault(key, {"key": key, "prs": [], "kind": decision["kind"], "owner": decision["owner"],
+                                            "question": decision["summary"], "criterion": decision["criterion"],
+                                            "recommend": decision.get("recommend"), "unblock": decision["unblock"]})
+            if item["number"] not in group["prs"]:
+                group["prs"].append(item["number"])
+    return list(groups.values())
+
+
+def waiting_lines(groups):
+    """The batch to ask in one message: one line per decision, then its answer forms."""
+    lines = []
+    for g in groups:
+        prs = ", ".join(f"#{n}" for n in g["prs"])
+        lines.append(f'{g["key"]} · {prs} · {g["owner"]}: {g["question"]} ({g["criterion"]})')
+        lines.append(f'    Recommended: {g["recommend"] + " · " if g["recommend"] else ""}{g["unblock"]}')
+        lines.append(f'    Answer: "accept {g["key"]}", "waive {g["key"]}", '
+                     f'"rescope {g["key"]} to <follow-up>" or "reject {g["key"]}"')
+    return lines
+
+
+def decide(key, answer, instruction, scope=None, actor=None, repo=None, bundle=None):
+    """Record an owner's answer on every saved assessment carrying the decision `key`, as a new record.
+
+    accept, waive and rescope add a waiver whose source is the owner's words; reject records the answer
+    and leaves the decision blocking. A code or reviewer-incomplete decision refuses every answer, and
+    nothing is recorded. With `bundle`, the round's assessments file, its matching entries are replaced
+    too, so the write helpers see the answer; each must first equal the saved record. Returns
+    [(number, unresolved decisions)] for every PR the key matched."""
+    if answer not in ANSWERS:
+        raise ValueError("answer is one of " + ", ".join(ANSWERS))
+    if not instruction:
+        raise ValueError("record the owner's exact words with --instruction")
+    if answer == "rescope" and not scope:
+        raise ValueError("rescope needs --scope naming what moves to the follow-up")
+    at, touched, changed = _now(), [], []
+    for number, saved in sorted(assessments(repo).items()):
+        if not any(decision_key(number, d) == key for d in saved["decisions"]):
+            continue
+        item = json.loads(json.dumps({k: v for k, v in saved.items() if k not in ("round", "recorded_at")}))
+        fresh = False
+        for d in item["decisions"]:
+            if decision_key(number, d) != key:
+                continue
+            if d["kind"] not in OWNED:
+                raise ValueError(f'#{number} {d["id"]} is a {d["kind"]} decision; an owner answer cannot settle it. '
+                                 "Nothing recorded")
+            if (d.get("waiver") or {}).get("answer") == answer or (answer == "reject" and d.get("rejected")):
+                continue
+            fresh = True
+            d.pop("waiver", None)
+            d.pop("rejected", None)
+            who = actor or d["owner"]
+            if answer == "reject":
+                d["rejected"] = {"actor": who, "source": instruction, "at": at}
+            else:
+                d["waiver"] = {"actor": who, "source": instruction, "at": at, "answer": answer,
+                               "scope": scope or f'{answer} {key} on #{number} at {item["head"]}',
+                               "criterion": d["criterion"]}
+        validate_assessment(item)
+        touched.append(item)
+        if fresh:
+            changed.append((saved, item))
+    if not touched:
+        raise ValueError(f"no saved assessment carries decision {key}; `ledger.py waiting` lists the open ones")
+    if bundle is not None:
+        entries = {a.get("number"): a for a in bundle.get("assessments", [])}
+        for saved, item in changed:
+            if item["number"] in entries and entries[item["number"]] != {
+                    k: v for k, v in saved.items() if k not in ("round", "recorded_at")}:
+                raise ValueError(f'#{item["number"]} in the assessments file differs from its saved record; '
+                                 "run `ledger.py record` with it first. Nothing recorded")
+    for saved, item in changed:
+        record_assessment(saved["round"], item, repo)
+    if bundle is not None:
+        answered = {item["number"]: item for _, item in changed}
+        bundle["assessments"] = [answered.get(a.get("number"), a) for a in bundle.get("assessments", [])]
+    return [(item["number"], unresolved(item)) for item in touched]
 
 
 def handled_requests(repo=None):
@@ -558,6 +674,51 @@ def main():
         for item in bundle["assessments"]:
             record_assessment(rid, item, repo)
         print(f'recorded {len(bundle["assessments"])} assessment(s) in round {rid}')
+        return
+
+    if cmd in ("waiting", "decide"):
+        import argparse
+        parser = argparse.ArgumentParser(prog=f"ledger.py {cmd}")
+        if cmd == "decide":
+            parser.add_argument("key", help='the decision\'s subject, such as "adr:183", or "<pr>/<decision id>"')
+            parser.add_argument("--answer", required=True, choices=ANSWERS)
+            parser.add_argument("--instruction", required=True, help="the owner's exact words")
+            parser.add_argument("--scope", help="what the answer covers; required for rescope")
+            parser.add_argument("--actor", help="who answered; defaults to each decision's owner")
+        parser.add_argument("--assessments", help="the round's assessments file; decide updates it in place")
+        args = parser.parse_args(sys.argv[2:])
+        repo = repo_slug()
+        if not repo:
+            sys.exit(no_repo())
+        bundle = None
+        if args.assessments:
+            try:
+                with open(args.assessments) as f:
+                    bundle = json.load(f)
+            except (OSError, ValueError) as error:
+                sys.exit(f"could not read the assessments: {error}")
+            if not isinstance(bundle, dict) or bundle.get("repository") != repo:
+                sys.exit(f'expected {{"repository": "{repo}", "assessments": [...]}}')
+        if cmd == "waiting":
+            groups = waiting(bundle["assessments"] if bundle else assessments(repo).values())
+            print(f"Waiting on you: {len(groups)} decision(s)" if groups else "Waiting on you: nothing")
+            for line in waiting_lines(groups):
+                print("  " + line)
+            return
+        try:
+            results = decide(args.key, args.answer, args.instruction, args.scope, args.actor, repo, bundle)
+        except ValueError as error:
+            sys.exit(str(error))
+        if bundle is not None:
+            with open(args.assessments, "w") as f:
+                json.dump(bundle, f, indent=2)
+        print(f'{args.key}: {args.answer}, from "{args.instruction}"')
+        for number, blockers in results:
+            print(f"  #{number} " + ("still blocked: " + "; ".join(
+                f'{d["owner"]}: {d["unblock"]} ({decision_key(number, d)}'
+                + (", rejected" if d.get("rejected") else "") + ")" for d in blockers) if blockers
+                                    else "clear: nothing unresolved in its saved assessment; with approvals on, "
+                                         "approve it with review_write.py approve"))
         return
 
     if cmd == "end":
