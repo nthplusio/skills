@@ -67,9 +67,10 @@ The user can save their answers as the repository default through
 | `auto-merge-on-approval` | Turns on auto-merge right after its own approval | `auto` |
 | `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
 | `dismiss-review` | Dismisses another reviewer's review after verifying its findings are fixed | `ask` |
+| `reapprove-base-only` | Approves again, as action `reapprove`, a PR whose round approval was dismissed when the new head adds only clean base merges | `auto` |
 
 `ask` holds the write and the helper prints the question to ask; `never`
-refuses it even with a grant. Both auto-merge kinds need approvals. The levels:
+refuses it even with a grant. Both auto-merge kinds and `reapprove-base-only` need approvals. The levels:
 
 | Level | The round does | Writes it allows |
 |---|---|---|

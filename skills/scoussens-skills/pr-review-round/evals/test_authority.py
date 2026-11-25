@@ -46,13 +46,14 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual((record["repository"], record["prs"], record["level"], record["approvals"]),
                          ("owner/repo", [3614, 3620], "review", True))
         self.assertEqual(record["policies"], {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto",
-                                              "dismiss-review": "auto"})
+                                              "dismiss-review": "auto", "reapprove-base-only": "auto"})
         self.assertEqual(record["sources"], {"level": "answer", "approvals": "answer", "policies": {
-            "auto-merge-on-approval": "default", "auto-merge-sweep": "default", "dismiss-review": "answer"}})
+            "auto-merge-on-approval": "default", "auto-merge-sweep": "default", "dismiss-review": "answer",
+            "reapprove-base-only": "default"}})
         self.assertEqual(record["instruction"], words)
         self.assertTrue(record["possible_landing"])
         # The record it wrote is the one the write helpers accept, auto-merge included.
-        for action in ("comment", "approve", "enable-auto-merge", "sweep-auto-merge", "dismiss"):
+        for action in ("comment", "approve", "enable-auto-merge", "sweep-auto-merge", "dismiss", "reapprove"):
             ledger.check_authority(record, "owner/repo", 3614, action)
         with self.assertRaises(ValueError):
             ledger.check_authority(record, "owner/repo", 3699, "comment")
@@ -86,14 +87,15 @@ class AuthorityTests(unittest.TestCase):
 
     def test_questions_list_only_what_the_profile_and_answers_leave_open(self):
         every = self.run_cli("questions", "--root", self.root)
-        for key in ("level:", "approvals:", "auto-merge-on-approval:", "auto-merge-sweep:", "dismiss-review:"):
+        for key in ("level:", "approvals:", "auto-merge-on-approval:", "auto-merge-sweep:", "dismiss-review:",
+                    "reapprove-base-only:"):
             self.assertIn(key, every)
         self.assertIn("Recommended: ask.", every)
         self.profile({"level": "review", "approvals": True, "policies": {"auto-merge-sweep": "auto"}})
         (self.tmp / "answers.json").write_text(json.dumps({"policies": {"dismiss-review": "never"}, "instruction": "x"}))
         left = self.run_cli("questions", "--root", self.root, "--answers", self.tmp / "answers.json")
         self.assertEqual([line.split(":")[0] for line in left.splitlines() if "Recommended" in line],
-                         ["auto-merge-on-approval"])
+                         ["auto-merge-on-approval", "reapprove-base-only"])
         self.assertIn("From the review profile", left)
         self.assertIn("level review; approvals yes; auto-merge-sweep auto", left)
 
@@ -116,6 +118,22 @@ class AuthorityTests(unittest.TestCase):
         for pr, action in ((3614, "sweep-auto-merge"), (3699, "dismiss")):
             self.run_cli("grant", self.tmp / "authority.json", "--pr", pr, "--action", action, "--instruction", "x", ok=False)
         self.run_cli("grant", self.tmp / "authority.json", "--pr", 3614, "--action", "push-fix", "--instruction", "x", ok=False)
+
+    def test_reapproving_after_base_merges_is_its_own_decision_and_never_leaves_fresh_approval_alone(self):
+        record, _ = self.init({"level": "review", "approvals": True, "instruction": "approve, but re-review base merges",
+                               "policies": {"reapprove-base-only": "never"}})
+        with self.assertRaisesRegex(ValueError, "reapprove-base-only policy is never"):
+            ledger.check_authority(record, "owner/repo", 3614, "reapprove")
+        ledger.check_authority(record, "owner/repo", 3614, "approve")
+        self.run_cli("grant", self.tmp / "authority.json", "--pr", 3614, "--action", "reapprove", "--instruction", "x",
+                     ok=False)
+        record, _ = self.init({"level": "review", "approvals": True, "instruction": "review with approvals"})
+        self.assertEqual(record["policies"]["reapprove-base-only"], "auto")
+        ledger.check_authority(record, "owner/repo", 3614, "reapprove")
+        # Without approvals the round asks, naming the question.
+        record, _ = self.init({"level": "review", "approvals": False, "instruction": "review only"})
+        with self.assertRaisesRegex(ValueError, "reapprove-base-only policy is ask. Ask: .*approve it again"):
+            ledger.check_authority(record, "owner/repo", 3614, "reapprove")
 
     def test_level_caps_hold_and_hand_edits_or_old_files_are_refused(self):
         record, _ = self.init({"level": "review", "approvals": True, "policies": {"dismiss-review": "auto"},

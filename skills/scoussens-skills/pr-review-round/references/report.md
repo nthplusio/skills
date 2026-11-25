@@ -117,11 +117,13 @@ Every write additionally takes `--authority authority.json`, which `authority.py
 
 ```json
 {"version": 2, "repository": "owner/repo", "prs": [3614, 3620], "level": "review", "approvals": true,
- "policies": {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto", "dismiss-review": "ask"},
+ "policies": {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto", "dismiss-review": "ask",
+              "reapprove-base-only": "auto"},
  "sources": {"level": "answer", "approvals": "answer",
-             "policies": {"auto-merge-on-approval": "default", "auto-merge-sweep": "profile", "dismiss-review": "default"}},
+             "policies": {"auto-merge-on-approval": "default", "auto-merge-sweep": "profile", "dismiss-review": "default",
+                          "reapprove-base-only": "default"}},
  "instruction": "<the user's exact words, or the profile path for profile defaults>", "profile": "<profile path or null>",
- "actions": ["comment", "request-changes", "approve", "enable-auto-merge", "sweep-auto-merge"], "possible_landing": true,
+ "actions": ["comment", "request-changes", "approve", "enable-auto-merge", "sweep-auto-merge", "reapprove"], "possible_landing": true,
  "grants": [{"pr": 3614, "action": "dismiss", "instruction": "dismiss the bot's review on #3614", "at": "<time>"}]}
 ```
 
