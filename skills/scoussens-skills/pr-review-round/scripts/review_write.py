@@ -37,6 +37,23 @@ def api(path, method="GET", payload=None):
     return data
 
 
+def existing_review(pull, login, head, state):
+    """Your latest decisive review at this head, when it already has `state`. A comment
+    does not replace a verdict, and a review at an older head does not count."""
+    result = subprocess.run(["gh", "api", f"{pull}/reviews?per_page=100", "--paginate", "--slurp"],
+                            capture_output=True, text=True)
+    try:
+        if result.returncode:
+            raise ValueError(result.stderr.strip())
+        reviews = [review for page in json.loads(result.stdout) for review in page]
+        mine = [r for r in reviews if (r.get("user") or {}).get("login") == login and r.get("commit_id") == head
+                and r.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
+    except (ValueError, TypeError, AttributeError) as error:
+        raise RuntimeError(f"HELD: could not read your existing reviews ({error}); nothing posted") from error
+    # GitHub lists reviews in chronological order.
+    return mine[-1] if mine and mine[-1]["state"] == state else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["approve", "request-changes", "comment", "dismiss"])
@@ -90,8 +107,8 @@ def main():
                 raise ValueError("request-changes requires a verified code decision; use a comment for evidence/owner requests")
             body += "\n\n## Unblock\n" + "\n".join(
                 f'- {d["owner"]}: {d["unblock"]} · {d["effort"]}' for d in code_decisions)
-        # Read identity first so the head check is the last read before a write.
-        login = api("user")["login"] if args.action == "approve" else None
+        # Read identity first; after the head check, only the existing-review lookup precedes a write.
+        login = api("user")["login"] if args.action != "dismiss" else None
         pr = api(pull)
         if pr["head"]["sha"] != args.head or pr["state"] != "open" or pr["draft"] is not False:
             raise RuntimeError("HELD: head changed, PR closed, or draft; review current state again")
@@ -120,6 +137,14 @@ def main():
             check_authority(authority, args.repo, args.number, args.action, possible_landing)
             require_resolved(assessment)
 
+        # Every check above still runs on a retry; only then does an existing review end it.
+        if args.action in ("approve", "request-changes"):
+            state = "APPROVED" if args.action == "approve" else "CHANGES_REQUESTED"
+            existing = existing_review(pull, login, args.head, state)
+            if existing:
+                print(f"{args.action} already exists at {args.head}: {existing.get('html_url') or existing.get('id')}; "
+                      "nothing posted")
+                return 0
         attempted = True
         if args.action == "dismiss":
             result = api(f"{pull}/reviews/{args.review_id}/dismissals", "PUT", {"message": body})

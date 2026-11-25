@@ -307,8 +307,12 @@ class QueueReportTests(unittest.TestCase):
 
 class ReviewWriteTests(unittest.TestCase):
     def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
-                  target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=()):
+                  target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=(), reviews=None,
+                  lost_reply=False):
+        """`reviews` is the PR's review list on GitHub; pass the same list to two runs to model a retry.
+        `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it."""
         writes = []
+        reviews = [] if reviews is None else reviews
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
                                       "base": {"sha": BASE, "ref": "main"}, "updated_at": REVISION,
                                       "draft": False, "auto_merge": None, "user": {"login": author}}] * 2)
@@ -317,14 +321,24 @@ class ReviewWriteTests(unittest.TestCase):
             if "/git/ref/heads/" in command[2]:
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": (target or {}).get("sha")}}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+            if command[2].startswith("repos/owner/repo/pulls/17/reviews?"):
+                # --paginate --slurp: one array per page.
+                return subprocess.CompletedProcess(command, 0, json.dumps([reviews[:1], reviews[1:]]), "")
             if freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
             method = command[command.index("--method") + 1]
             if method != "GET":
-                writes.append((command[2], json.loads(kwargs["input"])))
-                return subprocess.CompletedProcess(command, int(failure),
+                payload = json.loads(kwargs["input"])
+                writes.append((command[2], payload))
+                if command[2].endswith("/reviews") and (lost_reply or not failure):
+                    number = 100 + len(reviews)
+                    reviews.append({"id": number, "user": {"login": "reviewer"}, "commit_id": payload["commit_id"],
+                                    "state": {"APPROVE": "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED",
+                                              "COMMENT": "COMMENTED"}[payload["event"]],
+                                    "body": payload["body"], "html_url": f"https://example.test/review/{number}"})
+                return subprocess.CompletedProcess(command, int(failure or lost_reply),
                                                    '{"id": 42, "html_url": "https://example.test/posted/42"}',
-                                                   "denied" if failure else "")
+                                                   "timed out" if lost_reply else "denied" if failure else "")
             payload = {"login": "reviewer"} if command[2] == "user" else next(snapshots)
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
@@ -555,6 +569,39 @@ class ReviewWriteTests(unittest.TestCase):
             self.assertEqual((writes, code), ([], 1), output)
         writes, output, code = self.run_write("comment", flags=["--write"], permission=authority(prs=[99]))
         self.assertEqual((writes, code), ([], 1), output)
+
+    def test_a_retry_at_the_same_head_does_not_post_the_verdict_twice(self):
+        for action in ("approve", "request-changes"):
+            with self.subTest(action=action):
+                reviews = []
+                first, _, code = self.run_write(action, flags=["--write"], reviews=reviews)
+                self.assertEqual((len(first), code), (1, 0))
+                again, output, code = self.run_write(action, flags=["--write"], reviews=reviews)
+                self.assertEqual((again, code), ([], 0), output)
+                self.assertIn("already exists", output)
+                self.assertIn(reviews[0]["html_url"], output)
+                self.assertEqual(self.recorded, [])
+        # A comment after the approval, such as a note about a conflict, does not replace the verdict.
+        approved = {"id": 1, "user": {"login": "reviewer"}, "commit_id": HEAD, "state": "APPROVED", "body": "ok"}
+        writes, output, code = self.run_write("approve", flags=["--write"],
+                                              reviews=[approved, {**approved, "id": 2, "state": "COMMENTED"}])
+        self.assertEqual((writes, code), ([], 0), output)
+
+    def test_a_verdict_at_an_older_head_or_since_replaced_is_posted_again(self):
+        old = {"id": 1, "user": {"login": "reviewer"}, "commit_id": "b" * 40, "state": "APPROVED", "body": "ok"}
+        someone = {**old, "user": {"login": "someone"}, "commit_id": HEAD}
+        dismissed = {**old, "id": 2, "commit_id": HEAD, "state": "DISMISSED"}
+        for existing in ([old], [someone], [{**old, "commit_id": HEAD}, dismissed],
+                         [{**old, "commit_id": HEAD, "state": "CHANGES_REQUESTED"}]):
+            with self.subTest(existing=existing):
+                writes, output, code = self.run_write("approve", flags=["--write"], reviews=list(existing))
+                self.assertEqual((len(writes), code), (1, 0), output)
+
+    def test_existing_review_lookup_runs_after_every_check(self):
+        approved = [{"id": 1, "user": {"login": "reviewer"}, "commit_id": HEAD, "state": "APPROVED", "body": "ok"}]
+        writes, output, code = self.run_write("approve", flags=["--write"], reviews=approved, permission=authority(prs=[99]))
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertNotIn("already exists", output)
 
     def test_changed_review_policy_blocks_every_posted_action(self):
         item = assessment(kind="code")
