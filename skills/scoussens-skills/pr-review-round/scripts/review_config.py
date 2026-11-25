@@ -8,6 +8,29 @@ from pathlib import Path
 
 DEFAULTS = ("conventions", "data-layer", "integration", "security", "verification")
 LEVELS = ("assess", "review", "moderate", "major")
+# Write decisions a review round settles once, at its start, instead of in a chat message per PR.
+# Each kind governs the write actions it names: `auto` lets the round make them within its level,
+# `ask` needs a one-PR grant first, and `never` refuses them. `auto` needs level review or above,
+# and approvals too when `with_approvals` is set. Adding a kind is one entry here.
+MODES = ("auto", "ask", "never")
+KINDS = {
+    "auto-merge-on-approval": {
+        "default": "auto", "actions": ("enable-auto-merge",), "with_approvals": True,
+        "question": "After the round approves a PR, should it turn on auto-merge so GitHub merges it once checks pass?"},
+    "auto-merge-sweep": {
+        "default": "auto", "actions": ("sweep-auto-merge",), "with_approvals": True,
+        "question": "When someone already approved a PR at the head the round reviewed, the review found nothing "
+                    "unresolved and auto-merge is off, should the round turn auto-merge on?"},
+    "dismiss-review": {
+        "default": "ask", "actions": ("dismiss",), "with_approvals": False,
+        "question": "After verifying at the head that another reviewer's findings are fixed, may the round dismiss "
+                    "that review? A dismissal can let an auto-merge PR merge."},
+}
+
+
+def supports(kind, level, approvals):
+    """Whether a work level and approvals choice can run this kind without asking."""
+    return level in LEVELS[1:] and (approvals is True or not KINDS[kind]["with_approvals"])
 
 
 def fields(value, allowed, location):
@@ -49,12 +72,19 @@ def resolve(root, config=None):
         raise ValueError("execution.reviewers: expected auto, serial or parallel")
     # The repository's default work level for a review round; a request that names a level overrides it.
     round_ = data.get("round", {})
-    fields(round_, ("level", "approvals"), "round")
-    level, approvals = round_.get("level"), round_.get("approvals", False)
+    fields(round_, ("level", "approvals", "policies"), "round")
+    level, approvals, policies = round_.get("level"), round_.get("approvals", False), round_.get("policies", {})
     if level is not None and level not in LEVELS:
         raise ValueError("round.level: expected " + ", ".join(LEVELS))
     if type(approvals) is not bool or (approvals and level in (None, "assess")):
         raise ValueError("round.approvals: expected true or false, and true only with review, moderate or major")
+    fields(policies, KINDS, "round.policies")
+    for kind, mode in policies.items():
+        if mode not in MODES:
+            raise ValueError(f"round.policies.{kind}: expected " + ", ".join(MODES))
+        if mode == "auto" and level is not None and not supports(kind, level, approvals):
+            raise ValueError(f"round.policies.{kind}: auto needs level review or above"
+                             + (" with approvals" if KINDS[kind]["with_approvals"] else ""))
     overrides = data.get("references", {})
     if not isinstance(overrides, dict) or any(not name.strip() for name in overrides):
         raise ValueError("references: expected an object keyed by category name")
@@ -85,7 +115,7 @@ def resolve(root, config=None):
         "guidance": files(root, data.get("guidance", []), "guidance"),
         "tracker": {"policy": files(root, tracker.get("policy", []), "tracker.policy")},
         "execution": {"reviewers": reviewers, "policy": files(root, execution.get("policy", []), "execution.policy")},
-        "round": {"level": level, "approvals": approvals},
+        "round": {"level": level, "approvals": approvals, "policies": policies},
         "references": references,
         "disabled": disabled,
     }

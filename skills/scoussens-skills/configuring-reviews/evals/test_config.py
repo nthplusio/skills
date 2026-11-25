@@ -37,7 +37,7 @@ class ConfigTests(unittest.TestCase):
             self.assertIsNone(result["profile"])
             self.assertEqual(result["execution"], {"reviewers": "auto", "policy": []})
             self.assertEqual(result["tracker"], {"policy": []})
-            self.assertEqual(result["round"], {"level": None, "approvals": False})
+            self.assertEqual(result["round"], {"level": None, "approvals": False, "policies": {}})
             self.assertEqual(set(result["references"]), {"conventions", "data-layer", "integration", "security", "verification"})
             self.assertEqual(list(root.iterdir()), before, "resolution must not run setup")
             installed = Path(tmp) / "installed skill"
@@ -60,13 +60,15 @@ class ConfigTests(unittest.TestCase):
                 (root / "execution.md").write_text("Use this harness's existing execution setup.")
                 self.profile(root, guidance=["storage.md"], tracker={"policy": ["tickets.md"]},
                              execution={"reviewers": "serial", "policy": ["execution.md"]},
-                             round={"level": "review", "approvals": True}, references={
+                             round={"level": "review", "approvals": True,
+                                    "policies": {"auto-merge-sweep": "auto", "dismiss-review": "never"}}, references={
                                  "data-layer": {"files": ["storage.md"]},
                                  "integration": {"mode": "replace", "files": ["api.md"]},
                                  "security": {"mode": "disable"}, "accessibility": {"files": ["a11y.md"]}})
             first, second = self.run_config(a), self.run_config(b)
             self.assertEqual(first["execution"]["reviewers"], "serial")
-            self.assertEqual(first["round"], {"level": "review", "approvals": True})
+            self.assertEqual(first["round"], {"level": "review", "approvals": True,
+                                              "policies": {"auto-merge-sweep": "auto", "dismiss-review": "never"}})
             self.assertEqual(first["tracker"]["policy"], [str(a / "tickets.md")])
             self.assertEqual(second["tracker"]["policy"], [str(b / "tickets.md")])
             self.assertEqual(len(first["references"]["data-layer"]), 2)
@@ -114,6 +116,12 @@ class ConfigTests(unittest.TestCase):
             {"round": {"level": "approve"}}, {"round": {"level": "assess", "approvals": True}},
             {"round": {"approvals": True}}, {"round": {"level": "review", "approvals": "yes"}},
             {"round": {"default": "review"}},
+            # Policies name registered decision kinds and modes only, and auto must fit the level.
+            {"round": {"level": "review", "policies": {"dismiss-bot-review": "auto"}}},
+            {"round": {"level": "review", "policies": {"dismiss-review": "sometimes"}}},
+            {"round": {"level": "review", "policies": ["dismiss-review"]}},
+            {"round": {"level": "review", "approvals": False, "policies": {"auto-merge-sweep": "auto"}}},
+            {"round": {"level": "assess", "policies": {"dismiss-review": "auto"}}},
         ]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
