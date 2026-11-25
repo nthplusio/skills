@@ -325,6 +325,7 @@ class ReportTests(unittest.TestCase):
                     patch.object(round_report, "queue_state", return_value="not_queued"), \
                     patch.object(round_report, "target_state", return_value=TARGET), \
                     patch.object(round_report, "stack_of", return_value=None), \
+                    patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "unavailable")), \
                     patch.object(round_report, "gate_lines", side_effect=lambda repo, base, who, branches:
                                  [f"rules for {repo}@{base}, {who}, {branches}"]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):

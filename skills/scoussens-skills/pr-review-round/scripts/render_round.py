@@ -43,9 +43,14 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
         posted_urls.update(c["url"] for c in record["comments"] if c.get("url") and record["head"] in c.get("body", ""))
         if proposal:
             validate_assessment(proposal)
-            matches = not record.get("requirements_gaps") and assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")) and not any(
+            # round_report.py classified this proposal with the guards' rule; anything else needs an exact match.
+            fresh = record.get("freshness") or {}
+            classified = (fresh.get("assessed_at"), fresh.get("head")) == (proposal["assessed_at"], proposal["head"])
+            holds = (fresh["verdict"] != "stale" and proposal["evidence_inputs"]["issues"] == record["evidence_inputs"]["issues"]
+                     if classified else assessment_current(proposal, record["head"], record.get("base"), record.get("evidence_inputs")))
+            matches = not record.get("requirements_gaps") and holds and not any(
                 gap in record["history"]["gaps"] for gap in
-                ("snapshot-consistency", "queue-head-changed", "history-collection", "target-ref-changed-or-unavailable"))
+                ("snapshot-consistency", "queue-head-changed", "history-collection", "target-ref-unavailable"))
             blockers = unresolved(proposal)
             if matches and not any(d["kind"] == "reviewer-incomplete" for d in proposal["decisions"]):
                 complete += 1
@@ -55,6 +60,8 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                        f'<p class="muted">Assessed {escape(proposal["assessed_at"])} at '
                        f'<code>{escape(proposal["head"])}</code></p>'
                        f'<p class="muted">{escape(proposal.get("provenance") or "Local assessment")}</p>'
+                       + (f'<p class="muted">{"Inputs changed" if fresh["verdict"] == "stale" else "Accepted moved inputs"} · '
+                          f'{escape("; ".join(fresh["reasons"]))}</p>' if classified and fresh.get("reasons") else '') +
                        f'<p>Recommended next person · {escape(decision["owner"])}</p>'
                        f'<p>{escape(decision["unblock"])}</p>')
             for relation in proposal.get("relations", []):
@@ -145,6 +152,11 @@ def render(records, base, timezone="UTC", assessments=None, compact=False):
                                  f'<code>{escape(target.get("sha") or "Unknown")}</code> · '
                                  f'PR-reported base <code>{escape(record.get("base") or "Unknown")}</code>. '
                                  'A target read is not a tested merged result.</p>')
+        if record.get("target_moved"):
+            moved = record["target_moved"]
+            request_notes.append(f'<p>Target moved during collection · <code>{escape(moved["from"])}</code> → '
+                                 f'<code>{escape(moved["to"])}</code>. Information, not a gap: each assessment\'s '
+                                 'freshness decides whether it still holds.</p>')
         if record.get("merge_review_gap"):
             status = "Merged head has no saved local assessment"
             owner = "Maintainer to reconcile saved records and linked assessments. Missing local records do not establish missing review."

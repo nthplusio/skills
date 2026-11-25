@@ -61,6 +61,7 @@ from pr_history import normalize
 from review_config import resolve as review_config
 from review_requests import reconcile, effective_reviews
 from ledger import assessment_history, gh_said, marker_current, validate_assessment, target_state, writes as ledger_writes
+from freshness import classify, live_from_view
 from branch_rules import gate_lines
 from requirements import requirement_gaps
 from stacks import stack_of, missing_members
@@ -419,6 +420,11 @@ def main():
         }
         proposal = latest.get(n)
         rec["assessment"] = proposal
+        if proposal and p.get("state") == "OPEN":
+            # The same rule the write helpers apply, so the report and the guards agree on what is current.
+            verdict = classify(proposal, {**live_from_view(p), "target": target}, policy=policy["revision"],
+                               repo=slug, number=n, writes=recorded)
+            rec["freshness"] = {**verdict.record(), "assessed_at": proposal["assessed_at"], "head": proposal["head"]}
         rec["requirements_gaps"] = requirement_gaps(evidence.get("ticketEvidence", {}))
         rec["assessment_history"] = [a for a in saved if a["number"] == n]
         if p.get("state") == "MERGED":
@@ -430,11 +436,15 @@ def main():
         out.append(rec)
 
     final_target = target_state(slug, base)
+    # A busy base moves during collection; that is information, not missing evidence.
+    # Only an unreadable target is a gap, and it is not a request gap.
+    readable = bool(target.get("sha") and final_target.get("sha"))
+    moved = {"from": target["sha"], "to": final_target["sha"]} if readable and final_target != target else None
     for rec, evidence in collected:
-        if not target.get("sha") or final_target != target:
-            evidence.setdefault("failedFetches", []).append("target-ref-changed-or-unavailable")
-            rec["history"]["gaps"].append("target-ref-changed-or-unavailable")
+        if not readable:
+            rec["history"]["gaps"].append("target-ref-unavailable")
         rec["target_final"] = final_target
+        rec["target_moved"] = moved
         # A disposition is bound to its request event and the head it was assessed at,
         # not to the stricter inputs that keep a recommendation current.
         rec["handoffs"] = reconcile(evidence, [marker for item in rec["assessment_history"]
