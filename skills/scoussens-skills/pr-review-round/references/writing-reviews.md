@@ -88,7 +88,7 @@ Save every assessment, including clean ones, with `ledger.py record <round-id> <
 The table names proposed actions. In assessment-only mode, keep them local.
 Execute each action only with authority for that action and PR. An authority
 "with approvals" covers an approval that releases auto-merge; a dismissal follows
-the `dismiss-review` policy or a one-PR grant. Preserve the
+the `dismiss-bot-review` or `dismiss-human-review` policy or a one-PR grant. Preserve the
 independent risk-tier trace and evidence requirements before granting clearance.
 
 | Situation | Action |

@@ -4,8 +4,9 @@
 Without --write this only reports the held action. The authority file from
 authority.py decides each write: approvals cover an approval that releases
 auto-merge, the reapprove-base-only policy covers `reapprove` (an approval on an
-assessment `reapprove.py --carry` built), and the dismiss-review policy (or a
-one-PR grant) covers a dismissal.
+assessment `reapprove.py --carry` built), and a dismissal follows the
+dismiss-bot-review or dismiss-human-review policy (or a one-PR grant), chosen by
+what GitHub says about the review's author.
 Approvals, change requests and comments are pull request reviews (a comment is a
 COMMENT review), so each carries commit_id and shows in GitHub's review list. A
 review this login already posted at the same head is not posted again.
@@ -46,6 +47,11 @@ def api(path, method="GET", payload=None):
     if not isinstance(data, dict):
         raise RuntimeError(f"{method} returned unexpected data; inspect remote state before retry")
     return data
+
+
+def is_bot(user):
+    """A review bot by GitHub's account type or its `[bot]` login, never by the caller's say-so."""
+    return (user or {}).get("type") == "Bot" or ((user or {}).get("login") or "").endswith("[bot]")
 
 
 def existing_review(pull, login, head, state, body):
@@ -104,7 +110,15 @@ def main():
     code = 0
     try:
         authority = json.loads(args.authority.read_text())
-        check_authority(authority, args.repo, args.number, args.action)
+        write = args.action
+        if args.action == "dismiss":
+            # Bots and people are separate policies, so whose review this is comes from GitHub.
+            try:
+                dismissed = api(f"{pull}/reviews/{args.review_id}")
+            except RuntimeError as error:
+                raise RuntimeError(f"HELD: could not read review {args.review_id} to tell a bot from a person ({error})")
+            write = "dismiss-bot" if is_bot(dismissed.get("user")) else "dismiss-human"
+        check_authority(authority, args.repo, args.number, write)
         bundle = json.loads(args.assessments.read_text())
         if bundle.get("repository") != args.repo:
             raise ValueError("assessment belongs to a different repository")
@@ -152,7 +166,7 @@ def main():
                 raise RuntimeError(f'HELD: you pushed the last commit, and {pr["base"].get("ref")} requires approval '
                                    "of the last push by someone else; name another approver")
         # check_authority above covered the landing either write can release: approvals, or the
-        # dismiss-review policy or grant whose question names it.
+        # dismiss policy or grant whose question names it.
         if args.action in ("approve", "reapprove", "dismiss"):
             require_resolved(assessment)
 

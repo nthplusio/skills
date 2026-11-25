@@ -56,7 +56,7 @@ first message:
    unanswered setting takes the profile's value, then the default.
 4. When the user grants a held write mid-round ("dismiss the bot's review on
    #3614"), record it with `authority.py grant $RUN/authority.json --pr 3614
-   --action dismiss --instruction "<their words>"`. Never write or edit the
+   --action dismiss-bot --instruction "<their words>"`. Never write or edit the
    authority file by hand.
 
 The user can save their answers as the repository default through
@@ -66,7 +66,8 @@ The user can save their answers as the repository default through
 |---|---|---|
 | `auto-merge-on-approval` | Turns on auto-merge right after its own approval | `auto` |
 | `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
-| `dismiss-review` | Dismisses another reviewer's review after verifying its findings are fixed | `ask` |
+| `dismiss-bot-review` | Dismisses a review bot's review, as action `dismiss-bot`, after verifying its findings at the head (step 6) | `ask` |
+| `dismiss-human-review` | Dismisses a person's review, as action `dismiss-human`, after verifying its findings are fixed | `ask` |
 | `reapprove-base-only` | Approves again, as action `reapprove`, a PR whose round approval was dismissed when the new head adds only clean base merges | `auto` |
 
 `ask` holds the write and the helper prints the question to ask; `never`
@@ -96,8 +97,9 @@ separate merge permission is needed for either. Turn it on right after the
 approval, while checks still run; GitHub's required checks do the waiting.
 Prefer it to a direct merge, which waits for `CLEAN` and needs its own
 instruction. Re-read the head and auto-merge immediately before approving.
-A dismissal follows the `dismiss-review` policy, whose question names the
-merge it can release. GitHub refuses auto-merge for stacked PRs; land
+A dismissal follows `dismiss-bot-review` or `dismiss-human-review`, chosen by
+what GitHub reports about the review's author; each question names the merge
+it can release. GitHub refuses auto-merge for stacked PRs; land
 those with `land.py --enqueue --stack-method <method>` as step 5 describes,
 which needs its own merge instruction. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires the authority file `authority.py init` wrote; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
 

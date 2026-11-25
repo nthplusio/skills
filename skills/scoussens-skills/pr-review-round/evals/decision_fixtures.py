@@ -23,7 +23,7 @@ def bundle(item=None):
     return {"repository": "owner/repo", "assessments": [item or assessment()]}
 
 
-def authority(grants=("enqueue", "dismiss"), prs=(17,), **answers):
+def authority(grants=("enqueue", "dismiss-human"), prs=(17,), **answers):
     """An authority file as authority.py writes it: review with approvals, plus one-PR grants on each PR."""
     record = authority_script.build("owner/repo", list(prs), {"level": "review", "approvals": True,
                                     "instruction": "Test-only explicit authority", **answers}, {})

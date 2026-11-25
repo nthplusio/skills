@@ -339,9 +339,10 @@ class QueueReportTests(unittest.TestCase):
 class ReviewWriteTests(unittest.TestCase):
     def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
                   target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=(), reviews=None,
-                  lost_reply=False):
+                  lost_reply=False, dismissed=PERSON):
         """`reviews` is the PR's review list on GitHub; pass the same list to two runs to model a retry.
-        `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it."""
+        `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it.
+        `dismissed` is the author GitHub reports for review 9, the one a dismissal targets."""
         writes = []
         reviews = [] if reviews is None else reviews
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
@@ -357,6 +358,11 @@ class ReviewWriteTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, json.dumps([reviews[:1], reviews[1:]]), "")
             if freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
+            if command[2] == "repos/owner/repo/pulls/17/reviews/9":
+                if dismissed is None:
+                    return subprocess.CompletedProcess(command, 1, "", "HTTP 502")
+                payload = {"id": 9, "user": dismissed, "state": "CHANGES_REQUESTED", "commit_id": "c" * 40}
+                return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
             method = command[command.index("--method") + 1]
             if method != "GET":
                 payload = json.loads(kwargs["input"])
@@ -437,18 +443,45 @@ class ReviewWriteTests(unittest.TestCase):
                                               permission=authority(approvals=False))
         self.assertEqual((writes, code), ([], 1), output)
         self.assertIn("without approvals", output)
-        # Dismissal is the dismiss-review kind: ask (the default) holds it and names the question,
-        # a one-PR grant lets it through, and never refuses it even with a grant on file.
+        # Dismissing a person's review is the dismiss-human-review kind: ask (the default) holds it and names
+        # the question, a one-PR grant lets it through, and never refuses it even with a grant on file.
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr], permission=authority(grants=()))
         self.assertEqual((writes, code), ([], 1), output)
-        self.assertIn("dismiss-review policy is ask", output)
+        self.assertIn("dismiss-human-review policy is ask", output)
         self.assertIn("may the round dismiss", output)
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr, pr])
         self.assertEqual((len(writes), code), (1, 0), output)
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr],
                                               permission={**authority(), "policies": {**authority()["policies"],
-                                                                                      "dismiss-review": "never"}})
+                                                                                      "dismiss-human-review": "never"}})
         self.assertEqual((writes, code), ([], 1), output)
+
+    def test_whose_review_a_dismissal_targets_comes_from_github_and_picks_the_policy(self):
+        bots_only = authority(grants=(), policies={"dismiss-bot-review": "auto", "dismiss-human-review": "ask"})
+        for user in (BOT, {"login": "review-bot[bot]", "type": "User"}, {"login": "linter", "type": "Bot"}):
+            with self.subTest(user=user):
+                writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=user)
+                self.assertEqual((len(writes), code), (1, 0), output)
+                self.assertTrue(writes[0][0].endswith("/reviews/9/dismissals"))
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=PERSON)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("dismiss-human-review policy is ask", output)
+        # A caller's claim that the review is a bot's changes nothing: a dismiss-bot grant does not cover a
+        # person's review, and the helper has no action or flag that names the author type.
+        claimed = authority(grants=("dismiss-bot",))
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=claimed, dismissed=PERSON)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("dismiss-human-review policy is ask", output)
+        for argv in (["dismiss-bot"], ["dismiss", "--bot"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()), \
+                    patch.object(sys, "argv", ["review_write.py", *argv[:1], "17", *argv[1:], "--repo", "owner/repo",
+                                               "--head", HEAD, "--body-file", "x", "--review-id", "9", "--write"]), \
+                    patch.object(subprocess, "run", side_effect=AssertionError("unexpected forge access")):
+                review_write.main()
+        # An unreadable author holds the dismissal rather than guessing.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=None)
+        self.assertEqual(writes, [], output)
+        self.assertIn("could not read review 9 to tell a bot from a person", output)
 
     def test_self_approval_and_uncertain_writes_are_held(self):
         writes, output, code = self.run_write("approve", flags=["--write"], author="reviewer")

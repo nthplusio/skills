@@ -21,10 +21,15 @@ KINDS = {
         "default": "auto", "actions": ("sweep-auto-merge",), "with_approvals": True,
         "question": "When someone already approved a PR at the head the round reviewed, the review found nothing "
                     "unresolved and auto-merge is off, should the round turn auto-merge on?"},
-    "dismiss-review": {
-        "default": "ask", "actions": ("dismiss",), "with_approvals": False,
-        "question": "After verifying at the head that another reviewer's findings are fixed, may the round dismiss "
-                    "that review? A dismissal can let an auto-merge PR merge."},
+    # Bots and people are separate kinds, so a user can let the round dismiss a bot without letting it dismiss people.
+    "dismiss-bot-review": {
+        "default": "ask", "actions": ("dismiss-bot",), "with_approvals": False,
+        "question": "After verifying at the head that every inline finding of a review bot's review is fixed or "
+                    "overstated, may the round dismiss that bot's review? A dismissal can let an auto-merge PR merge."},
+    "dismiss-human-review": {
+        "default": "ask", "actions": ("dismiss-human",), "with_approvals": False,
+        "question": "After verifying at the head that a person's review findings are fixed, may the round dismiss "
+                    "that person's review? A dismissal can let an auto-merge PR merge."},
     # Its own action, so `never` here refuses only a carried approval and a fresh `approve` after review still works.
     "reapprove-base-only": {
         "default": "auto", "actions": ("reapprove",), "with_approvals": True,
