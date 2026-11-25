@@ -3,7 +3,9 @@
 
 Without --write this only reports the held action. The authority file from
 authority.py decides each write: approvals cover an approval that releases
-auto-merge, and the dismiss-review policy (or a one-PR grant) covers a dismissal.
+auto-merge, the reapprove-base-only policy covers `reapprove` (an approval on an
+assessment `reapprove.py --carry` built), and the dismiss-review policy (or a
+one-PR grant) covers a dismissal.
 Approvals, change requests and comments are pull request reviews (a comment is a
 COMMENT review), so each carries commit_id and shows in GitHub's review list. A
 review this login already posted at the same head is not posted again.
@@ -21,9 +23,11 @@ from ledger import (check_authority, current_assessment, record_write, require_r
 from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
+from reapprove import approved_head
 
 # Each review action: the event GitHub takes and the state the posted review shows.
-REVIEWS = {"approve": ("APPROVE", "APPROVED"), "request-changes": ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
+REVIEWS = {"approve": ("APPROVE", "APPROVED"), "reapprove": ("APPROVE", "APPROVED"),
+           "request-changes": ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
            "comment": ("COMMENT", "COMMENTED")}
 
 
@@ -67,7 +71,7 @@ def existing_review(pull, login, head, state, body):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["approve", "request-changes", "comment", "dismiss"])
+    parser.add_argument("action", choices=["approve", "reapprove", "request-changes", "comment", "dismiss"])
     parser.add_argument("number", type=int)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--head", required=True)
@@ -111,6 +115,16 @@ def main():
         validate_assessment(assessment)
         if assessment["head"] != args.head:
             raise ValueError("assessment head differs from reviewed head")
+        # A re-approval stands on an assessment reapprove.py carried from the round's own approval; a fresh
+        # approval stands on a review of this head. Keeping them apart is what lets reapprove-base-only be never.
+        carried = assessment.get("carried")
+        if args.action == "approve" and carried:
+            raise ValueError("this assessment was carried from an earlier head; post it with reapprove, or review the head")
+        if args.action == "reapprove":
+            approved = approved_head(args.repo, args.number)
+            if not carried or carried["from_head"] != approved:
+                raise ValueError("reapprove needs an assessment reapprove.py --carry built from the round's last approval"
+                                 + (f" at {approved[:9]}" if approved else "; the ledger records none"))
         if args.action == "request-changes":
             code_decisions = [d for d in assessment["decisions"] if d["kind"] == "code" and d["severity"] == "blocking"]
             if not code_decisions:
@@ -128,9 +142,9 @@ def main():
         accepted = verdict.record() if isinstance(verdict, Benign) else None
         if accepted:
             print("Accepted moved inputs: " + "; ".join(accepted["reasons"]))
-        if args.action == "approve" and pr["user"]["login"] == login:
+        if args.action in ("approve", "reapprove") and pr["user"]["login"] == login:
             raise RuntimeError("HELD: an author cannot approve their own PR")
-        if args.action == "approve":
+        if args.action in ("approve", "reapprove"):
             # Your approval cannot clear a last-push rule on a commit you pushed.
             rules = review_rules(args.repo, pr["base"].get("ref"))
             if (rules or {}).get("require_last_push_approval") and login and last_pusher(
@@ -139,7 +153,7 @@ def main():
                                    "of the last push by someone else; name another approver")
         # check_authority above covered the landing either write can release: approvals, or the
         # dismiss-review policy or grant whose question names it.
-        if args.action in ("approve", "dismiss"):
+        if args.action in ("approve", "reapprove", "dismiss"):
             require_resolved(assessment)
 
         # Every check above still runs on a retry; only then does an existing review end it.
@@ -192,7 +206,7 @@ def main():
             print("Post-write state uncertain or changed; reconcile before further writes"
                   + (f" ({drift})" if drift else ""))
             code = 1
-        if (args.action == "approve" and submitted and observed.get("state") == "OPEN"
+        if (args.action in ("approve", "reapprove") and submitted and observed.get("state") == "OPEN"
                 and observed.get("reviewDecision") not in (None, "", "APPROVED")):
             print(f'APPROVAL POSTED BUT THE REVIEW GATE DID NOT CLEAR: GitHub reports {observed["reviewDecision"]}. '
                   "The approval exists; do not post it again.")

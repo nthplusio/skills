@@ -1,0 +1,178 @@
+"""reapprove.py against real temporary git repositories; no forge calls."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import ledger
+import reapprove
+from decision_fixtures import assessment, REVISION
+from review_config import resolve
+
+LIVE = {"base": "c" * 40, "forge": "2026-11-12T09:00:00Z", "target": {"ref": "main", "sha": "c" * 40}}
+
+
+class Repository:
+    """A repository with `main` and a PR branch `feature`; A is the approved head."""
+
+    def __init__(self, path):
+        self.path = path
+        self.git("init", "-q", "-b", "main")
+        for key, value in (("user.email", "a@example.test"), ("user.name", "Author")):
+            self.git("config", key, value)
+        self.commit("shared.py", "x = 1\n", "base")
+        self.git("checkout", "-q", "-b", "feature")
+        self.approved = self.commit("feature.py", "y = 1\n", "feature")
+
+    def git(self, *args, check=True):
+        result = subprocess.run(["git", *args], cwd=self.path, capture_output=True, text=True)
+        if check and result.returncode:
+            raise AssertionError(result.stderr)
+        return result.stdout.strip()
+
+    def commit(self, name, text, message):
+        (self.path / name).write_text(text)
+        self.git("add", name)
+        self.git("commit", "-qm", message)
+        return self.git("rev-parse", "HEAD")
+
+    def on(self, branch, name, text):
+        """Commit on another branch and come back to feature."""
+        self.git("checkout", "-q", branch)
+        sha = self.commit(name, text, f"{branch}: {name}")
+        self.git("checkout", "-q", "feature")
+        return sha
+
+    def merge(self, branch):
+        self.git("merge", "-q", "--no-ff", "--no-edit", branch)
+        return self.git("rev-parse", "HEAD")
+
+    def head(self):
+        return self.git("rev-parse", "HEAD")
+
+    def decide(self):
+        return reapprove.base_only(self.approved, self.head(), self.git("rev-parse", "main"))
+
+
+class BaseOnlyTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        previous = os.getcwd()
+        os.chdir(directory.name)  # reapprove.py runs git in the repository root, as from a round
+        self.addCleanup(os.chdir, previous)
+        self.repo = Repository(Path(directory.name))
+
+    def assertBaseOnly(self, expected, reason=""):
+        result = self.repo.decide()
+        self.assertEqual(result["base_only"], expected, result["reason"])
+        self.assertIn(reason, result["reason"])
+        return result
+
+    def test_one_clean_base_merge_is_base_only(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        merge = self.repo.merge("main")
+        result = self.assertBaseOnly(True, "1 clean base merge")
+        self.assertEqual([s["commit"] for s in result["steps"]], [merge])
+        self.assertEqual(result["steps"][0]["merge_tree"], result["steps"][0]["tree"])
+        self.assertIn("clean, tree matches", "\n".join(reapprove.describe({**result, "approved": "a", "head": "h"})))
+
+    def test_two_successive_base_merges_are_base_only(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        self.repo.on("main", "third.py", "w = 1\n")
+        self.repo.merge("main")
+        self.assertBaseOnly(True, "2 clean base merge")
+
+    def test_a_conflict_resolved_by_hand_is_not_base_only(self):
+        self.repo.on("main", "feature.py", "y = 2\n")
+        self.repo.git("merge", "-q", "--no-ff", "--no-edit", "main", check=False)  # conflicts
+        (self.repo.path / "feature.py").write_text("y = 3\n")
+        self.repo.git("add", "feature.py")
+        self.repo.git("commit", "-q", "--no-edit")
+        result = self.assertBaseOnly(False, "conflicts")
+        self.assertIsNone(result["steps"][0]["merge_tree"])
+
+    def test_a_change_slipped_into_a_clean_merge_is_not_base_only(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        (self.repo.path / "feature.py").write_text("y = 99\n")
+        self.repo.git("commit", "-q", "-a", "--amend", "--no-edit")
+        self.assertBaseOnly(False, "differs from a clean merge")
+
+    def test_a_merge_and_an_author_commit_is_not_base_only(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        self.repo.commit("feature.py", "y = 2\n", "more work")
+        self.assertBaseOnly(False, "author commit")
+
+    def test_a_rebase_onto_the_new_base_is_not_base_only(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.git("rebase", "-q", "main")
+        self.assertBaseOnly(False, "not in the live head's history")
+
+    def test_merging_a_branch_that_is_not_the_base_is_not_base_only(self):
+        self.repo.git("branch", "other", "main")
+        self.repo.on("other", "other.py", "z = 1\n")
+        self.repo.merge("other")
+        self.assertBaseOnly(False, "not on the base branch")
+
+    def test_an_unmoved_head_or_unknown_commit_is_not_base_only(self):
+        self.assertBaseOnly(False, "has not moved")
+        result = reapprove.base_only("e" * 40, self.repo.head(), self.repo.git("rev-parse", "main"))
+        self.assertFalse(result["base_only"])
+        self.assertIn("not available locally", result["reason"])
+
+
+class CarryTests(unittest.TestCase):
+    A, H = "a" * 40, "d" * 40
+    BASE_ONLY = {"base_only": True, "reason": "1 clean base merge(s)", "approved": A, "head": H,
+                 "steps": [{"commit": H, "second_parent": "c" * 40, "merge_tree": "t" * 40, "tree": "t" * 40}]}
+
+    def carry(self, earlier, result=None, discussion=([], []), policy=None):
+        return reapprove.carry(earlier, result or self.BASE_ONLY, LIVE, policy=policy or resolve(".")["revision"],
+                               discussion=discussion, at=REVISION)
+
+    def test_a_clean_assessment_moves_to_the_new_head_and_keeps_its_review(self):
+        earlier = assessment()
+        carried = self.carry(earlier, discussion=([], ["GitHub dismissing this round's approval on a push"]))
+        ledger.validate_assessment(carried)
+        self.assertEqual((carried["head"], carried["base"]), (self.H, LIVE["base"]))
+        self.assertEqual((carried["assessed_at"], carried["decisions"]), (earlier["assessed_at"], earlier["decisions"]))
+        self.assertEqual(carried["evidence_inputs"]["forge"], LIVE["forge"])
+        self.assertEqual(carried["evidence_inputs"]["target"], LIVE["target"])
+        self.assertEqual((carried["carried"]["from_head"], carried["carried"]["commits"]), (self.A, [self.H]))
+        for text in (self.A, self.H, "git merge-tree --write-tree"):
+            self.assertIn(text, carried["provenance"])
+        self.assertEqual(ledger.unresolved(carried), [])
+
+    def test_nothing_unresolved_changed_or_unreviewed_is_carried(self):
+        cases = [
+            ("unresolved", dict(earlier=assessment(kind="code", owner="Author")), "unresolved decisions"),
+            ("not base-only", dict(result={**self.BASE_ONLY, "base_only": False, "reason": "an author commit"}),
+             "not base-only"),
+            ("another head", dict(earlier=assessment(head="b" * 40)), "not the approved head"),
+            ("policy", dict(policy="other-revision"), "review policy changed"),
+            ("a person spoke", dict(discussion=(["reviewed by alex (CHANGES_REQUESTED) since the assessment"], [])),
+             "discussion"),
+        ]
+        for name, changes, message in cases:
+            with self.subTest(name):
+                earlier = changes.pop("earlier", assessment())
+                with self.assertRaisesRegex(ValueError, message):
+                    self.carry(earlier, **changes)
+
+    def test_a_carried_record_must_name_its_check_and_heads(self):
+        carried = self.carry(assessment())
+        for broken in ({**carried, "carried": {**carried["carried"], "head": "e" * 40}},
+                       {**carried, "carried": {**carried["carried"], "commits": []}},
+                       {k: v for k, v in carried.items() if k != "provenance"}):
+            with self.subTest(broken=broken.get("carried")), self.assertRaisesRegex(ValueError, "carried requires"):
+                ledger.validate_assessment(broken)
+
+
+if __name__ == "__main__":
+    unittest.main()
