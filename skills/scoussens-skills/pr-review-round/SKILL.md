@@ -182,6 +182,7 @@ python3 $S/test_reach.py <n>        # added symbols with no test referencing the
 python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
 python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
+python3 $S/approvers.py <n> --repo <owner/repo> # code owners who can approve, minus author and last pusher, read-only
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
 python3 $S/branch_write.py --help   # moderate/major: base merge or minor fix, leased on the reviewed head
 python3 $S/authority.py questions|init|show|grant # the round's write permissions, settled at its start
