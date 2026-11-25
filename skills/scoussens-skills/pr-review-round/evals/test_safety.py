@@ -171,6 +171,11 @@ class LandingTests(unittest.TestCase):
                 self.assertEqual(writes, 0)
                 self.assertIn(f"queue={queue}", output)
                 self.assertEqual(code, 1)
+        # A retry finds the PR already queued: it says so instead of looking stuck.
+        _, output, _ = self.run_land([state(queue_state="queued")] * 3)
+        self.assertIn("#17 already in the merge queue at the reviewed head; no merge request sent", output)
+        _, output, _ = self.run_land([state(queue_state="queued")] * 3, ["--watch", "17"])
+        self.assertNotIn("already in the merge queue", output)
 
     def test_accepted_request_is_not_retried_without_new_authority_and_reconciliation(self):
         writes, output, code = self.run_land([state(), state(), state(state="MERGED")])
@@ -238,6 +243,8 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 1), output)
         writes, output, code = self.run_land([state(autoMergeRequest=auto)], ["--enable-auto-merge", f"17:{HEAD}"])
         self.assertEqual((writes, code), (0, 0), output)
+        self.assertIn("already on at the reviewed head, so no request was sent", output)
+        self.assertEqual(self.recorded, [])
         # "With approvals" grants auto-merge without listing it; without approvals it is held.
         bare = authority(actions=[], possible_landing=False)
         writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(autoMergeRequest=auto)],
