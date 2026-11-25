@@ -32,6 +32,7 @@ from review_requests import collect, reconcile, effective_reviews
 from ledger import assessments, gh_said, handled_requests, repo_slug
 from branch_rules import gate_lines
 from stacks import stack_of, label as stack_label, missing_members
+from reapprove import check as reapprove_check
 import related
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
@@ -351,11 +352,18 @@ def main():
     again = []
     for n in numbers:
         why = [w for w in (looks[n], mine[n]) if w == "HEAD MOVED" or w in uncovered]
+        # The git check runs only where the round's approval no longer covers the head.
+        if mine[n] in ("DISMISSED", "approved at old head") and reapprove_check(slug, n)[0]["base_only"]:
+            why.append("REAPPROVE: base only")
         if why:
             again.append(f'#{n} ({", ".join(why)})')
     if again:
         print("Look again -- the head moved since your saved assessment, or your review no longer "
               "covers the head: " + ", ".join(again))
+        if any("REAPPROVE: base only" in line for line in again):
+            print("  REAPPROVE: base only -- only clean base merges since the round's approval. With "
+                  "reapprove-base-only on auto, carry the assessment with reapprove.py <n> --carry and post "
+                  "review_write.py reapprove; anything else gets a normal review.")
     gated = [p for p in prs
              if mine[p["number"]] == "approved at head" and p.get("reviewDecision") == "REVIEW_REQUIRED"]
     if gated:
