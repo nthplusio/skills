@@ -158,8 +158,14 @@ def _discussion_move(saved, live, repo, number, writes):
         login = who.get("login") or "unknown"
         bot = who.get("type") == "Bot" or login.endswith("[bot]")
         state = (event.get("state") or "").upper()
-        if event.get("html_url") in ours or str((event.get("dismissed_review") or {}).get("review_id")) in dismissed:
+        review = event.get("dismissed_review") or {}
+        if event.get("html_url") in ours or str(review.get("review_id")) in dismissed:
             benign.append(f"this round's {kind}")
+        elif kind == "review_dismissed" and review.get("dismissal_commit_id") and not review.get("dismissal_message") \
+                and any(url.endswith(f'pullrequestreview-{review.get("review_id")}') for url in ours):
+            # GitHub's stale-approval rule dismissed this round's own approval on a push: it records the pushed
+            # commit and no message, and names the pusher as actor. A person's dismissal carries a message.
+            benign.append("GitHub dismissing this round's approval on a push")
         elif bot and (kind == "commented" or (kind == "reviewed" and state == "COMMENTED")):
             benign.append(f"{kind} by {login}")
         elif kind in AUTOMATED:

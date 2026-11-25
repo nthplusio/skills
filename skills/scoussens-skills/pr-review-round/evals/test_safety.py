@@ -563,6 +563,23 @@ class ReviewWriteTests(unittest.TestCase):
                                 "user": PERSON}], (), "reviewed by alex (COMMENTED)"),
             ("bot changes request", [{"event": "reviewed", "submitted_at": "2026-11-11T20:30:00Z",
                                       "state": "changes_requested", "user": BOT}], (), "(CHANGES_REQUESTED)"),
+            ("GitHub dismissing this round's approval on a push",
+             [{"event": "review_dismissed", "created_at": "2026-11-11T20:30:00Z", "actor": PERSON,
+               "dismissed_review": {"state": "approved", "review_id": 51, "dismissal_message": None,
+                                    "dismissal_commit_id": "c" * 40}}],
+             ({**ours, "action": "approve", "url": "https://example.test/pull/17#pullrequestreview-51"},), None),
+            ("a person dismissing this round's approval",
+             [{"event": "review_dismissed", "created_at": "2026-11-11T20:30:00Z", "actor": PERSON,
+               "dismissed_review": {"state": "approved", "review_id": 51, "dismissal_message": "not yet",
+                                    "dismissal_commit_id": None}}],
+             ({**ours, "action": "approve", "url": "https://example.test/pull/17#pullrequestreview-51"},),
+             "review_dismissed by alex"),
+            ("a push dismissing someone else's approval",
+             [{"event": "review_dismissed", "created_at": "2026-11-11T20:30:00Z", "actor": PERSON,
+               "dismissed_review": {"state": "approved", "review_id": 52, "dismissal_message": None,
+                                    "dismissal_commit_id": "c" * 40}}],
+             ({**ours, "action": "approve", "url": "https://example.test/pull/17#pullrequestreview-51"},),
+             "review_dismissed by alex"),
             ("unreadable timeline", None, (), "timeline is unreadable"),
         ]:
             for action in ("approve", "comment"):
@@ -603,6 +620,32 @@ class ReviewWriteTests(unittest.TestCase):
             self.assertEqual((writes, code), ([], 1), output)
         writes, output, code = self.run_write("comment", flags=["--write"], permission=authority(prs=[99]))
         self.assertEqual((writes, code), ([], 1), output)
+
+    def test_a_carried_assessment_reapproves_under_its_own_policy_and_a_fresh_approval_does_not_need_it(self):
+        approved = "c" * 40
+        carried = assessment(carried={"from_head": approved, "head": HEAD, "check": "git merge-tree --write-tree",
+                                      "commits": [HEAD], "at": REVISION},
+                             provenance=f"Carried from {approved} to {HEAD}")
+        prior = ({"number": 17, "action": "approve", "head": approved, "url": "https://example.test/review/1"},)
+        writes, output, code = self.run_write("reapprove", flags=["--write"], item=carried, prior=prior)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        self.assertEqual((writes[0][1]["event"], writes[0][1]["commit_id"]), ("APPROVE", HEAD))
+        self.assertEqual([w["action"] for w in self.recorded], ["approve", "reapprove"])
+        never = authority(grants=(), policies={"reapprove-base-only": "never"})
+        writes, output, code = self.run_write("reapprove", flags=["--write"], item=carried, prior=prior, permission=never)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("reapprove-base-only policy is never", output)
+        writes, output, code = self.run_write("approve", flags=["--write"], permission=never)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        # Each action needs its own kind of assessment, and a re-approval needs the round's own earlier approval.
+        for action, item, held, message in (("approve", carried, prior, "carried from an earlier head"),
+                                            ("reapprove", assessment(), prior, "reapprove needs an assessment"),
+                                            ("reapprove", carried, (), "the ledger records none"),
+                                            ("reapprove", carried, ({**prior[0], "head": "e" * 40},), "at eeeeeeeee")):
+            with self.subTest(action=action, message=message):
+                writes, output, code = self.run_write(action, flags=["--write"], item=item, prior=held)
+                self.assertEqual((writes, code), ([], 1), output)
+                self.assertIn(message, output)
 
     def test_a_retry_at_the_same_head_does_not_post_the_verdict_twice(self):
         for action in ("approve", "request-changes"):

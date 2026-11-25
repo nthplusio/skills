@@ -67,9 +67,10 @@ The user can save their answers as the repository default through
 | `auto-merge-on-approval` | Turns on auto-merge right after its own approval | `auto` |
 | `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
 | `dismiss-review` | Dismisses another reviewer's review after verifying its findings are fixed | `ask` |
+| `reapprove-base-only` | Approves again, as action `reapprove`, a PR whose round approval was dismissed when the new head adds only clean base merges | `auto` |
 
 `ask` holds the write and the helper prints the question to ask; `never`
-refuses it even with a grant. Both auto-merge kinds need approvals. The levels:
+refuses it even with a grant. Both auto-merge kinds and `reapprove-base-only` need approvals. The levels:
 
 | Level | The round does | Writes it allows |
 |---|---|---|
@@ -186,6 +187,7 @@ python3 $S/land.py --help          # guarded enqueue/auto-merge; requires author
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
 python3 $S/stacks.py <n> --repo <owner/repo> # stack membership and order, read-only
+python3 $S/reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] # base-only since the round's approval, read-only
 python3 $S/round_report.py <base> --scope <scope.json> # report data: urls, review timestamps, bodies
 python3 $S/render_round.py <round.json> --base <base> --timezone <IANA-zone> # offline HTML
 python3 $S/md_to_html.py            # render a review body's markdown (import: `render`)
@@ -332,6 +334,8 @@ Bare PR numbers also default to read-only. Report **queued** only when
 queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
 merge command are not evidence of queue membership. Conflicted, closed, held,
 or timed-out PRs never count as landed; the helper exits nonzero for them.
+
+**Re-approve base-only heads.** When the base dismisses stale approvals on push, an author's base merge dismisses the round's approval. For each PR `queue.py` marks `REAPPROVE: base only`, with `reapprove-base-only` on `auto`, run `reapprove.py <n> --repo <owner/repo> --carry $RUN/assessments.json > $RUN/reapprove-<n>.json`. It checks that every commit since the approved head A is a clean merge from the base tip, compares each merge's tree with `git merge-tree --write-tree`, and carries the assessment at A to the live head H. Then run `review_write.py reapprove <n> --head <H> --assessments $RUN/reapprove-<n>.json` with a body naming A, H and the tree check; auto-merge follows per `auto-merge-on-approval`. Any other change, a conflict or a refused carry gets a normal re-review.
 
 Merges reshuffle the queue. A PR you approved five minutes ago can go
 conflicting because another landed first. When that happens, run

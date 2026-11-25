@@ -102,6 +102,13 @@ def validate_assessment(assessment):
             raise ValueError("waiver must name actor, source, time, scope and this exact criterion")
         if waiver and decision["kind"] not in ("evidence", "decision"):
             raise ValueError("a waiver cannot substitute for code verification or unfinished review")
+    carried = assessment.get("carried")
+    if carried is not None and (
+            not isinstance(carried, dict) or carried.get("head") != assessment["head"]
+            or not re.fullmatch(r"[0-9a-f]{40}", carried.get("from_head") or "") or not carried.get("check")
+            or not carried.get("at") or not isinstance(carried.get("commits"), list) or not carried["commits"]
+            or not assessment.get("provenance")):
+        raise ValueError("carried requires from_head, this head, the check, its commits and time, plus a provenance")
     gate = assessment.get("approval_gate")
     if gate and not all(gate.get(k) for k in ("owner", "source", "reason")):
         raise ValueError("approval gate requires owner, source and reason from repository setup/policy")
@@ -208,7 +215,7 @@ LEVELS = {
     "moderate": ("comment", "request-changes", "update-branch", "push-fix"),
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
-SEPARATE = ("dismiss", "enqueue", "enable-auto-merge", "sweep-auto-merge")
+SEPARATE = ("dismiss", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove")
 # Writes that can make a PR merge, directly or by releasing an author's auto-merge.
 LANDING = ("approve", *SEPARATE)
 GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}

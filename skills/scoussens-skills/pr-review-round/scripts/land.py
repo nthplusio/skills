@@ -90,7 +90,7 @@ def landing_action(args, number, head):
     """Auto-merge after this round's own approval at the head, or the sweep of a PR someone else approved."""
     if not args.enable_auto_merge:
         return "enqueue"
-    own = any(w.get("number") == number and w.get("action") == "approve" and w.get("head") == head
+    own = any(w.get("number") == number and w.get("action") in ("approve", "reapprove") and w.get("head") == head
               for w in writes(args.repo))
     return "enable-auto-merge" if own else "sweep-auto-merge"
 

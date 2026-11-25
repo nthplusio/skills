@@ -50,7 +50,7 @@ def queue_row(**changes):
             "isCrossRepository": False, **changes}
 
 
-def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()):
+def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=(), base_only=()):
     """Drive queue.main() against recorded reads; returns what it printed.
 
     `elsewhere` is the last read: open PRs that request the reviewer, on any base."""
@@ -65,6 +65,7 @@ def run_queue(reads, raw, *, argv=(), saved=None, login="reviewer", elsewhere=()
             patch.object(queue, "gate_lines", side_effect=lambda repo, base, who, branches:
                          [f"rules for {repo}@{base}, {who}, {branches}"]), \
             patch.object(queue, "collect", side_effect=lambda slug, number: copy.deepcopy(raw)), \
+            patch.object(queue, "reapprove_check", side_effect=lambda slug, number: ({"base_only": number in base_only}, None)), \
             contextlib.redirect_stdout(output):
         queue.main()
     return output.getvalue()
@@ -416,6 +417,14 @@ class HandoffTests(unittest.TestCase):
                     self.assertIn(expected, text)
                 for unexpected in hidden:
                     self.assertNotIn(unexpected, text)
+        # A dismissed approval whose new head reapprove.py finds base-only is marked; the check runs only there.
+        raw = evidence()
+        raw["pr"]["reviews"] = [mine("DISMISSED", HEAD)]
+        raw["timeline"], raw["requestedReviewers"] = [], []
+        p = queue_row(headRefOid=moved)
+        text = run_queue([[p], details, p], raw, saved={17: assessment()}, base_only=(17,)).split("\nRISK -> depth")[0]
+        self.assertIn("#17 (HEAD MOVED, DISMISSED, REAPPROVE: base only)", text)
+        self.assertIn("review_write.py reapprove", text)
         # Without a readable login the column says so; it never reads as "no review".
         raw = evidence()
         raw["pr"]["reviews"] = [mine("APPROVED", HEAD)]
