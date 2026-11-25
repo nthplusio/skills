@@ -26,6 +26,16 @@ No strategy flag: the queue owns the merge strategy. A successful request is
 not proof of queue membership or landing; only subsequent reads establish it.
 A PR that already has auto-merge on, or is already queued, at the reviewed head
 gets no new request; the helper says so, so a re-run is safe.
+
+A PR without GitHub's APPROVED decision that the authenticated user authored,
+or last pushed under a last-push rule, cannot be approved by the round. It is
+governed by the own-pr-landing policy (action land-own-pr) and lands only when
+the required checks are green at the reviewed head, a review bot has reviewed
+the PR, no reviewer's latest verdict requests changes, and the round's
+assessment at that head has nothing unresolved. The write records each
+condition. Under `ask` the hold names who can approve (approvers.py). When
+GitHub refuses, for example because the base requires a human approval, the
+helper prints the head-bound command a person can run. It never bypasses.
 """
 import argparse
 import json
@@ -34,7 +44,11 @@ import re
 import subprocess
 import time
 
+from approvers import approvers, lines as approver_lines
+from branch_rules import last_pusher, review_rules
+from findings import is_bot
 from merge_queue import queue_state
+from review_requests import effective_reviews
 from freshness import Benign, live_from_view
 from ledger import check_authority, check_clearance, record_write, target_state, writes
 from stacks import stack_of, below
@@ -47,7 +61,7 @@ def state_of(num, repo=None):
     result = subprocess.run([
         "gh", "pr", "view", str(num), *(["--repo", repo] if repo else []), "--json",
         "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeable,mergeStateStatus,reviewDecision,"
-        "mergedAt,autoMergeRequest",
+        "mergedAt,autoMergeRequest,author,headRefName,headRepository,headRepositoryOwner",
     ], capture_output=True, text=True)
     if result.returncode:
         return {}
@@ -78,16 +92,74 @@ def stack_merge(num, method):
     return result.returncode == 0, (result.stdout + result.stderr).strip()
 
 
-def remember(repo, number, action, head, accepted=None):
+def remember(repo, number, action, head, accepted=None, conditions=None):
     """Record an accepted landing request; a ledger failure must not hide the write that happened."""
     try:
-        record_write(repo, number, action, head, accepted=accepted)
+        record_write(repo, number, action, head, accepted=accepted, conditions=conditions)
     except OSError as error:
         print(f"#{number} landing requested, but not recorded in the ledger ({error})")
 
 
-def landing_action(args, number, head):
-    """Auto-merge after this round's own approval at the head, or the sweep of a PR someone else approved."""
+def _read(command):
+    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout)
+    except ValueError:
+        return None
+
+
+def own_pr(repo, state):
+    """Why the authenticated user cannot approve this PR (author, or last pusher under a last-push rule), or None."""
+    login = (_read(["gh", "api", "user"]) or {}).get("login")
+    if not login:
+        return None
+    if (state.get("author") or {}).get("login") == login:
+        return f"{login} authored it"
+    head_repo = "/".join(filter(None, ((state.get("headRepositoryOwner") or {}).get("login"),
+                                       (state.get("headRepository") or {}).get("name"))))
+    if ((review_rules(repo, state.get("baseRefName")) or {}).get("require_last_push_approval")
+            and last_pusher(head_repo, state.get("headRefName")) == login):
+        return f"{login} pushed the last commit and the base requires another approver of the last push"
+    return None
+
+
+def own_conditions(repo, number, head):
+    """What each own-PR landing condition observed; raises naming every condition that fails.
+    The fourth, the round's assessment at the head with nothing unresolved, is clearance() and runs first."""
+    failed, observed = [], {"assessment": f"saved at {head} with nothing unresolved"}
+    checks = _read(["gh", "pr", "checks", str(number), "--repo", repo, "--required", "--json", "name,bucket"])
+    if not isinstance(checks, list) or not checks:
+        failed.append("required checks unknown or none reported at the reviewed head")
+    elif any(c.get("bucket") not in ("pass", "skipping") for c in checks):
+        failed.append("required checks not green: " + ", ".join(
+            f'{c.get("name")} {c.get("bucket")}' for c in checks if c.get("bucket") not in ("pass", "skipping")))
+    else:
+        observed["checks"] = ", ".join(f'{c["name"]} {c["bucket"]}' for c in checks)
+    pages = _read(["gh", "api", f"repos/{repo}/pulls/{number}/reviews?per_page=100", "--paginate", "--slurp"])
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        failed.append("reviews unreadable, so the bot review and changes requests are unknown")
+    else:
+        reviews = [review for page in pages for review in page]
+        bots = sorted({r["user"]["login"] for r in reviews if is_bot(r.get("user"))})
+        if bots:
+            observed["bot_review"] = ", ".join(bots)
+        else:
+            failed.append("no review bot has reviewed this PR")
+        blocking = sorted(login for login, r in effective_reviews(reviews).items() if r.get("state") == "CHANGES_REQUESTED")
+        if blocking:
+            failed.append("changes requested by " + ", ".join(blocking))
+        else:
+            observed["changes_requested"] = "none"
+    if failed:
+        raise ValueError("own PR cannot land: " + "; ".join(failed))
+    return observed
+
+
+def landing_action(args, number, head, own=None):
+    """Auto-merge after this round's own approval at the head, the sweep of a PR someone else approved,
+    or the landing of a PR the round cannot approve because it is the user's own."""
+    if own:
+        return "land-own-pr"
     if not args.enable_auto_merge:
         return "enqueue"
     own = any(w.get("number") == number and w.get("action") in ("approve", "reapprove") and w.get("head") == head
@@ -141,6 +213,10 @@ def main():
     outcomes = {}
     submitted = set()
     accepted = {}
+    owned = {}  # PR -> the own-PR conditions its landing went ahead on
+    # An own PR needs no APPROVED decision, only no changes request; any other PR needs APPROVED.
+    cleared = lambda n, s: s.get("reviewDecision") == "APPROVED" or (
+        n in owned and s.get("reviewDecision") != "CHANGES_REQUESTED")
     for poll in range(MAX_POLLS + 1):
         if poll:
             time.sleep(POLL_SECONDS)
@@ -151,6 +227,8 @@ def main():
             merge_state = state.get("mergeStateStatus")
             queue = state.get("queue_state", "unknown")
             outcome = None
+            own = (own_pr(args.repo, state) if writing and status == "OPEN" and not state.get("stack")
+                   and state.get("reviewDecision") != "APPROVED" else None)
             if status == "MERGED":
                 outcome = "MERGED"
             elif status == "CLOSED":
@@ -161,7 +239,7 @@ def main():
                 outcome = "HELD: reviewed head changed or unavailable; review again"
             elif writing and (status != "OPEN" or state.get("isDraft") is not False):
                 outcome = "HELD: open non-draft state not confirmed"
-            elif writing and state.get("reviewDecision") != "APPROVED":
+            elif writing and state.get("reviewDecision") != "APPROVED" and not own:
                 outcome = "HELD: current approval not confirmed"
             elif writing and (state.get("stack") or {}).get("status") == "unknown":
                 outcome = "HELD: stack membership unknown; re-read before landing"
@@ -175,12 +253,23 @@ def main():
                 outcome = f"HELD: gh stack merge would also land {lower}; name each with its reviewed head and authority"
             if writing and not outcome:
                 try:
-                    check_authority(json.loads(args.authority.read_text()), args.repo, number,
-                                    landing_action(args, number, heads[number]))
+                    try:
+                        check_authority(json.loads(args.authority.read_text()), args.repo, number,
+                                        landing_action(args, number, heads[number], own))
+                    except ValueError as error:
+                        if own and "policy is ask" in str(error):
+                            # Name who can approve, so the round can request their review instead.
+                            raise ValueError(f"{error}\n  #{number} is your own PR ({own}); request review from:\n    "
+                                             + "\n    ".join(approver_lines(approvers(args.repo, number), number)))
+                        raise
                     verdict = clearance(args, number, state)
                     accepted[number] = verdict.record() if isinstance(verdict, Benign) else None
                     if accepted[number]:
                         print(f"#{number} accepted moved inputs: " + "; ".join(verdict.reasons))
+                    if own:
+                        owned[number] = {"own": own, **own_conditions(args.repo, number, heads[number])}
+                        print(f"#{number} own PR ({own}); landing conditions hold: "
+                              + "; ".join(f"{k}: {v}" for k, v in owned[number].items() if k != "own"))
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     outcome = f"HELD: {error}"
             if writing and not outcome and args.enable_auto_merge and state.get("autoMergeRequest"):
@@ -200,13 +289,13 @@ def main():
                     and queue == "not_queued" and number not in submitted and state.get("stack")):
                 ready[number] = state
             elif (writing and poll < MAX_POLLS and queue == "not_queued" and number not in submitted
-                    and (merge_state == "CLEAN" or (args.enable_auto_merge
-                                                     and merge_state in ("BLOCKED", "UNSTABLE", "HAS_HOOKS", "BEHIND")))):
+                    and (merge_state == "CLEAN" or (number in owned and merge_state == "BLOCKED")
+                         or (args.enable_auto_merge and merge_state in ("BLOCKED", "UNSTABLE", "HAS_HOOKS", "BEHIND")))):
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
                 if ok:
-                    remember(args.repo, number, "enable-auto-merge" if args.enable_auto_merge else "enqueue", heads[number],
-                             accepted.get(number))
+                    action = "land-own-pr" if number in owned else "enable-auto-merge" if args.enable_auto_merge else "enqueue"
+                    remember(args.repo, number, action, heads[number], accepted.get(number), owned.get(number))
                 # Read after even an uncertain write. Never retry on its response alone.
                 observed = state_of(number, args.repo)
                 print(f"#{number} post-write: head={observed.get('headRefOid', 'unknown')} / "
@@ -217,12 +306,11 @@ def main():
                     outcomes[number] = "MERGED"
                     pending.remove(number)
                 elif (ok and args.enable_auto_merge and observed.get("autoMergeRequest")
-                      and observed.get("headRefOid") == heads[number] and observed.get("reviewDecision") == "APPROVED"
-                      and not moved):
+                      and observed.get("headRefOid") == heads[number] and cleared(number, observed) and not moved):
                     outcomes[number] = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
                     pending.remove(number)
                     print(f"#{number} {outcomes[number]}")
-                elif observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED" or moved:
+                elif observed.get("headRefOid") != heads[number] or not cleared(number, observed) or moved:
                     outcomes[number] = ("HELD: post-write head or approval changed, or the assessment no longer holds"
                                         + (f" ({moved})" if moved else "") + "; reconcile before further writes")
                     pending.remove(number)
@@ -231,6 +319,11 @@ def main():
                     outcomes[number] = "HELD: merge request failed or outcome uncertain; inspect before retry"
                     pending.discard(number)
                     print(f"#{number} {outcomes[number]} -- {out}")
+                    if number in owned:
+                        print(f"#{number} GitHub refused landing your own PR; the base may require a human approval. "
+                              "After rechecking the head and approval, a person with that right can run: "
+                              f"gh pr merge {number} --repo {args.repo} --match-head-commit {heads[number]}"
+                              + (" --auto" if args.enable_auto_merge else ""))
                 elif number in pending:
                     print(f"#{number} merge request accepted; awaiting observed queue/merge state")
         # One `gh stack merge` per stack, from its highest named PR, only when

@@ -109,6 +109,11 @@ def validate_assessment(assessment):
             or not carried.get("at") or not isinstance(carried.get("commits"), list) or not carried["commits"]
             or not assessment.get("provenance")):
         raise ValueError("carried requires from_head, this head, the check, its commits and time, plus a provenance")
+    for finding in assessment.get("verified_findings", []):
+        if (type(finding.get("comment")) is not int or finding.get("status") not in ("fixed", "overstated")
+                or not finding.get("file") or type(finding.get("line")) is not int or not finding.get("observation")):
+            raise ValueError("verified finding requires the inline comment id, status fixed or overstated, "
+                             "the file and line checked at the head, and the observation")
     gate = assessment.get("approval_gate")
     if gate and not all(gate.get(k) for k in ("owner", "source", "reason")):
         raise ValueError("approval gate requires owner, source and reason from repository setup/policy")
@@ -215,7 +220,8 @@ LEVELS = {
     "moderate": ("comment", "request-changes", "update-branch", "push-fix"),
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
-SEPARATE = ("dismiss", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove")
+SEPARATE = ("dismiss-bot", "dismiss-human", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove",
+            "land-own-pr")
 # Writes that can make a PR merge, directly or by releasing an author's auto-merge.
 LANDING = ("approve", *SEPARATE)
 GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}
@@ -365,11 +371,13 @@ def _append(name, rec, repo=None):
 
 # ---------------------------------------------------------------- writes
 
-def record_write(repo, number, action, head, url=None, accepted=None):
+def record_write(repo, number, action, head, url=None, accepted=None, conditions=None):
     """One accepted write by a helper. Never a proposed action or a failed request.
-    `accepted` is a Benign freshness record: the moved inputs the write went ahead on, and why."""
+    `accepted` is a Benign freshness record: the moved inputs the write went ahead on, and why.
+    `conditions` is what an own-PR landing observed for each condition it went ahead on."""
     _append("writes", {"number": number, "action": action, "head": head, "url": url, "at": _now(),
-                       **({"accepted": accepted} if accepted else {})}, repo)
+                       **({"accepted": accepted} if accepted else {}),
+                       **({"conditions": conditions} if conditions else {})}, repo)
 
 
 def writes(repo=None):

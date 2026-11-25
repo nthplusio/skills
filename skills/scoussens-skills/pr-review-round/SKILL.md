@@ -56,7 +56,7 @@ first message:
    unanswered setting takes the profile's value, then the default.
 4. When the user grants a held write mid-round ("dismiss the bot's review on
    #3614"), record it with `authority.py grant $RUN/authority.json --pr 3614
-   --action dismiss --instruction "<their words>"`. Never write or edit the
+   --action dismiss-bot --instruction "<their words>"`. Never write or edit the
    authority file by hand.
 
 The user can save their answers as the repository default through
@@ -66,7 +66,9 @@ The user can save their answers as the repository default through
 |---|---|---|
 | `auto-merge-on-approval` | Turns on auto-merge right after its own approval | `auto` |
 | `auto-merge-sweep` | Turns on auto-merge for an in-scope PR someone already approved at the assessed head, with nothing unresolved in its assessment | `auto` |
-| `dismiss-review` | Dismisses another reviewer's review after verifying its findings are fixed | `ask` |
+| `dismiss-bot-review` | Dismisses a review bot's review, as action `dismiss-bot`, after verifying its findings at the head (step 6) | `ask` |
+| `dismiss-human-review` | Dismisses a person's review, as action `dismiss-human`, after verifying its findings are fixed | `ask` |
+| `own-pr-landing` | Lands, as action `land-own-pr`, a PR you authored or last pushed under a last-push rule, when the four conditions in step 5 hold; `ask` names who can approve | `ask` |
 | `reapprove-base-only` | Approves again, as action `reapprove`, a PR whose round approval was dismissed when the new head adds only clean base merges | `auto` |
 
 `ask` holds the write and the helper prints the question to ask; `never`
@@ -96,8 +98,9 @@ separate merge permission is needed for either. Turn it on right after the
 approval, while checks still run; GitHub's required checks do the waiting.
 Prefer it to a direct merge, which waits for `CLEAN` and needs its own
 instruction. Re-read the head and auto-merge immediately before approving.
-A dismissal follows the `dismiss-review` policy, whose question names the
-merge it can release. GitHub refuses auto-merge for stacked PRs; land
+A dismissal follows `dismiss-bot-review` or `dismiss-human-review`, chosen by
+what GitHub reports about the review's author; each question names the merge
+it can release. GitHub refuses auto-merge for stacked PRs; land
 those with `land.py --enqueue --stack-method <method>` as step 5 describes,
 which needs its own merge instruction. Direct `gh pr merge`, `--auto`, and ad-hoc API mutations bypass local decisions and are not this workflow's write path. Every write requires the authority file `authority.py init` wrote; schema in `references/report.md`. Refresh tracker evidence and owner decisions before creating write inputs. Helpers enforce recorded decisions and live forge revisions, not live tracker access or the user's actual permission.
 
@@ -114,7 +117,8 @@ Three rules hold regardless:
 - Never approve your own PR; GitHub forbids it. Do not approve a PR whose last
   push was yours when the base requires the last push to be approved by someone
   else; GitHub accepts that approval and does not count it. `review_write.py`
-  holds both. On such work, resolve the conflicts and name a reviewer.
+  holds both. On such work, resolve the conflicts and name a reviewer; the
+  `own-pr-landing` policy decides whether the round may land it (step 5).
 - When a permission gate denies a merge command, record the denial and the
   observed readiness separately, give the head-bound command a human can run
   after rechecking the head and approval, confirm state with
@@ -180,6 +184,7 @@ python3 $S/test_reach.py <n>        # added symbols with no test referencing the
 python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
 python3 $S/branch_rules.py <owner/repo> <base> # review rules an approval has to satisfy
+python3 $S/approvers.py <n> --repo <owner/repo> # code owners who can approve, minus author and last pusher, read-only
 python3 $S/review_write.py --help   # head-bound, explicitly authorized review writes
 python3 $S/branch_write.py --help   # moderate/major: base merge or minor fix, leased on the reviewed head
 python3 $S/authority.py questions|init|show|grant # the round's write permissions, settled at its start
@@ -335,6 +340,8 @@ queue unknown** when the queue read fails. `CLEAN`, auto-merge, and a successful
 merge command are not evidence of queue membership. Conflicted, closed, held,
 or timed-out PRs never count as landed; the helper exits nonzero for them.
 
+**Land your own PRs.** The round cannot approve a PR you authored, or one whose last push was yours when the base requires another approver of the last push. For each such PR, run `approvers.py <n> --repo <owner/repo>`; it prints the code owners of the changed files who can approve, without you, and prints unknown when it cannot read an input. With `own-pr-landing` on `ask`, `land.py` holds and prints the same names: at `review` or above, request review from them with `gh pr edit <n> --add-reviewer <names>` and report them. With `auto`, run `land.py --enable-auto-merge <n>:<head>` (or `--enqueue`). For a PR without GitHub's `APPROVED` decision that is yours, it lands only when all four hold, and records each on the ledger write: the required checks (`gh pr checks --required`) are all pass or skipping at the reviewed head, at least one review on the PR is from a bot account, no reviewer's latest verdict is `CHANGES_REQUESTED`, and the round's saved assessment at that head is current with nothing unresolved. It holds naming each condition that fails. GitHub still enforces any human approval the base requires: when it refuses, record the denial and give the head-bound command a person can run, as for any permission denial. Never use `--admin` or another bypass.
+
 **Re-approve base-only heads.** When the base dismisses stale approvals on push, an author's base merge dismisses the round's approval. For each PR `queue.py` marks `REAPPROVE: base only`, with `reapprove-base-only` on `auto`, run `reapprove.py <n> --repo <owner/repo> --carry $RUN/assessments.json > $RUN/reapprove-<n>.json`. It checks that every commit since the approved head A is a clean merge from the base tip, compares each merge's tree with `git merge-tree --write-tree`, and carries the assessment at A to the live head H. Then run `review_write.py reapprove <n> --head <H> --assessments $RUN/reapprove-<n>.json` with a body naming A, H and the tree check; auto-merge follows per `auto-merge-on-approval`. Any other change, a conflict or a refused carry gets a normal re-review.
 
 Merges reshuffle the queue. A PR you approved five minutes ago can go
@@ -356,6 +363,17 @@ you confirmed:
 If you cannot state what you verified, you have not verified it yet. Never
 dismiss conditionally ("if CI comes back clean") — it reads as housekeeping, so
 nobody re-checks it. Full guidance: [`writing-reviews.md`](references/writing-reviews.md).
+
+A review bot does not re-review on its own, so its stale changes request blocks
+a fixed PR until someone dismisses it. `review_write.py dismiss` asks GitHub who
+wrote the review: a bot account follows `dismiss-bot-review`, a person
+`dismiss-human-review`. For a bot's review, record each of its inline findings
+(`findings.py` prints each comment id) in the assessment at the head as
+`verified_findings`, fixed or overstated, with the file and line you checked.
+The helper holds the dismissal and names any finding without a record, and the
+message it posts lists every finding with its record. When the repository's
+guidance names a re-review trigger for its bot, post it with
+`review_write.py comment` before dismissing; do not assume one.
 
 ### 7. Record, sweep again, then report
 

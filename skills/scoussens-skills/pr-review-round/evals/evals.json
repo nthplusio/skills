@@ -27,7 +27,7 @@
         "attributes_the_conflict_blocker_to_the_author: states that a conflict is the author's to resolve and that approving cannot clear it",
         "any_merge_command_is_head_bound: a stated merge command uses --match-head-commit with the reviewed full head, or land.py --enqueue n:sha; no --merge/--squash/--rebase is added for a merge queue",
         "distinguishes_enqueued_from_landed: notes that enqueueing is not the same as merged and the queue runs its own checks",
-        "checks_auto_merge_before_approving: reports whether auto-merge is enabled and states that approval that releases it needs approvals in the authority, and dismissal follows the dismiss-review policy",
+        "checks_auto_merge_before_approving: reports whether auto-merge is enabled and states that approval that releases it needs approvals in the authority, and dismissal follows the dismiss-bot-review or dismiss-human-review policy",
         "distinguishes_queued_from_merged: never describes a PR sitting in a merge queue as merged; confirms landing by state=MERGED"
       ],
       "files": []

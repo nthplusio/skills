@@ -88,7 +88,7 @@ Save every assessment, including clean ones, with `ledger.py record <round-id> <
 The table names proposed actions. In assessment-only mode, keep them local.
 Execute each action only with authority for that action and PR. An authority
 "with approvals" covers an approval that releases auto-merge; a dismissal follows
-the `dismiss-review` policy or a one-PR grant. Preserve the
+the `dismiss-bot-review` or `dismiss-human-review` policy or a one-PR grant. Preserve the
 independent risk-tier trace and evidence requirements before granting clearance.
 
 | Situation | Action |
@@ -123,6 +123,11 @@ checked:
 
 Note the last clause. When several reviews are in force, say which ones still
 gate, so the author is not guessing.
+
+A bot's review is dismissed on structured evidence, not prose alone: the
+assessment at the head records each inline finding as fixed or overstated
+(`verified_findings` in `report.md`), and the helper appends one line per
+finding to the message, with the file and line you checked.
 
 ## Commands
 

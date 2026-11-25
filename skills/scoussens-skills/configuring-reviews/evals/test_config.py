@@ -61,14 +61,14 @@ class ConfigTests(unittest.TestCase):
                 self.profile(root, guidance=["storage.md"], tracker={"policy": ["tickets.md"]},
                              execution={"reviewers": "serial", "policy": ["execution.md"]},
                              round={"level": "review", "approvals": True,
-                                    "policies": {"auto-merge-sweep": "auto", "dismiss-review": "never"}}, references={
+                                    "policies": {"auto-merge-sweep": "auto", "dismiss-human-review": "never"}}, references={
                                  "data-layer": {"files": ["storage.md"]},
                                  "integration": {"mode": "replace", "files": ["api.md"]},
                                  "security": {"mode": "disable"}, "accessibility": {"files": ["a11y.md"]}})
             first, second = self.run_config(a), self.run_config(b)
             self.assertEqual(first["execution"]["reviewers"], "serial")
             self.assertEqual(first["round"], {"level": "review", "approvals": True,
-                                              "policies": {"auto-merge-sweep": "auto", "dismiss-review": "never"}})
+                                              "policies": {"auto-merge-sweep": "auto", "dismiss-human-review": "never"}})
             self.assertEqual(first["tracker"]["policy"], [str(a / "tickets.md")])
             self.assertEqual(second["tracker"]["policy"], [str(b / "tickets.md")])
             self.assertEqual(len(first["references"]["data-layer"]), 2)
@@ -117,11 +117,12 @@ class ConfigTests(unittest.TestCase):
             {"round": {"approvals": True}}, {"round": {"level": "review", "approvals": "yes"}},
             {"round": {"default": "review"}},
             # Policies name registered decision kinds and modes only, and auto must fit the level.
-            {"round": {"level": "review", "policies": {"dismiss-bot-review": "auto"}}},
-            {"round": {"level": "review", "policies": {"dismiss-review": "sometimes"}}},
-            {"round": {"level": "review", "policies": ["dismiss-review"]}},
+            # dismiss-review was split into dismiss-bot-review and dismiss-human-review.
+            {"round": {"level": "review", "policies": {"dismiss-review": "auto"}}},
+            {"round": {"level": "review", "policies": {"dismiss-bot-review": "sometimes"}}},
+            {"round": {"level": "review", "policies": ["dismiss-bot-review"]}},
             {"round": {"level": "review", "approvals": False, "policies": {"auto-merge-sweep": "auto"}}},
-            {"round": {"level": "assess", "policies": {"dismiss-review": "auto"}}},
+            {"round": {"level": "assess", "policies": {"dismiss-bot-review": "auto"}}},
         ]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

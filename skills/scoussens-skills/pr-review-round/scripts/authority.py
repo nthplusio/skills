@@ -9,7 +9,7 @@
 `questions` prints only what the review profile and the answers leave open, each with
 its recommended answer. `answers.json` holds the user's answers:
 
-    {"level": "review", "approvals": true, "policies": {"dismiss-review": "ask"}, "instruction": "<their exact words>"}
+    {"level": "review", "approvals": true, "policies": {"dismiss-bot-review": "auto"}, "instruction": "<their exact words>"}
 
 Every key is optional. A missing answer falls back to the profile's `round` block, then
 to the registry default (level assess, no approvals, each kind's default mode). `init`
@@ -94,7 +94,7 @@ def grant(record, pr, action, instruction, at=None):
     if pr not in record["prs"]:
         raise ValueError(f"#{pr} is not in this round's scope")
     kind = GOVERNED.get(action)
-    if kind and record["policies"][kind] == "never":
+    if kind and record["policies"].get(kind) == "never":
         raise ValueError(f"the {kind} policy is never; change it with init before granting {action}")
     if not instruction:
         raise ValueError("record the user's exact words with --instruction")

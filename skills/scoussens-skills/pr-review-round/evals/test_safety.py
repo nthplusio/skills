@@ -1,4 +1,5 @@
 """Local forge doubles only; these tests never contact GitHub."""
+import base64
 import contextlib
 from html.parser import HTMLParser
 import io
@@ -29,6 +30,13 @@ MOVED = {**TARGET, "sha": "f" * 40}
 LATER = "2026-11-11T21:00:00Z"
 BOT = {"login": "review-bot[bot]", "type": "Bot"}
 PERSON = {"login": "alex", "type": "User"}
+# Review 9's inline findings from review-bot[bot], and the records an assessment keeps for them.
+INLINE = [{"id": 301, "pull_request_review_id": 9, "path": "src/app.py", "line": 12, "body": "Unchecked None"},
+          {"id": 302, "pull_request_review_id": 9, "path": "src/db.py", "line": None, "original_line": 40,
+           "body": "Possible N+1 query"}]
+VERIFIED = [{"comment": 301, "status": "fixed", "file": "src/app.py", "line": 14, "observation": "Guard added"},
+            {"comment": 302, "status": "overstated", "file": "src/db.py", "line": 40,
+             "observation": "Caller batches the ids"}]
 # The base moved without touching the PR's one file.
 BENIGN_BASE = {"compare": {"status": "ahead", "files": [{"filename": "docs/other.md"}]},
                "files": [{"filename": "src/app.py"}]}
@@ -69,7 +77,11 @@ class Elements(HTMLParser):
 
 
 class LandingTests(unittest.TestCase):
-    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None, prior=()):
+    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None, prior=(),
+                 rules=(), pusher=None, checks=(), reviews=(), codeowners=None):
+        """The last five answer an own-PR landing's reads: the base's rulesets, the branch's last pusher,
+        `gh pr checks --required`, the PR's reviews, and the base's CODEOWNERS (None: no file). The
+        authenticated user is `reviewer`."""
         output = io.StringIO()
         snapshots = iter(states)
         writes = []
@@ -83,6 +95,25 @@ class LandingTests(unittest.TestCase):
             elif command[:2] == ["gh", "api"] and "/git/ref/heads/" in command[2]:
                 target = current.get("target") or {}
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": target.get("sha")}}
+            elif command[:3] == ["gh", "api", "user"]:
+                payload = {"login": "reviewer"}
+            elif command[:2] == ["gh", "api"] and "/rules/branches/" in command[2]:
+                payload = list(rules)
+            elif command[:2] == ["gh", "api"] and "/activity?" in command[2]:
+                payload = [{"actor": {"login": pusher}}] if pusher else []
+            elif command[:3] == ["gh", "pr", "checks"]:
+                payload = list(checks)
+            elif command[:2] == ["gh", "api"] and "/pulls/17/reviews?" in command[2]:
+                payload = [list(reviews)]
+            elif command[:2] == ["gh", "api"] and command[2] == "repos/owner/repo/pulls/17":
+                payload = {"user": current.get("author"), "base": {"ref": "main"},
+                           "head": {"ref": "feature", "repo": {"full_name": "owner/repo"}}}
+            elif command[:2] == ["gh", "api"] and "/pulls/17/files?" in command[2] and "files" not in (reads or {}):
+                payload = [[{"filename": "src/app.py"}]]
+            elif command[:2] == ["gh", "api"] and "/contents/" in command[2]:
+                if codeowners is None or not command[2].startswith("repos/owner/repo/contents/CODEOWNERS?"):
+                    return subprocess.CompletedProcess(command, 1, "", "gh: Not Found (HTTP 404)")
+                payload = {"content": base64.b64encode(codeowners.encode()).decode()}
             elif command[:2] == ["gh", "api"] and freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
             elif command[:3] == ["gh", "api", "graphql"] and "stackEntry" in command[4]:
@@ -290,6 +321,80 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 1), output)
         self.assertIn("base changed files this PR changes: src/app.py", output)
 
+    def test_own_pr_lands_under_auto_only_when_every_condition_holds_and_records_them(self):
+        auto = {"enabledAt": REVISION}
+        mine = state(reviewDecision="REVIEW_REQUIRED", mergeStateStatus="BLOCKED", author={"login": "reviewer"})
+        green = [{"name": "ci", "bucket": "pass"}, {"name": "docs", "bucket": "skipping"}]
+        bot_review = [{"id": 5, "user": BOT, "state": "COMMENTED", "submitted_at": REVISION}]
+        allowed = authority(grants=(), policies={"own-pr-landing": "auto"})
+        for mode in ("--enable-auto-merge", "--enqueue"):
+            with self.subTest(mode=mode):
+                writes, output, code = self.run_land([mine, {**mine, "autoMergeRequest": auto, "state": "MERGED"}],
+                                                     [mode, f"17:{HEAD}"], permission=allowed, checks=green,
+                                                     reviews=bot_review)
+                self.assertEqual((writes, code), (1, 0), output)
+                [write] = self.recorded
+                self.assertEqual((write["action"], write["head"]), ("land-own-pr", HEAD))
+                self.assertEqual(write["conditions"], {
+                    "own": "reviewer authored it", "assessment": f"saved at {HEAD} with nothing unresolved",
+                    "checks": "ci pass, docs skipping", "bot_review": "review-bot[bot]", "changes_requested": "none"})
+        # The user's last push under a last-push rule makes another author's PR theirs too.
+        pushed = {**mine, "author": {"login": "alex"}, "headRepositoryOwner": {"login": "owner"},
+                  "headRepository": {"name": "repo"}, "headRefName": "feature"}
+        last_push = [{"type": "pull_request", "parameters": {"require_last_push_approval": True}}]
+        writes, output, code = self.run_land([pushed, {**pushed, "autoMergeRequest": auto}], ["--enable-auto-merge",
+                                             f"17:{HEAD}"], permission=allowed, checks=green, reviews=bot_review,
+                                             rules=last_push, pusher="reviewer")
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("reviewer pushed the last commit", self.recorded[0]["conditions"]["own"])
+        # Each failed condition holds without writing and is named.
+        person = {"id": 6, "user": PERSON, "state": "CHANGES_REQUESTED", "submitted_at": REVISION}
+        for name, changes, held in [
+            ("red check", {"checks": [{"name": "ci", "bucket": "fail"}]}, "required checks not green: ci fail"),
+            ("pending check", {"checks": [{"name": "ci", "bucket": "pending"}]}, "required checks not green: ci pending"),
+            ("no required checks", {"checks": []}, "required checks unknown or none reported"),
+            ("no bot review", {"reviews": [{**bot_review[0], "user": PERSON}]}, "no review bot has reviewed this PR"),
+            ("changes requested", {"reviews": [*bot_review, person]}, "changes requested by alex"),
+            ("unresolved assessment", {"item": assessment(kind="evidence", owner="Operator")}, "unresolved decisions"),
+        ]:
+            with self.subTest(failed=name):
+                kwargs = {"permission": allowed, "checks": green, "reviews": bot_review, **changes}
+                writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], **kwargs)
+                self.assertEqual((writes, code), (0, 1), output)
+                self.assertIn(held, output)
+                self.assertEqual(self.recorded, [])
+        # Someone else's unapproved PR is not an own PR.
+        writes, output, code = self.run_land([{**mine, "author": {"login": "alex"}}] * 3, ["--enable-auto-merge",
+                                             f"17:{HEAD}"], permission=allowed, checks=green, reviews=bot_review)
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("current approval not confirmed", output)
+
+    def test_own_pr_landing_asks_naming_approvers_and_reports_a_refusal_without_bypassing(self):
+        mine = state(reviewDecision="REVIEW_REQUIRED", mergeStateStatus="BLOCKED", author={"login": "reviewer"})
+        green = [{"name": "ci", "bucket": "pass"}]
+        bot_review = [{"id": 5, "user": BOT, "state": "COMMENTED", "submitted_at": REVISION}]
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"],
+                                             permission=authority(grants=()), checks=green, reviews=bot_review,
+                                             codeowners="* @carol @reviewer\n")
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("own-pr-landing policy is ask", output)
+        self.assertIn("@carol  owns src/app.py", output)
+        self.assertIn("left out @reviewer: author", output)
+        # A yes for this PR lets it through, and a GitHub refusal names the head-bound command for a person.
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], failure=True,
+                                             permission=authority(grants=("land-own-pr",)), checks=green,
+                                             reviews=bot_review)
+        self.assertEqual((writes, code), (1, 1), output)
+        self.assertIn(f"a person with that right can run: gh pr merge 17 --repo owner/repo --match-head-commit {HEAD} "
+                      "--auto", output)
+        self.assertNotIn("--admin", output)
+        self.assertEqual(self.recorded, [])
+        writes, output, code = self.run_land([mine] * 3, ["--enable-auto-merge", f"17:{HEAD}"], checks=green,
+                                             reviews=bot_review,
+                                             permission=authority(grants=(), policies={"own-pr-landing": "never"}))
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("own-pr-landing policy is never", output)
+
     def test_authorized_auto_merge_is_a_landing_write_and_reads_back_uncertainty(self):
         writes, output, code = self.run_land([state(), state(state="MERGED")], ["--enable-auto-merge", f"17:{HEAD}"])
         self.assertEqual((writes, code), (1, 0), output)
@@ -339,9 +444,11 @@ class QueueReportTests(unittest.TestCase):
 class ReviewWriteTests(unittest.TestCase):
     def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
                   target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=(), reviews=None,
-                  lost_reply=False):
+                  lost_reply=False, dismissed=PERSON, inline=()):
         """`reviews` is the PR's review list on GitHub; pass the same list to two runs to model a retry.
-        `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it."""
+        `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it.
+        `dismissed` is the author GitHub reports for review 9, the one a dismissal targets, and `inline`
+        the PR's inline review comments."""
         writes = []
         reviews = [] if reviews is None else reviews
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
@@ -357,6 +464,13 @@ class ReviewWriteTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, json.dumps([reviews[:1], reviews[1:]]), "")
             if freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
+            if command[2].startswith("repos/owner/repo/pulls/17/comments?"):
+                return subprocess.CompletedProcess(command, 0, json.dumps([list(inline)]), "")
+            if command[2] == "repos/owner/repo/pulls/17/reviews/9":
+                if dismissed is None:
+                    return subprocess.CompletedProcess(command, 1, "", "HTTP 502")
+                payload = {"id": 9, "user": dismissed, "state": "CHANGES_REQUESTED", "commit_id": "c" * 40}
+                return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
             method = command[command.index("--method") + 1]
             if method != "GET":
                 payload = json.loads(kwargs["input"])
@@ -437,18 +551,84 @@ class ReviewWriteTests(unittest.TestCase):
                                               permission=authority(approvals=False))
         self.assertEqual((writes, code), ([], 1), output)
         self.assertIn("without approvals", output)
-        # Dismissal is the dismiss-review kind: ask (the default) holds it and names the question,
-        # a one-PR grant lets it through, and never refuses it even with a grant on file.
+        # Dismissing a person's review is the dismiss-human-review kind: ask (the default) holds it and names
+        # the question, a one-PR grant lets it through, and never refuses it even with a grant on file.
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr], permission=authority(grants=()))
         self.assertEqual((writes, code), ([], 1), output)
-        self.assertIn("dismiss-review policy is ask", output)
+        self.assertIn("dismiss-human-review policy is ask", output)
         self.assertIn("may the round dismiss", output)
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr, pr])
         self.assertEqual((len(writes), code), (1, 0), output)
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr],
                                               permission={**authority(), "policies": {**authority()["policies"],
-                                                                                      "dismiss-review": "never"}})
+                                                                                      "dismiss-human-review": "never"}})
         self.assertEqual((writes, code), ([], 1), output)
+
+    def test_a_bot_review_is_dismissed_only_when_every_inline_finding_is_verified_at_the_head(self):
+        bots_only = authority(grants=(), policies={"dismiss-bot-review": "auto"})
+        # The bot's two findings, a reply in one of its threads, and a finding from another review.
+        inline = [*INLINE, {**INLINE[0], "id": 303, "in_reply_to_id": 301},
+                  {**INLINE[1], "id": 304, "pull_request_review_id": 8}]
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=VERIFIED))
+        self.assertEqual((len(writes), code), (1, 0), output)
+        message = writes[0][1]["message"]
+        self.assertIn(f"## Findings verified at `{HEAD}`", message)
+        self.assertIn("- `src/app.py:12` (comment 301): fixed, checked at `src/app.py:14`. Guard added", message)
+        self.assertIn("- `src/db.py:40` (comment 302): overstated, checked at `src/db.py:40`. Caller", message)
+        self.assertNotIn("comment 303", message)
+        self.assertNotIn("comment 304", message)
+        # One finding without a record holds the dismissal and names it.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=VERIFIED[:1]))
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("no fixed or overstated record for src/db.py:40 (comment 302)", output)
+        self.assertNotIn("comment 301", output)
+        # A record that is not fixed or overstated is not a verification.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=[
+                                                  VERIFIED[0], {**VERIFIED[1], "status": "open"}]))
+        self.assertEqual((writes, code), ([], 1), output)
+        # A bot review with no inline findings leaves nothing to verify: auto holds, a one-PR grant may dismiss it.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("no inline findings", output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], dismissed=BOT,
+                                              permission=authority(grants=("dismiss-bot",)))
+        self.assertEqual((len(writes), code), (1, 0), output)
+        # A person's review keeps its own policy and free-text evidence.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], dismissed=PERSON, inline=inline)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        self.assertNotIn("Findings verified", writes[0][1]["message"])
+
+    def test_whose_review_a_dismissal_targets_comes_from_github_and_picks_the_policy(self):
+        bots_only = authority(grants=(), policies={"dismiss-bot-review": "auto", "dismiss-human-review": "ask"})
+        verified = assessment(verified_findings=[VERIFIED[0]])
+        for user in (BOT, {"login": "review-bot[bot]", "type": "User"}, {"login": "linter", "type": "Bot"}):
+            with self.subTest(user=user):
+                writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=user,
+                                                      inline=INLINE[:1], item=verified)
+                self.assertEqual((len(writes), code), (1, 0), output)
+                self.assertTrue(writes[0][0].endswith("/reviews/9/dismissals"))
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=PERSON)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("dismiss-human-review policy is ask", output)
+        # A caller's claim that the review is a bot's changes nothing: a dismiss-bot grant does not cover a
+        # person's review, and the helper has no action or flag that names the author type.
+        claimed = authority(grants=("dismiss-bot",))
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=claimed, dismissed=PERSON)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("dismiss-human-review policy is ask", output)
+        for argv in (["dismiss-bot"], ["dismiss", "--bot"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()), \
+                    patch.object(sys, "argv", ["review_write.py", *argv[:1], "17", *argv[1:], "--repo", "owner/repo",
+                                               "--head", HEAD, "--body-file", "x", "--review-id", "9", "--write"]), \
+                    patch.object(subprocess, "run", side_effect=AssertionError("unexpected forge access")):
+                review_write.main()
+        # An unreadable author holds the dismissal rather than guessing.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=None)
+        self.assertEqual(writes, [], output)
+        self.assertIn("could not read review 9 to tell a bot from a person", output)
 
     def test_self_approval_and_uncertain_writes_are_held(self):
         writes, output, code = self.run_write("approve", flags=["--write"], author="reviewer")
