@@ -364,6 +364,12 @@ def main():
         for line in gate_lines(slug, base, login, {p["number"]: p.get("headRefName") for p in gated
                                                    if not p.get("isCrossRepository")}):
             print("  " + line)
+    # The auto-merge-sweep candidates: approved by anyone, auto-merge off, not a stack member.
+    sweep = [f'#{p["number"]}' for p in prs if p.get("reviewDecision") == "APPROVED"
+             and not p.get("autoMergeRequest") and not stacks.get(p["number"])]
+    if sweep:
+        print("Approved with auto-merge off -- with the auto-merge-sweep policy on auto, run land.py "
+              "--enable-auto-merge on each one your assessment clears: " + ", ".join(sweep))
     if login is None:
         print("!! reviewer login unavailable (`gh api user` failed); MY REVIEW is unknown, check your reviews by hand")
 

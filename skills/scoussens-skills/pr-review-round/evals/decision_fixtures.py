@@ -1,4 +1,5 @@
 """Synthetic regressions based on the audit, not fresh PR assessments."""
+import authority as authority_script
 from review_config import resolve
 
 HEAD = "a" * 40
@@ -22,7 +23,11 @@ def bundle(item=None):
     return {"repository": "owner/repo", "assessments": [item or assessment()]}
 
 
-def authority(**changes):
-    return {"repository": "owner/repo", "prs": [17], "instruction": "Test-only explicit authority for #17",
-            "actions": ["enqueue", "enable-auto-merge", "approve", "dismiss", "comment", "request-changes"],
-            "level": "review", "approvals": True, "possible_landing": True, **changes}
+def authority(grants=("enqueue", "dismiss"), prs=(17,), **answers):
+    """An authority file as authority.py writes it: review with approvals, plus one-PR grants on each PR."""
+    record = authority_script.build("owner/repo", list(prs), {"level": "review", "approvals": True,
+                                    "instruction": "Test-only explicit authority", **answers}, {})
+    for number in prs:
+        for action in grants:
+            record = authority_script.grant(record, number, action, "Test-only grant", at=REVISION)
+    return record

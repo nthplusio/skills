@@ -427,6 +427,17 @@ class HandoffTests(unittest.TestCase):
         fork = queue_row(isCrossRepository=True)
         self.assertIn("  rules for sample/product@main, reviewer, {}\n", run_queue([[fork], details, fork], raw))
 
+    def test_approved_prs_with_auto_merge_off_are_listed_for_the_sweep(self):
+        details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
+        raw = evidence()
+        raw["timeline"], raw["requestedReviewers"] = [], []
+        for decision, auto, listed in (("APPROVED", None, True), ("APPROVED", {"enabledAt": REVISION}, False),
+                                       ("REVIEW_REQUIRED", None, False)):
+            with self.subTest(decision=decision, auto=auto):
+                p = queue_row(reviewDecision=decision, autoMergeRequest=auto)
+                text = run_queue([[p], details, p], raw)
+                self.assertEqual("Approved with auto-merge off" in text, listed, text)
+
     def test_scope_file_is_written_once_and_names_what_joined_and_left(self):
         details = {"files": [{"path": "src/store.py"}], "statusCheckRollup": []}
         raw = evidence()

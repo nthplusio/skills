@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Submit one authorized review action against a verified full head SHA.
 
-Without --write this only reports the held action. An authority "with approvals"
-covers an approval that releases auto-merge. --allow-landing asserts merge
-authority for a dismissal that can release auto-merge.
+Without --write this only reports the held action. The authority file from
+authority.py decides each write: approvals cover an approval that releases
+auto-merge, and the dismiss-review policy (or a one-PR grant) covers a dismissal.
 Approvals, change requests and comments are pull request reviews (a comment is a
 COMMENT review), so each carries commit_id and shows in GitHub's review list. A
 review this login already posted at the same head is not posted again.
@@ -16,8 +16,8 @@ from pathlib import Path
 import re
 import subprocess
 
-from ledger import (approvals_granted, check_authority, current_assessment, record_write, require_resolved,
-                    target_state, validate_assessment)
+from ledger import (check_authority, current_assessment, record_write, require_resolved, target_state,
+                    validate_assessment)
 from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
@@ -74,7 +74,6 @@ def main():
     parser.add_argument("--body-file", required=True, type=Path)
     parser.add_argument("--review-id", type=int)
     parser.add_argument("--write", action="store_true")
-    parser.add_argument("--allow-landing", action="store_true")
     parser.add_argument("--authority", type=Path)
     parser.add_argument("--assessments", type=Path)
     args = parser.parse_args()
@@ -138,14 +137,9 @@ def main():
                     (pr["head"].get("repo") or {}).get("full_name"), pr["head"].get("ref")) == login:
                 raise RuntimeError(f'HELD: you pushed the last commit, and {pr["base"].get("ref")} requires approval '
                                    "of the last push by someone else; name another approver")
-        # Approving to merge covers auto-merge; dismissing someone else's review still needs --allow-landing.
-        lands_with_approval = args.action == "approve" and approvals_granted(authority)
-        if args.action in ("approve", "dismiss") and not args.allow_landing and not lands_with_approval:
-            if "auto_merge" not in pr or pr["auto_merge"] is not None:
-                raise RuntimeError("HELD: auto-merge enabled or unknown; merge authority required")
+        # check_authority above covered the landing either write can release: approvals, or the
+        # dismiss-review policy or grant whose question names it.
         if args.action in ("approve", "dismiss"):
-            possible_landing = pr.get("auto_merge") is not None or "auto_merge" not in pr
-            check_authority(authority, args.repo, args.number, args.action, possible_landing)
             require_resolved(assessment)
 
         # Every check above still runs on a retry; only then does an existing review end it.

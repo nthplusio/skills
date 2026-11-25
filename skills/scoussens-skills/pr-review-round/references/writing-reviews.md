@@ -87,8 +87,8 @@ Save every assessment, including clean ones, with `ledger.py record <round-id> <
 
 The table names proposed actions. In assessment-only mode, keep them local.
 Execute each action only with authority for that action and PR. An authority
-"with approvals" covers an approval that releases auto-merge; a dismissal that
-can release it also needs merge authority. Preserve the
+"with approvals" covers an approval that releases auto-merge; a dismissal follows
+the `dismiss-review` policy or a one-PR grant. Preserve the
 independent risk-tier trace and evidence requirements before granting clearance.
 
 | Situation | Action |
@@ -128,9 +128,8 @@ gate, so the author is not guessing.
 
 Use the guarded helper after verifying the full head SHA, not an unpinned
 `gh pr review` call. Supply `--authority <authority.json>` and `--assessments <assessments.json>` on every write (schema in `report.md`). The helper generates the required **Unblock** section with owner, smallest fix and effort from code decisions; it rejects changes-requested without a code decision. Evidence and owner requests use the proposed comment channel; reviewer-incomplete work stays local with the reviewer. `--write` selects execution; omit
-it when preparing a proposed action. `--allow-landing` additionally asserts
-merge authority and is required for a dismissal if auto-merge is enabled, and
-for an approval only when the authority does not include approvals. Neither flag substitutes for the user's permission or for evidence.
+it when preparing a proposed action. The authority file, not a flag, decides each write: a held write names the
+policy question to ask, and `authority.py grant` records the yes. No flag substitutes for the user's permission or for evidence.
 
 ```bash
 # Set S to this skill's scripts directory; HEAD is the full SHA already reviewed.

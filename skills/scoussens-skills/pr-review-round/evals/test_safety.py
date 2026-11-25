@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import authority as authority_script
 import branch_rules
 import branch_write
 import freshness
@@ -68,7 +69,7 @@ class Elements(HTMLParser):
 
 
 class LandingTests(unittest.TestCase):
-    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None):
+    def run_land(self, states, args=None, failure=False, item=None, permission=None, reads=None, prior=()):
         output = io.StringIO()
         snapshots = iter(states)
         writes = []
@@ -114,6 +115,8 @@ class LandingTests(unittest.TestCase):
                 patch.dict(os.environ, XDG_STATE_HOME=tmp), \
                 patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), \
                 contextlib.redirect_stdout(output):
+                for write in prior:
+                    ledger.record_write("owner/repo", 17, write, HEAD)
                 code = land.main()
                 self.recorded = ledger.writes("owner/repo")
         for command in writes:
@@ -215,8 +218,8 @@ class LandingTests(unittest.TestCase):
                 (state(headRefOid="c" * 40), assessment(), authority()),
                 (state(queue_state="unknown"), assessment(), authority()),
                 (state(), assessment(), authority(prs=[99])),
-                # Without approvals, landing needs its own landing authority; "with approvals" covers auto-merge.
-                (state(), assessment(), authority(possible_landing=False, approvals=False)),
+                # Without approvals or a one-PR grant, nothing covers the landing.
+                (state(), assessment(), authority(grants=(), approvals=False)),
                 (state(updatedAt="new discussion"), assessment(), authority()),
                 (state(target={**TARGET, "sha": "f" * 40}), assessment(), authority()),
                 (state(target={**TARGET, "sha": None}), assessment(), authority()),
@@ -245,15 +248,36 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 0), output)
         self.assertIn("already on at the reviewed head, so no request was sent", output)
         self.assertEqual(self.recorded, [])
-        # "With approvals" grants auto-merge without listing it; without approvals it is held.
-        bare = authority(actions=[], possible_landing=False)
+        # "With approvals" covers auto-merge with no grant; without approvals it is held.
         writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(autoMergeRequest=auto)],
-                                             ["--enable-auto-merge", f"17:{HEAD}"], permission=bare)
+                                             ["--enable-auto-merge", f"17:{HEAD}"], permission=authority(grants=()))
         self.assertEqual((writes, code), (1, 0), output)
-        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED")],
-                                             ["--enable-auto-merge", f"17:{HEAD}"], permission={**bare, "approvals": False})
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED")], ["--enable-auto-merge", f"17:{HEAD}"],
+                                             permission=authority(grants=(), approvals=False))
         self.assertEqual((writes, code), (0, 1), output)
-        self.assertIn("out-of-scope authority", output)
+        self.assertIn("auto-merge-sweep policy is ask", output)
+
+    def test_sweep_turns_on_auto_merge_for_a_pr_someone_else_approved_and_holds_without_approval(self):
+        auto = {"enabledAt": REVISION}
+        sweep = ["--enable-auto-merge", f"17:{HEAD}"]
+        # No approval by this round at the head: another reviewer's approval, under the auto-merge-sweep policy.
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(autoMergeRequest=auto)], sweep,
+                                             permission=authority(grants=()))
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("AUTO-MERGE ENABLED, not merged", output)
+        for decision in ("REVIEW_REQUIRED", "CHANGES_REQUESTED", None):
+            with self.subTest(decision=decision):
+                writes, output, code = self.run_land([state(reviewDecision=decision)] * 3, sweep, permission=authority(grants=()))
+                self.assertEqual((writes, code), (0, 1), output)
+                self.assertIn("current approval not confirmed", output)
+        # The two kinds are separate: sweep never holds another's approval, not the round's own.
+        never = authority(grants=(), policies={"auto-merge-sweep": "never"})
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED")], sweep, permission=never)
+        self.assertEqual((writes, code), (0, 1), output)
+        self.assertIn("auto-merge-sweep policy is never", output)
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(autoMergeRequest=auto)], sweep,
+                                             permission=never, prior=["approve"])
+        self.assertEqual((writes, code), (1, 0), output)
 
     def test_landing_goes_ahead_on_a_benign_base_move_and_holds_when_it_overlaps(self):
         moved = state(target=MOVED, baseRefOid=MOVED["sha"], mergeable="MERGEABLE")
@@ -409,19 +433,22 @@ class ReviewWriteTests(unittest.TestCase):
         # Approving to merge covers auto-merge when the user chose approvals.
         writes, output, code = self.run_write("approve", flags=["--write"], snapshots=[pr, pr])
         self.assertEqual((len(writes), code), (1, 0), output)
-        writes, output, code = self.run_write("approve", flags=["--write", "--allow-landing"], snapshots=[pr],
-                                              permission=authority(approvals=False, actions=["approve"]))
+        writes, output, code = self.run_write("approve", flags=["--write"], snapshots=[pr],
+                                              permission=authority(approvals=False))
         self.assertEqual((writes, code), ([], 1), output)
         self.assertIn("without approvals", output)
-        for action in ["dismiss"]:
-            with self.subTest(action=action):
-                writes, output, code = self.run_write(action, flags=["--write"], snapshots=[pr])
-                self.assertEqual(writes, [])
-                self.assertIn("merge authority required", output)
-                self.assertEqual(code, 1)
-                writes, _, code = self.run_write(action, flags=["--write", "--allow-landing"], snapshots=[pr, pr])
-                self.assertEqual(len(writes), 1)
-                self.assertEqual(code, 0)
+        # Dismissal is the dismiss-review kind: ask (the default) holds it and names the question,
+        # a one-PR grant lets it through, and never refuses it even with a grant on file.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr], permission=authority(grants=()))
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("dismiss-review policy is ask", output)
+        self.assertIn("may the round dismiss", output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr, pr])
+        self.assertEqual((len(writes), code), (1, 0), output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[pr],
+                                              permission={**authority(), "policies": {**authority()["policies"],
+                                                                                      "dismiss-review": "never"}})
+        self.assertEqual((writes, code), ([], 1), output)
 
     def test_self_approval_and_uncertain_writes_are_held(self):
         writes, output, code = self.run_write("approve", flags=["--write"], author="reviewer")
@@ -752,12 +779,18 @@ class WorkLevelTests(unittest.TestCase):
                  ("assess", False, "enqueue", True), (None, True, "comment", False)]
         for level, approvals, action, allowed in cases:
             with self.subTest(level=level, approvals=approvals, action=action):
-                permission = authority(level=level, approvals=approvals, actions=[action])
+                try:  # authority.py refuses a level that cannot hold the answer, so no file exists to write with
+                    permission = authority(grants=(), level=level, approvals=approvals)
+                    if action == "enqueue":
+                        permission = authority_script.grant(permission, 17, action, "merge #17")
+                except ValueError:
+                    self.assertFalse(allowed)
+                    continue
                 if allowed:
-                    ledger.check_authority(permission, "owner/repo", 17, action, possible_landing=True)
+                    ledger.check_authority(permission, "owner/repo", 17, action)
                 else:
                     with self.assertRaises(ValueError):
-                        ledger.check_authority(permission, "owner/repo", 17, action, possible_landing=True)
+                        ledger.check_authority(permission, "owner/repo", 17, action)
 
     def run_branch(self, action, *, lines=3, level="moderate", github_head=None, fork=False, race=False):
         with tempfile.TemporaryDirectory() as tmp:
@@ -790,7 +823,7 @@ class WorkLevelTests(unittest.TestCase):
                                                   "repo": {"full_name": "someone/repo" if fork else "owner/repo"}}}
 
             permission = Path(tmp) / "authority.json"
-            permission.write_text(json.dumps(authority(level=level, actions=[action])))
+            permission.write_text(json.dumps(authority(grants=(), level=level)))
             output = io.StringIO()
             previous = os.getcwd()
             os.chdir(work)

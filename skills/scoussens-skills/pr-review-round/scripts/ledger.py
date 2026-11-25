@@ -53,7 +53,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from review_config import resolve as review_config
+from review_config import KINDS, MODES, resolve as review_config, supports
 
 STATUSES = ("open", "fixed", "overstated", "pre-existing", "withdrawn")
 DECISIONS = {
@@ -199,44 +199,60 @@ def handled_requests(repo=None):
 
 
 # The work level the user picked caps the writes. Approval is a separate yes/no at
-# every level above assess. Approving to merge includes auto-merge: "with approvals"
-# grants approve and enable-auto-merge, and an approval may release auto-merge.
-# Dismissal and direct merges still need their own instruction.
+# every level above assess. The writes outside the level table are separate: each one
+# is governed by a decision kind in review_config.KINDS (auto, ask or never), or, with
+# no kind, needs its own one-PR grant. authority.py writes and extends the record.
 LEVELS = {
     "assess": (),
     "review": ("comment", "request-changes"),
     "moderate": ("comment", "request-changes", "update-branch", "push-fix"),
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
-SEPARATE = ("dismiss", "enqueue", "enable-auto-merge")
+SEPARATE = ("dismiss", "enqueue", "enable-auto-merge", "sweep-auto-merge")
+# Writes that can make a PR merge, directly or by releasing an author's auto-merge.
+LANDING = ("approve", *SEPARATE)
+GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}
 
 
-def level_allows(authority, action):
-    level = authority.get("level")
-    if level not in LEVELS:
-        return False
-    if action in ("approve", "enable-auto-merge") and authority.get("approvals") is True and level != "assess":
-        return True
-    if action == "approve":
-        return False
-    return action in LEVELS[level] or action in SEPARATE
+def standing_actions(level, approvals, policies):
+    """The writes a level, approvals choice and policies allow on every scoped PR without asking."""
+    actions = [*LEVELS[level], *(["approve"] if approvals and level != "assess" else [])]
+    return actions + [action for kind, mode in policies.items() if mode == "auto" and supports(kind, level, approvals)
+                      for action in KINDS[kind]["actions"]]
 
 
-def approvals_granted(authority):
-    return authority.get("level") in LEVELS and authority["level"] != "assess" and authority.get("approvals") is True
+def possible_landing(actions, grants):
+    return any(action in LANDING for action in [*actions, *(g["action"] for g in grants)])
 
 
-def check_authority(authority, repo, number, action, possible_landing=False):
-    if authority.get("level") not in LEVELS:
-        raise ValueError("authority requires a work level: " + ", ".join(LEVELS))
-    if not level_allows(authority, action):
-        raise ValueError(f'{action} is outside the {authority["level"]} level'
-                         + (" without approvals" if action == "approve" else "") + "; ask before raising the level")
-    via_approval = action in ("approve", "enable-auto-merge") and approvals_granted(authority)
-    if (authority.get("repository") != repo or number not in authority.get("prs", [])
-            or (action not in authority.get("actions", []) and not via_approval) or not authority.get("instruction")
-            or (possible_landing and authority.get("possible_landing") is not True and not via_approval)):
-        raise ValueError("out-of-scope authority: record instruction, repository, exact PRs, action and possible landing")
+def check_authority(authority, repo, number, action):
+    if authority.get("version") != 2:
+        raise ValueError("authority file predates decision policies; regenerate it with authority.py init")
+    level, approvals, policies = authority.get("level"), authority.get("approvals"), authority.get("policies")
+    if level not in LEVELS or type(approvals) is not bool or not isinstance(policies, dict) \
+            or set(policies) != set(KINDS) or any(mode not in MODES for mode in policies.values()):
+        raise ValueError("authority requires a work level, approvals and a mode for every decision kind; "
+                         "regenerate it with authority.py init")
+    grants = authority.get("grants", [])
+    actions = standing_actions(level, approvals, policies)
+    if authority.get("actions") != actions or authority.get("possible_landing") != possible_landing(actions, grants):
+        raise ValueError("authority actions do not follow from its level and policies; it was edited by hand. "
+                         "Regenerate it with authority.py init, and add one-PR writes with authority.py grant")
+    if authority.get("repository") != repo or number not in authority.get("prs", []) or not authority.get("instruction"):
+        raise ValueError("out-of-scope authority: record instruction, repository and exact PRs")
+    kind = GOVERNED.get(action)
+    if kind and policies[kind] == "never":
+        raise ValueError(f"{action} on #{number} is refused: the {kind} policy is never")
+    if action in actions:
+        return
+    if action not in SEPARATE:
+        raise ValueError(f"{action} is outside the {level} level" + (" without approvals" if action == "approve" else "")
+                         + "; ask before raising the level")
+    if any(g.get("pr") == number and g.get("action") == action for g in grants):
+        return
+    ask = f'the {kind} policy is ask. Ask: "{KINDS[kind]["question"]}"' if kind else "it needs its own instruction"
+    raise ValueError(f"{action} on #{number} is held: {ask} After a yes, record it with "
+                     f'authority.py grant <authority.json> --pr {number} --action {action} --instruction "<their words>"')
 
 
 def current_assessment(bundle, repo, number, live):
