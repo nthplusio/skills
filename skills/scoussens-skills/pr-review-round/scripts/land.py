@@ -4,6 +4,11 @@
 land.py [--watch] <pr-number> [pr-number ...]
 land.py --enqueue <pr-number>:<reviewed-full-sha> [...]
 land.py --enqueue --stack-method squash <pr>:<sha> [<lower-pr>:<sha> ...]
+land.py --enable-auto-merge <pr>:<reviewed-full-sha> [...]
+
+--enable-auto-merge after this round's own approval at the reviewed head is
+governed by the auto-merge-on-approval policy; on a PR someone else approved it
+is the auto-merge-sweep policy. Both still need GitHub's APPROVED review decision.
 
 Stacked PRs (GitHub `gh stack`): GitHub refuses per-PR auto-merge for any stack
 member, so --enable-auto-merge holds them. --enqueue lands a stack member with
@@ -31,7 +36,7 @@ import time
 
 from merge_queue import queue_state
 from freshness import Benign, live_from_view
-from ledger import check_authority, check_clearance, record_write, target_state
+from ledger import check_authority, check_clearance, record_write, target_state, writes
 from stacks import stack_of, below
 
 POLL_SECONDS = 30
@@ -79,6 +84,15 @@ def remember(repo, number, action, head, accepted=None):
         record_write(repo, number, action, head, accepted=accepted)
     except OSError as error:
         print(f"#{number} landing requested, but not recorded in the ledger ({error})")
+
+
+def landing_action(args, number, head):
+    """Auto-merge after this round's own approval at the head, or the sweep of a PR someone else approved."""
+    if not args.enable_auto_merge:
+        return "enqueue"
+    own = any(w.get("number") == number and w.get("action") == "approve" and w.get("head") == head
+              for w in writes(args.repo))
+    return "enable-auto-merge" if own else "sweep-auto-merge"
 
 
 def clearance(args, number, state):
@@ -162,7 +176,7 @@ def main():
             if writing and not outcome:
                 try:
                     check_authority(json.loads(args.authority.read_text()), args.repo, number,
-                                    "enable-auto-merge" if args.enable_auto_merge else "enqueue", True)
+                                    landing_action(args, number, heads[number]))
                     verdict = clearance(args, number, state)
                     accepted[number] = verdict.record() if isinstance(verdict, Benign) else None
                     if accepted[number]:
