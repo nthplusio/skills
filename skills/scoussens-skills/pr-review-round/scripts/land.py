@@ -19,6 +19,8 @@ landing path: it turns auto-merge on while checks still run, leaves the wait to
 GitHub's required checks, and reports AUTO-MERGE ENABLED once GitHub shows it. GitHub's --match-head-commit guards the merge request too.
 No strategy flag: the queue owns the merge strategy. A successful request is
 not proof of queue membership or landing; only subsequent reads establish it.
+A PR that already has auto-merge on, or is already queued, at the reviewed head
+gets no new request; the helper says so, so a re-run is safe.
 """
 import argparse
 import json
@@ -168,7 +170,8 @@ def main():
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     outcome = f"HELD: {error}"
             if writing and not outcome and args.enable_auto_merge and state.get("autoMergeRequest"):
-                outcome = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
+                outcome = ("AUTO-MERGE ENABLED, not merged; already on at the reviewed head, so no request was sent. "
+                           "GitHub merges it when its required checks pass")
             if outcome:
                 outcomes[number] = outcome
                 pending.remove(number)
@@ -177,6 +180,8 @@ def main():
 
             print(f"#{number} pending -- state={status or 'unknown'} / "
                   f"merge={merge_state or 'unknown'} / queue={queue}")
+            if writing and queue == "queued" and number not in submitted:
+                print(f"#{number} already in the merge queue at the reviewed head; no merge request sent")
             if (writing and poll < MAX_POLLS and merge_state == "CLEAN"
                     and queue == "not_queued" and number not in submitted and state.get("stack")):
                 ready[number] = state

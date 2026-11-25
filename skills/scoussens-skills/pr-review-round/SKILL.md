@@ -80,7 +80,9 @@ Three rules hold regardless:
 - Bind every write to the full head SHA you verified. Re-read the head before
   each action; if it changes, hold writes and review the new head. Use
   `review_write.py` for review/comment/dismissal actions and `land.py --enqueue` or `--enable-auto-merge`
-  for merges. These helpers do not grant authority. Merge only an open,
+  for merges. `review_write.py` posts a comment as a head-bound `COMMENT`
+  review, so it shows in GitHub's review list, and skips a review you already
+  posted at that head. These helpers do not grant authority. Merge only an open,
   non-draft PR that still has that head and is `APPROVED` + `CLEAN` before every
   enqueue, including retries. An unknown state holds the write.
 - Never approve your own PR; GitHub forbids it. Do not approve a PR whose last

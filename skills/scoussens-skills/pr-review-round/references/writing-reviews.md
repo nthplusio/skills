@@ -149,13 +149,24 @@ and pins review submissions through REST `commit_id`. It includes the verified
 head in every body and checks it again after the write. If the head moved,
 reconcile the posted action and review the new head before further writes.
 
-**API limit:** comments and dismissals have no atomic expected-head parameter.
+A `comment` is a pull request review with event `COMMENT`, bound to the
+reviewed head like an approval. It shows in GitHub's review list and the PR's
+reviewers, so the author sees that the PR was reviewed; it does not change
+GitHub's review decision. After every check passes, the helper reads your
+reviews on the PR. When your latest approval or changes request at the reviewed
+head already has the requested state, or a comment review there has the same
+body, it prints that review's URL and posts nothing. A review at an older head
+does not count, so re-running a write is safe.
+
+**API limit:** dismissals have no atomic expected-head parameter.
 A preflight and postflight check can detect movement, not undo a write that
 raced it. Review `commit_id` pins the review's subject, not all concurrent
 approval or auto-merge changes. If the requested guarantee needs an atomic
 gate the API cannot supply, hold the action for a human. The helpers independently re-read the actual target branch before and after writes, and `scripts/freshness.py` judges any move against saved `evidence_inputs`. A base move that changes none of the PR's files while GitHub reports it mergeable, and new discussion that is only bot comments, automated events or this round's own writes, are benign: the write proceeds and records why. A new head, overlap, conflict, a person's comment or review, a bot's changes request, or any unreadable read holds it. Postflight reads detect movement but cannot undo a raced write or pin the merged result atomically. Never describe these
 checks as eliminating the race. On a permission denial or uncertain response,
 inspect remote state before retrying; the helper does not retry mutations.
+After a review write returns an error, `review_write.py` reads your reviews
+back once and reports a review it finds at the reviewed head as posted.
 
 ## Reporting the round
 

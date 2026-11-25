@@ -4,8 +4,11 @@
 Without --write this only reports the held action. An authority "with approvals"
 covers an approval that releases auto-merge. --allow-landing asserts merge
 authority for a dismissal that can release auto-merge.
-Reviews carry commit_id. Comments and dismissals have no atomic head condition
-in GitHub's API, so the helper checks before and after and never retries writes.
+Approvals, change requests and comments are pull request reviews (a comment is a
+COMMENT review), so each carries commit_id and shows in GitHub's review list. A
+review this login already posted at the same head is not posted again.
+Dismissals have no atomic head condition in GitHub's API, so the helper checks
+before and after. It never retries a write.
 """
 import argparse
 import json
@@ -18,6 +21,10 @@ from ledger import (approvals_granted, check_authority, current_assessment, reco
 from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
+
+# Each review action: the event GitHub takes and the state the posted review shows.
+REVIEWS = {"approve": ("APPROVE", "APPROVED"), "request-changes": ("REQUEST_CHANGES", "CHANGES_REQUESTED"),
+           "comment": ("COMMENT", "COMMENTED")}
 
 
 def api(path, method="GET", payload=None):
@@ -35,6 +42,27 @@ def api(path, method="GET", payload=None):
     if not isinstance(data, dict):
         raise RuntimeError(f"{method} returned unexpected data; inspect remote state before retry")
     return data
+
+
+def existing_review(pull, login, head, state, body):
+    """The review this action would post, if you already posted it at this head: any
+    COMMENTED review with the same body, or your latest verdict when it has `state`.
+    A comment does not replace a verdict, and a review at an older head does not count."""
+    result = subprocess.run(["gh", "api", f"{pull}/reviews?per_page=100", "--paginate", "--slurp"],
+                            capture_output=True, text=True)
+    try:
+        if result.returncode:
+            raise ValueError(result.stderr.strip())
+        reviews = [review for page in json.loads(result.stdout) for review in page]
+        mine = [r for r in reviews if (r.get("user") or {}).get("login") == login and r.get("commit_id") == head]
+        if state == "COMMENTED":
+            return next((r for r in mine if r.get("state") == state
+                         and (r.get("body") or "").replace("\r\n", "\n").strip() == body), None)
+        # GitHub lists reviews in chronological order.
+        verdicts = [r for r in mine if r.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
+    except (ValueError, TypeError, AttributeError) as error:
+        raise RuntimeError(f"HELD: could not read your existing reviews ({error}); nothing posted") from error
+    return verdicts[-1] if verdicts and verdicts[-1]["state"] == state else None
 
 
 def main():
@@ -90,8 +118,8 @@ def main():
                 raise ValueError("request-changes requires a verified code decision; use a comment for evidence/owner requests")
             body += "\n\n## Unblock\n" + "\n".join(
                 f'- {d["owner"]}: {d["unblock"]} · {d["effort"]}' for d in code_decisions)
-        # Read identity first so the head check is the last read before a write.
-        login = api("user")["login"] if args.action == "approve" else None
+        # Read identity first; after the head check, only the existing-review lookup precedes a write.
+        login = api("user")["login"] if args.action != "dismiss" else None
         pr = api(pull)
         if pr["head"]["sha"] != args.head or pr["state"] != "open" or pr["draft"] is not False:
             raise RuntimeError("HELD: head changed, PR closed, or draft; review current state again")
@@ -120,15 +148,29 @@ def main():
             check_authority(authority, args.repo, args.number, args.action, possible_landing)
             require_resolved(assessment)
 
+        # Every check above still runs on a retry; only then does an existing review end it.
+        if args.action in REVIEWS:
+            event, state = REVIEWS[args.action]
+            existing = existing_review(pull, login, args.head, state, body)
+            if existing:
+                print(f"{args.action} already exists at {args.head}: {existing.get('html_url') or existing.get('id')}; "
+                      "nothing posted")
+                return 0
         attempted = True
         if args.action == "dismiss":
             result = api(f"{pull}/reviews/{args.review_id}/dismissals", "PUT", {"message": body})
-        elif args.action == "comment":
-            result = api(f"repos/{args.repo}/issues/{args.number}/comments", "POST", {"body": body})
         else:
-            event = "APPROVE" if args.action == "approve" else "REQUEST_CHANGES"
-            result = api(f"{pull}/reviews", "POST",
-                         {"event": event, "commit_id": args.head, "body": body})
+            try:
+                result = api(f"{pull}/reviews", "POST", {"event": event, "commit_id": args.head, "body": body})
+            except RuntimeError as error:
+                # An error or timeout can follow an accepted review. Read back once; never post again.
+                try:
+                    result = existing_review(pull, login, args.head, state, body)
+                except RuntimeError:
+                    result = None
+                if not result:
+                    raise error
+                print(f"The write returned an error, but reading back found your {args.action} at {args.head}")
         submitted = True
         print(f"Submitted {args.action}: {result.get('html_url') or result.get('id')}")
         try:
