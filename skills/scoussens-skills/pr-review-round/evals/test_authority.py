@@ -48,7 +48,7 @@ class AuthorityTests(unittest.TestCase):
         self.assertEqual(record["policies"], {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto",
                                               "dismiss-bot-review": "auto", "dismiss-human-review": "ask",
                                               "own-pr-landing": "ask", "reapprove-base-only": "auto"})
-        self.assertEqual(record["sources"], {"level": "answer", "approvals": "answer", "policies": {
+        self.assertEqual(record["sources"], {"level": "answer", "approvals": "answer", "mode": "default", "policies": {
             "auto-merge-on-approval": "default", "auto-merge-sweep": "default", "dismiss-bot-review": "answer",
             "dismiss-human-review": "default", "own-pr-landing": "default", "reapprove-base-only": "default"}})
         self.assertEqual(record["instruction"], words)
@@ -100,9 +100,42 @@ class AuthorityTests(unittest.TestCase):
         (self.tmp / "answers.json").write_text(json.dumps({"policies": {"dismiss-bot-review": "never", "dismiss-human-review": "ask"}, "instruction": "x"}))
         left = self.run_cli("questions", "--root", self.root, "--answers", self.tmp / "answers.json")
         self.assertEqual([line.split(":")[0] for line in left.splitlines() if "Recommended" in line],
-                         ["auto-merge-on-approval", "own-pr-landing", "reapprove-base-only"])
+                         ["auto-merge-on-approval", "own-pr-landing", "reapprove-base-only", "mode"])
         self.assertIn("From the review profile", left)
         self.assertIn("level review; approvals yes; auto-merge-sweep auto", left)
+
+    def test_run_mode_round_trips_and_is_asked_only_when_unanswered(self):
+        asked = self.run_cli("questions", "--root", self.root)
+        self.assertIn("mode: Should the round stop after one pass (once)", asked)
+        self.assertIn("Recommended: once.", asked)
+        record, shown = self.init({"level": "review", "instruction": "review them"})
+        self.assertEqual((record["mode"], record["sources"]["mode"]), ("once", "default"))
+        self.assertNotIn("until", record)
+        self.assertIn("Run mode: once, one pass, then report (from the default).", shown)
+        self.assertNotIn("subscribe", shown)
+        record, shown = self.init({"level": "review", "mode": "settle", "instruction": "keep going until it settles"})
+        self.assertEqual((record["mode"], record["sources"]["mode"]), ("settle", "answer"))
+        self.assertIn("Run mode: settle, keep working until no scoped PR has an action left", shown)
+        self.assertIn("lets the round subscribe to events on these PRs, or schedule its own wake-ups", shown)
+        self.assertEqual(self.run_cli("show", self.tmp / "authority.json"), shown)
+        record, shown = self.init({"level": "review", "mode": "watch", "window": "2026-12-01T18:00:00+01:00",
+                                   "instruction": "watch until 6pm"})
+        self.assertEqual((record["mode"], record["until"]), ("watch", "2026-12-01T17:00:00Z"))
+        self.assertIn("Run mode: watch until 2026-12-01T17:00:00Z", self.run_cli("show", self.tmp / "authority.json"))
+        record, _ = self.init({"level": "review", "mode": "watch", "window": "4h", "instruction": "watch for 4 hours"})
+        self.assertRegex(record["until"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        # A run mode authorizes no write.
+        self.assertEqual(record["actions"], ["comment", "request-changes"])
+        (self.tmp / "answers.json").write_text(json.dumps({"mode": "settle", "instruction": "settle"}))
+        left = self.run_cli("questions", "--root", self.root, "--answers", self.tmp / "answers.json")
+        self.assertNotIn("mode:", left)
+        for answers in ({"mode": "watch", "instruction": "x"}, {"mode": "settle", "window": "4h", "instruction": "x"},
+                        {"mode": "forever", "instruction": "x"},
+                        {"mode": "watch", "window": "2020-01-01T00:00:00Z", "instruction": "x"},
+                        {"mode": "watch", "window": "tomorrow", "instruction": "x"}):
+            with self.subTest(answers=answers):
+                _, error = self.init(answers, ok=False)
+                self.assertIn("answers.", error)
 
     def test_never_refuses_ask_names_the_question_and_a_grant_allows_one_pr(self):
         record, _ = self.init({"level": "review", "approvals": True, "instruction": "review with approvals",

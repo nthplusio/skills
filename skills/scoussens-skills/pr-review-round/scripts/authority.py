@@ -9,10 +9,15 @@
 `questions` prints only what the review profile and the answers leave open, each with
 its recommended answer. `answers.json` holds the user's answers:
 
-    {"level": "review", "approvals": true, "policies": {"dismiss-bot-review": "auto"}, "instruction": "<their exact words>"}
+    {"level": "review", "approvals": true, "policies": {"dismiss-bot-review": "auto"},
+     "mode": "watch", "window": "4h", "instruction": "<their exact words>"}
 
 Every key is optional. A missing answer falls back to the profile's `round` block, then
-to the registry default (level assess, no approvals, each kind's default mode). `init`
+to the registry default (level assess, no approvals, each kind's default mode). `mode` is
+how long the round runs, not a write: `once` (the default) is one pass, `settle` keeps
+working until `queue.py --next` prints settled, and `watch` keeps working until `window`
+ends, a duration such as `90m` or `4h` or an ISO 8601 end time, which `init` records as
+`until`. `init`
 writes an authority file for exactly the PRs in the scope file `queue.py --save-scope`
 wrote, records where each value came from, and derives `actions` and `possible_landing`,
 which the write helpers recompute and compare. `grant` adds one explicit write for one PR
@@ -20,11 +25,39 @@ when the user says yes mid-round; it never raises the level or overrides a `neve
 """
 import argparse
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ledger import GOVERNED, LEVELS, SEPARATE, check_authority, possible_landing, standing_actions
 from review_config import KINDS, MODES, resolve, supports
+
+
+# How long a round runs. Not a decision kind: it authorizes no write on a PR, only the
+# event subscriptions or schedule a settle or watch round creates to wake itself.
+RUN_MODES = {
+    "once": "one pass, then report",
+    "settle": "keep working until no scoped PR has an action left for the round, then report",
+    "watch": "keep working until the window ends, then report",
+}
+
+
+def watch_until(window, now):
+    """The watch window's end: a duration such as 90m or 4h from now, or an ISO 8601 time with a zone."""
+    duration = re.fullmatch(r"(\d+)\s*([mh])", window.strip()) if isinstance(window, str) else None
+    if duration:
+        minutes = int(duration[1]) * (60 if duration[2] == "h" else 1)
+        end = now + timedelta(minutes=minutes)
+    else:
+        try:
+            end = datetime.fromisoformat(window.replace("Z", "+00:00"))
+        except (AttributeError, ValueError):
+            end = None
+        if end is None or end.tzinfo is None:
+            raise ValueError("answers.window: expected a duration such as 90m or 4h, or an ISO 8601 time with a zone")
+    if end <= now:
+        raise ValueError("answers.window: the watch window has already ended")
+    return end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def profile_round(root):
@@ -33,8 +66,8 @@ def profile_round(root):
 
 
 def validate_answers(answers):
-    if not isinstance(answers, dict) or answers.keys() - {"level", "approvals", "policies", "instruction"}:
-        raise ValueError("answers: expected an object with only level, approvals, policies and instruction")
+    if not isinstance(answers, dict) or answers.keys() - {"level", "approvals", "policies", "mode", "window", "instruction"}:
+        raise ValueError("answers: expected an object with only level, approvals, policies, mode, window and instruction")
     if "level" in answers and answers["level"] not in LEVELS:
         raise ValueError("answers.level: expected " + ", ".join(LEVELS))
     if "approvals" in answers and type(answers["approvals"]) is not bool:
@@ -44,14 +77,21 @@ def validate_answers(answers):
         raise ValueError("answers.policies: expected an object keyed by " + ", ".join(KINDS))
     if any(mode not in MODES for mode in policies.values()):
         raise ValueError("answers.policies: expected " + ", ".join(MODES))
+    if "mode" in answers and answers["mode"] not in RUN_MODES:
+        raise ValueError("answers.mode: expected " + ", ".join(RUN_MODES))
+    if ("window" in answers) != (answers.get("mode") == "watch"):
+        raise ValueError("answers.window: give a window with mode watch, and only then")
     if answers and not answers.get("instruction"):
         raise ValueError("answers.instruction: record the user's exact words")
 
 
-def build(repo, prs, answers, round_, profile=None):
+def build(repo, prs, answers, round_, profile=None, now=None):
     """The authority record: each value from the answer, then the profile, then the default."""
     validate_answers(answers)
-    sources = {"policies": {}}
+    sources = {"policies": {}, "mode": "answer" if "mode" in answers else "default"}
+    run = {"mode": answers.get("mode", "once")}
+    if run["mode"] == "watch":
+        run["until"] = watch_until(answers["window"], now or datetime.now(timezone.utc))
     if "level" in answers:
         level, sources["level"] = answers["level"], "answer"
     elif round_.get("level"):
@@ -83,7 +123,7 @@ def build(repo, prs, answers, round_, profile=None):
         sources["policies"][kind] = source
     actions = standing_actions(level, approvals, policies)
     return {"version": 2, "repository": repo, "prs": prs, "level": level, "approvals": approvals,
-            "policies": policies, "sources": sources,
+            "policies": policies, **run, "sources": sources,
             "instruction": answers.get("instruction") or f"review profile {profile or '(none)'}: round defaults",
             "profile": profile, "actions": actions, "possible_landing": possible_landing(actions, []), "grants": []}
 
@@ -118,6 +158,12 @@ def describe(record):
     for kind, mode in record["policies"].items():
         lines.append(f"{kind}: {MODE[mode]} (from {origin(record['sources']['policies'][kind])}). "
                      f"{KINDS[kind]['question']}")
+    mode = record.get("mode", "once")  # files written before run modes ran once
+    lines.append(f"Run mode: {mode}" + (f" until {record['until']}" if mode == "watch" else "")
+                 + f", {RUN_MODES[mode]} (from {origin(record['sources'].get('mode', 'default'))}).")
+    if mode != "once":
+        lines.append("This choice lets the round subscribe to events on these PRs, or schedule its own wake-ups, "
+                     "and it removes them when it stops. It authorizes no write on a PR.")
     lines.append("Writes allowed on every PR: " + (", ".join(record["actions"]) or "none") + ".")
     lines.append(f"Can a write make a PR merge: {'yes' if record['possible_landing'] else 'no'}.")
     lines += [f"Granted: {g['action']} on #{g['pr']} (\"{g['instruction']}\")." for g in record["grants"]]
@@ -141,6 +187,10 @@ def open_questions(round_, answers):
         if level and approvals is not None and not supports(kind, level, approvals):
             continue  # this level cannot use auto, so the answer is moot: the write is asked for
         questions.append((kind, entry["question"], entry["default"]))
+    if "mode" not in answers:
+        questions.append(("mode", "Should the round stop after one pass (once), keep working on its own until no PR "
+                          "has an action left for it (settle), or keep working for a set time (watch, with a duration "
+                          "or end time)?", "once"))
     return questions
 
 

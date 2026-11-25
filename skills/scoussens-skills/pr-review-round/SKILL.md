@@ -43,7 +43,8 @@ writes that would otherwise each need a chat message. Settle both once, in the
 first message:
 
 1. Write the request's explicit answers to `answers.json` (`level`, `approvals`,
-   `policies`, and `instruction`, the user's exact words), then run
+   `policies`, `mode` with `window` for `watch` (see [Run modes](#run-modes)), and
+   `instruction`, the user's exact words), then run
    `authority.py questions --root <repository> --answers answers.json`. It prints
    only what the request and the profile's `round` block leave open, each with its
    recommended answer, and which settings the profile set.
@@ -177,6 +178,7 @@ python3 $S/review_config.py --root <repository> # resolved review/policy referen
 python3 $S/queue.py <base> [--save-scope <f> | --scope <f>] # triage: every PR, risk tier, who is
                                     # blocking, AUTO, your review against the head, changes since your last look,
                                     # related pairs and files the base changed under each PR
+python3 $S/queue.py <base> --scope <f> --next --authority <f> # what the round can still do; prints settled when nothing
 python3 $S/stale_sweep.py <base>    # staleness across the WHOLE queue, one pass
 python3 $S/prstate.py <n>           # review state + head sha + staleness, one PR
 python3 $S/findings.py <n>          # blocking review bodies + their inline comments
@@ -418,6 +420,17 @@ A historical return does not establish a current blocker or developer quality sc
 Terminal summary and HTML artifact spec — including the per-PR link, timestamp,
 expandable review body and optional teach-me prompt:
 [`references/report.md`](references/report.md).
+
+## Run modes
+
+The `mode` answer sets how long the round runs. `once`, the default, is one pass. `settle` keeps working until no scoped PR has an action left for the round. `watch` keeps working until the window ends (`until` in the authority file). A mode authorizes no write. Choosing `settle` or `watch` is the user's authorization for the round to create event subscriptions or a schedule that wake it, and to remove them when it stops; `once` creates neither.
+
+In `settle` or `watch`, after the first pass (checklist commands 1 to 4 and steps 2 to 6):
+
+1. Read the harness's monitoring capability from `harness-discovery`'s saved record (`monitoring`), or from the current tool inventory when there is no record. Use what it names, not another harness's tools.
+2. When the harness can subscribe to pull-request events, subscribe for each scoped PR to pushes, check completions, reviews, review requests and merge-queue removals. Otherwise, and for events no subscription covers, schedule a sweep at an interval near the CI duration observed this round. Keep a list of what you created. When the harness can do neither, run as `once` and say so.
+3. On each wake, run `queue.py <base> --scope $RUN/scope.json --next --authority $RUN/authority.json` and act only on the round work it lists, with the same steps, helpers and authority file. Run checklist command 3 after each review. Ask the decisions `ledger.py waiting` prints in one batch and keep working; the round never waits on an answer while another PR has an action. Never widen the scope or the authority mid-run: report each PR listed as JOINED; it enters only through a new intake answer and a new round.
+4. Stop when `--next` prints `settled` (`settle`) or `until` passes (`watch`). A listed action that its helper held at the same head on the previous wake does not keep the round open; report the hold. Then remove every subscription and schedule the round created, run checklist commands 5 and 6, and report the mode, the number of wakes and why the round stopped.
 
 ## What good looks like
 

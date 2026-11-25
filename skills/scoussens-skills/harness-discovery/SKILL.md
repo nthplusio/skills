@@ -104,6 +104,9 @@ Each harness entry records the observation time, inspected sources, and:
   alone establishes neither concurrency nor independent ownership.
 - Monitoring. Describe notification coverage and lifetime, bounded waits with
   timeout arguments and caller behavior, and wake after the coordinator yields.
+  Name the forge events a subscription can deliver (pushes, check results,
+  reviews, review requests, merge-queue moves) and what it is scoped by, such
+  as one pull request or a repository, and how to remove it.
   Distinguish native notifications from owner-authored status messages. Keep
   inspection separate from completion collection. Record any authorization
   requirement and whether monitoring requires an active turn or manual resume.

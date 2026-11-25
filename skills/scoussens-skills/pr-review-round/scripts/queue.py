@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """queue.py <base-branch> [--save-scope <file> | --scope <file>]
+queue.py <base-branch> --scope <file> --next --authority <authority.json>
 
 The triage pass. Every open non-draft PR against <base>, oldest first, with the
 facts that decide what you do next: who is actually blocking (you or the
@@ -25,11 +26,21 @@ with --scope: drafts get marked ready and PRs open while you review, and the
 second run names the PRs that JOINED or LEFT. Reviewing in creation order
 matters -- the oldest PRs have the most accumulated review history to
 reconcile, and merging them first is what stops the queue growing.
+
+With --next it prints the round's work list instead of the table, read-only:
+each scoped PR that has an action left for the round under its authority file
+and saved assessments, then each scoped PR waiting on someone else, then the
+PRs that JOINED or LEFT. A JOINED PR stays outside the round until a new
+intake answer adds it. With no action left it prints "settled". A settle or
+watch round runs it on every wake and acts only on what it lists.
 """
 import argparse, json, shlex, subprocess, sys, time
 from pathlib import Path
 from review_requests import collect, reconcile, effective_reviews
-from ledger import assessments, gh_said, handled_requests, repo_slug
+from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, repo_slug,
+                    target_state, unresolved, writes)
+from freshness import Stale, classify, live_from_view
+from review_config import resolve as review_config
 from branch_rules import gate_lines
 from stacks import stack_of, label as stack_label, missing_members
 from reapprove import check as reapprove_check
@@ -131,6 +142,120 @@ def blocker_of(pr, red, mine=None):
     return "REVIEW: needs review"
 
 
+def checks_of(p):
+    """(failed, pending) checks in the PR's status rollup."""
+    state = lambda c: c.get("conclusion") or c.get("state")
+    checks = p.get("statusCheckRollup") or []
+    return ([c for c in checks if state(c) in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT")],
+            [c for c in checks if state(c) in ("PENDING", "IN_PROGRESS", "QUEUED", None, "")])
+
+
+def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale):
+    """What the round can still do on one scoped PR, and who else it waits on: (actions, waits).
+
+    `allowed(action)` asks the authority file; `base_only()` and `stale()` read the forge, so they run
+    only where the answer matters."""
+    actions, waits = [], []
+    if requests["unhandled"]:
+        actions.append(f'record a disposition for {requests["unhandled"]} review request(s)')
+    if requests["coverage"] != "complete":
+        waits.append("unknown: request coverage (" + ", ".join(requests["gaps"]) + "); report it")
+    if p.get("_degraded"):
+        return actions + ["read it again: its files and checks were unreadable"], waits
+    if look in ("new", "HEAD MOVED"):
+        if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only():
+            actions.append("reapprove: only clean base merges since the round's approval")
+        else:
+            actions.append("review: no saved assessment" if look == "new"
+                           else f'review at new head {p["headRefOid"][:9]}')
+        return actions, waits
+    reasons = stale() if look in ("base moved", "discussion changed") else []
+    if reasons:
+        return actions + ["review again: " + "; ".join(reasons)], waits
+    red, pending = checks_of(p)
+    blocker = blocker_of(p, red, mine)
+    author = blocker.startswith("AUTHOR:")
+    if blocker == "AUTHOR: behind base" and allowed("update-branch"):
+        actions.append("update the branch: branch_write.py update-branch")
+    elif author:
+        waits.append("author: " + blocker.split(": ", 1)[1])
+    elif pending:
+        waits.append(f"CI pending: {len(pending)} check(s)")
+    blocking = unresolved(saved)
+    for d in blocking:
+        if d["kind"] in OWNED and not d.get("rejected"):
+            waits.append(f'owner decision {decision_key(p["number"], d)} ({d["owner"]}); ask it with ledger.py waiting')
+        else:
+            waits.append(f'{d["owner"]}: {d["unblock"]}')
+    if blocking:
+        return actions, waits
+    answered = any((d.get("waiver") or {}).get("answer") for d in saved["decisions"])
+    if p.get("autoMergeRequest"):
+        waits.append("GitHub: auto-merge is on; required checks and the merge queue decide")
+    elif author:
+        pass  # nothing lands until the branch changes, and that is a new head to review
+    elif p.get("reviewDecision") == "APPROVED":
+        if stacked and allowed("enqueue"):
+            actions.append("land: approved stack layer; land.py --enqueue --stack-method")
+        elif stacked:
+            waits.append("owner: approved stack layer; landing it with land.py --enqueue needs a merge grant")
+        elif allowed("sweep-auto-merge"):
+            actions.append("sweep: approved with auto-merge off; land.py --enable-auto-merge")
+        else:
+            waits.append("owner: approved with auto-merge off; the auto-merge-sweep policy is not auto")
+    elif own:
+        if allowed("land-own-pr"):
+            actions.append("land your own PR: land.py --enable-auto-merge checks its four conditions")
+        else:
+            waits.append("another approver: you cannot approve your own PR; approvers.py names who can")
+    elif mine == "approved at head":
+        waits.append("another approver: still REVIEW_REQUIRED after the round's approval")
+    elif allowed("approve"):
+        actions.append(("decision answered: " if answered else "land: ") + "approve, then auto-merge")
+    else:
+        waits.append("another approver: nothing unresolved, and this round may not approve")
+    return actions, waits
+
+
+def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states, stacks, login):
+    """The round's work list; prints "settled" when no scoped PR has an action left for the round."""
+    def allowed(number, action):
+        try:
+            check_authority(authority, slug, number, action)
+        except ValueError:
+            return False
+        return True
+
+    def stale(p):
+        assessment = saved[p["number"]]
+        live = live_from_view({**p, "target": target_state(slug, (assessment["evidence_inputs"].get("target") or {}).get("ref"))})
+        verdict = classify(assessment, live, policy=review_config(".")["revision"], repo=slug,
+                           number=p["number"], writes=writes(slug))
+        return list(verdict.reasons) if isinstance(verdict, Stale) else []
+
+    listed = {p["number"] for p in prs}
+    work, waiting = [], []
+    for p in (p for p in prs if p["number"] in scoped):
+        n = p["number"]
+        actions, waits = round_work(
+            p, saved.get(n), mine[n], looks[n], request_states[n], bool(stacks.get(n)),
+            login is not None and p["author"]["login"] == login, lambda action: allowed(n, action),
+            lambda: reapprove_check(slug, n)[0]["base_only"], lambda: stale(p))
+        work += [f"  #{n:<6} {'; '.join(actions)}"] if actions else []
+        waiting += [f"  #{n:<6} {'; '.join(waits)}"] if waits else []
+    mode = authority.get("mode", "once")
+    print(f"Round work on {len(work)} of {len(scoped)} scoped PR(s), run mode {mode}"
+          + (f" until {authority['until']}" if mode == "watch" else "") + ":")
+    print("\n".join(work) if work else "  none")
+    print("Waiting on someone else:")
+    print("\n".join(waiting) if waiting else "  none")
+    joined = [f"#{p['number']}" for p in prs if p["number"] not in scoped]
+    print("JOINED, outside this round until a new intake answer adds them: " + (", ".join(joined) or "none"))
+    print("LEFT the queue: " + (", ".join(f"#{n}" for n in scoped if n not in listed) or "none"))
+    if not work:
+        print("settled: no scoped PR has an action left for the round")
+
+
 def me():
     """The login behind `gh`; None when it cannot be read."""
     r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
@@ -215,7 +340,11 @@ def main():
     scope_mode = parser.add_mutually_exclusive_group()
     scope_mode.add_argument("--save-scope", type=Path, help="write the listed PR numbers as the round's scope")
     scope_mode.add_argument("--scope", type=Path, help="name the PRs that joined or left since the saved scope")
+    parser.add_argument("--next", action="store_true", help="print the round's work list instead of the table")
+    parser.add_argument("--authority", type=Path, help="with --next: the authority file authority.py init wrote")
     args = parser.parse_args()
+    if args.next and not (args.scope and args.authority):
+        parser.error("--next needs --scope and --authority")
     base = args.base
     if args.save_scope and args.save_scope.exists():
         sys.exit(f"{args.save_scope} already exists; it is the round's original scope. Compare with --scope instead of replacing it")
@@ -247,6 +376,17 @@ def main():
         prs.append(extra)
         stacks[number] = stack_of(slug, number)
     prs.sort(key=lambda p: p["createdAt"])
+    authority = None
+    if args.next:
+        try:
+            authority = json.loads(args.authority.read_text())
+        except (OSError, ValueError) as error:
+            sys.exit(f"could not read the authority file: {error}")
+        if authority.get("repository") != slug:
+            sys.exit(f"{args.authority} is for {authority.get('repository')}, not {slug}")
+        # Only scoped PRs get work; the rest are named as JOINED without reading them further.
+        joined = [p for p in prs if p["number"] not in scoped]
+        prs = [p for p in prs if p["number"] in scoped]
     for p in prs:
         detail = gh_json(["gh", "pr", "view", str(p["number"]), "--json", DETAIL_FIELDS])
         p.update(detail or {"files": [], "statusCheckRollup": []})
@@ -272,6 +412,9 @@ def main():
         mine[p["number"]] = my_review_of(evidence, login, head)
         looks[p["number"]] = since_last_look(assessed.get(p["number"]), head, (final or p).get("baseRefOid"),
                                              (final or p).get("updatedAt"))
+    if args.next:
+        print_next(prs + joined, scoped, slug, authority, assessed, mine, looks, request_states, stacks, login)
+        return
     tiers = load_overrides()
     print(f"{len(prs)} open non-draft PR(s) targeting {base} or a stack rooted on it, oldest first\n")
     hdr = (f'{"PR":<7}{"OPENED":<12}{"AUTHOR":<18}{"RISK":<7}'
@@ -281,10 +424,7 @@ def main():
     print("-" * len(hdr))
     for p in prs:
         paths = [f["path"] for f in (p.get("files") or [])]
-        checks = p.get("statusCheckRollup") or []
-        state = lambda c: c.get("conclusion") or c.get("state")
-        red = [c for c in checks if state(c) in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT")]
-        pend = [c for c in checks if state(c) in ("PENDING", "IN_PROGRESS", "QUEUED", None, "")]
+        red, pend = checks_of(p)
         if p.get("_degraded"):
             ci = "?"          # detail fetch failed; re-check this row by hand
         else:
