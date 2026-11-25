@@ -17,6 +17,7 @@ import round_report
 from render_round import render
 from test_report import fixture
 from decision_fixtures import assessment, TARGET, REVISION
+from test_safety import freshness_read, BENIGN_BASE, MOVED
 
 
 def requirements():
@@ -34,7 +35,7 @@ def requirements():
 class SourceEvidenceTests(unittest.TestCase):
     writes = ()
 
-    def collect(self, *, saved=(), ticket=None, targets=None, merged=True, reviews=None, changes=None, failed=()):
+    def collect(self, *, saved=(), ticket=None, targets=None, merged=True, reviews=None, changes=None, failed=(), reads=None):
         raw, record = fixture()
         raw['timeline'], raw['requestedReviewers'] = [], []
         raw['ticketEvidence'] = ticket or {}
@@ -58,6 +59,7 @@ class SourceEvidenceTests(unittest.TestCase):
                 patch.object(round_report, 'queue_state', return_value='not_queued'), \
                 patch.object(round_report, 'stack_of', return_value=None), \
                 patch.object(ledger, 'heads', return_value={}), \
+                patch.object(subprocess, 'run', side_effect=lambda command, **_: freshness_read(reads or {}, command)), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             round_report.main()
         return json.loads(output.getvalue())[0], errors.getvalue()
@@ -215,14 +217,40 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertFalse(ledger.assessment_current(saved, second['head'], second['base'], second['evidence_inputs']))
         self.assertIn('Owner decision remains limited to C', second['history']['ticketEvidence']['source_snapshots'][0]['body'])
 
-    def test_independent_target_change_or_failed_read_invalidates_matching_pr_base(self):
-        for target in ({**TARGET, 'sha': 'f' * 40}, {**TARGET, 'sha': None}):
-            row, _ = self.collect(targets=[TARGET, target], merged=False)
-            self.assertNotEqual(row['base'], target['sha'])
-            self.assertIn('target-ref-changed-or-unavailable', row['history']['gaps'])
-            self.assertEqual(row['handoffs']['coverage'], 'unknown')
-            saved = assessment(482, head=row['head'], base=row['base'], evidence_inputs=row['evidence_inputs'])
-            self.assertIn('Review again', render([row], 'main', assessments={'repository': row['repository'], 'assessments': [saved]}))
+    def test_a_target_that_moves_during_collection_is_information_and_the_round_closes(self):
+        row, _ = self.collect(targets=[TARGET, MOVED], merged=False)
+        self.assertEqual(row['target_moved'], {'from': TARGET['sha'], 'to': MOVED['sha']})
+        self.assertEqual(row['history']['gaps'], [])
+        self.assertEqual(row['handoffs']['coverage'], 'complete')
+        self.assertIn('Target moved during collection', render([row], 'main'))
+        with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', XDG_STATE_HOME=tmp):
+            rid = ledger.round_start('main', row['repository'])
+            self.assertEqual(ledger.round_blockers([row]), [])
+            ledger.round_end(rid, [482], row['repository'], reconciliation=[row])
+            self.assertEqual(ledger.last_round('main', row['repository'])['prs'], [482])
+
+    def test_only_an_unreadable_target_is_a_gap_and_it_is_not_a_request_gap(self):
+        row, _ = self.collect(targets=[TARGET, {**TARGET, 'sha': None}], merged=False)
+        self.assertIsNone(row['target_moved'])
+        self.assertIn('target-ref-unavailable', row['history']['gaps'])
+        self.assertEqual(row['handoffs']['coverage'], 'complete')
+        saved = assessment(482, head=row['head'], base=row['base'], evidence_inputs=row['evidence_inputs'])
+        self.assertIn('Review again', render([row], 'main', assessments={'repository': row['repository'], 'assessments': [saved]}))
+
+    def test_report_applies_the_guards_rule_to_an_assessment_made_before_the_base_moved(self):
+        first, _ = self.collect(merged=False)
+        older = {**first['evidence_inputs'], 'target': {**TARGET, 'sha': 'e' * 40}}
+        saved = assessment(482, head=first['head'], base=first['base'], evidence_inputs=older)
+        for reads, verdict, label in [(BENIGN_BASE, 'benign', 'Report recommendation'),
+                                      ({**BENIGN_BASE, 'compare': {'status': 'ahead', 'files': [{'filename': 'src/app.py'}]}},
+                                       'stale', 'Review again')]:
+            with self.subTest(verdict=verdict):
+                row, _ = self.collect(saved=[saved], merged=False, changes={'mergeable': 'MERGEABLE'}, reads=reads)
+                self.assertEqual(row['freshness']['verdict'], verdict)
+                page = render([row], 'main')
+                self.assertIn(label, page)
+                self.assertNotIn({'Report recommendation': 'Review again', 'Review again': 'Report recommendation'}[label], page)
+                self.assertIn('Accepted moved inputs' if verdict == 'benign' else 'base changed files this PR changes', page)
 
     def test_snapshot_cli_retains_exact_response_and_refuses_overwrite(self):
         script = Path(__file__).resolve().parents[1] / 'scripts/requirements.py'

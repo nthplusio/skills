@@ -360,6 +360,7 @@ class HandoffTests(unittest.TestCase):
                     patch.object(round_report, "history_evidence", return_value={**raw, "pr": pr}), \
                     patch.object(round_report, "assessment_history", return_value=[first, later]), \
                     patch("ledger.heads", return_value={}), \
+                    patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "unavailable")), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
                 round_report.main()
                 row = json.loads(output.getvalue())[0]

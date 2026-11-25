@@ -28,6 +28,7 @@ import subprocess
 import time
 
 from merge_queue import queue_state
+from freshness import Benign, live_from_view
 from ledger import check_authority, check_clearance, record_write, target_state
 from stacks import stack_of, below
 
@@ -38,8 +39,8 @@ MAX_POLLS = 40
 def state_of(num, repo=None):
     result = subprocess.run([
         "gh", "pr", "view", str(num), *(["--repo", repo] if repo else []), "--json",
-        "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeStateStatus,reviewDecision,mergedAt,"
-        "autoMergeRequest",
+        "id,state,headRefOid,baseRefOid,baseRefName,updatedAt,isDraft,mergeable,mergeStateStatus,reviewDecision,"
+        "mergedAt,autoMergeRequest",
     ], capture_output=True, text=True)
     if result.returncode:
         return {}
@@ -70,12 +71,26 @@ def stack_merge(num, method):
     return result.returncode == 0, (result.stdout + result.stderr).strip()
 
 
-def remember(repo, number, action, head):
+def remember(repo, number, action, head, accepted=None):
     """Record an accepted landing request; a ledger failure must not hide the write that happened."""
     try:
-        record_write(repo, number, action, head)
+        record_write(repo, number, action, head, accepted=accepted)
     except OSError as error:
         print(f"#{number} landing requested, but not recorded in the ledger ({error})")
+
+
+def clearance(args, number, state):
+    """The freshness verdict a landing goes ahead on; raises when it must hold."""
+    return check_clearance(json.loads(args.assessments.read_text()), args.repo, number, live_from_view(state))
+
+
+def drift(args, number, state):
+    """Why the observed state no longer clears the assessment, or None."""
+    try:
+        clearance(args, number, state)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        return str(error)
+    return None
 
 
 def main():
@@ -109,6 +124,7 @@ def main():
     pending = set(heads)
     outcomes = {}
     submitted = set()
+    accepted = {}
     for poll in range(MAX_POLLS + 1):
         if poll:
             time.sleep(POLL_SECONDS)
@@ -145,8 +161,10 @@ def main():
                 try:
                     check_authority(json.loads(args.authority.read_text()), args.repo, number,
                                     "enable-auto-merge" if args.enable_auto_merge else "enqueue", True)
-                    check_clearance(json.loads(args.assessments.read_text()), args.repo, number,
-                                    state.get("headRefOid"), state.get("baseRefOid"), state.get("updatedAt"), state.get("target"))
+                    verdict = clearance(args, number, state)
+                    accepted[number] = verdict.record() if isinstance(verdict, Benign) else None
+                    if accepted[number]:
+                        print(f"#{number} accepted moved inputs: " + "; ".join(verdict.reasons))
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     outcome = f"HELD: {error}"
             if writing and not outcome and args.enable_auto_merge and state.get("autoMergeRequest"):
@@ -168,24 +186,26 @@ def main():
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
                 if ok:
-                    remember(args.repo, number, "enable-auto-merge" if args.enable_auto_merge else "enqueue", heads[number])
+                    remember(args.repo, number, "enable-auto-merge" if args.enable_auto_merge else "enqueue", heads[number],
+                             accepted.get(number))
                 # Read after even an uncertain write. Never retry on its response alone.
                 observed = state_of(number, args.repo)
                 print(f"#{number} post-write: head={observed.get('headRefOid', 'unknown')} / "
                       f"review={observed.get('reviewDecision', 'unknown')} / "
                       f"queue={observed.get('queue_state', 'unknown')} / state={observed.get('state', 'unknown')}")
+                moved = None if observed.get("state") == "MERGED" else drift(args, number, observed)
                 if observed.get("state") == "MERGED":
                     outcomes[number] = "MERGED"
                     pending.remove(number)
                 elif (ok and args.enable_auto_merge and observed.get("autoMergeRequest")
                       and observed.get("headRefOid") == heads[number] and observed.get("reviewDecision") == "APPROVED"
-                      and observed.get("target") == state.get("target")):
+                      and not moved):
                     outcomes[number] = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
                     pending.remove(number)
                     print(f"#{number} {outcomes[number]}")
-                elif (observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED"
-                      or observed.get("target") != state.get("target")):
-                    outcomes[number] = "HELD: post-write head or approval changed, or target moved; reconcile before further writes"
+                elif observed.get("headRefOid") != heads[number] or observed.get("reviewDecision") != "APPROVED" or moved:
+                    outcomes[number] = ("HELD: post-write head or approval changed, or the assessment no longer holds"
+                                        + (f" ({moved})" if moved else "") + "; reconcile before further writes")
                     pending.remove(number)
                     print(f"#{number} {outcomes[number]}")
                 if not ok:
@@ -206,7 +226,7 @@ def main():
             covered = [e["number"] for e in below(ready[number]["stack"], number)] + [number]
             fresh = {n: state_of(n, args.repo) for n in covered}
             if any(fresh[n].get("headRefOid") != heads[n] or fresh[n].get("reviewDecision") != "APPROVED"
-                   or fresh[n].get("queue_state") != "not_queued" or fresh[n].get("target") != ready[n].get("target")
+                   or fresh[n].get("queue_state") != "not_queued" or drift(args, n, fresh[n])
                    for n in covered):
                 print(f"#{number} stack state changed before write; holding this poll")
                 continue
@@ -214,7 +234,7 @@ def main():
             submitted.update(covered)
             for n in covered:
                 if ok:
-                    remember(args.repo, n, "stack-merge", heads[n])
+                    remember(args.repo, n, "stack-merge", heads[n], accepted.get(n))
                 observed = state_of(n, args.repo)
                 print(f"#{n} post-write: head={observed.get('headRefOid', 'unknown')} / "
                       f"review={observed.get('reviewDecision', 'unknown')} / "
@@ -226,8 +246,8 @@ def main():
                     outcomes[n] = "HELD: stack merge failed or outcome uncertain; inspect before retry"
                     pending.discard(n)
                     print(f"#{n} {outcomes[n]} -- {out}")
-                elif observed.get("headRefOid") != heads[n] or observed.get("target") != ready[n].get("target"):
-                    outcomes[n] = "HELD: post-write head changed or target moved; reconcile before further writes"
+                elif observed.get("headRefOid") != heads[n] or drift(args, n, observed):
+                    outcomes[n] = "HELD: post-write head changed or the assessment no longer holds; reconcile before further writes"
                     pending.discard(n)
                     print(f"#{n} {outcomes[n]}")
                 else:
