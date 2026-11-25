@@ -30,6 +30,23 @@ def gh(args, tries=3):
     return None
 
 
+def inline_comments(repo, num):
+    """Every inline review comment on the PR, or None when unreadable."""
+    pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/comments?per_page=100", "--paginate", "--slurp"])
+    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+        return None
+    return [comment for page in pages for comment in page]
+
+
+def review_findings(comments, review_id):
+    """A review's own findings: its inline comments that start a thread, not its replies."""
+    return [c for c in comments if c.get("pull_request_review_id") == review_id and not c.get("in_reply_to_id")]
+
+
+def line_of(comment):
+    return comment.get("line") or comment.get("original_line") or "?"
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: findings.py <pr-number> [review-id ...]")
@@ -54,11 +71,9 @@ def main():
         print("no blocking reviews on this PR")
         return
 
-    pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/comments?per_page=100",
-                "--paginate", "--slurp"])
-    if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+    comments = inline_comments(repo, num)
+    if comments is None:
         sys.exit(f"could not read inline findings for #{num}; coverage unknown")
-    comments = [comment for page in pages for comment in page]
 
     for r in targets:
         who = (r.get("user") or {}).get("login", "?")
@@ -71,9 +86,8 @@ def main():
         mine = [c for c in comments if c.get("pull_request_review_id") == r["id"]]
         print(f"\n--- {len(mine)} inline comment(s) on this review ---")
         for c in mine:
-            line = c.get("line") or c.get("original_line") or "?"
             resolved = " [reply-thread]" if c.get("in_reply_to_id") else ""
-            print(f'\n### {c["path"]}:{line}{resolved}')
+            print(f'\n### {c["path"]}:{line_of(c)} (comment {c["id"]}){resolved}')
             print((c.get("body") or "").strip())
         print()
 

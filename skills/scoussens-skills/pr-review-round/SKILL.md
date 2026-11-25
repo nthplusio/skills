@@ -359,6 +359,17 @@ If you cannot state what you verified, you have not verified it yet. Never
 dismiss conditionally ("if CI comes back clean") — it reads as housekeeping, so
 nobody re-checks it. Full guidance: [`writing-reviews.md`](references/writing-reviews.md).
 
+A review bot does not re-review on its own, so its stale changes request blocks
+a fixed PR until someone dismisses it. `review_write.py dismiss` asks GitHub who
+wrote the review: a bot account follows `dismiss-bot-review`, a person
+`dismiss-human-review`. For a bot's review, record each of its inline findings
+(`findings.py` prints each comment id) in the assessment at the head as
+`verified_findings`, fixed or overstated, with the file and line you checked.
+The helper holds the dismissal and names any finding without a record, and the
+message it posts lists every finding with its record. When the repository's
+guidance names a re-review trigger for its bot, post it with
+`review_write.py comment` before dismissing; do not assume one.
+
 ### 7. Record, sweep again, then report
 
 **Record every PR assessment** with checklist command 3, including clean reviews and the request-event markers it handles. A local assessment is not a posted response or approval. Keep detailed findings with `ledger.record` — each with `status`,

@@ -124,6 +124,11 @@ checked:
 Note the last clause. When several reviews are in force, say which ones still
 gate, so the author is not guessing.
 
+A bot's review is dismissed on structured evidence, not prose alone: the
+assessment at the head records each inline finding as fixed or overstated
+(`verified_findings` in `report.md`), and the helper appends one line per
+finding to the message, with the file and line you checked.
+
 ## Commands
 
 Use the guarded helper after verifying the full head SHA, not an unpinned

@@ -6,7 +6,9 @@ authority.py decides each write: approvals cover an approval that releases
 auto-merge, the reapprove-base-only policy covers `reapprove` (an approval on an
 assessment `reapprove.py --carry` built), and a dismissal follows the
 dismiss-bot-review or dismiss-human-review policy (or a one-PR grant), chosen by
-what GitHub says about the review's author.
+what GitHub says about the review's author. A bot's review is dismissed only
+when the assessment at the head records each of its inline findings as fixed or
+overstated (`verified_findings`); the message lists them with file and line.
 Approvals, change requests and comments are pull request reviews (a comment is a
 COMMENT review), so each carries commit_id and shows in GitHub's review list. A
 review this login already posted at the same head is not posted again.
@@ -25,6 +27,7 @@ from freshness import Benign, live_from_rest, live_from_view
 from land import state_of
 from branch_rules import review_rules, describe, last_pusher
 from reapprove import approved_head
+from findings import inline_comments, line_of, review_findings
 
 # Each review action: the event GitHub takes and the state the posted review shows.
 REVIEWS = {"approve": ("APPROVE", "APPROVED"), "reapprove": ("APPROVE", "APPROVED"),
@@ -52,6 +55,29 @@ def api(path, method="GET", payload=None):
 def is_bot(user):
     """A review bot by GitHub's account type or its `[bot]` login, never by the caller's say-so."""
     return (user or {}).get("type") == "Bot" or ((user or {}).get("login") or "").endswith("[bot]")
+
+
+def verified_bot_findings(repo, number, review_id, assessment, granted):
+    """The dismissal's evidence: each inline finding of the bot's review with the fixed or overstated record
+    the assessment at the reviewed head keeps for it. Raises naming every finding without one."""
+    comments = inline_comments(repo, number)
+    if comments is None:
+        raise RuntimeError(f"HELD: could not read review {review_id}'s inline findings; coverage unknown")
+    found = review_findings(comments, review_id)
+    if not found and not granted:
+        raise RuntimeError(f"HELD: bot review {review_id} has no inline findings for the round to record as verified; "
+                           "dismissing it needs a one-PR grant")
+    records = {r["comment"]: r for r in assessment.get("verified_findings", [])}
+    missing = [f'{c["path"]}:{line_of(c)} (comment {c["id"]})' for c in found if c["id"] not in records]
+    if missing:
+        raise RuntimeError(f'HELD: the assessment at {assessment["head"]} has no fixed or overstated record for '
+                           + "; ".join(missing) + ". Verify each at the head and add it to verified_findings")
+    lines = [f'\n\n## Findings verified at `{assessment["head"]}`']
+    for comment in found:
+        record = records[comment["id"]]
+        lines.append(f'- `{comment["path"]}:{line_of(comment)}` (comment {comment["id"]}): {record["status"]}, '
+                     f'checked at `{record["file"]}:{record["line"]}`. {record["observation"]}')
+    return "\n".join(lines)
 
 
 def existing_review(pull, login, head, state, body):
@@ -169,6 +195,9 @@ def main():
         # dismiss policy or grant whose question names it.
         if args.action in ("approve", "reapprove", "dismiss"):
             require_resolved(assessment)
+        if write == "dismiss-bot":
+            granted = any(g.get("pr") == args.number and g.get("action") == write for g in authority.get("grants", []))
+            body += verified_bot_findings(args.repo, args.number, args.review_id, assessment, granted)
 
         # Every check above still runs on a retry; only then does an existing review end it.
         if args.action in REVIEWS:

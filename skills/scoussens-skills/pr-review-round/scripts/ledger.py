@@ -109,6 +109,11 @@ def validate_assessment(assessment):
             or not carried.get("at") or not isinstance(carried.get("commits"), list) or not carried["commits"]
             or not assessment.get("provenance")):
         raise ValueError("carried requires from_head, this head, the check, its commits and time, plus a provenance")
+    for finding in assessment.get("verified_findings", []):
+        if (type(finding.get("comment")) is not int or finding.get("status") not in ("fixed", "overstated")
+                or not finding.get("file") or type(finding.get("line")) is not int or not finding.get("observation")):
+            raise ValueError("verified finding requires the inline comment id, status fixed or overstated, "
+                             "the file and line checked at the head, and the observation")
     gate = assessment.get("approval_gate")
     if gate and not all(gate.get(k) for k in ("owner", "source", "reason")):
         raise ValueError("approval gate requires owner, source and reason from repository setup/policy")

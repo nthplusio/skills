@@ -29,6 +29,13 @@ MOVED = {**TARGET, "sha": "f" * 40}
 LATER = "2026-11-11T21:00:00Z"
 BOT = {"login": "review-bot[bot]", "type": "Bot"}
 PERSON = {"login": "alex", "type": "User"}
+# Review 9's inline findings from review-bot[bot], and the records an assessment keeps for them.
+INLINE = [{"id": 301, "pull_request_review_id": 9, "path": "src/app.py", "line": 12, "body": "Unchecked None"},
+          {"id": 302, "pull_request_review_id": 9, "path": "src/db.py", "line": None, "original_line": 40,
+           "body": "Possible N+1 query"}]
+VERIFIED = [{"comment": 301, "status": "fixed", "file": "src/app.py", "line": 14, "observation": "Guard added"},
+            {"comment": 302, "status": "overstated", "file": "src/db.py", "line": 40,
+             "observation": "Caller batches the ids"}]
 # The base moved without touching the PR's one file.
 BENIGN_BASE = {"compare": {"status": "ahead", "files": [{"filename": "docs/other.md"}]},
                "files": [{"filename": "src/app.py"}]}
@@ -339,10 +346,11 @@ class QueueReportTests(unittest.TestCase):
 class ReviewWriteTests(unittest.TestCase):
     def run_write(self, action, *, flags=(), snapshots=None, failure=False, author="author", item=None, permission=None,
                   target=TARGET, after=None, rules=None, pusher=None, reads=None, prior=(), reviews=None,
-                  lost_reply=False, dismissed=PERSON):
+                  lost_reply=False, dismissed=PERSON, inline=()):
         """`reviews` is the PR's review list on GitHub; pass the same list to two runs to model a retry.
         `lost_reply` posts the review but returns an error, like a timeout after GitHub accepted it.
-        `dismissed` is the author GitHub reports for review 9, the one a dismissal targets."""
+        `dismissed` is the author GitHub reports for review 9, the one a dismissal targets, and `inline`
+        the PR's inline review comments."""
         writes = []
         reviews = [] if reviews is None else reviews
         snapshots = iter(snapshots or [{"head": {"sha": HEAD}, "state": "open",
@@ -358,6 +366,8 @@ class ReviewWriteTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, json.dumps([reviews[:1], reviews[1:]]), "")
             if freshness_read(reads or {}, command):
                 return freshness_read(reads or {}, command)
+            if command[2].startswith("repos/owner/repo/pulls/17/comments?"):
+                return subprocess.CompletedProcess(command, 0, json.dumps([list(inline)]), "")
             if command[2] == "repos/owner/repo/pulls/17/reviews/9":
                 if dismissed is None:
                     return subprocess.CompletedProcess(command, 1, "", "HTTP 502")
@@ -456,11 +466,50 @@ class ReviewWriteTests(unittest.TestCase):
                                                                                       "dismiss-human-review": "never"}})
         self.assertEqual((writes, code), ([], 1), output)
 
+    def test_a_bot_review_is_dismissed_only_when_every_inline_finding_is_verified_at_the_head(self):
+        bots_only = authority(grants=(), policies={"dismiss-bot-review": "auto"})
+        # The bot's two findings, a reply in one of its threads, and a finding from another review.
+        inline = [*INLINE, {**INLINE[0], "id": 303, "in_reply_to_id": 301},
+                  {**INLINE[1], "id": 304, "pull_request_review_id": 8}]
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=VERIFIED))
+        self.assertEqual((len(writes), code), (1, 0), output)
+        message = writes[0][1]["message"]
+        self.assertIn(f"## Findings verified at `{HEAD}`", message)
+        self.assertIn("- `src/app.py:12` (comment 301): fixed, checked at `src/app.py:14`. Guard added", message)
+        self.assertIn("- `src/db.py:40` (comment 302): overstated, checked at `src/db.py:40`. Caller", message)
+        self.assertNotIn("comment 303", message)
+        self.assertNotIn("comment 304", message)
+        # One finding without a record holds the dismissal and names it.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=VERIFIED[:1]))
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("no fixed or overstated record for src/db.py:40 (comment 302)", output)
+        self.assertNotIn("comment 301", output)
+        # A record that is not fixed or overstated is not a verification.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT,
+                                              inline=inline, item=assessment(verified_findings=[
+                                                  VERIFIED[0], {**VERIFIED[1], "status": "open"}]))
+        self.assertEqual((writes, code), ([], 1), output)
+        # A bot review with no inline findings leaves nothing to verify: auto holds, a one-PR grant may dismiss it.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=BOT)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("no inline findings", output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], dismissed=BOT,
+                                              permission=authority(grants=("dismiss-bot",)))
+        self.assertEqual((len(writes), code), (1, 0), output)
+        # A person's review keeps its own policy and free-text evidence.
+        writes, output, code = self.run_write("dismiss", flags=["--write"], dismissed=PERSON, inline=inline)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        self.assertNotIn("Findings verified", writes[0][1]["message"])
+
     def test_whose_review_a_dismissal_targets_comes_from_github_and_picks_the_policy(self):
         bots_only = authority(grants=(), policies={"dismiss-bot-review": "auto", "dismiss-human-review": "ask"})
+        verified = assessment(verified_findings=[VERIFIED[0]])
         for user in (BOT, {"login": "review-bot[bot]", "type": "User"}, {"login": "linter", "type": "Bot"}):
             with self.subTest(user=user):
-                writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=user)
+                writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=user,
+                                                      inline=INLINE[:1], item=verified)
                 self.assertEqual((len(writes), code), (1, 0), output)
                 self.assertTrue(writes[0][0].endswith("/reviews/9/dismissals"))
         writes, output, code = self.run_write("dismiss", flags=["--write"], permission=bots_only, dismissed=PERSON)
