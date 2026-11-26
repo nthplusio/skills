@@ -5,6 +5,7 @@ land.py [--watch] <pr-number> [pr-number ...]
 land.py --enqueue <pr-number>:<reviewed-full-sha> [...]
 land.py --enqueue --stack-method squash <pr>:<sha> [<lower-pr>:<sha> ...]
 land.py --enable-auto-merge <pr>:<reviewed-full-sha> [...]
+land.py --requeue-flake --failure-log <log> <pr>:<reviewed-full-sha>
 
 --enable-auto-merge after this round's own approval at the reviewed head is
 governed by the auto-merge-on-approval policy; on a PR someone else approved it
@@ -36,6 +37,13 @@ assessment at that head has nothing unresolved. The write records each
 condition. Under `ask` the hold names who can approve (approvers.py). When
 GitHub refuses, for example because the base requires a human approval, the
 helper prints the head-bound command a person can run. It never bypasses.
+
+--requeue-flake puts a PR the merge queue removed for a failing check back in the
+queue, under the requeue-flake policy (action requeue), with every --enqueue gate.
+It goes ahead only when the failing log (`gh run view <run> --log-failed` of the
+merge-group run) names a test that a line of the profile's `flakes` reference lists
+beside a ticket key, and only once per PR: the ledger records the requeue, so a
+second removal holds for a person.
 """
 import argparse
 import json
@@ -52,6 +60,9 @@ from review_requests import effective_reviews
 from freshness import Benign, live_from_view
 from ledger import check_authority, check_clearance, record_write, target_state, writes
 from stacks import stack_of, below
+from review_config import resolve
+
+TICKET = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
 
 POLL_SECONDS = 30
 MAX_POLLS = 40
@@ -155,11 +166,23 @@ def own_conditions(repo, number, head):
     return observed
 
 
+def flake_ticket(log, references):
+    """The ticket of the first `flakes` reference line whose backticked test name appears in the failing log."""
+    for path in references:
+        for line in Path(path).read_text().splitlines():
+            ticket = TICKET.search(line)
+            if ticket and any(test in log for test in re.findall(r"`([^`]+)`", line)):
+                return ticket[0]
+    return None
+
+
 def landing_action(args, number, head, own=None):
     """Auto-merge after this round's own approval at the head, the sweep of a PR someone else approved,
     or the landing of a PR the round cannot approve because it is the user's own."""
     if own:
         return "land-own-pr"
+    if args.requeue_flake:
+        return "requeue"
     if not args.enable_auto_merge:
         return "enqueue"
     own = any(w.get("number") == number and w.get("action") in ("approve", "reapprove") and w.get("head") == head
@@ -187,6 +210,8 @@ def main():
     mode.add_argument("--watch", action="store_true", help="read-only (default)")
     mode.add_argument("--enqueue", action="store_true", help="authorized merge requests only")
     mode.add_argument("--enable-auto-merge", action="store_true", help="same landing gates, including the first attempt")
+    mode.add_argument("--requeue-flake", action="store_true", help="requeue once after a removal for a known flake")
+    parser.add_argument("--failure-log", type=Path, help="with --requeue-flake: the failing run's log")
     parser.add_argument("--repo")
     parser.add_argument("--authority", type=Path)
     parser.add_argument("--assessments", type=Path)
@@ -194,9 +219,17 @@ def main():
                         help="merge method for stacked PRs; a merge queue on the base still chooses its own")
     parser.add_argument("prs", nargs="+")
     args = parser.parse_args()
-    writing = args.enqueue or args.enable_auto_merge
+    writing = args.enqueue or args.enable_auto_merge or args.requeue_flake
     if writing and not all((args.repo, args.authority, args.assessments)):
         parser.error("landing requires --repo, --authority and --assessments; flags alone grant no authority")
+    if args.requeue_flake != bool(args.failure_log):
+        parser.error("--requeue-flake and --failure-log go together")
+    flake = None
+    if args.requeue_flake:
+        try:
+            flake = flake_ticket(args.failure_log.read_text(), resolve(".")["references"].get("flakes", []))
+        except (OSError, ValueError) as error:
+            parser.error(f"could not read the failing log or the flakes reference: {error}")
     heads = {}
     for value in args.prs:
         pattern = r"([1-9][0-9]*):([0-9a-f]{40})" if writing else r"([1-9][0-9]*)"
@@ -241,6 +274,12 @@ def main():
                 outcome = "HELD: open non-draft state not confirmed"
             elif writing and state.get("reviewDecision") != "APPROVED" and not own:
                 outcome = "HELD: current approval not confirmed"
+            elif args.requeue_flake and any(w.get("number") == number and w.get("action") == "requeue"
+                                            for w in writes(args.repo)):
+                outcome = "HELD: the round already requeued this PR once after a flaky failure; a person decides now"
+            elif args.requeue_flake and not flake:
+                outcome = ("HELD: the failing log names no test the profile's flakes reference lists; "
+                           "treat the failure as real")
             elif writing and (state.get("stack") or {}).get("status") == "unknown":
                 outcome = "HELD: stack membership unknown; re-read before landing"
             elif writing and (state.get("stack") or {}).get("kind") == "branch":
@@ -298,8 +337,10 @@ def main():
                 ok, out = enqueue(number, heads[number], args.repo, args.enable_auto_merge)
                 submitted.add(number)
                 if ok:
-                    action = "land-own-pr" if number in owned else "enable-auto-merge" if args.enable_auto_merge else "enqueue"
-                    remember(args.repo, number, action, heads[number], accepted.get(number), owned.get(number))
+                    action = ("land-own-pr" if number in owned else "enable-auto-merge" if args.enable_auto_merge
+                              else "requeue" if args.requeue_flake else "enqueue")
+                    remember(args.repo, number, action, heads[number], accepted.get(number),
+                             owned.get(number) or ({"flake": flake} if args.requeue_flake else None))
                 # Read after even an uncertain write. Never retry on its response alone.
                 observed = state_of(number, args.repo)
                 print(f"#{number} post-write: head={observed.get('headRefOid', 'unknown')} / "

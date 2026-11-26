@@ -233,6 +233,16 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
             waits.append("owner: approved stack layer; landing it with land.py --enqueue needs a merge grant")
         elif queued():
             waits.append("GitHub: in the merge queue")
+        elif p.get("_dequeued"):
+            # The sweep would requeue it whatever failed; a flake requeue is the one automatic way back.
+            if p.get("_requeued"):
+                waits.append("owner: removed from the merge queue again after the round's one flake requeue")
+            elif allowed("requeue"):
+                actions.append("requeue-flake: removed from the merge queue; with the failing merge-group run's log, "
+                               f'land.py --requeue-flake --failure-log <log> {p["number"]}:<head> requeues it once '
+                               "if the failure is a listed flake")
+            else:
+                waits.append("owner: removed from the merge queue for a failing check; the requeue-flake policy is not auto")
         elif allowed("sweep-auto-merge"):
             actions.append("sweep: approved with auto-merge off; land.py --enable-auto-merge")
         else:
@@ -453,6 +463,10 @@ def main():
         request_states[p["number"]] = reconcile(evidence, [m for m in markers if m["head"] == head])
         mine[p["number"]] = my_review_of(evidence, login, head)
         p["_stale_bot"] = superseded_bot_reviews(evidence["pr"].get("reviews", []), head)
+        queue_events = [e.get("event") for e in evidence.get("timeline", [])
+                        if e.get("event") in ("added_to_merge_queue", "removed_from_merge_queue")]
+        p["_dequeued"] = queue_events[-1:] == ["removed_from_merge_queue"]
+        p["_requeued"] = any(w.get("number") == p["number"] and w.get("action") == "requeue" for w in writes(slug))
         p["_base_changed"] = max((e.get("created_at") or "" for e in evidence.get("timeline", [])
                                   if e.get("event") in ("base_ref_changed", "automatic_base_change_succeeded")),
                                  default=None)

@@ -345,7 +345,7 @@ LEVELS = {
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
 SEPARATE = ("dismiss-bot", "dismiss-human", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove",
-            "land-own-pr")
+            "land-own-pr", "requeue")
 # Writes that can make a PR merge, directly or by releasing an author's auto-merge.
 LANDING = ("approve", *SEPARATE)
 GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}

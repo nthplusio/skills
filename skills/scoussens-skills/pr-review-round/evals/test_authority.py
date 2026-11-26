@@ -47,10 +47,11 @@ class AuthorityTests(unittest.TestCase):
                          ("owner/repo", [3614, 3620], "review", True))
         self.assertEqual(record["policies"], {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto",
                                               "dismiss-bot-review": "auto", "dismiss-human-review": "ask",
-                                              "own-pr-landing": "ask", "reapprove-base-only": "auto"})
+                                              "own-pr-landing": "ask", "reapprove-base-only": "auto", "requeue-flake": "ask"})
         self.assertEqual(record["sources"], {"level": "answer", "approvals": "answer", "mode": "default", "policies": {
             "auto-merge-on-approval": "default", "auto-merge-sweep": "default", "dismiss-bot-review": "answer",
-            "dismiss-human-review": "default", "own-pr-landing": "default", "reapprove-base-only": "default"}})
+            "dismiss-human-review": "default", "own-pr-landing": "default", "reapprove-base-only": "default",
+            "requeue-flake": "default"}})
         self.assertEqual(record["instruction"], words)
         self.assertTrue(record["possible_landing"])
         # The record it wrote is the one the write helpers accept, auto-merge included.
@@ -93,14 +94,14 @@ class AuthorityTests(unittest.TestCase):
     def test_questions_list_only_what_the_profile_and_answers_leave_open(self):
         every = self.run_cli("questions", "--root", self.root)
         for key in ("level:", "approvals:", "auto-merge-on-approval:", "auto-merge-sweep:", "dismiss-bot-review:",
-                    "dismiss-human-review:", "own-pr-landing:", "reapprove-base-only:"):
+                    "dismiss-human-review:", "own-pr-landing:", "reapprove-base-only:", "requeue-flake:"):
             self.assertIn(key, every)
         self.assertIn("Recommended: ask.", every)
         self.profile({"level": "review", "approvals": True, "policies": {"auto-merge-sweep": "auto"}})
         (self.tmp / "answers.json").write_text(json.dumps({"policies": {"dismiss-bot-review": "never", "dismiss-human-review": "ask"}, "instruction": "x"}))
         left = self.run_cli("questions", "--root", self.root, "--answers", self.tmp / "answers.json")
         self.assertEqual([line.split(":")[0] for line in left.splitlines() if "Recommended" in line],
-                         ["auto-merge-on-approval", "own-pr-landing", "reapprove-base-only", "mode"])
+                         ["auto-merge-on-approval", "own-pr-landing", "reapprove-base-only", "requeue-flake", "mode"])
         self.assertIn("From the review profile", left)
         self.assertIn("level review; approvals yes; auto-merge-sweep auto", left)
 

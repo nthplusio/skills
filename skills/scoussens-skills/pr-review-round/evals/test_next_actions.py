@@ -190,5 +190,19 @@ class NextActionTests(unittest.TestCase):
         self.assertIn("author: red CI", text)
 
 
+    def test_a_pr_the_merge_queue_removed_is_a_flake_requeue_not_a_sweep(self):
+        self.save(assessment(27))
+        removed = {27: [{"event": "added_to_merge_queue", "created_at": "2026-11-11T19:00:00Z"},
+                        {"event": "removed_from_merge_queue", "created_at": "2026-11-11T19:20:00Z"}]}
+        rows = [row(27, decision="APPROVED")]
+        work, _ = self.sections(self.next_actions(rows, [27], timeline=removed, policies={"requeue-flake": "auto"}))
+        self.assertIn("#27     requeue-flake: removed from the merge queue", work)
+        self.assertNotIn("sweep", work)
+        ledger.record_write("owner/repo", 27, "requeue", HEAD)
+        work, waiting = self.sections(self.next_actions(rows, [27], timeline=removed, policies={"requeue-flake": "auto"}))
+        self.assertNotIn("#27", work)
+        self.assertIn("removed from the merge queue again after the round's one flake requeue", waiting)
+
+
 if __name__ == "__main__":
     unittest.main()

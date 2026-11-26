@@ -140,7 +140,7 @@ class LandingTests(unittest.TestCase):
             assessment_file.write_text(json.dumps(bundle(item)))
             authority_file.write_text(json.dumps(permission or authority()))
             argv = args or ["--enqueue", f"17:{HEAD}"]
-            if "--enqueue" in argv or "--enable-auto-merge" in argv:
+            if {"--enqueue", "--enable-auto-merge", "--requeue-flake"} & set(argv):
                 argv = [*argv, "--repo", "owner/repo", "--authority", str(authority_file),
                         "--assessments", str(assessment_file)]
             with patch.object(sys, "argv", ["land.py", *argv]), \
@@ -174,6 +174,37 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(self.recorded, [])
         self.run_land([state()], ["--watch", "17"])
         self.assertEqual(self.recorded, [])
+
+    def test_a_flaky_removal_from_the_merge_queue_is_requeued_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            (root / ".nthplusio-skills").mkdir()
+            (root / ".nthplusio-skills/review.json").write_text(json.dumps(
+                {"schema_version": 1, "references": {"flakes": {"files": ["flakes.md"]}}}))
+            (root / "flakes.md").write_text("- INT-2911: `test_preview_pair_timeout` times out under load\n")
+            log = root / "failed.log"
+            previous = os.getcwd()
+            os.chdir(root)  # the profile is read from the repository root, as from a round
+            self.addCleanup(os.chdir, previous)
+            item = assessment(evidence_inputs={**assessment()["evidence_inputs"],
+                                               "policy": ledger.review_config(".")["revision"]})
+            permission = authority(grants=(), policies={"requeue-flake": "auto"})
+            run = lambda text, prior=(): (log.write_text(text), self.run_land(
+                [state(), state(queue_state="queued")], ["--requeue-flake", "--failure-log", str(log), f"17:{HEAD}"],
+                item=item, permission=permission, prior=prior))[1]
+            flaky = "FAILED tests/test_preview.py::test_preview_pair_timeout - TimeoutError"
+            writes, output, _ = run(flaky)
+            self.assertEqual(writes, 1, output)
+            self.assertEqual([(w["action"], w.get("conditions")) for w in self.recorded],
+                             [("requeue", {"flake": "INT-2911"})])
+            # A second removal holds: the ledger already records the one requeue.
+            writes, output, _ = run(flaky, prior=("requeue",))
+            self.assertEqual(writes, 0, output)
+            self.assertIn("already requeued this PR once", output)
+            # A failure that is not a listed flake is real.
+            writes, output, _ = run("FAILED tests/test_store.py::test_rollback - AssertionError")
+            self.assertEqual(writes, 0, output)
+            self.assertIn("names no test the profile's flakes reference lists", output)
 
     def test_conflict_is_not_landed(self):
         _, output, code = self.run_land([state(), state(mergeStateStatus="DIRTY")])

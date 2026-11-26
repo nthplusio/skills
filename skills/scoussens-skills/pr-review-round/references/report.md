@@ -132,11 +132,13 @@ Every write additionally takes `--authority authority.json`, which `authority.py
 ```json
 {"version": 2, "repository": "owner/repo", "prs": [3614, 3620], "level": "review", "approvals": true,
  "policies": {"auto-merge-on-approval": "auto", "auto-merge-sweep": "auto", "dismiss-bot-review": "auto",
-              "dismiss-human-review": "ask", "own-pr-landing": "ask", "reapprove-base-only": "auto"},
+              "dismiss-human-review": "ask", "own-pr-landing": "ask", "reapprove-base-only": "auto",
+              "requeue-flake": "ask"},
  "mode": "watch", "until": "2026-11-25T22:00:00Z",
  "sources": {"level": "answer", "approvals": "answer", "mode": "answer",
              "policies": {"auto-merge-on-approval": "default", "auto-merge-sweep": "profile", "dismiss-bot-review": "answer",
-                          "dismiss-human-review": "default", "own-pr-landing": "default", "reapprove-base-only": "default"}},
+                          "dismiss-human-review": "default", "own-pr-landing": "default", "reapprove-base-only": "default",
+                          "requeue-flake": "default"}},
  "instruction": "<the user's exact words, or the profile path for profile defaults>", "profile": "<profile path or null>",
  "actions": ["comment", "request-changes", "approve", "enable-auto-merge", "sweep-auto-merge", "dismiss-bot", "reapprove"], "possible_landing": true,
  "grants": [{"pr": 3620, "action": "dismiss-human", "instruction": "dismiss Alex's review on #3620", "at": "<time>"}]}
