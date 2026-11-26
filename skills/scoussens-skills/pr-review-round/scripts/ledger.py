@@ -128,9 +128,10 @@ def validate_assessment(assessment):
     if carried is not None and (
             not isinstance(carried, dict) or carried.get("head") != assessment["head"]
             or not re.fullmatch(r"[0-9a-f]{40}", carried.get("from_head") or "") or not carried.get("check")
-            or not carried.get("at") or not isinstance(carried.get("commits"), list) or not carried["commits"]
-            or not assessment.get("provenance")):
-        raise ValueError("carried requires from_head, this head, the check, its commits and time, plus a provenance")
+            or not carried.get("at") or not isinstance(carried.get("commits"), list)
+            or not (carried["commits"] or carried["from_head"] == carried["head"]) or not assessment.get("provenance")):
+        raise ValueError("carried requires from_head, this head, the check, its commits (none only when the head is "
+                         "unchanged) and time, plus a provenance")
     for finding in assessment.get("verified_findings", []):
         if (type(finding.get("comment")) is not int or finding.get("status") not in ("fixed", "overstated")
                 or not finding.get("file") or type(finding.get("line")) is not int or not finding.get("observation")):

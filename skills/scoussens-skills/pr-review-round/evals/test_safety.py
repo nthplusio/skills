@@ -849,7 +849,10 @@ class ReviewWriteTests(unittest.TestCase):
         writes, output, code = self.run_write("approve", flags=["--write"], permission=never)
         self.assertEqual((len(writes), code), (1, 0), output)
         # Each action needs its own kind of assessment, and a re-approval needs the round's own earlier approval.
-        for action, item, held, message in (("approve", carried, prior, "carried from an earlier head"),
+        # Carried from an assessment the round never approved: an ordinary approval of the carried review.
+        writes, output, code = self.run_write("approve", flags=["--write"], item=carried)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        for action, item, held, message in (("approve", carried, prior, "carried from the round's approval"),
                                             ("reapprove", assessment(), prior, "reapprove needs an assessment"),
                                             ("reapprove", carried, (), "the ledger records none"),
                                             ("reapprove", carried, ({**prior[0], "head": "e" * 40},), "at eeeeeeeee")):

@@ -4,7 +4,8 @@
 Without --write this only reports the held action. The authority file from
 authority.py decides each write: approvals cover an approval that releases
 auto-merge, the reapprove-base-only policy covers `reapprove` (an approval on an
-assessment `reapprove.py --carry` built), and a dismissal follows the
+assessment `reapprove.py --carry` built from the round's approval; `approve` takes
+one carried from an assessment the round never approved), and a dismissal follows the
 dismiss-bot-review or dismiss-human-review policy (or a one-PR grant), chosen by
 what GitHub says about the review's author. A bot's review is dismissed only
 when the assessment at the head records each of its inline findings as fixed or
@@ -153,10 +154,11 @@ def main():
         # A re-approval stands on an assessment reapprove.py carried from the round's own approval; a fresh
         # approval stands on a review of this head. Keeping them apart is what lets reapprove-base-only be never.
         carried = assessment.get("carried")
-        if args.action == "approve" and carried:
-            raise ValueError("this assessment was carried from an earlier head; post it with reapprove, or review the head")
+        approved = approved_head(args.repo, args.number) if carried or args.action == "reapprove" else None
+        if args.action == "approve" and carried and carried["from_head"] == approved:
+            raise ValueError("this assessment was carried from the round's approval; post it with reapprove, "
+                             "or review the head")
         if args.action == "reapprove":
-            approved = approved_head(args.repo, args.number)
             if not carried or carried["from_head"] != approved:
                 raise ValueError("reapprove needs an assessment reapprove.py --carry built from the round's last approval"
                                  + (f" at {approved[:9]}" if approved else "; the ledger records none"))

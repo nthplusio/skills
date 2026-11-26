@@ -76,7 +76,7 @@ class NextActionTests(unittest.TestCase):
                 patch.object(queue, "me", return_value="reviewer"), \
                 patch.object(queue, "stack_of", return_value=None), \
                 patch.object(queue, "collect", side_effect=lambda slug, n: evidence((reviews or {}).get(n))), \
-                patch.object(queue, "reapprove_check", side_effect=lambda slug, n: ({"base_only": n in base_only}, None)), \
+                patch.object(queue, "reapprove_check", side_effect=lambda slug, n, since=None: ({"base_only": n in base_only}, None)), \
                 contextlib.redirect_stdout(output):
             queue.main()
         return output.getvalue()

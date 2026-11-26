@@ -153,8 +153,8 @@ def checks_of(p):
 def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale):
     """What the round can still do on one scoped PR, and who else it waits on: (actions, waits).
 
-    `allowed(action)` asks the authority file; `base_only()` and `stale()` read the forge, so they run
-    only where the answer matters."""
+    `allowed(action)` asks the authority file; `base_only(since)` and `stale()` read the forge, so they run
+    only where the answer matters. `base_only` checks since the round's approval, or since `since`."""
     actions, waits = [], []
     if requests["unhandled"]:
         actions.append(f'record a disposition for {requests["unhandled"]} review request(s)')
@@ -163,15 +163,18 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
     if p.get("_degraded"):
         return actions + ["read it again: its files and checks were unreadable"], waits
     if look in ("new", "HEAD MOVED"):
-        if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only():
+        if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only(None):
             actions.append("reapprove: only clean base merges since the round's approval")
+        elif look == "HEAD MOVED" and base_only(saved["head"]):
+            actions.append(f'carry: only clean base merges since the assessment; reapprove.py {p["number"]} --carry')
         else:
             actions.append("review: no saved assessment" if look == "new"
                            else f'review at new head {p["headRefOid"][:9]}')
         return actions, waits
     reasons = stale() if look in ("base moved", "discussion changed") else []
     if reasons:
-        return actions + ["review again: " + "; ".join(reasons)], waits
+        return actions + ["review again: " + "; ".join(reasons) + "; or read it and, when the review holds, "
+                          f'reapprove.py {p["number"]} --carry --read "<why>"'], waits
     red, pending = checks_of(p)
     blocker = blocker_of(p, red, mine)
     author = blocker.startswith("AUTHOR:")
@@ -245,7 +248,7 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
         actions, waits = round_work(
             p, saved.get(n), mine[n], looks[n], request_states[n], stacks.get(n),
             login is not None and p["author"]["login"] == login, lambda action: allowed(n, action),
-            lambda: reapprove_check(slug, n)[0]["base_only"], lambda: stale(p))
+            lambda since: reapprove_check(slug, n, since)[0]["base_only"], lambda: stale(p))
         work += [f"  #{n:<6} {'; '.join(actions)}"] if actions else []
         waiting += [f"  #{n:<6} {'; '.join(waits)}"] if waits else []
     mode = authority.get("mode", "once")
