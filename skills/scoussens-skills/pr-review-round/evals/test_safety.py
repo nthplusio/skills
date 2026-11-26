@@ -89,6 +89,8 @@ class LandingTests(unittest.TestCase):
 
         def forge(command, **kwargs):
             nonlocal current
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 128, "", "fatal: not a git repository")
             if command[:3] == ["gh", "pr", "view"]:
                 current = next(snapshots, current)
                 payload = {"id": "PR_fixture", **current}
@@ -145,7 +147,7 @@ class LandingTests(unittest.TestCase):
                 patch.object(subprocess, "run", side_effect=forge), \
                 patch.dict(os.environ, XDG_STATE_HOME=tmp), \
                 patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), \
-                contextlib.redirect_stdout(output):
+                patch.object(freshness.time, "sleep"), contextlib.redirect_stdout(output):
                 for write in prior:
                     ledger.record_write("owner/repo", 17, write, HEAD)
                 code = land.main()
@@ -456,6 +458,8 @@ class ReviewWriteTests(unittest.TestCase):
                                       "draft": False, "auto_merge": None, "user": {"login": author}}] * 2)
 
         def forge(command, **kwargs):
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 128, "", "fatal: not a git repository")
             if "/git/ref/heads/" in command[2]:
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": (target or {}).get("sha")}}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -499,7 +503,7 @@ class ReviewWriteTests(unittest.TestCase):
                                            "--head", HEAD, "--body-file", str(body),
                                            "--review-id", "9", "--authority", str(authority_file),
                                            "--assessments", str(assessment_file), *flags]), \
-                    patch.object(subprocess, "run", side_effect=forge), \
+                    patch.object(subprocess, "run", side_effect=forge), patch.object(freshness.time, "sleep"), \
                     patch.dict(os.environ, XDG_STATE_HOME=directory), \
                     patch.object(review_write, "state_of", return_value=after or state()), \
                     patch.object(review_write, "review_rules", return_value=rules), \

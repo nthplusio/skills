@@ -52,7 +52,7 @@ import related
 # time, where a single failure degrades one row instead of the whole run.
 LIST_FIELDS = ("number,title,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,changedFiles,"
-               "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository")
+               "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository,baseRefName,id")
 DETAIL_FIELDS = "files,statusCheckRollup,body"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
@@ -195,7 +195,10 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
     elif author:
         pass  # nothing lands until the branch changes, and that is a new head to review
     elif p.get("reviewDecision") == "APPROVED":
-        if stacked and allowed("enqueue"):
+        if (stacked or {}).get("kind") == "branch":
+            parent = stacked["entries"][0]["number"]
+            waits.append(f"#{parent}: based on its branch; lands after #{parent} merges and GitHub retargets it")
+        elif stacked and allowed("enqueue"):
             actions.append("land: approved stack layer; land.py --enqueue --stack-method")
         elif stacked:
             waits.append("owner: approved stack layer; landing it with land.py --enqueue needs a merge grant")
@@ -228,7 +231,9 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
 
     def stale(p):
         assessment = saved[p["number"]]
-        live = live_from_view({**p, "target": target_state(slug, (assessment["evidence_inputs"].get("target") or {}).get("ref"))})
+        # The PR's live base, not the saved ref: a stacked PR's base is its parent's branch, then the base it is retargeted to.
+        ref = p.get("baseRefName") or (assessment["evidence_inputs"].get("target") or {}).get("ref")
+        live = live_from_view({**p, "target": target_state(slug, ref)})
         verdict = classify(assessment, live, policy=review_config(".")["revision"], repo=slug,
                            number=p["number"], writes=writes(slug))
         return list(verdict.reasons) if isinstance(verdict, Stale) else []
@@ -238,7 +243,7 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
     for p in (p for p in prs if p["number"] in scoped):
         n = p["number"]
         actions, waits = round_work(
-            p, saved.get(n), mine[n], looks[n], request_states[n], bool(stacks.get(n)),
+            p, saved.get(n), mine[n], looks[n], request_states[n], stacks.get(n),
             login is not None and p["author"]["login"] == login, lambda action: allowed(n, action),
             lambda: reapprove_check(slug, n)[0]["base_only"], lambda: stale(p))
         work += [f"  #{n:<6} {'; '.join(actions)}"] if actions else []

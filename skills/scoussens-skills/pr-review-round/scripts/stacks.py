@@ -9,49 +9,72 @@ GitHub retargets it. So `gh pr list --base <base>` misses upper layers, a
 child's diff is against its parent branch, GitHub refuses per-PR auto-merge for
 any stack member, and `gh stack merge <pr>` lands that PR plus every unmerged
 PR below it. Read-only: this module never changes a stack.
+
+A PR whose base is another open PR's head branch is stacked too, without
+`gh stack`: its diff is against that branch, and it lands after that PR merges
+and GitHub retargets it. Its stack has `kind: "branch"` and the parent as the
+entry below it.
 """
 import argparse
 import json
 import subprocess
 
+PR = "number state isDraft baseRefName headRefName headRefOid"
+STACK = (" stackEntry { position stack { number size baseRefName"
+         f" entries(first: 50) {{ totalCount nodes {{ position pullRequest {{ {PR} }} }} }} }} }}")
+# Open PRs whose head branch is this PR's base: the parent of a branch stack.
+PARENT = f" baseRef {{ associatedPullRequests(states: OPEN, first: 5) {{ totalCount nodes {{ {PR} }} }} }}"
 QUERY = ("query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {"
-         " pullRequest(number: $number) { stackEntry { position stack { number size baseRefName"
-         " entries(first: 50) { totalCount nodes { position pullRequest {"
-         " number state isDraft baseRefName headRefName headRefOid } } } } } } } }")
+         f" pullRequest(number: $number) {{ {PR}{PARENT}%s }} }} }}")
 UNKNOWN = {"status": "unknown"}
+
+
+def _entry(position, pr):
+    return {"position": position, "number": pr["number"], "state": pr["state"], "isDraft": pr["isDraft"],
+            "base": pr["baseRefName"], "head": pr["headRefName"], "headOid": pr["headRefOid"]}
+
+
+def _read(repo, number, with_stack):
+    owner, name = repo.split("/", 1)
+    query = QUERY % (STACK if with_stack else "")
+    result = subprocess.run(["gh", "api", "graphql", "-f", f"query={query}", "-f", f"owner={owner}",
+                             "-f", f"name={name}", "-F", f"number={number}"], capture_output=True, text=True)
+    try:
+        data = json.loads(result.stdout)
+    except ValueError:
+        return None, ["unreadable"]
+    return data, (data.get("errors") or []) + ([{"message": "gh failed"}] if result.returncode else [])
 
 
 def stack_of(repo, number):
     """None when not stacked; {"status": "unknown"} when membership could not be read."""
     if not repo or "/" not in repo or not number:
         return dict(UNKNOWN)
-    owner, name = repo.split("/", 1)
-    result = subprocess.run(["gh", "api", "graphql", "-f", f"query={QUERY}", "-f", f"owner={owner}",
-                             "-f", f"name={name}", "-F", f"number={number}"], capture_output=True, text=True)
-    try:
-        data = json.loads(result.stdout)
-    except ValueError:
-        return dict(UNKNOWN)
-    errors = data.get("errors") or []
-    # A forge without the stack schema cannot have stacked PRs.
+    data, errors = _read(repo, number, True)
+    # A forge without the stack schema has no `gh stack` stacks, only branch stacks.
     if errors and all((e.get("extensions") or {}).get("code") == "undefinedField"
                       and (e.get("extensions") or {}).get("fieldName") == "stackEntry" for e in errors):
-        return None
+        data, errors = _read(repo, number, False)
     try:
-        if result.returncode or errors:
+        if errors:
             return dict(UNKNOWN)
-        entry = data["data"]["repository"]["pullRequest"]["stackEntry"]
+        pr = data["data"]["repository"]["pullRequest"]
+        entry = pr.get("stackEntry")
         if entry is None:
-            return None
+            parents = (pr.get("baseRef") or {}).get("associatedPullRequests") or {"totalCount": 0, "nodes": []}
+            if parents["totalCount"] != len(parents["nodes"]) or len(parents["nodes"]) > 1:
+                return dict(UNKNOWN)
+            if not parents["nodes"]:
+                return None
+            parent = parents["nodes"][0]
+            return {"status": "stacked", "kind": "branch", "number": None, "base": parent["baseRefName"],
+                    "size": 2, "position": 2, "entries": [_entry(1, parent), _entry(2, pr)]}
         stack, connection = entry["stack"], entry["stack"]["entries"]
-        entries = sorted(({"position": n["position"], "number": n["pullRequest"]["number"],
-                           "state": n["pullRequest"]["state"], "isDraft": n["pullRequest"]["isDraft"],
-                           "base": n["pullRequest"]["baseRefName"], "head": n["pullRequest"]["headRefName"],
-                           "headOid": n["pullRequest"]["headRefOid"]}
-                          for n in connection["nodes"]), key=lambda e: e["position"])
+        entries = sorted((_entry(n["position"], n["pullRequest"]) for n in connection["nodes"]),
+                         key=lambda e: e["position"])
         if connection["totalCount"] != len(entries) or number not in [e["number"] for e in entries]:
             return dict(UNKNOWN)
-        return {"status": "stacked", "number": stack["number"], "base": stack["baseRefName"],
+        return {"status": "stacked", "kind": "gh-stack", "number": stack["number"], "base": stack["baseRefName"],
                 "size": stack["size"], "position": entry["position"], "entries": entries}
     except (KeyError, TypeError):
         return dict(UNKNOWN)
@@ -69,6 +92,10 @@ def label(stack, number):
         return ""
     if stack.get("status") != "stacked":
         return "Stack membership unknown"
+    if stack.get("kind") == "branch":
+        parent = stack["entries"][0]
+        return (f'On #{parent["number"]}\'s branch {parent["head"]}, not a gh stack · '
+                f'lands after #{parent["number"]} merges into {stack["base"]} and GitHub retargets it')
     entries = stack["entries"]
     index = next(i for i, e in enumerate(entries) if e["number"] == number)
     parts = [f'Stack #{stack["number"]} · {stack["position"]} of {stack["size"]} on {stack["base"]}']

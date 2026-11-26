@@ -243,6 +243,10 @@ def main():
                 outcome = "HELD: current approval not confirmed"
             elif writing and (state.get("stack") or {}).get("status") == "unknown":
                 outcome = "HELD: stack membership unknown; re-read before landing"
+            elif writing and (state.get("stack") or {}).get("kind") == "branch":
+                parent = state["stack"]["entries"][0]["number"]
+                outcome = (f"HELD: based on #{parent}'s branch; it lands after #{parent} merges and GitHub "
+                           "retargets it, then review the retargeted PR")
             elif writing and state.get("stack") and args.enable_auto_merge:
                 outcome = ("HELD: GitHub refuses auto-merge for stacked PRs; use --enqueue --stack-method "
                            "with every unmerged lower PR, or ask the author to unstack")

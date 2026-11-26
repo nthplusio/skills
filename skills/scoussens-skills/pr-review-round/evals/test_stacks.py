@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import freshness
 import land
 import ledger
 import stacks
@@ -55,7 +56,11 @@ class StackReadTests(unittest.TestCase):
 
     def test_unstacked_schema_absent_and_failed_reads_differ(self):
         self.assertIsNone(self.read({"data": {"repository": {"pullRequest": {"stackEntry": None}}}}))
-        self.assertIsNone(self.read({"errors": [{"extensions": {"code": "undefinedField", "fieldName": "stackEntry"}}]}))
+        # A forge without the stack schema is read again for a branch stack; with no parent PR it is unstacked.
+        absent = {"errors": [{"extensions": {"code": "undefinedField", "fieldName": "stackEntry"}}]}
+        plain = {"data": {"repository": {"pullRequest": {"baseRef": {"associatedPullRequests": {"totalCount": 0, "nodes": []}}}}}}
+        with patch.object(subprocess, "run", side_effect=[reply(absent)([]), reply(plain)([])]):
+            self.assertIsNone(stacks.stack_of("owner/repo", 17))
         for payload, code in [({}, 1), ({"errors": [{"message": "rate limited"}]}, 0),
                               ({"data": {"repository": {"pullRequest": {"stackEntry": stack_entry(17, [LOWER, UPPER], total=60)}}}}, 0)]:
             with self.subTest(payload=payload):
@@ -173,6 +178,131 @@ class StackLandingTests(unittest.TestCase):
                 self.assertEqual(self.recorded, [])
                 self.assertIn("#17 HELD: stack merge failed", output)
         self.assertIn("gh extension install github/gh-stack", output)
+
+
+class BranchStackTests(unittest.TestCase):
+    """A PR based on another open PR's head branch, without `gh stack`."""
+
+    def read(self, parents):
+        pr = {"number": 3663, "state": "OPEN", "isDraft": False, "baseRefName": "feat-3657",
+              "headRefName": "feat-3663", "headRefOid": HEAD, "stackEntry": None,
+              "baseRef": {"associatedPullRequests": {"totalCount": len(parents), "nodes": parents}}}
+        with patch.object(subprocess, "run", side_effect=reply({"data": {"repository": {"pullRequest": pr}}})):
+            return stacks.stack_of("owner/repo", 3663)
+
+    def test_a_pr_on_another_open_prs_branch_is_stacked_on_it(self):
+        parent = {"number": 3657, "state": "OPEN", "isDraft": False, "baseRefName": "development",
+                  "headRefName": "feat-3657", "headRefOid": BASE}
+        stack = self.read([parent])
+        self.assertEqual(stack["status"], "stacked")
+        self.assertEqual(stack["base"], "development")
+        self.assertEqual([e["number"] for e in stacks.below(stack, 3663)], [3657])
+        self.assertIn("On #3657's branch feat-3657, not a gh stack", stacks.label(stack, 3663))
+        self.assertIsNone(self.read([]))
+
+
+class Git:
+    def __init__(self, path):
+        self.path = path
+        self("init", "-q", "-b", "development")
+        for key, value in (("user.email", "a@example.test"), ("user.name", "Author")):
+            self("config", key, value)
+
+    def __call__(self, *args):
+        result = subprocess.run(["git", *args], cwd=self.path, capture_output=True, text=True)
+        if result.returncode:
+            raise AssertionError(result.stderr)
+        return result.stdout.strip()
+
+    def commit(self, files, message):
+        for name, text in files.items():
+            (self.path / name).write_text(text)
+            self("add", name)
+        self("commit", "-qm", message)
+        return self("rev-parse", "HEAD")
+
+
+class RetargetFreshnessTests(unittest.TestCase):
+    """#3663 on #3657's branch; #3657 squash-merges and GitHub retargets #3663 to development."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        previous = os.getcwd()
+        os.chdir(directory.name)  # the freshness tree check runs git in the repository root
+        self.addCleanup(os.chdir, previous)
+        self.git = git = Git(Path(directory.name))
+        git.commit({"shared.py": "x = 1\n"}, "base")
+        git("checkout", "-q", "-b", "feat-3657")
+        self.parent = git.commit({"parent.py": "p = 1\n"}, "parent work")
+        git("checkout", "-q", "-b", "feat-3663")
+        self.head = git.commit({"child.py": "c = 1\n"}, "child work")
+        git("checkout", "-q", "development")
+
+    def squash_parent(self, also=None):
+        """Squash-merge the parent into development, plus an optional unrelated development commit."""
+        if also:
+            self.git.commit(also, "development work")
+        self.git("merge", "-q", "--squash", "feat-3657")
+        return self.git.commit({}, "parent (#3657)") if self.git("status", "--porcelain") else None
+
+    def classify(self, tip):
+        saved = assessment(3663, head=self.head, base=self.parent,
+                           evidence_inputs={**assessment()["evidence_inputs"], "target": {"ref": "feat-3657", "sha": self.parent}})
+        live = {"head": self.head, "base": tip, "forge": REVISION, "conflicting": False,
+                "target": {"ref": "development", "sha": tip}}
+        with patch.object(freshness, "_api", side_effect=AssertionError("no forge read")):
+            return freshness.classify(saved, live, policy=saved["evidence_inputs"]["policy"], repo="owner/repo",
+                                      number=3663, writes=[])
+
+    def test_the_same_change_on_the_new_base_carries(self):
+        verdict = self.classify(self.squash_parent(also={"docs.md": "d\n"}))
+        self.assertIsInstance(verdict, freshness.Benign, verdict)
+        self.assertIn("retargeted from feat-3657 to development", verdict.reasons[0])
+        self.assertIn("makes the same change the round reviewed", verdict.reasons[0])
+
+    def test_a_different_merged_result_holds(self):
+        # development already carries part of the child's change, so merging the head now changes less.
+        verdict = self.classify(self.squash_parent(also={"child.py": "c = 1\n"}))
+        self.assertIsInstance(verdict, freshness.Stale)
+        self.assertIn("changes something other than what the round reviewed", verdict.message())
+        # And a conflict with the new base holds too.
+        self.git("checkout", "-q", "-b", "other", "development~1")
+        tip = self.git.commit({"child.py": "c = 2\n"}, "conflicting")
+        self.assertIn("conflicts with development", self.classify(tip).message())
+
+    def test_the_retarget_events_and_the_dismissed_stack_approval_are_benign(self):
+        after = lambda kind, **extra: {"event": kind, "created_at": "2026-11-11T21:00:00Z",
+                                       "actor": {"login": "IL-AKingcaidOuedraogo", "type": "User"}, **extra}
+        rows = [after("automatic_base_change_succeeded"), after("removed_from_stack"),
+                after("review_dismissed", dismissed_review={"review_id": 5, "dismissal_message": None})]
+        with patch.object(freshness, "_api", return_value=rows):
+            stale, benign = freshness._discussion_move(REVISION, "2026-11-11T21:05:00Z", "owner/repo", 3663, [])
+        self.assertEqual(stale, [])
+        self.assertIn("GitHub dismissing an approval on the automatic retarget", benign[0])
+        # Without a retarget, a dismissal is still a person acting.
+        with patch.object(freshness, "_api", return_value=rows[2:]):
+            stale, _ = freshness._discussion_move(REVISION, "2026-11-11T21:05:00Z", "owner/repo", 3663, [])
+        self.assertIn("review_dismissed by IL-AKingcaidOuedraogo", stale[0])
+
+    def test_unknown_mergeability_after_a_base_move_is_read_again_before_it_holds(self):
+        saved = assessment(17)
+        live = {"head": HEAD, "base": "c" * 40, "forge": REVISION, "conflicting": None,
+                "target": {"ref": "main", "sha": "c" * 40}}
+        reads = {"files": [{"filename": "src/app.py"}], "compare": {"status": "ahead", "files": [{"filename": "docs/x.md"}]},
+                 "pulls/17": {"head": {"sha": HEAD}, "mergeable": True, "mergeable_state": "clean"}}
+        api = lambda path, paginate=False: next(v for k, v in reads.items() if k in path)
+        with patch.object(freshness, "_api", side_effect=api), patch.object(freshness.time, "sleep") as slept:
+            verdict = freshness.classify(saved, live, policy=saved["evidence_inputs"]["policy"], repo="owner/repo",
+                                         number=17, writes=[])
+        self.assertIsInstance(verdict, freshness.Benign, verdict)
+        self.assertEqual(slept.call_count, 1)
+        reads["pulls/17"] = {"head": {"sha": HEAD}, "mergeable": None}
+        with patch.object(freshness, "_api", side_effect=api), patch.object(freshness.time, "sleep") as slept:
+            verdict = freshness.classify(saved, live, policy=saved["evidence_inputs"]["policy"], repo="owner/repo",
+                                         number=17, writes=[])
+        self.assertIn("has not reported the PR mergeable", verdict.message())
+        self.assertEqual(slept.call_count, len(freshness.MERGEABLE_WAITS))
 
 
 if __name__ == "__main__":

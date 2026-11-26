@@ -69,7 +69,7 @@ from stacks import stack_of, missing_members
 
 
 LIST_FIELDS = ("id,headRefOid,baseRefOid,updatedAt,number,title,url,author,createdAt,isDraft,reviewDecision,"
-               "mergeable,mergeStateStatus,additions,deletions,state,mergedAt,headRefName,isCrossRepository")
+               "mergeable,mergeStateStatus,additions,deletions,state,mergedAt,headRefName,isCrossRepository,baseRefName")
 
 
 def history_evidence(slug, pr):
@@ -334,6 +334,8 @@ def main():
     out = []
     for p in prs:
         n = p["number"]
+        # A stacked PR's diff is against its own base branch, so that branch is what its assessment depends on.
+        pr_target = target if p.get("baseRefName") in (None, base) else target_state(slug, p["baseRefName"])
         p["queue_state"] = (queue_state(p.get("id"), p.get("headRefOid"))
                             if p.get("state") == "OPEN" else "not_queued")
         evidence = history_evidence(slug, p)
@@ -379,9 +381,9 @@ def main():
             "head": p.get("headRefOid"),
             "base": p.get("baseRefOid"),
             "review_config": config_path,
-            "target": target,
+            "target": pr_target,
             "evidence_inputs": {
-                "target": target,
+                "target": pr_target,
                 "forge": p.get("updatedAt"),
                 "issues": hashlib.sha256(json.dumps(evidence.get("ticketEvidence", {}), sort_keys=True).encode()).hexdigest(),
                 "policy": policy["revision"],
@@ -423,7 +425,7 @@ def main():
         rec["assessment"] = proposal
         if proposal and p.get("state") == "OPEN":
             # The same rule the write helpers apply, so the report and the guards agree on what is current.
-            verdict = classify(proposal, {**live_from_view(p), "target": target}, policy=policy["revision"],
+            verdict = classify(proposal, {**live_from_view(p), "target": pr_target}, policy=policy["revision"],
                                repo=slug, number=n, writes=recorded)
             rec["freshness"] = {**verdict.record(), "assessed_at": proposal["assessed_at"], "head": proposal["head"]}
         rec["requirements_gaps"] = requirement_gaps(evidence.get("ticketEvidence", {}))
