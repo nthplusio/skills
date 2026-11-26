@@ -466,7 +466,10 @@ def main():
           'Local dispositions are not posted responses.', file=sys.stderr)
     # One batch for the owner: each open owner or evidence decision once, with every PR it gates.
     groups = waiting([r["assessment"] for r in out if r["state"] == "OPEN" and r.get("assessment")
-                      and (r.get("freshness") or {}).get("verdict") != "stale"])
+                      and (r.get("freshness") or {}).get("verdict") != "stale"], who)
+    others, groups = [g for g in groups if not g["mine"]], [g for g in groups if g["mine"]]
+    if others:
+        print("WAITING ON SOMEONE ELSE: " + "; ".join(f'{g["key"]} ({g["owner"]})' for g in others), file=sys.stderr)
     if groups:
         print(f"WAITING ON YOU: {len(groups)} decision(s); ask them in one message, then record each answer "
               "with ledger.py decide", file=sys.stderr)

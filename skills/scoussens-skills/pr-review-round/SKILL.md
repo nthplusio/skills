@@ -53,7 +53,7 @@ first message:
    change one in a word.
 3. After the answers, update `answers.json`, run `authority.py init --repo
    <owner/repo> --scope $RUN/scope.json --answers answers.json --root <repository>
-   --out $RUN/authority.json`, and show the user `authority.py show`. An
+   --out $RUN/authority.json`, and show the user the summary it prints. An
    unanswered setting takes the profile's value, then the default.
 4. When the user grants a held write mid-round ("dismiss the bot's review on
    #3614"), record it with `authority.py grant $RUN/authority.json --pr 3614
@@ -323,7 +323,7 @@ absence of a posted review is expected, not a reason to post one.
 
 ### 5. Land what is ready
 
-**Ask owner decisions once, then unblock.** Before landing, ask every decision `round_report.py` prints under WAITING ON YOU (also `ledger.py waiting`) in one message, with its recommendation. Record each answer with `ledger.py decide <key> --answer <accept|waive|rescope|reject> --instruction "<their exact words>" [--scope "..."] --assessments $RUN/assessments.json`; one answer covers every PR the key gates. For each PR it prints as clear, with approvals on, approve it with `review_write.py approve` and continue as below; the owner does not need to say "approve what that unblocks". Every guard of an ordinary approval still applies: authority, head, freshness, own-PR and last-push holds. A PR still blocked names its remaining gates. `reject` records the answer and keeps the PR blocked. An answer cannot settle a `code` or `reviewer-incomplete` decision.
+**Ask owner decisions once, then unblock.** Before landing, ask every decision `round_report.py` prints under WAITING ON YOU (also `ledger.py waiting`) in one message, with its recommendation. Do not ask the user a decision listed as waiting on someone else; name who owes it. Record each answer with `ledger.py decide <key> --answer <accept|waive|rescope|reject> --instruction "<their exact words>" [--scope "..."] --assessments $RUN/assessments.json`; one answer covers every PR the key gates. For each PR it prints as clear, with approvals on, approve it with `review_write.py approve` and continue as below; the owner does not need to say "approve what that unblocks". Every guard of an ordinary approval still applies: authority, head, freshness, own-PR and last-push holds. A PR still blocked names its remaining gates. `reject` records the answer and keeps the PR blocked. An answer cannot settle a `code` or `reviewer-incomplete` decision.
 
 Land related PRs in the order their relations give: a `depends-on` PR after the one it needs, and one side of a `conflicts` pair, then a fresh check of the other at its rebased head. Never land both sides of a duplicate pair.
 

@@ -37,7 +37,7 @@ watch round runs it on every wake and acts only on what it lists.
 import argparse, json, shlex, subprocess, sys, time
 from pathlib import Path
 from review_requests import collect, reconcile, effective_reviews
-from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, repo_slug,
+from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, me, repo_slug,
                     target_state, unresolved, writes)
 from freshness import Stale, classify, live_from_view
 from review_config import resolve as review_config
@@ -262,12 +262,6 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
     print("LEFT the queue: " + (", ".join(f"#{n}" for n in scoped if n not in listed) or "none"))
     if not work:
         print("settled: no scoped PR has an action left for the round")
-
-
-def me():
-    """The login behind `gh`; None when it cannot be read."""
-    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
-    return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
 def my_review_of(evidence, login, head):

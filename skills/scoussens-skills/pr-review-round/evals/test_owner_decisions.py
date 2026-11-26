@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -112,6 +113,38 @@ class OwnerDecisionTests(unittest.TestCase):
         out, code = self.cli("decide", "17/criterion-1", "--answer", "accept", "--instruction", WORDS)
         self.assertNotEqual(code, 0)
         self.assertEqual(len(ledger.assessment_history("owner/repo")), before)
+
+    def test_an_open_subject_decision_holds_approval_at_should_fix(self):
+        # Live #3717: the INT-3042 owner's sign-off was should-fix, and decide printed the PR as clear.
+        signoff = adr_gated(3717)
+        signoff["decisions"][0].update(severity="should-fix", subject="ticket:INT-3042")
+        evidence = assessment(3718, kind="evidence", owner="Operator")
+        evidence["decisions"][0].update(id="screens", severity="should-fix", subject="ticket:INT-3042")
+        path = self.save(signoff, evidence)
+        out, code = self.cli("decide", "3718/screens", "--answer", "reject", "--instruction", "x")
+        self.assertNotEqual(code, 0, out)  # the key is the subject, not the id
+        out, _ = self.cli("waiting", "--assessments", str(path))
+        self.assertIn("Waiting on you: 1 decision(s)", out)
+        self.assertIn("ticket:INT-3042 · #3717, #3718", out)
+        out, code = self.cli("decide", "ticket:INT-3042", "--answer", "reject", "--instruction", "Not signed off")
+        self.assertIn("#3717 still blocked", out)
+        self.assertNotIn("clear", out)
+
+    def test_a_decision_another_person_answers_waits_on_someone_else(self):
+        # Live #3717: the author's screenshots were listed under "Waiting on you".
+        screenshots = assessment(3717, kind="evidence", owner="il-bilal (author)")
+        screenshots["decisions"][0].update(id="screenshots", subject="evidence:3717-screenshots", owner_login="il-bilal")
+        mine = adr_gated(3716)
+        mine["decisions"][0]["owner_login"] = "reviewer"
+        path = self.save(screenshots, mine)
+        login = lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "reviewer\n", "")
+        with patch.object(subprocess, "run", side_effect=login):  # `gh api user`: the round's user
+            out, _ = self.cli("waiting", "--assessments", str(path))
+        yours, others = out.split("Waiting on someone else:")
+        self.assertIn("Waiting on you: 1 decision(s)", yours)
+        self.assertIn("adr:183 · #3716", yours)
+        self.assertNotIn("3717", yours)
+        self.assertIn("evidence:3717-screenshots · #3717 · il-bilal (author)", others)
 
     def test_the_report_asks_a_decision_shared_by_two_prs_once(self):
         records, proposals = [], []
