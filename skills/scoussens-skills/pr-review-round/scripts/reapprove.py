@@ -18,13 +18,19 @@ approvals posted outside the round do not count. The live head H is base-only wh
 Anything unreadable is not base-only. Output: the verdict, its reason, A, H and the
 merge-tree result per commit.
 
-With `--carry`, it also prints an assessments bundle whose one assessment for this
-PR is the earlier assessment at A carried to H: the new head, base, target, discussion
-time and policy revision are read live, the original `assessed_at` and decisions are
-kept, and `carried` plus `provenance` name the tree check and both heads. It refuses an
-assessment with unresolved decisions, a changed review policy, or discussion since A
-that freshness.py would not call benign. Post the re-approval with
-`review_write.py reapprove`, which runs every approval guard on the carried record.
+With `--carry`, A is the head of the PR's saved assessment instead, whether or not
+the round approved it, and the script prints an assessments bundle whose one
+assessment for this PR is that assessment carried to H: the new head, base, target,
+discussion time and policy revision are read live, the original `assessed_at` and
+decisions are kept, and `carried` plus `provenance` record the tree check, both heads
+and why the review still holds. H may equal A when only the base or the discussion
+moved. It refuses a changed review policy, a base move freshness.py would not call
+benign, and a head that changed code: it names the files changed beyond the base, so
+a test-only push gets a short review of those files. Discussion since A that
+freshness.py would not call benign needs `--read "<why the review still holds>"`,
+which the round passes only after reading every new event. When A is the round's
+approval, post the re-approval with `review_write.py reapprove`; otherwise approve
+with `review_write.py approve`. Both run every approval guard on the carried record.
 """
 import argparse
 import json
@@ -34,8 +40,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-from freshness import SHA, _api, _discussion_move
-from ledger import target_state, unresolved, validate_assessment, writes
+from freshness import SHA, _api, _base_move, _discussion_move
+from ledger import target_state, validate_assessment, writes
 from review_config import resolve
 
 APPROVALS = ("approve", "reapprove")
@@ -62,6 +68,8 @@ def base_only(approved, head, base_tip):
     for name, sha in (("approved head", approved), ("live head", head), ("base tip", base_tip)):
         if not have(sha):
             return verdict(False, f"{name} {sha[:9]} is not available locally")
+    refused = verdict
+    verdict = lambda ok, reason: {**refused(ok, reason), **({} if ok else {"files": pushed(approved, head, base_tip)})}
     if approved == head:
         return verdict(False, "the head has not moved since the approval")
     if subprocess.run(["git", "merge-base", "--is-ancestor", approved, head], capture_output=True).returncode:
@@ -91,6 +99,17 @@ def base_only(approved, head, base_tip):
     return verdict(True, f"{len(steps)} clean base merge(s) since the approval")
 
 
+def pushed(approved, head, base_tip):
+    """Files the head changes since `approved` other than by taking the base tip's version; None when unreadable."""
+    changed = git("diff", "--name-only", approved, head)
+    fork = git("merge-base", approved, base_tip)
+    if changed is None or not fork:
+        return None
+    from_base = set((git("diff", "--name-only", fork, base_tip) or "").splitlines())
+    return [f for f in changed.splitlines()
+            if f not in from_base or git("rev-parse", f"{head}:{f}") != git("rev-parse", f"{base_tip}:{f}")]
+
+
 def approved_head(repo, number):
     """The head of the round's last approval of this PR, from the ledger; None when there is none."""
     mine = [w for w in writes(repo) if w.get("number") == number and w.get("action") in APPROVALS
@@ -105,13 +124,13 @@ def mergeable(pr):
     return pr["mergeable"] is True and pr.get("mergeable_state") != "dirty"
 
 
-def check(repo, number):
-    """Read the PR and the ledger, fetch what git needs, and decide."""
+def check(repo, number, since=None):
+    """Read the PR and the ledger, fetch what git needs, and decide. `since` replaces the round's approved head."""
     pr = _api(f"repos/{repo}/pulls/{number}")
     if not isinstance(pr, dict) or not SHA.fullmatch(((pr.get("head") or {}).get("sha")) or ""):
         return {"base_only": False, "reason": "the PR is unreadable", "approved": None, "head": None, "steps": []}, None
     head, ref = pr["head"]["sha"], pr["base"]["ref"]
-    approved = approved_head(repo, number)
+    approved = since or approved_head(repo, number)
     target = target_state(repo, ref)
     result = {"approved": approved, "head": head, "base": pr["base"]["sha"], "target": target, "steps": []}
     if not approved:
@@ -130,29 +149,36 @@ def check(repo, number):
     return result, pr
 
 
-def carry(earlier, result, live, *, policy, discussion, at=None):
-    """The earlier assessment at A carried to the base-only head H; raises when it cannot be carried."""
+def carry(earlier, result, live, *, policy, discussion, base=([], []), read=None, at=None):
+    """The earlier assessment at A carried to the live head H; raises when the review may no longer hold.
+
+    `discussion` and `base` are freshness.py's (stale, benign) reasons since A; `read` is the round's
+    statement that it read the stale discussion and why the review still holds."""
     validate_assessment(earlier)
-    if not result["base_only"]:
-        raise ValueError(f'not base-only: {result["reason"]}; review the new head')
-    if earlier["head"] != result["approved"]:
-        raise ValueError(f'the assessment is at {earlier["head"][:9]}, not the approved head {result["approved"][:9]}')
-    blockers = unresolved(earlier)
-    if blockers:
-        raise ValueError("the assessment has unresolved decisions: "
-                         + "; ".join(f'{d["owner"]}: {d["unblock"]}' for d in blockers))
-    if earlier["evidence_inputs"]["policy"] != policy:
-        raise ValueError("the review policy changed since the approval; review the new head")
-    stale, benign = discussion
-    if stale:
-        raise ValueError("discussion since the approval needs a review: " + "; ".join(stale))
     a, h = result["approved"], result["head"]
+    if earlier["head"] != a:
+        raise ValueError(f'the assessment is at {earlier["head"][:9]}, not the carried-from head {a[:9]}')
+    if a != h and not result["base_only"]:
+        files = result.get("files")
+        raise ValueError(f'not base-only: {result["reason"]}; review the new head'
+                         + (f'. Changed beyond the base: {", ".join(files)}' if files else ""))
+    if earlier["evidence_inputs"]["policy"] != policy:
+        raise ValueError("the review policy changed since the assessment; review the new head")
+    if base[0]:
+        raise ValueError("the base moved in a way that needs a review: " + "; ".join(base[0]))
+    stale, benign = discussion
+    if stale and not read:
+        raise ValueError("discussion since the assessment needs a review: " + "; ".join(stale)
+                         + '. After reading it, carry with --read "<why the review still holds>"')
+    reasons = ([f'{len(result["steps"])} base merge(s), each tree equal to `git merge-tree --write-tree` of its '
+                "parents"] if a != h else []) + list(base[1]) + list(benign)
+    if stale:
+        reasons.append("read by the round: " + "; ".join(stale) + f". {read}")
     record = {"from_head": a, "head": h, "check": "git merge-tree --write-tree",
-              "commits": [s["commit"] for s in result["steps"]],
+              "commits": [s["commit"] for s in result["steps"]] if a != h else [], "reason": "; ".join(reasons),
               "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    provenance = (f"Carried from the approved head {a} to {h}: {len(record['commits'])} base merge(s), each tree equal "
-                  "to `git merge-tree --write-tree` of its parents. Code checks were not rerun; issue evidence is "
-                  "carried from the approved assessment." + (" " + "; ".join(benign) if benign else ""))
+    provenance = (f"Carried from {a} to {h}: {record['reason'] or 'nothing moved'}. Code checks were not rerun; "
+                  "issue evidence is carried from the earlier assessment.")
     return {**earlier, "head": h, "base": live["base"], "carried": record, "provenance": provenance,
             "evidence_inputs": {**earlier["evidence_inputs"], "forge": live["forge"], "policy": policy,
                                 "target": live["target"]}}
@@ -177,13 +203,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("number", type=int)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--carry", type=Path, help="assessments bundle holding the assessment at the approved head")
+    parser.add_argument("--carry", type=Path, help="assessments bundle holding the PR's saved assessment")
+    parser.add_argument("--read", help="with --carry: why the review holds after the round read the new discussion")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo) or args.number <= 0:
         parser.error("use OWNER/REPO and a positive PR number")
-    result, pr = check(args.repo, args.number)
-    print("\n".join(describe(result)), file=sys.stderr if args.carry else sys.stdout)
     if not args.carry:
+        result, _ = check(args.repo, args.number)
+        print("\n".join(describe(result)))
         return 0 if result["base_only"] else 1
     try:
         bundle = json.loads(args.carry.read_text())
@@ -192,11 +219,20 @@ def main():
         matches = [a for a in bundle.get("assessments", []) if a.get("number") == args.number]
         if len(matches) != 1:
             raise ValueError("one assessment of this PR required")
-        live = {"base": result.get("base"), "forge": (pr or {}).get("updated_at"), "target": result.get("target")}
-        discussion = _discussion_move(matches[0]["evidence_inputs"]["forge"], live["forge"], args.repo, args.number,
+        earlier = matches[0]
+        validate_assessment(earlier)
+        result, pr = check(args.repo, args.number, since=earlier["head"])
+        print("\n".join(describe(result)), file=sys.stderr)
+        if not pr:
+            raise ValueError(result["reason"])
+        live = {"head": result["head"], "base": result.get("base"), "forge": pr.get("updated_at"),
+                "target": result.get("target"), "conflicting": None if mergeable(pr) is None else not mergeable(pr)}
+        discussion = _discussion_move(earlier["evidence_inputs"]["forge"], live["forge"], args.repo, args.number,
                                       writes(args.repo)) if live["forge"] else (["discussion time unreadable"], [])
-        carried = carry(matches[0], result, live, policy=resolve(".", bundle.get("review_config"))["revision"],
-                        discussion=discussion)
+        # A moved head is judged by the base-merge check; an unmoved head with a moved base, by freshness.py.
+        base = _base_move(earlier, live, args.repo, args.number) if result["head"] == earlier["head"] else ([], [])
+        carried = carry(earlier, result, live, policy=resolve(".", bundle.get("review_config"))["revision"],
+                        discussion=discussion, base=base, read=args.read)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(f"not carried: {error}", file=sys.stderr)
         return 1

@@ -53,7 +53,7 @@ first message:
    change one in a word.
 3. After the answers, update `answers.json`, run `authority.py init --repo
    <owner/repo> --scope $RUN/scope.json --answers answers.json --root <repository>
-   --out $RUN/authority.json`, and show the user `authority.py show`. An
+   --out $RUN/authority.json`, and show the user the summary it prints. An
    unanswered setting takes the profile's value, then the default.
 4. When the user grants a held write mid-round ("dismiss the bot's review on
    #3614"), record it with `authority.py grant $RUN/authority.json --pr 3614
@@ -181,7 +181,7 @@ python3 $S/queue.py <base> [--save-scope <f> | --scope <f>] # triage: every PR, 
 python3 $S/queue.py <base> --scope <f> --next --authority <f> # what the round can still do; prints settled when nothing
 python3 $S/stale_sweep.py <base>    # staleness across the WHOLE queue, one pass
 python3 $S/prstate.py <n>           # review state + head sha + staleness, one PR
-python3 $S/findings.py <n>          # blocking review bodies + their inline comments
+python3 $S/findings.py <n> [--draft <review-id>] # blocking reviews + inline comments; draft verified_findings
 python3 $S/test_reach.py <n>        # added symbols with no test referencing them
 python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
@@ -195,7 +195,7 @@ python3 $S/land.py --help          # guarded enqueue/auto-merge; requires author
 python3 $S/land.py --watch <n>      # poll only; never enqueues. Use with AUTO, or when
                                     # a permission gate denies the merge command
 python3 $S/stacks.py <n> --repo <owner/repo> # stack membership and order, read-only
-python3 $S/reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] # base-only since the round's approval, read-only
+python3 $S/reapprove.py <n> --repo <owner/repo> [--carry <assessments.json> [--read <why>]] # base-only since the approval; carry a saved assessment, read-only
 python3 $S/round_report.py <base> --scope <scope.json> # report data: urls, review timestamps, bodies
 python3 $S/render_round.py <round.json> --base <base> --timezone <IANA-zone> # offline HTML
 python3 $S/md_to_html.py            # render a review body's markdown (import: `render`)
@@ -323,7 +323,7 @@ absence of a posted review is expected, not a reason to post one.
 
 ### 5. Land what is ready
 
-**Ask owner decisions once, then unblock.** Before landing, ask every decision `round_report.py` prints under WAITING ON YOU (also `ledger.py waiting`) in one message, with its recommendation. Record each answer with `ledger.py decide <key> --answer <accept|waive|rescope|reject> --instruction "<their exact words>" [--scope "..."] --assessments $RUN/assessments.json`; one answer covers every PR the key gates. For each PR it prints as clear, with approvals on, approve it with `review_write.py approve` and continue as below; the owner does not need to say "approve what that unblocks". Every guard of an ordinary approval still applies: authority, head, freshness, own-PR and last-push holds. A PR still blocked names its remaining gates. `reject` records the answer and keeps the PR blocked. An answer cannot settle a `code` or `reviewer-incomplete` decision.
+**Ask owner decisions once, then unblock.** Before landing, ask every decision `round_report.py` prints under WAITING ON YOU (also `ledger.py waiting`) in one message, with its recommendation. Do not ask the user a decision listed as waiting on someone else; name who owes it. Record each answer with `ledger.py decide <key> --answer <accept|waive|rescope|reject> --instruction "<their exact words>" [--scope "..."] --assessments $RUN/assessments.json`; one answer covers every PR the key gates. For each PR it prints as clear, with approvals on, approve it with `review_write.py approve` and continue as below; the owner does not need to say "approve what that unblocks". Every guard of an ordinary approval still applies: authority, head, freshness, own-PR and last-push holds. A PR still blocked names its remaining gates. `reject` records the answer and keeps the PR blocked. An answer cannot settle a `code` or `reviewer-incomplete` decision.
 
 Land related PRs in the order their relations give: a `depends-on` PR after the one it needs, and one side of a `conflicts` pair, then a fresh check of the other at its rebased head. Never land both sides of a duplicate pair.
 
@@ -348,6 +348,10 @@ or timed-out PRs never count as landed; the helper exits nonzero for them.
 **Land your own PRs.** The round cannot approve a PR you authored, or one whose last push was yours when the base requires another approver of the last push. For each such PR, run `approvers.py <n> --repo <owner/repo>`; it prints the code owners of the changed files who can approve, without you, and prints unknown when it cannot read an input. With `own-pr-landing` on `ask`, `land.py` holds and prints the same names: at `review` or above, request review from them with `gh pr edit <n> --add-reviewer <names>` and report them. With `auto`, run `land.py --enable-auto-merge <n>:<head>` (or `--enqueue`). For a PR without GitHub's `APPROVED` decision that is yours, it lands only when all four hold, and records each on the ledger write: the required checks (`gh pr checks --required`) are all pass or skipping at the reviewed head, at least one review on the PR is from a bot account, no reviewer's latest verdict is `CHANGES_REQUESTED`, and the round's saved assessment at that head is current with nothing unresolved. It holds naming each condition that fails. GitHub still enforces any human approval the base requires: when it refuses, record the denial and give the head-bound command a person can run, as for any permission denial. Never use `--admin` or another bypass.
 
 **Re-approve base-only heads.** When the base dismisses stale approvals on push, an author's base merge dismisses the round's approval. For each PR `queue.py` marks `REAPPROVE: base only`, with `reapprove-base-only` on `auto`, run `reapprove.py <n> --repo <owner/repo> --carry $RUN/assessments.json > $RUN/reapprove-<n>.json`. It checks that every commit since the approved head A is a clean merge from the base tip, compares each merge's tree with `git merge-tree --write-tree`, and carries the assessment at A to the live head H. Then run `review_write.py reapprove <n> --head <H> --assessments $RUN/reapprove-<n>.json` with a body naming A, H and the tree check; auto-merge follows per `auto-merge-on-approval`. Any other change, a conflict or a refused carry gets a normal re-review.
+
+**Requeue a known flake once.** When `queue.py --next` lists `requeue-flake`, read the failing merge-group run's log with `gh run view <run> --log-failed > $RUN/failed-<n>.log`, then run `land.py --requeue-flake --failure-log $RUN/failed-<n>.log <n>:<head> --repo <owner/repo> --authority $RUN/authority.json --assessments $RUN/assessments.json`. It requeues only when the log names a test the profile's `flakes` reference lists, and only once per PR. Report any other removal as a real failure.
+
+**Carry an assessment instead of editing it.** When `queue.py --next` lists `carry`, or a PR's head, base or discussion moved and the review still holds, run `reapprove.py <n> --repo <owner/repo> --carry $RUN/assessments.json [--read "<why>"] > $RUN/carry-<n>.json`. It carries the saved assessment to the live head across clean base merges, a retarget or a moved base, and records why. Pass `--read` only after reading every new comment or review it names. It refuses a push that changes code and names the files; review only those. Never edit `assessments.json` by hand.
 
 Merges reshuffle the queue. A PR you approved five minutes ago can go
 conflicting because another landed first. When that happens, run
@@ -429,7 +433,7 @@ In `settle` or `watch`, after the first pass (checklist commands 1 to 4 and step
 
 1. Read the harness's monitoring capability from `harness-discovery`'s saved record (`monitoring`), or from the current tool inventory when there is no record. Use what it names, not another harness's tools.
 2. When the harness can subscribe to pull-request events, subscribe for each scoped PR to pushes, check completions, reviews, review requests and merge-queue removals. Otherwise, and for events no subscription covers, schedule a sweep at an interval near the CI duration observed this round. Keep a list of what you created. When the harness can do neither, run as `once` and say so.
-3. On each wake, run `queue.py <base> --scope $RUN/scope.json --next --authority $RUN/authority.json` and act only on the round work it lists, with the same steps, helpers and authority file. Run checklist command 3 after each review. Ask the decisions `ledger.py waiting` prints in one batch and keep working; the round never waits on an answer while another PR has an action. Never widen the scope or the authority mid-run: report each PR listed as JOINED; it enters only through a new intake answer and a new round.
+3. On each wake, run `queue.py <base> --scope $RUN/scope.json --next --authority $RUN/authority.json` and act only on the round work it lists, with the same steps, helpers and authority file. When it prints `unchanged`, the event changed nothing the user acts on: reply in one line, or not at all. Run checklist command 3 after each review. Ask the decisions `ledger.py waiting` prints in one batch and keep working; the round never waits on an answer while another PR has an action. Never widen the scope or the authority mid-run: report each PR listed as JOINED; it enters only through a new intake answer and a new round.
 4. Stop when `--next` prints `settled` (`settle`) or `until` passes (`watch`). A listed action that its helper held at the same head on the previous wake does not keep the round open; report the hold. Then remove every subscription and schedule the round created, run checklist commands 5 and 6, and report the mode, the number of wakes and why the round stopped.
 
 ## What good looks like

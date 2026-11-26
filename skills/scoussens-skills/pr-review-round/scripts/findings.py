@@ -9,6 +9,11 @@ the review itself and have to be joined on `pull_request_review_id`, which is
 why this is a script and not a one-liner you retype every time.
 
 With no review-id, prints every review still in CHANGES_REQUESTED state.
+
+findings.py <pr-number> --draft <review-id> prints a `verified_findings` draft for
+a bot's review: one entry per inline finding, with status "confirm". Set each to
+fixed or overstated only after checking it at the head; until every entry is
+confirmed, the assessment does not validate and `review_write.py dismiss` holds.
 """
 import json
 import subprocess
@@ -52,13 +57,40 @@ def line_of(comment):
     return comment.get("line") or comment.get("original_line") or "?"
 
 
+def superseded_bot_reviews(reviews, head):
+    """Each bot's changes request at an older head that a later COMMENT review of its own at `head` followed.
+    GitHub keeps the changes request in force, because a COMMENT review does not replace it."""
+    at = lambda r: r.get("submitted_at") or r.get("submittedAt") or ""
+    sha = lambda r: r.get("commit_id") or r.get("commitOid")
+    who = lambda r: (r.get("user") or r.get("author") or {}).get("login")
+    return [review for login, review in effective_reviews(reviews).items()
+            if review.get("state") == "CHANGES_REQUESTED" and is_bot(review.get("user") or review.get("author"))
+            and sha(review) != head and any(who(r) == login and r.get("state") == "COMMENTED" and sha(r) == head
+                                            and at(r) > at(review) for r in reviews)]
+
+
+def draft(comments, review_id):
+    """Unconfirmed verified_findings for a review's inline findings; the reviewer sets each status."""
+    return [{"comment": c["id"], "status": "confirm", "file": c["path"], "line": line_of(c),
+             "observation": "Check at the head: " + ((c.get("body") or "").strip().splitlines() or [""])[0]}
+            for c in review_findings(comments, review_id)]
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("usage: findings.py <pr-number> [review-id ...]")
     num = sys.argv[1]
-    wanted = {int(a) for a in sys.argv[2:]} if len(sys.argv) > 2 else None
     repo = (gh(["gh", "repo", "view", "--json", "nameWithOwner",
                 "-q", ".nameWithOwner"]) or "").strip()
+    if sys.argv[2:3] == ["--draft"]:
+        if len(sys.argv) != 4:
+            sys.exit("usage: findings.py <pr-number> --draft <review-id>")
+        comments = inline_comments(repo, num)
+        if comments is None:
+            sys.exit(f"could not read inline findings for #{num}; coverage unknown")
+        print(json.dumps(draft(comments, int(sys.argv[3])), indent=2))
+        return
+    wanted = {int(a) for a in sys.argv[2:]} if len(sys.argv) > 2 else None
 
     pages = gh(["gh", "api", f"repos/{repo}/pulls/{num}/reviews?per_page=100", "--paginate", "--slurp"])
     if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):

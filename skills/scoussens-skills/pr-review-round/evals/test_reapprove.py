@@ -1,12 +1,17 @@
 """reapprove.py against real temporary git repositories; no forge calls."""
+import contextlib
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import freshness
 import ledger
 import reapprove
 from decision_fixtures import assessment, REVISION
@@ -149,12 +154,11 @@ class CarryTests(unittest.TestCase):
             self.assertIn(text, carried["provenance"])
         self.assertEqual(ledger.unresolved(carried), [])
 
-    def test_nothing_unresolved_changed_or_unreviewed_is_carried(self):
+    def test_nothing_changed_or_unreviewed_is_carried(self):
         cases = [
-            ("unresolved", dict(earlier=assessment(kind="code", owner="Author")), "unresolved decisions"),
             ("not base-only", dict(result={**self.BASE_ONLY, "base_only": False, "reason": "an author commit"}),
              "not base-only"),
-            ("another head", dict(earlier=assessment(head="b" * 40)), "not the approved head"),
+            ("another head", dict(earlier=assessment(head="b" * 40)), "not the carried-from head"),
             ("policy", dict(policy="other-revision"), "review policy changed"),
             ("a person spoke", dict(discussion=(["reviewed by alex (CHANGES_REQUESTED) since the assessment"], [])),
              "discussion"),
@@ -165,6 +169,10 @@ class CarryTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     self.carry(earlier, **changes)
 
+    def test_unresolved_decisions_are_carried_and_still_block(self):
+        carried = self.carry(assessment(kind="code", owner="Author"))
+        self.assertEqual([d["owner"] for d in ledger.unresolved(carried)], ["Author"])
+
     def test_a_carried_record_must_name_its_check_and_heads(self):
         carried = self.carry(assessment())
         for broken in ({**carried, "carried": {**carried["carried"], "head": "e" * 40}},
@@ -172,6 +180,77 @@ class CarryTests(unittest.TestCase):
                        {k: v for k, v in carried.items() if k != "provenance"}):
             with self.subTest(broken=broken.get("carried")), self.assertRaisesRegex(ValueError, "carried requires"):
                 ledger.validate_assessment(broken)
+
+
+
+class CarryCommandTests(unittest.TestCase):
+    """`reapprove.py --carry` against a real repository, with the forge reads recorded."""
+    LATER = "2026-11-12T09:00:00Z"
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        previous = os.getcwd()
+        os.chdir(directory.name)
+        self.addCleanup(os.chdir, previous)
+        self.repo = Repository(Path(directory.name))
+        self.state = Path(directory.name) / ".state"
+
+    def run_carry(self, timeline=(), read=None):
+        """Carry the assessment at the feature commit to the live head; returns (code, stdout, stderr)."""
+        head, tip = self.repo.head(), self.repo.git("rev-parse", "main")
+        item = assessment(17, head=self.repo.approved, base=self.repo.git("rev-parse", "main~0"))
+        if head == self.repo.approved:  # nothing pushed: the base did not move either
+            item["base"] = tip
+            item["evidence_inputs"] = {**item["evidence_inputs"], "target": {"ref": "main", "sha": tip}}
+        path = self.repo.path / "assessments.json"
+        path.write_text(json.dumps({"repository": "owner/repo", "assessments": [item]}))
+        pr = {"head": {"sha": head}, "base": {"ref": "main", "sha": tip}, "updated_at": self.LATER,
+              "mergeable": True, "mergeable_state": "clean"}
+        api = lambda route, paginate=False: list(timeline) if "timeline" in route else pr
+        out, err = io.StringIO(), io.StringIO()
+        argv = ["reapprove.py", "17", "--repo", "owner/repo", "--carry", str(path), *(["--read", read] if read else [])]
+        with patch.object(sys, "argv", argv), patch.dict(os.environ, XDG_STATE_HOME=str(self.state)), \
+                patch.object(reapprove, "_api", side_effect=api), patch.object(freshness, "_api", side_effect=api), \
+                patch.object(reapprove, "target_state", return_value={"ref": "main", "sha": tip}), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = reapprove.main()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_base_only_merge_carries_an_assessment_the_round_never_approved(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        head = self.repo.merge("main")
+        code, out, err = self.run_carry()
+        self.assertEqual(code, 0, err)
+        carried = json.loads(out)["assessments"][0]
+        self.assertEqual((carried["head"], carried["carried"]["from_head"]), (head, self.repo.approved))
+        self.assertEqual(carried["evidence_inputs"]["forge"], self.LATER)
+        self.assertIn("1 base merge(s)", carried["carried"]["reason"])
+
+    def test_a_code_push_is_refused_naming_the_files_it_changed(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        self.repo.commit("test_feature.py", "assert True\n", "add a test")
+        code, out, err = self.run_carry()
+        self.assertEqual((code, out), (1, ""), err)
+        self.assertIn("not carried: not base-only", err)
+        self.assertIn("Changed beyond the base: test_feature.py", err)
+        self.assertNotIn("other.py", err.split("Changed beyond the base:")[1])
+
+    def test_a_person_s_comment_carries_only_after_the_round_read_it(self):
+        comment = [{"event": "commented", "created_at": "2026-11-12T08:00:00Z",
+                    "actor": {"login": "alex", "type": "User"}, "user": {"login": "alex", "type": "User"}}]
+        code, out, err = self.run_carry(comment)
+        self.assertEqual(code, 1, err)
+        self.assertIn("commented by alex", err)
+        self.assertIn("--read", err)
+        code, out, err = self.run_carry(comment, read="alex asks about naming; no change to the verdict")
+        self.assertEqual(code, 0, err)
+        carried = json.loads(out)["assessments"][0]
+        self.assertEqual((carried["head"], carried["carried"]["commits"]), (self.repo.approved, []))
+        self.assertEqual(carried["evidence_inputs"]["forge"], self.LATER)
+        self.assertIn("read by the round: commented by alex", carried["provenance"])
+        self.assertIn("no change to the verdict", carried["provenance"])
 
 
 if __name__ == "__main__":

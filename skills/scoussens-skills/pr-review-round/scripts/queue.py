@@ -32,18 +32,21 @@ each scoped PR that has an action left for the round under its authority file
 and saved assessments, then each scoped PR waiting on someone else, then the
 PRs that JOINED or LEFT. A JOINED PR stays outside the round until a new
 intake answer adds it. With no action left it prints "settled". A settle or
-watch round runs it on every wake and acts only on what it lists.
+watch round runs it on every wake and acts only on what it lists. When the list
+matches the last one printed for the round, it prints only "unchanged".
 """
-import argparse, json, shlex, subprocess, sys, time
+import argparse, json, re, shlex, subprocess, sys, time
 from pathlib import Path
 from review_requests import collect, reconcile, effective_reviews
-from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, repo_slug,
-                    target_state, unresolved, writes)
+from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, me, open_round,
+                    repo_slug, state_dir, target_state, unresolved, writes)
 from freshness import Stale, classify, live_from_view
 from review_config import resolve as review_config
 from branch_rules import gate_lines
 from stacks import stack_of, label as stack_label, missing_members
 from reapprove import check as reapprove_check
+from findings import superseded_bot_reviews
+from merge_queue import queue_state
 import related
 
 # Two phases on purpose. Asking for `files` + `statusCheckRollup` across a
@@ -52,7 +55,7 @@ import related
 # time, where a single failure degrades one row instead of the whole run.
 LIST_FIELDS = ("number,title,author,createdAt,isDraft,reviewDecision,"
                "mergeable,mergeStateStatus,additions,deletions,changedFiles,"
-               "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository")
+               "autoMergeRequest,headRefOid,baseRefOid,updatedAt,headRefName,isCrossRepository,baseRefName,id")
 DETAIL_FIELDS = "files,statusCheckRollup,body"
 
 # Risk tiers drive review depth. Classify by the *riskiest* path in the diff:
@@ -143,18 +146,32 @@ def blocker_of(pr, red, mine=None):
 
 
 def checks_of(p):
-    """(failed, pending) checks in the PR's status rollup."""
+    """(failed, pending, stale) checks in the PR's status rollup. A failure that ran before the PR's latest
+    base change (`_base_changed`, from the timeline) is stale: it judged a PR that no longer exists."""
     state = lambda c: c.get("conclusion") or c.get("state")
     checks = p.get("statusCheckRollup") or []
-    return ([c for c in checks if state(c) in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT")],
-            [c for c in checks if state(c) in ("PENDING", "IN_PROGRESS", "QUEUED", None, "")])
+    failed = [c for c in checks if state(c) in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT")]
+    moved = p.get("_base_changed") or ""
+    stale = [c for c in failed if moved and (c.get("startedAt") or c.get("completedAt") or moved) < moved]
+    return ([c for c in failed if c not in stale], [c for c in checks if state(c) in ("PENDING", "IN_PROGRESS", "QUEUED", None, "")],
+            stale)
 
 
-def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale):
+def rerun_line(check, moved):
+    """A stale failure, named with the command that reruns it."""
+    name = check.get("name") or check.get("context") or "check"
+    run = re.search(r"/actions/runs/(\d+)", check.get("detailsUrl") or check.get("targetUrl") or "")
+    return (f"stale check: {name}" + (f' ({check["workflowName"]})' if check.get("workflowName") else "")
+            + f" failed before the base changed at {moved}, so it is not red CI; rerun it"
+            + (f" with gh run rerun {run[1]} --failed" if run else ""))
+
+
+def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale, queued):
     """What the round can still do on one scoped PR, and who else it waits on: (actions, waits).
 
-    `allowed(action)` asks the authority file; `base_only()` and `stale()` read the forge, so they run
-    only where the answer matters."""
+    `allowed(action)` asks the authority file; `base_only(since)` and `stale()` read the forge, so they run
+    only where the answer matters. `base_only` checks since the round's approval, or since `since`; `queued()`
+    reads merge-queue membership."""
     actions, waits = [], []
     if requests["unhandled"]:
         actions.append(f'record a disposition for {requests["unhandled"]} review request(s)')
@@ -163,16 +180,20 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
     if p.get("_degraded"):
         return actions + ["read it again: its files and checks were unreadable"], waits
     if look in ("new", "HEAD MOVED"):
-        if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only():
+        if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only(None):
             actions.append("reapprove: only clean base merges since the round's approval")
+        elif look == "HEAD MOVED" and base_only(saved["head"]):
+            actions.append(f'carry: only clean base merges since the assessment; reapprove.py {p["number"]} --carry')
         else:
             actions.append("review: no saved assessment" if look == "new"
                            else f'review at new head {p["headRefOid"][:9]}')
         return actions, waits
     reasons = stale() if look in ("base moved", "discussion changed") else []
     if reasons:
-        return actions + ["review again: " + "; ".join(reasons)], waits
-    red, pending = checks_of(p)
+        return actions + ["review again: " + "; ".join(reasons) + "; or read it and, when the review holds, "
+                          f'reapprove.py {p["number"]} --carry --read "<why>"'], waits
+    red, pending, rerun = checks_of(p)
+    waits += [rerun_line(c, p["_base_changed"]) for c in rerun]
     blocker = blocker_of(p, red, mine)
     author = blocker.startswith("AUTHOR:")
     if blocker == "AUTHOR: behind base" and allowed("update-branch"):
@@ -189,16 +210,39 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
             waits.append(f'{d["owner"]}: {d["unblock"]}')
     if blocking:
         return actions, waits
+    for review in p.get("_stale_bot", []):
+        why = (f'{review["user"]["login"]}\'s changes request at {review["commit_id"][:9]} still blocks after its '
+               "COMMENT review at the head")
+        if allowed("dismiss-bot"):
+            actions.append(f'dismiss-bot: {why}; draft verified_findings with findings.py {p["number"]} --draft '
+                           f'{review["id"]}, confirm each at the head, then review_write.py dismiss --review-id {review["id"]}')
+        else:
+            waits.append(f"owner: {why}; dismissing it needs the dismiss-bot-review policy on auto or a grant")
     answered = any((d.get("waiver") or {}).get("answer") for d in saved["decisions"])
     if p.get("autoMergeRequest"):
         waits.append("GitHub: auto-merge is on; required checks and the merge queue decide")
     elif author:
         pass  # nothing lands until the branch changes, and that is a new head to review
     elif p.get("reviewDecision") == "APPROVED":
-        if stacked and allowed("enqueue"):
+        if (stacked or {}).get("kind") == "branch":
+            parent = stacked["entries"][0]["number"]
+            waits.append(f"#{parent}: based on its branch; lands after #{parent} merges and GitHub retargets it")
+        elif stacked and allowed("enqueue"):
             actions.append("land: approved stack layer; land.py --enqueue --stack-method")
         elif stacked:
             waits.append("owner: approved stack layer; landing it with land.py --enqueue needs a merge grant")
+        elif queued():
+            waits.append("GitHub: in the merge queue")
+        elif p.get("_dequeued"):
+            # The sweep would requeue it whatever failed; a flake requeue is the one automatic way back.
+            if p.get("_requeued"):
+                waits.append("owner: removed from the merge queue again after the round's one flake requeue")
+            elif allowed("requeue"):
+                actions.append("requeue-flake: removed from the merge queue; with the failing merge-group run's log, "
+                               f'land.py --requeue-flake --failure-log <log> {p["number"]}:<head> requeues it once '
+                               "if the failure is a listed flake")
+            else:
+                waits.append("owner: removed from the merge queue for a failing check; the requeue-flake policy is not auto")
         elif allowed("sweep-auto-merge"):
             actions.append("sweep: approved with auto-merge off; land.py --enable-auto-merge")
         else:
@@ -217,8 +261,9 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
     return actions, waits
 
 
-def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states, stacks, login):
-    """The round's work list; prints "settled" when no scoped PR has an action left for the round."""
+def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states, stacks, login, base, scope):
+    """The round's work list; prints "settled" when no scoped PR has an action left for the round, and
+    only "unchanged" when the list matches the last one printed for this round."""
     def allowed(number, action):
         try:
             check_authority(authority, slug, number, action)
@@ -228,7 +273,9 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
 
     def stale(p):
         assessment = saved[p["number"]]
-        live = live_from_view({**p, "target": target_state(slug, (assessment["evidence_inputs"].get("target") or {}).get("ref"))})
+        # The PR's live base, not the saved ref: a stacked PR's base is its parent's branch, then the base it is retargeted to.
+        ref = p.get("baseRefName") or (assessment["evidence_inputs"].get("target") or {}).get("ref")
+        live = live_from_view({**p, "target": target_state(slug, ref)})
         verdict = classify(assessment, live, policy=review_config(".")["revision"], repo=slug,
                            number=p["number"], writes=writes(slug))
         return list(verdict.reasons) if isinstance(verdict, Stale) else []
@@ -238,28 +285,33 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
     for p in (p for p in prs if p["number"] in scoped):
         n = p["number"]
         actions, waits = round_work(
-            p, saved.get(n), mine[n], looks[n], request_states[n], bool(stacks.get(n)),
+            p, saved.get(n), mine[n], looks[n], request_states[n], stacks.get(n),
             login is not None and p["author"]["login"] == login, lambda action: allowed(n, action),
-            lambda: reapprove_check(slug, n)[0]["base_only"], lambda: stale(p))
+            lambda since: reapprove_check(slug, n, since)[0]["base_only"], lambda: stale(p),
+            lambda: queue_state(p.get("id"), p["headRefOid"]) == "queued")
         work += [f"  #{n:<6} {'; '.join(actions)}"] if actions else []
         waiting += [f"  #{n:<6} {'; '.join(waits)}"] if waits else []
     mode = authority.get("mode", "once")
-    print(f"Round work on {len(work)} of {len(scoped)} scoped PR(s), run mode {mode}"
-          + (f" until {authority['until']}" if mode == "watch" else "") + ":")
-    print("\n".join(work) if work else "  none")
-    print("Waiting on someone else:")
-    print("\n".join(waiting) if waiting else "  none")
     joined = [f"#{p['number']}" for p in prs if p["number"] not in scoped]
-    print("JOINED, outside this round until a new intake answer adds them: " + (", ".join(joined) or "none"))
-    print("LEFT the queue: " + (", ".join(f"#{n}" for n in scoped if n not in listed) or "none"))
+    lines = [f"Round work on {len(work)} of {len(scoped)} scoped PR(s), run mode {mode}"
+             + (f" until {authority['until']}" if mode == "watch" else "") + ":",
+             *(work or ["  none"]), "Waiting on someone else:", *(waiting or ["  none"]),
+             "JOINED, outside this round until a new intake answer adds them: " + (", ".join(joined) or "none"),
+             "LEFT the queue: " + (", ".join(f"#{n}" for n in scoped if n not in listed) or "none")]
+    # The last list, per round, beside the round's other state: an event that changed nothing gets one line.
+    last = Path(state_dir(slug)) / "next.json"
+    try:
+        previous = json.loads(last.read_text())
+    except (OSError, ValueError):
+        previous = {}
+    key = (open_round(base, slug) or {}).get("round") or str(scope.resolve())
+    if previous.get(key) == lines:
+        print("unchanged: the work list matches the last one")
+    else:
+        print("\n".join(lines))
+        last.write_text(json.dumps({**previous, key: lines}))
     if not work:
         print("settled: no scoped PR has an action left for the round")
-
-
-def me():
-    """The login behind `gh`; None when it cannot be read."""
-    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
-    return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
 def my_review_of(evidence, login, head):
@@ -410,10 +462,19 @@ def main():
         stale[p["number"]] = [m for m in markers if m["head"] != head]
         request_states[p["number"]] = reconcile(evidence, [m for m in markers if m["head"] == head])
         mine[p["number"]] = my_review_of(evidence, login, head)
+        p["_stale_bot"] = superseded_bot_reviews(evidence["pr"].get("reviews", []), head)
+        queue_events = [e.get("event") for e in evidence.get("timeline", [])
+                        if e.get("event") in ("added_to_merge_queue", "removed_from_merge_queue")]
+        p["_dequeued"] = queue_events[-1:] == ["removed_from_merge_queue"]
+        p["_requeued"] = any(w.get("number") == p["number"] and w.get("action") == "requeue" for w in writes(slug))
+        p["_base_changed"] = max((e.get("created_at") or "" for e in evidence.get("timeline", [])
+                                  if e.get("event") in ("base_ref_changed", "automatic_base_change_succeeded")),
+                                 default=None)
         looks[p["number"]] = since_last_look(assessed.get(p["number"]), head, (final or p).get("baseRefOid"),
                                              (final or p).get("updatedAt"))
     if args.next:
-        print_next(prs + joined, scoped, slug, authority, assessed, mine, looks, request_states, stacks, login)
+        print_next(prs + joined, scoped, slug, authority, assessed, mine, looks, request_states, stacks, login,
+                   base, args.scope)
         return
     tiers = load_overrides()
     print(f"{len(prs)} open non-draft PR(s) targeting {base} or a stack rooted on it, oldest first\n")
@@ -424,11 +485,11 @@ def main():
     print("-" * len(hdr))
     for p in prs:
         paths = [f["path"] for f in (p.get("files") or [])]
-        red, pend = checks_of(p)
+        red, pend, rerun = checks_of(p)
         if p.get("_degraded"):
             ci = "?"          # detail fetch failed; re-check this row by hand
         else:
-            ci = f"{len(red)} RED" if red else (f"{len(pend)} pend" if pend else "green")
+            ci = f"{len(red)} RED" if red else (f"{len(pend)} pend" if pend else f"{len(rerun)} stale" if rerun else "green")
         size = f'+{p["additions"]}/-{p["deletions"]}'
         print(f'#{p["number"]:<6}{p["createdAt"][:10]:<12}{p["author"]["login"][:17]:<18}'
               f'{tier(paths, tiers):<7}{size:<13}{blocker_of(p, red, mine[p["number"]]):<26}{ci:<9}'
@@ -461,7 +522,7 @@ def main():
                    "text": f'{p["title"]}\n{p.get("body") or ""}'} for p in prs]
     found = related.pairs(neighbours)
     print("\nRelated PRs -- judge each pair before either verdict, and record a relation on either PR's "
-          "assessment: " + ("none" if found else ""))
+          "assessment: " + ("" if found else "none"))
     for entry in found:
         print("  " + related.describe(entry))
     for number, claim in related.outside_claims(neighbours):
@@ -514,7 +575,8 @@ def main():
             print("  " + line)
     # The auto-merge-sweep candidates: approved by anyone, auto-merge off, not a stack member.
     sweep = [f'#{p["number"]}' for p in prs if p.get("reviewDecision") == "APPROVED"
-             and not p.get("autoMergeRequest") and not stacks.get(p["number"])]
+             and not p.get("autoMergeRequest") and not stacks.get(p["number"])
+             and queue_state(p.get("id"), p.get("headRefOid")) != "queued"]
     if sweep:
         print("Approved with auto-merge off -- with the auto-merge-sweep policy on auto, run land.py "
               "--enable-auto-merge on each one your assessment clears: " + ", ".join(sweep))

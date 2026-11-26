@@ -122,15 +122,19 @@ def validate_assessment(assessment):
         subject = decision.get("subject")
         if subject is not None and (not isinstance(subject, str) or not re.fullmatch(r"[a-z][a-z0-9-]*:\S+", subject)):
             raise ValueError('subject is a shared key such as "adr:183", the same on every PR the decision gates')
+        login = decision.get("owner_login")
+        if login is not None and (not isinstance(login, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?", login)):
+            raise ValueError("owner_login is the forge login of the one person who answers the decision")
         if decision.get("recommend") not in (None, *ANSWERS):
             raise ValueError("recommend is one of " + ", ".join(ANSWERS))
     carried = assessment.get("carried")
     if carried is not None and (
             not isinstance(carried, dict) or carried.get("head") != assessment["head"]
             or not re.fullmatch(r"[0-9a-f]{40}", carried.get("from_head") or "") or not carried.get("check")
-            or not carried.get("at") or not isinstance(carried.get("commits"), list) or not carried["commits"]
-            or not assessment.get("provenance")):
-        raise ValueError("carried requires from_head, this head, the check, its commits and time, plus a provenance")
+            or not carried.get("at") or not isinstance(carried.get("commits"), list)
+            or not (carried["commits"] or carried["from_head"] == carried["head"]) or not assessment.get("provenance")):
+        raise ValueError("carried requires from_head, this head, the check, its commits (none only when the head is "
+                         "unchanged) and time, plus a provenance")
     for finding in assessment.get("verified_findings", []):
         if (type(finding.get("comment")) is not int or finding.get("status") not in ("fixed", "overstated")
                 or not finding.get("file") or type(finding.get("line")) is not int or not finding.get("observation")):
@@ -167,9 +171,11 @@ def validate_assessment(assessment):
 
 
 def unresolved(assessment):
+    """Decisions that hold approval: blocking ones, unfinished review, and any unanswered decision with a
+    `subject`, whatever its severity, because a shared decision waits on a person."""
     validate_assessment(assessment)
     return [d for d in assessment["decisions"] if d["kind"] != "ready" and not d.get("waiver")
-            and (d["severity"] == "blocking" or d["kind"] == "reviewer-incomplete")]
+            and (d["severity"] == "blocking" or d["kind"] == "reviewer-incomplete" or d.get("subject"))]
 
 
 def target_state(repo, ref):
@@ -228,9 +234,10 @@ def decision_key(number, decision):
     return decision.get("subject") or f'{number}/{decision["id"]}'
 
 
-def waiting(items):
+def waiting(items, me=None):
     """Open owner and evidence decisions across PRs, one entry per key, in the order first seen.
-    A rejected decision still blocks but was answered, so it is not asked again."""
+    A rejected decision still blocks but was answered, so it is not asked again. A decision whose
+    `owner_login` names someone other than `me` is marked `mine: False`: it waits on someone else."""
     groups = {}
     for item in items:
         for decision in unresolved(item):
@@ -239,7 +246,8 @@ def waiting(items):
             key = decision_key(item["number"], decision)
             group = groups.setdefault(key, {"key": key, "prs": [], "kind": decision["kind"], "owner": decision["owner"],
                                             "question": decision["summary"], "criterion": decision["criterion"],
-                                            "recommend": decision.get("recommend"), "unblock": decision["unblock"]})
+                                            "recommend": decision.get("recommend"), "unblock": decision["unblock"],
+                                            "mine": decision.get("owner_login") in (None, me)})
             if item["number"] not in group["prs"]:
                 group["prs"].append(item["number"])
     return list(groups.values())
@@ -337,7 +345,7 @@ LEVELS = {
     "major": ("comment", "request-changes", "update-branch", "push-fix", "delegate"),
 }
 SEPARATE = ("dismiss-bot", "dismiss-human", "enqueue", "enable-auto-merge", "sweep-auto-merge", "reapprove",
-            "land-own-pr")
+            "land-own-pr", "requeue")
 # Writes that can make a PR merge, directly or by releasing an author's auto-merge.
 LANDING = ("approve", *SEPARATE)
 GOVERNED = {action: kind for kind, entry in KINDS.items() for action in entry["actions"]}
@@ -417,6 +425,15 @@ def check_clearance(bundle, repo, number, live):
 
 def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def me():
+    """The login behind `gh`; None when it cannot be read."""
+    try:
+        r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    except OSError:
+        return None
+    return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 
 def gh_said(stderr=""):
@@ -700,10 +717,15 @@ def main():
             if not isinstance(bundle, dict) or bundle.get("repository") != repo:
                 sys.exit(f'expected {{"repository": "{repo}", "assessments": [...]}}')
         if cmd == "waiting":
-            groups = waiting(bundle["assessments"] if bundle else assessments(repo).values())
-            print(f"Waiting on you: {len(groups)} decision(s)" if groups else "Waiting on you: nothing")
-            for line in waiting_lines(groups):
+            groups = waiting(bundle["assessments"] if bundle else assessments(repo).values(), me())
+            mine, others = [g for g in groups if g["mine"]], [g for g in groups if not g["mine"]]
+            print(f"Waiting on you: {len(mine)} decision(s)" if mine else "Waiting on you: nothing")
+            for line in waiting_lines(mine):
                 print("  " + line)
+            if others:
+                print(f"Waiting on someone else: {len(others)} decision(s); the round does not ask you these")
+                for g in others:
+                    print(f'  {g["key"]} · ' + ", ".join(f"#{n}" for n in g["prs"]) + f' · {g["owner"]}: {g["question"]}')
             return
         try:
             results = decide(args.key, args.answer, args.instruction, args.scope, args.actor, repo, bundle)

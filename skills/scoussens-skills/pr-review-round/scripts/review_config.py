@@ -42,6 +42,12 @@ KINDS = {
         "default": "auto", "actions": ("reapprove",), "with_approvals": True,
         "question": "When GitHub dismisses the round's approval because the author merged the base branch, and the "
                     "new head adds nothing beyond those clean base merges, should the round approve it again?"},
+    # Flake tickets come from the profile's `flakes` reference; a PR is requeued at most once.
+    "requeue-flake": {
+        "default": "ask", "actions": ("requeue",), "with_approvals": False,
+        "question": "When the merge queue removes an approved PR for a failing check, and the failing test matches a "
+                    "flake ticket in the review profile's flakes reference, may the round put it back in the queue "
+                    "once? A second removal waits for a person."},
 }
 
 

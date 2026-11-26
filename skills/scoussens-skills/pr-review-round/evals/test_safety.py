@@ -89,6 +89,8 @@ class LandingTests(unittest.TestCase):
 
         def forge(command, **kwargs):
             nonlocal current
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 128, "", "fatal: not a git repository")
             if command[:3] == ["gh", "pr", "view"]:
                 current = next(snapshots, current)
                 payload = {"id": "PR_fixture", **current}
@@ -138,14 +140,14 @@ class LandingTests(unittest.TestCase):
             assessment_file.write_text(json.dumps(bundle(item)))
             authority_file.write_text(json.dumps(permission or authority()))
             argv = args or ["--enqueue", f"17:{HEAD}"]
-            if "--enqueue" in argv or "--enable-auto-merge" in argv:
+            if {"--enqueue", "--enable-auto-merge", "--requeue-flake"} & set(argv):
                 argv = [*argv, "--repo", "owner/repo", "--authority", str(authority_file),
                         "--assessments", str(assessment_file)]
             with patch.object(sys, "argv", ["land.py", *argv]), \
                 patch.object(subprocess, "run", side_effect=forge), \
                 patch.dict(os.environ, XDG_STATE_HOME=tmp), \
                 patch.object(land.time, "sleep"), patch.object(land, "MAX_POLLS", 2), \
-                contextlib.redirect_stdout(output):
+                patch.object(freshness.time, "sleep"), contextlib.redirect_stdout(output):
                 for write in prior:
                     ledger.record_write("owner/repo", 17, write, HEAD)
                 code = land.main()
@@ -172,6 +174,37 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(self.recorded, [])
         self.run_land([state()], ["--watch", "17"])
         self.assertEqual(self.recorded, [])
+
+    def test_a_flaky_removal_from_the_merge_queue_is_requeued_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            (root / ".nthplusio-skills").mkdir()
+            (root / ".nthplusio-skills/review.json").write_text(json.dumps(
+                {"schema_version": 1, "references": {"flakes": {"files": ["flakes.md"]}}}))
+            (root / "flakes.md").write_text("- INT-2911: `test_preview_pair_timeout` times out under load\n")
+            log = root / "failed.log"
+            previous = os.getcwd()
+            os.chdir(root)  # the profile is read from the repository root, as from a round
+            self.addCleanup(os.chdir, previous)
+            item = assessment(evidence_inputs={**assessment()["evidence_inputs"],
+                                               "policy": ledger.review_config(".")["revision"]})
+            permission = authority(grants=(), policies={"requeue-flake": "auto"})
+            run = lambda text, prior=(): (log.write_text(text), self.run_land(
+                [state(), state(queue_state="queued")], ["--requeue-flake", "--failure-log", str(log), f"17:{HEAD}"],
+                item=item, permission=permission, prior=prior))[1]
+            flaky = "FAILED tests/test_preview.py::test_preview_pair_timeout - TimeoutError"
+            writes, output, _ = run(flaky)
+            self.assertEqual(writes, 1, output)
+            self.assertEqual([(w["action"], w.get("conditions")) for w in self.recorded],
+                             [("requeue", {"flake": "INT-2911"})])
+            # A second removal holds: the ledger already records the one requeue.
+            writes, output, _ = run(flaky, prior=("requeue",))
+            self.assertEqual(writes, 0, output)
+            self.assertIn("already requeued this PR once", output)
+            # A failure that is not a listed flake is real.
+            writes, output, _ = run("FAILED tests/test_store.py::test_rollback - AssertionError")
+            self.assertEqual(writes, 0, output)
+            self.assertIn("names no test the profile's flakes reference lists", output)
 
     def test_conflict_is_not_landed(self):
         _, output, code = self.run_land([state(), state(mergeStateStatus="DIRTY")])
@@ -456,6 +489,8 @@ class ReviewWriteTests(unittest.TestCase):
                                       "draft": False, "auto_merge": None, "user": {"login": author}}] * 2)
 
         def forge(command, **kwargs):
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 128, "", "fatal: not a git repository")
             if "/git/ref/heads/" in command[2]:
                 payload = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": (target or {}).get("sha")}}
                 return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
@@ -499,7 +534,7 @@ class ReviewWriteTests(unittest.TestCase):
                                            "--head", HEAD, "--body-file", str(body),
                                            "--review-id", "9", "--authority", str(authority_file),
                                            "--assessments", str(assessment_file), *flags]), \
-                    patch.object(subprocess, "run", side_effect=forge), \
+                    patch.object(subprocess, "run", side_effect=forge), patch.object(freshness.time, "sleep"), \
                     patch.dict(os.environ, XDG_STATE_HOME=directory), \
                     patch.object(review_write, "state_of", return_value=after or state()), \
                     patch.object(review_write, "review_rules", return_value=rules), \
@@ -845,7 +880,10 @@ class ReviewWriteTests(unittest.TestCase):
         writes, output, code = self.run_write("approve", flags=["--write"], permission=never)
         self.assertEqual((len(writes), code), (1, 0), output)
         # Each action needs its own kind of assessment, and a re-approval needs the round's own earlier approval.
-        for action, item, held, message in (("approve", carried, prior, "carried from an earlier head"),
+        # Carried from an assessment the round never approved: an ordinary approval of the carried review.
+        writes, output, code = self.run_write("approve", flags=["--write"], item=carried)
+        self.assertEqual((len(writes), code), (1, 0), output)
+        for action, item, held, message in (("approve", carried, prior, "carried from the round's approval"),
                                             ("reapprove", assessment(), prior, "reapprove needs an assessment"),
                                             ("reapprove", carried, (), "the ledger records none"),
                                             ("reapprove", carried, ({**prior[0], "head": "e" * 40},), "at eeeeeeeee")):
