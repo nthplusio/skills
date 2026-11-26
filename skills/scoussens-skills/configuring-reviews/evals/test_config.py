@@ -92,6 +92,25 @@ class ConfigTests(unittest.TestCase):
             rule.write_text("Changed acceptance and automation rule")
             self.assertNotEqual(first["revision"], self.run_config(root)["revision"])
 
+    def test_reports_profile_files_git_has_no_committed_copy_of(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repository"
+            root.mkdir()
+            self.assertEqual(self.run_config(root)["uncommitted"], [], "nothing to commit without a profile")
+            (root / "clean.md").write_text("Committed rule")
+            (root / "edited.md").write_text("Committed rule")
+            git = lambda *a: subprocess.run(["git", "-C", str(root), *a], check=True, capture_output=True)
+            self.profile(root, guidance=["clean.md"], references={"conventions": {"files": ["edited.md"]}})
+            self.assertIsNone(self.run_config(root)["uncommitted"], "outside Git the answer is unknown")
+            git("init", "-q")
+            git("add", "clean.md", "edited.md")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "rules")
+            (root / "edited.md").write_text("Changed locally")
+            self.assertEqual(self.run_config(root)["uncommitted"], [".nthplusio-skills/review.json", "edited.md"])
+            git("add", "-A")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "profile")
+            self.assertEqual(self.run_config(root)["uncommitted"], [])
+
     def test_template_and_alternate_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

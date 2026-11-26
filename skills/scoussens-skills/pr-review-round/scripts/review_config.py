@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 
 
 DEFAULTS = ("conventions", "data-layer", "integration", "security", "verification")
@@ -156,6 +157,30 @@ def resolve(root, config=None):
     return result
 
 
+def uncommitted(root, result):
+    """The profile and referenced repository files that Git has no committed copy of: untracked, ignored,
+    added or changed. Other clones and CI review without them. None when Git cannot tell."""
+    root = Path(root).resolve()
+    paths = [result["profile"] or "", *result["guidance"], *result["tracker"]["policy"],
+             *result["execution"]["policy"], *(p for selected in result["references"].values() for p in selected)]
+    bundled = Path(__file__).resolve().parents[1]
+    names = list(dict.fromkeys(str(Path(p).relative_to(root)) for p in paths
+                               if p and Path(p).is_relative_to(root) and not Path(p).is_relative_to(bundled)))
+    if not names:
+        return []
+
+    def git(*args):
+        done = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+        return done.stdout if done.returncode == 0 else None
+    top = git("rev-parse", "--show-toplevel")
+    status = top and git("status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--", *names)
+    if status is None or top is None:
+        return None
+    entries = [e[3:] for e in status.split("\0") if len(e) > 3 and e[2] == " "]
+    found = {str((Path(top.strip()) / e).resolve().relative_to(root)) for e in entries}
+    return sorted(n for n in names if n in found)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -165,6 +190,7 @@ def main():
         result = resolve(args.root, args.config)
     except (ValueError, OSError) as error:
         parser.exit(2, f"Review configuration error: {error}\n")
+    result["uncommitted"] = uncommitted(args.root, result)
     print(json.dumps(result, indent=2))
 
 

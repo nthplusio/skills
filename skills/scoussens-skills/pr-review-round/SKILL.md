@@ -50,7 +50,8 @@ first message:
    recommended answer, and which settings the profile set.
 2. Ask those questions in one batch with the base branch and destination below,
    each with its recommended answer. Name the profile's settings so the user can
-   change one in a word.
+   change one in a word. When `review_config.py` lists `uncommitted` files, say
+   so: the round uses them, but other clones and CI do not.
 3. After the answers, update `answers.json`, run `authority.py init --repo
    <owner/repo> --scope $RUN/scope.json --answers answers.json --root <repository>
    --out $RUN/authority.json`, and show the user the summary it prints. An
