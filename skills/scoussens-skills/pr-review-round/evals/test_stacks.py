@@ -98,6 +98,9 @@ class StackQueueTests(unittest.TestCase):
         self.assertIn("#17", text)
         self.assertIn("Stack #7 · 2 of 2 on main · lands with #16 below", text)
         self.assertIn("per-PR auto-merge unavailable", text)
+        related = text.split("Related PRs")[1].split("\n\n")[0]
+        self.assertIn("#16 + #17  shared: README.md", related)
+        self.assertNotIn("none", related)
 
 
 class StackLandingTests(unittest.TestCase):

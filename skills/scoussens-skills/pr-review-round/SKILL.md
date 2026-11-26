@@ -181,7 +181,7 @@ python3 $S/queue.py <base> [--save-scope <f> | --scope <f>] # triage: every PR, 
 python3 $S/queue.py <base> --scope <f> --next --authority <f> # what the round can still do; prints settled when nothing
 python3 $S/stale_sweep.py <base>    # staleness across the WHOLE queue, one pass
 python3 $S/prstate.py <n>           # review state + head sha + staleness, one PR
-python3 $S/findings.py <n>          # blocking review bodies + their inline comments
+python3 $S/findings.py <n> [--draft <review-id>] # blocking reviews + inline comments; draft verified_findings
 python3 $S/test_reach.py <n>        # added symbols with no test referencing them
 python3 $S/ledger.py start|record|end # open the round, save assessments, close it (round checklist)
 python3 $S/ledger.py open|heads|rounds # findings, heads and rounds carried in from earlier rounds
@@ -431,7 +431,7 @@ In `settle` or `watch`, after the first pass (checklist commands 1 to 4 and step
 
 1. Read the harness's monitoring capability from `harness-discovery`'s saved record (`monitoring`), or from the current tool inventory when there is no record. Use what it names, not another harness's tools.
 2. When the harness can subscribe to pull-request events, subscribe for each scoped PR to pushes, check completions, reviews, review requests and merge-queue removals. Otherwise, and for events no subscription covers, schedule a sweep at an interval near the CI duration observed this round. Keep a list of what you created. When the harness can do neither, run as `once` and say so.
-3. On each wake, run `queue.py <base> --scope $RUN/scope.json --next --authority $RUN/authority.json` and act only on the round work it lists, with the same steps, helpers and authority file. Run checklist command 3 after each review. Ask the decisions `ledger.py waiting` prints in one batch and keep working; the round never waits on an answer while another PR has an action. Never widen the scope or the authority mid-run: report each PR listed as JOINED; it enters only through a new intake answer and a new round.
+3. On each wake, run `queue.py <base> --scope $RUN/scope.json --next --authority $RUN/authority.json` and act only on the round work it lists, with the same steps, helpers and authority file. When it prints `unchanged`, the event changed nothing the user acts on: reply in one line, or not at all. Run checklist command 3 after each review. Ask the decisions `ledger.py waiting` prints in one batch and keep working; the round never waits on an answer while another PR has an action. Never widen the scope or the authority mid-run: report each PR listed as JOINED; it enters only through a new intake answer and a new round.
 4. Stop when `--next` prints `settled` (`settle`) or `until` passes (`watch`). A listed action that its helper held at the same head on the previous wake does not keep the round open; report the hold. Then remove every subscription and schedule the round created, run checklist commands 5 and 6, and report the mode, the number of wakes and why the round stopped.
 
 ## What good looks like

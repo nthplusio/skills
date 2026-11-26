@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,21 +26,34 @@ spec.loader.exec_module(queue)
 PENDING = [{"name": "test", "status": "IN_PROGRESS", "conclusion": None}]
 
 
-def row(number, head=HEAD, decision="REVIEW_REQUIRED", auto=False, checks=()):
+def row(number, head=HEAD, decision="REVIEW_REQUIRED", auto=False, checks=(), node=None):
     return {"number": number, "title": f"PR {number}", "author": {"login": "author"},
             "createdAt": f"2026-11-{number - 10:02d}T12:00:00Z", "isDraft": False, "reviewDecision": decision,
             "headRefOid": head, "baseRefOid": BASE, "updatedAt": REVISION, "mergeStateStatus": "CLEAN",
             "mergeable": "MERGEABLE", "additions": 1, "deletions": 0, "headRefName": f"pr-{number}",
             "isCrossRepository": False, "autoMergeRequest": {"enabledAt": REVISION} if auto else None,
-            "_checks": list(checks)}
+            "_checks": list(checks), **({"id": node} if node else {})}
 
 
-def evidence(approved_at=None):
-    """The collected reviews: the reviewer's approval at `approved_at`, or none."""
+def evidence(approved_at=None, others=(), timeline=()):
+    """The collected reviews: the reviewer's approval at `approved_at`, or none, then `others`; and the timeline."""
     reviews = [{"id": 1, "state": "APPROVED", "user": {"login": "reviewer"}, "submitted_at": REVISION,
                 "commit_id": approved_at}] if approved_at else []
-    return {"failedFetches": [], "truncatedSources": [], "timeline": [], "requestedReviewers": [],
-            "pr": {"reviews": reviews}}
+    return {"failedFetches": [], "truncatedSources": [], "timeline": list(timeline), "requestedReviewers": [],
+            "pr": {"reviews": reviews + list(others)}}
+
+
+BOT = {"login": "review-bot[bot]", "type": "Bot"}
+
+
+def queued_reply(queued):
+    """The merge-queue GraphQL read: PR node ids in `queued` have an entry at their head."""
+    def run(command, **kwargs):
+        node = next(a.split("=", 1)[1] for a in command if a.startswith("id="))
+        entry = {"id": "entry", "state": "QUEUED", "position": 1} if node in queued else None
+        payload = {"data": {"node": {"headRefOid": HEAD, "mergeQueueEntry": entry}}}
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+    return run
 
 
 class NextActionTests(unittest.TestCase):
@@ -57,11 +71,13 @@ class NextActionTests(unittest.TestCase):
         for item in items:
             ledger.record_assessment(self.round, item, "owner/repo")
 
-    def next_actions(self, rows, scope, reviews=None, base_only=()):
-        """Run `queue.py main --scope --next --authority` against these listed rows; returns what it printed."""
+    def next_actions(self, rows, scope, reviews=None, base_only=(), policies=None, others=None, timeline=None,
+                     queued=()):
+        """Run `queue.py main --scope --next --authority` against these listed rows; returns what it printed.
+        `others` and `timeline` map a PR to more reviews and to timeline events; `queued` names merge-queue nodes."""
         (self.tmp / "scope.json").write_text(json.dumps(scope))
-        record = authority_script.build("owner/repo", scope, {"level": "review", "approvals": True,
-                                                               "mode": "settle", "instruction": "settle it"}, {})
+        record = authority_script.build("owner/repo", scope, {"level": "review", "approvals": True, "mode": "settle",
+                                                               "instruction": "settle it", "policies": policies or {}}, {})
         (self.tmp / "authority.json").write_text(json.dumps(record))
         scoped = [r for r in rows if r["number"] in scope]
         reads = [copy.deepcopy(rows)]
@@ -75,7 +91,9 @@ class NextActionTests(unittest.TestCase):
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "me", return_value="reviewer"), \
                 patch.object(queue, "stack_of", return_value=None), \
-                patch.object(queue, "collect", side_effect=lambda slug, n: evidence((reviews or {}).get(n))), \
+                patch.object(queue, "collect", side_effect=lambda slug, n: evidence(
+                    (reviews or {}).get(n), (others or {}).get(n, ()), (timeline or {}).get(n, ()))), \
+                patch.object(subprocess, "run", side_effect=queued_reply(queued)), \
                 patch.object(queue, "reapprove_check", side_effect=lambda slug, n, since=None: ({"base_only": n in base_only}, None)), \
                 contextlib.redirect_stdout(output):
             queue.main()
@@ -119,6 +137,57 @@ class NextActionTests(unittest.TestCase):
         self.assertIn("#20     decision answered: approve, then auto-merge", work)
         self.assertNotIn("#20", waiting)
         self.assertNotIn("settled", text)
+
+
+    def test_a_bot_comment_at_the_head_over_its_older_changes_request_is_dismiss_bot(self):
+        self.save(assessment(23))
+        reviews = [{"id": 9, "state": "CHANGES_REQUESTED", "user": BOT, "submitted_at": "2026-11-11T19:00:00Z",
+                    "commit_id": "c" * 40},
+                   {"id": 10, "state": "COMMENTED", "user": BOT, "submitted_at": "2026-11-11T19:30:00Z", "commit_id": HEAD}]
+        rows = [row(23, decision="CHANGES_REQUESTED")]
+        work, _ = self.sections(self.next_actions(rows, [23], others={23: reviews},
+                                                  policies={"dismiss-bot-review": "auto"}))
+        self.assertIn("#23     dismiss-bot: review-bot[bot]'s changes request at ccccccccc still blocks", work)
+        self.assertIn("findings.py 23 --draft 9", work)
+        # Under the default ask, the round does not list the dismissal as its own work.
+        work, waiting = self.sections(self.next_actions(rows, [23], others={23: reviews}))
+        self.assertNotIn("dismiss-bot:", work)
+        self.assertIn("dismissing it needs the dismiss-bot-review policy", waiting)
+        # A changes request at the head is a live verdict, not a stale one.
+        live = [{**reviews[0], "commit_id": HEAD}, reviews[1]]
+        text = self.next_actions(rows, [23], others={23: live}, policies={"dismiss-bot-review": "auto"})
+        self.assertNotIn("dismiss", text)
+
+    def test_the_sweep_skips_a_pr_already_in_the_merge_queue(self):
+        self.save(assessment(24), assessment(25))
+        rows = [row(24, decision="APPROVED", node="PR_24"), row(25, decision="APPROVED", node="PR_25")]
+        work, waiting = self.sections(self.next_actions(rows, [24, 25], queued={"PR_24"}))
+        self.assertNotIn("#24", work)
+        self.assertIn("#24     GitHub: in the merge queue", waiting)
+        self.assertIn("#25     sweep: approved with auto-merge off", work)
+
+    def test_the_same_state_twice_prints_unchanged(self):
+        self.save(assessment(19))
+        rows = [row(19, decision="APPROVED")]
+        first = self.next_actions(rows, [19])
+        self.assertIn("#19     sweep", first)
+        second = self.next_actions(rows, [19])
+        self.assertEqual(second.strip(), "unchanged: the work list matches the last one")
+
+    def test_a_check_that_failed_before_the_base_changed_is_stale_not_red(self):
+        # Live #3663: "select" in "Build preview pair" failed before GitHub retargeted the PR.
+        self.save(assessment(26))
+        failed = {"name": "select", "workflowName": "Build preview pair", "conclusion": "FAILURE",
+                  "startedAt": "2026-11-11T19:00:00Z", "detailsUrl": "https://github.com/o/r/actions/runs/77/job/1"}
+        moved = [{"event": "base_ref_changed", "created_at": "2026-11-11T19:10:00Z"}]
+        text = self.next_actions([row(26, checks=[failed])], [26], timeline={26: moved})
+        self.assertIn("stale check: select (Build preview pair) failed before the base changed", text)
+        self.assertIn("gh run rerun 77 --failed", text)
+        self.assertNotIn("author: red CI", text)
+        # The same failure after the base change is red CI.
+        text = self.next_actions([row(26, checks=[{**failed, "startedAt": "2026-11-11T19:20:00Z"}])], [26],
+                                 timeline={26: moved})
+        self.assertIn("author: red CI", text)
 
 
 if __name__ == "__main__":
