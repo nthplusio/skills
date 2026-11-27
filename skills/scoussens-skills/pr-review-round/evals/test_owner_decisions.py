@@ -79,6 +79,14 @@ class OwnerDecisionTests(unittest.TestCase):
         self.assertIn("18/staging-run · #18", out)
         self.assertNotIn("adr:183", out)
 
+    def test_clear_names_the_head_its_saved_assessment_reviewed(self):
+        # Live: "#3582 clear" while #3582's head had moved past its saved assessment.
+        self.save(adr_gated(17))
+        out, code = self.cli("decide", "adr:183", "--answer", "accept", "--instruction", WORDS)
+        self.assertEqual(code, 0, out)
+        self.assertIn("#17 clear at aaaaaaaaa: nothing unresolved in its saved assessment of that head", out)
+        self.assertIn("if the PR's head has moved, review or carry it first", out)
+
     def test_history_keeps_the_earlier_assessment_beside_the_answered_one(self):
         self.save(adr_gated(17), adr_gated(18))
         self.cli("decide", "adr:183", "--answer", "waive", "--instruction", WORDS)

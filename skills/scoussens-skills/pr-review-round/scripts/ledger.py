@@ -21,7 +21,7 @@ Settle owner decisions in one batch:
 
 `decide` appends a new assessment for every PR whose latest saved assessment carries
 the decision `<key>` (its `subject`, or `<pr>/<decision id>`), and prints each PR as
-clear or still blocked by the gates it names.
+clear at its saved head or still blocked by the gates it names.
 
 Read a round's history:
 
@@ -735,12 +735,14 @@ def main():
             with open(args.assessments, "w") as f:
                 json.dump(bundle, f, indent=2)
         print(f'{args.key}: {args.answer}, from "{args.instruction}"')
+        saved = assessments(repo)  # the head each answer applies to; decide does not read the live head
         for number, blockers in results:
             print(f"  #{number} " + ("still blocked: " + "; ".join(
                 f'{d["owner"]}: {d["unblock"]} ({decision_key(number, d)}'
                 + (", rejected" if d.get("rejected") else "") + ")" for d in blockers) if blockers
-                                    else "clear: nothing unresolved in its saved assessment; with approvals on, "
-                                         "approve it with review_write.py approve"))
+                                    else f'clear at {saved[number]["head"][:9]}: nothing unresolved in its saved '
+                                         "assessment of that head; if the PR's head has moved, review or carry it "
+                                         "first, otherwise, with approvals on, approve it with review_write.py approve"))
         return
 
     if cmd == "end":
