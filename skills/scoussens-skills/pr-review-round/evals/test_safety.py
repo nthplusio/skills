@@ -794,7 +794,8 @@ class ReviewWriteTests(unittest.TestCase):
                 writes, output, code = self.run_write(action, flags=["--write"], snapshots=[conflicting, conflicting],
                                                      target=MOVED, reads=BENIGN_BASE)
                 self.assertEqual(len(writes), 1, output)
-                self.assertIn("Accepted moved inputs: GitHub reports the PR conflicting", output)
+                self.assertIn(f"Accepted moved inputs: main moved ({BASE[:9]}..{MOVED['sha'][:9]}", output)
+                self.assertIn("GitHub reports the PR conflicting with it", output)
         writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[conflicting, conflicting],
                                              target=MOVED, reads=BENIGN_BASE)
         self.assertEqual((writes, code), ([], 1), output)
