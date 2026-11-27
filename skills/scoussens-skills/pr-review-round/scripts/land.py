@@ -52,6 +52,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 
 from approvers import approvers, lines as approver_lines
@@ -436,4 +437,5 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)  # each line as it happens, so a killed run still shows what it did
     raise SystemExit(main())

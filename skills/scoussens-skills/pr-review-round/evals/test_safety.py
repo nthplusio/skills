@@ -333,6 +333,20 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 0), output)
         self.assertIn("#17 QUEUED, not merged; in the merge queue at the reviewed head, so no request was sent", output)
 
+    def test_a_killed_run_has_already_printed_what_it_saw(self):
+        # Live: `timeout 150 land.py --enable-auto-merge ...` exited 124 and printed nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            gh = Path(tmp) / "gh"  # answers `gh pr view` with an open PR; every other read fails
+            gh.write_text("#!/bin/sh\n[ \"$1 $2\" = \"pr view\" ] || exit 1\n"
+                          f"echo '{json.dumps(state(mergeStateStatus='BLOCKED'))}'\n")
+            gh.chmod(0o755)
+            env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+            env.update(PATH=f"{tmp}:{env['PATH']}", XDG_STATE_HOME=tmp, PYTHONDONTWRITEBYTECODE="1")
+            with self.assertRaises(subprocess.TimeoutExpired) as killed:
+                subprocess.run([sys.executable, str(Path(land.__file__)), "--watch", "17"], env=env, cwd=tmp,
+                               capture_output=True, timeout=5)
+        self.assertIn("#17 pending -- state=OPEN / merge=BLOCKED", (killed.exception.stdout or b"").decode())
+
     def test_sweep_turns_on_auto_merge_for_a_pr_someone_else_approved_and_holds_without_approval(self):
         auto = {"enabledAt": REVISION}
         sweep = ["--enable-auto-merge", f"17:{HEAD}"]
