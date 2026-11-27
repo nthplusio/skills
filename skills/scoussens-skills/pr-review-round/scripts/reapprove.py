@@ -58,8 +58,9 @@ def have(sha):
     return git("cat-file", "-e", f"{sha}^{{commit}}") is not None
 
 
-def base_only(approved, head, base_tip):
+def base_only(approved, head, base_tip, anchor="the approval"):
     """{"base_only", "reason", "steps"} for the local commits approved..head against base_tip.
+    `anchor` names what the approved head is in the reason: the round's approval or a saved assessment.
 
     Each step is one commit on head's first-parent chain, newest first, with its second
     parent, the tree `git merge-tree --write-tree` produced (None on conflict) and its own tree.
@@ -72,13 +73,13 @@ def base_only(approved, head, base_tip):
     refused = verdict
     verdict = lambda ok, reason: {**refused(ok, reason), **({} if ok else {"files": pushed(approved, head, base_tip)})}
     if approved == head:
-        return verdict(False, "the head has not moved since the approval")
+        return verdict(False, f"the head has not moved since {anchor}")
     if subprocess.run(["git", "merge-base", "--is-ancestor", approved, head], capture_output=True).returncode:
         return verdict(False, f"approved head {approved[:9]} is not in the live head's history (rebase or force-push)")
     commit = head
     while commit != approved:
         if len(steps) >= MAX_STEPS:
-            return verdict(False, f"more than {MAX_STEPS} commits since the approval")
+            return verdict(False, f"more than {MAX_STEPS} commits since {anchor}")
         parents = (git("rev-list", "--parents", "-n", "1", commit) or "").split()[1:]
         if len(parents) != 2:
             steps.append({"commit": commit, "parents": len(parents)})
@@ -97,7 +98,7 @@ def base_only(approved, head, base_tip):
         if step["merge_tree"] != tree:
             return verdict(False, f"{commit[:9]}: the merge's tree differs from a clean merge of its parents")
         commit = first
-    return verdict(True, f"{len(steps)} clean base merge(s) since the approval")
+    return verdict(True, f"{len(steps)} clean base merge(s) since {anchor}")
 
 
 def pushed(approved, head, base_tip):
@@ -133,7 +134,9 @@ def check(repo, number, since=None):
     head, ref = pr["head"]["sha"], pr["base"]["ref"]
     approved = since or approved_head(repo, number)
     target = target_state(repo, ref)
-    result = {"approved": approved, "head": head, "base": pr["base"]["sha"], "target": target, "steps": []}
+    anchor = "the saved assessment" if since else "the approval"
+    result = {"approved": approved, "anchor": anchor, "head": head, "base": pr["base"]["sha"], "target": target,
+              "steps": []}
     if not approved:
         return {**result, "base_only": False, "reason": "the ledger records no approval of this PR by the round"}, pr
     if not target["sha"]:
@@ -143,7 +146,7 @@ def check(repo, number, since=None):
     for sha in (approved, target["sha"]):
         if not have(sha):  # GitHub serves a dropped commit by SHA for a while
             subprocess.run(["git", "fetch", "-q", "origin", sha], capture_output=True)
-    result.update(base_only(approved, head, target["sha"]))
+    result.update(base_only(approved, head, target["sha"], anchor))
     if result["base_only"] and mergeable(pr) is not True:
         result.update(base_only=False, reason="GitHub reports the PR conflicting" if mergeable(pr) is False
                       else "GitHub has not reported the PR mergeable yet")
@@ -187,7 +190,8 @@ def carry(earlier, result, live, *, policy, discussion, base=([], []), read=None
 
 def describe(result):
     lines = [f'base-only: {"yes" if result["base_only"] else "no"} -- {result["reason"]}',
-             f'approved head (A): {result.get("approved") or "none"}', f'live head (H):     {result.get("head") or "unknown"}']
+             f'head at {result.get("anchor", "the approval")} (A): {result.get("approved") or "none"}',
+             f'live head (H): {result.get("head") or "unknown"}']
     for step in result["steps"]:
         if "second_parent" not in step:
             lines.append(f'  {step["commit"][:9]}  {step["parents"]} parent(s): not a base merge')

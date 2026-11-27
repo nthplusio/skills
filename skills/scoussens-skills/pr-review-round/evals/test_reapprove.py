@@ -240,6 +240,15 @@ class CarryCommandTests(unittest.TestCase):
         self.assertEqual(code, 1, err)
         self.assertEqual(self.saved()[17]["head"], self.repo.approved)
 
+    def test_a_carry_names_the_assessment_it_carried_from_not_an_approval(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        code, out, err = self.run_carry()
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 clean base merge(s) since the saved assessment", err)
+        self.assertIn(f"head at the saved assessment (A): {self.repo.approved}", err)
+        self.assertNotIn("approval", err)
+
     def test_a_base_only_merge_carries_an_assessment_the_round_never_approved(self):
         self.repo.on("main", "other.py", "z = 1\n")
         head = self.repo.merge("main")
