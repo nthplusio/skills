@@ -148,21 +148,34 @@ def blocker_of(pr, red, mine=None):
 
 
 def checks_of(p):
-    """(failed, pending, stale) checks in the PR's status rollup. A failure that ran before the PR's latest
-    base change (`_base_changed`, from the timeline) is stale: it judged a PR that no longer exists."""
+    """(failed, pending, stale) checks in the PR's status rollup. A failure whose run was triggered before the
+    PR's latest base change (`_base_changed`, from the timeline) is stale: it judged a PR that no longer exists.
+    A rerun replays the event that created its run, so `_run_created`, the run's creation, beats the attempt's
+    `startedAt`."""
     state = lambda c: c.get("conclusion") or c.get("state")
     checks = p.get("statusCheckRollup") or []
     failed = [c for c in checks if state(c) in ("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT")]
     moved = p.get("_base_changed") or ""
-    stale = [c for c in failed if moved and (c.get("startedAt") or c.get("completedAt") or moved) < moved]
+    stale = [c for c in failed
+             if moved and (c.get("_run_created") or c.get("startedAt") or c.get("completedAt") or moved) < moved]
     return ([c for c in failed if c not in stale], [c for c in checks if state(c) in ("PENDING", "IN_PROGRESS", "QUEUED", None, "")],
             stale)
+
+
+RUN = re.compile(r"/actions/runs/(\d+)")
+
+
+def run_created(slug, check):
+    """When the GitHub Actions run behind a check was created. Unlike `run_started_at`, `created_at` stays
+    fixed across reruns, which replay the run's original event. None for a check that is not an Actions run."""
+    run = RUN.search(check.get("detailsUrl") or check.get("targetUrl") or "")
+    return (gh_json(["gh", "api", f"repos/{slug}/actions/runs/{run[1]}"]) or {}).get("created_at") if run else None
 
 
 def rerun_line(check, moved):
     """A stale failure, named with the command that reruns it."""
     name = check.get("name") or check.get("context") or "check"
-    run = re.search(r"/actions/runs/(\d+)", check.get("detailsUrl") or check.get("targetUrl") or "")
+    run = RUN.search(check.get("detailsUrl") or check.get("targetUrl") or "")
     return (f"stale check: {name}" + (f' ({check["workflowName"]})' if check.get("workflowName") else "")
             + f" failed before the base changed at {moved}, so it is not red CI; rerun it"
             + (f" with gh run rerun {run[1]} --failed" if run else ""))
@@ -474,6 +487,9 @@ def main():
         p["_base_changed"] = max((e.get("created_at") or "" for e in evidence.get("timeline", [])
                                   if e.get("event") in ("base_ref_changed", "automatic_base_change_succeeded")),
                                  default=None)
+        if p["_base_changed"]:
+            for check in checks_of(p)[0]:  # red by its attempt's start; a rerun may still replay an older event
+                check["_run_created"] = run_created(slug, check)
         looks[p["number"]] = since_last_look(assessed.get(p["number"]), head, (final or p).get("baseRefOid"),
                                              (final or p).get("updatedAt"))
     if args.next:
