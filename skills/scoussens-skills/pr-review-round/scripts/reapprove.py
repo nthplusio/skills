@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] -- read-only.
+"""reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] -- read-only on the forge.
 
 Whether a PR the round approved earlier has changed only by clean base merges since
 that approval, so the `reapprove-base-only` policy can approve it again without a
@@ -19,9 +19,10 @@ Anything unreadable is not base-only. Output: the verdict, its reason, A, H and 
 merge-tree result per commit.
 
 With `--carry`, A is the head of the PR's saved assessment instead, whether or not
-the round approved it, and the script prints an assessments bundle whose one
-assessment for this PR is that assessment carried to H: the new head, base, target,
-discussion time and policy revision are read live, the original `assessed_at` and
+the round approved it, and the script replaces this PR's assessment in the round's
+assessments file, in place, with that assessment carried to H, keeping every other
+PR's entry; `ledger.py record` then saves it. In the carried record the new head,
+base, target, discussion time and policy revision are read live, the original `assessed_at` and
 decisions are kept, and `carried` plus `provenance` record the tree check, both heads
 and why the review still holds. H may equal A when only the base or the discussion
 moved. It refuses a changed review policy, a base move freshness.py would not call
@@ -203,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("number", type=int)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--carry", type=Path, help="assessments bundle holding the PR's saved assessment")
+    parser.add_argument("--carry", type=Path, help="the round's assessments file; carry updates this PR's entry in place")
     parser.add_argument("--read", help="with --carry: why the review holds after the round read the new discussion")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo) or args.number <= 0:
@@ -236,7 +237,11 @@ def main():
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(f"not carried: {error}", file=sys.stderr)
         return 1
-    print(json.dumps({**{k: v for k, v in bundle.items() if k != "assessments"}, "assessments": [carried]}, indent=2))
+    # Replace this PR's entry in the round's file in place, as `ledger.py decide` does; other PRs' entries stay.
+    bundle["assessments"] = [carried if a.get("number") == args.number else a for a in bundle["assessments"]]
+    args.carry.write_text(json.dumps(bundle, indent=2))
+    print(f'#{args.number} carried from {carried["carried"]["from_head"][:9]} to {carried["head"][:9]} in {args.carry}: '
+          + (carried["carried"]["reason"] or "nothing moved"))
     return 0
 
 
