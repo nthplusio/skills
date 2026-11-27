@@ -130,8 +130,9 @@ def _base_move(assessment, live, repo, number, conflict_ok=False):
         return [], []
     conflicting = _conflicting(live, repo, number)
     if conflicting and conflict_ok:
-        return [], ["GitHub reports the PR conflicting with its base; the review covers the reviewed head, and "
-                    "the author's resolving push is a new head"]
+        moved = ", ".join(f"{old[:9]}..{new[:9]}" for old, new in sorted(moves))
+        return [], [f'{target["ref"]} moved ({moved}) and GitHub reports the PR conflicting with it; the review '
+                    "covers the reviewed head, and the author's resolving push is a new head"]
     if conflicting is not False:
         return ["GitHub reports the PR conflicting" if conflicting
                 else "base moved and GitHub has not reported the PR mergeable"], []
