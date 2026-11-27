@@ -21,7 +21,9 @@ Settle owner decisions in one batch:
 
 `decide` appends a new assessment for every PR whose latest saved assessment carries
 the decision `<key>` (its `subject`, or `<pr>/<decision id>`), and prints each PR as
-clear or still blocked by the gates it names.
+clear at its saved head or still blocked by the gates it names. An answer can
+arrive after its round closed, so `decide` appends to that round; `record` refuses
+a closed round.
 
 Read a round's history:
 
@@ -392,8 +394,9 @@ def check_authority(authority, repo, number, action):
                      f'authority.py grant <authority.json> --pr {number} --action {action} --instruction "<their words>"')
 
 
-def current_assessment(bundle, repo, number, live):
-    """The PR's one saved assessment and its freshness verdict; raises when the verdict is Stale."""
+def current_assessment(bundle, repo, number, live, conflict_ok=False):
+    """The PR's one saved assessment and its freshness verdict; raises when the verdict is Stale.
+    `conflict_ok` is for review writes only; see freshness.classify."""
     from freshness import Stale, classify
     if bundle.get("repository") != repo:
         raise ValueError("assessment belongs to a different repository")
@@ -404,7 +407,8 @@ def current_assessment(bundle, repo, number, live):
     validate_assessment(assessment)
     discussed = assessment["evidence_inputs"]["forge"] != live.get("forge")
     verdict = classify(assessment, live, policy=review_config(".", bundle.get("review_config"))["revision"],
-                       repo=repo, number=number, writes=writes(repo) if discussed else [])
+                       repo=repo, number=number, writes=writes(repo) if discussed else [],
+                       conflict_ok=conflict_ok)
     if isinstance(verdict, Stale):
         raise ValueError(verdict.message())
     return assessment, verdict
@@ -681,6 +685,10 @@ def main():
             sys.exit(f'expected {{"repository": "{repo}", "assessments": [...]}}; nothing recorded')
         if not round_known(rid, repo):
             sys.exit(f"unknown round {rid!r}; run `ledger.py start <base>` and pass the id it prints. Nothing recorded")
+        ended = next((r.get("ended_at") for r in _read("rounds", repo) if r.get("round") == rid), None)
+        if ended:
+            sys.exit(f"round {rid} closed at {ended}; run `ledger.py start <base>` and record into the round it "
+                     "prints. Nothing recorded")
         # Validate every assessment before writing any, so a bad one records nothing.
         for item in bundle["assessments"]:
             try:
@@ -735,12 +743,14 @@ def main():
             with open(args.assessments, "w") as f:
                 json.dump(bundle, f, indent=2)
         print(f'{args.key}: {args.answer}, from "{args.instruction}"')
+        saved = assessments(repo)  # the head each answer applies to; decide does not read the live head
         for number, blockers in results:
             print(f"  #{number} " + ("still blocked: " + "; ".join(
                 f'{d["owner"]}: {d["unblock"]} ({decision_key(number, d)}'
                 + (", rejected" if d.get("rejected") else "") + ")" for d in blockers) if blockers
-                                    else "clear: nothing unresolved in its saved assessment; with approvals on, "
-                                         "approve it with review_write.py approve"))
+                                    else f'clear at {saved[number]["head"][:9]}: nothing unresolved in its saved '
+                                         "assessment of that head; if the PR's head has moved, review or carry it "
+                                         "first, otherwise, with approvals on, approve it with review_write.py approve"))
         return
 
     if cmd == "end":

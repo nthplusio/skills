@@ -72,9 +72,10 @@ class NextActionTests(unittest.TestCase):
             ledger.record_assessment(self.round, item, "owner/repo")
 
     def next_actions(self, rows, scope, reviews=None, base_only=(), policies=None, others=None, timeline=None,
-                     queued=()):
+                     queued=(), runs=None):
         """Run `queue.py main --scope --next --authority` against these listed rows; returns what it printed.
-        `others` and `timeline` map a PR to more reviews and to timeline events; `queued` names merge-queue nodes."""
+        `others` and `timeline` map a PR to more reviews and to timeline events; `queued` names merge-queue nodes;
+        `runs` maps an Actions run id to its `gh api repos/.../actions/runs/<id>` payload."""
         (self.tmp / "scope.json").write_text(json.dumps(scope))
         record = authority_script.build("owner/repo", scope, {"level": "review", "approvals": True, "mode": "settle",
                                                                "instruction": "settle it", "policies": policies or {}}, {})
@@ -84,9 +85,12 @@ class NextActionTests(unittest.TestCase):
         reads += [{"files": [{"path": "src/app.py"}], "statusCheckRollup": r["_checks"], "body": ""} for r in scoped]
         reads += [{k: r[k] for k in ("headRefOid", "baseRefOid", "updatedAt")} for r in scoped]
         output = io.StringIO()
+        reads = iter(reads)
+        read = lambda args, **kwargs: ((runs or {})[args[2].rsplit("/", 1)[1]] if "/actions/runs/" in args[-1]
+                                       else next(reads))
         with patch.object(sys, "argv", ["queue.py", "main", "--scope", str(self.tmp / "scope.json"), "--next",
                                         "--authority", str(self.tmp / "authority.json")]), \
-                patch.object(queue, "gh_json", side_effect=reads), \
+                patch.object(queue, "gh_json", side_effect=read), \
                 patch.object(queue, "repo_slug", return_value="owner/repo"), \
                 patch.object(queue, "handled_requests", return_value=[]), \
                 patch.object(queue, "me", return_value="reviewer"), \
@@ -100,9 +104,12 @@ class NextActionTests(unittest.TestCase):
         return output.getvalue()
 
     def sections(self, text):
-        work = text.split("Waiting on someone else:")[0]
+        work = text.split("Waiting on")[0]
         waiting = text.split("Waiting on someone else:")[1].split("JOINED")[0]
         return work, waiting
+
+    def yours(self, text):
+        return text.split("Waiting on you:")[1].split("Waiting on someone else:")[0]
 
     def mixed_queue(self):
         self.save(assessment(17), assessment(18), assessment(19), adr_gated(20), assessment(21))
@@ -120,11 +127,26 @@ class NextActionTests(unittest.TestCase):
         self.assertIn("#19     sweep: approved with auto-merge off", work)
         self.assertNotIn("#20", work)
         self.assertNotIn("#21", work)
-        self.assertIn("#20     owner decision adr:183 (Product owner); ask it with ledger.py waiting", waiting)
+        self.assertIn("#20     owner decision adr:183 (Product owner); ask it with ledger.py waiting", self.yours(text))
+        self.assertNotIn("#20", waiting)
         self.assertIn("#21     CI pending: 1 check(s); GitHub: auto-merge is on", waiting)
         self.assertIn("JOINED, outside this round until a new intake answer adds them: #22", text)
         self.assertIn("LEFT the queue: #16", text)
         self.assertNotIn("settled", text)
+
+    def test_owner_decisions_split_between_you_and_someone_else_as_ledger_waiting_does(self):
+        # Live: Seth's own decisions were listed under "Waiting on someone else". The user is `reviewer`.
+        for_me, for_alex = adr_gated(30), adr_gated(31)
+        for_me["decisions"][0].update(subject="adr:184", owner_login="reviewer")
+        for_alex["decisions"][0].update(subject="adr:185", owner_login="alex")
+        self.save(for_me, for_alex)
+        text = self.next_actions([row(30), row(31)], [30, 31])
+        _, waiting = self.sections(text)
+        self.assertIn("#30     owner decision adr:184 (Product owner); ask it with ledger.py waiting", self.yours(text))
+        self.assertNotIn("#31", self.yours(text))
+        self.assertIn("#31     owner decision adr:185 (Product owner)", waiting)
+        self.assertNotIn("#30", waiting)
+        self.assertTrue(text.rstrip().endswith("settled: no scoped PR has an action left for the round"), text)
 
     def test_settled_when_only_others_have_work_and_an_answer_makes_work_again(self):
         rows = self.mixed_queue()
@@ -181,13 +203,27 @@ class NextActionTests(unittest.TestCase):
                   "startedAt": "2026-11-11T19:00:00Z", "detailsUrl": "https://github.com/o/r/actions/runs/77/job/1"}
         moved = [{"event": "base_ref_changed", "created_at": "2026-11-11T19:10:00Z"}]
         text = self.next_actions([row(26, checks=[failed])], [26], timeline={26: moved})
-        self.assertIn("stale check: select (Build preview pair) failed before the base changed", text)
-        self.assertIn("gh run rerun 77 --failed", text)
+        self.assertIn("stale check: select (Build preview pair) ran for an event from before the base changed", text)
+        self.assertIn("a new push or closing and reopening the PR", text)
+        self.assertNotIn("gh run rerun", text)
         self.assertNotIn("author: red CI", text)
         # The same failure after the base change is red CI.
-        text = self.next_actions([row(26, checks=[{**failed, "startedAt": "2026-11-11T19:20:00Z"}])], [26],
-                                 timeline={26: moved})
+        rerun = {**failed, "startedAt": "2026-11-11T19:20:00Z"}
+        runs = {"77": {"created_at": "2026-11-11T19:20:00Z", "run_started_at": "2026-11-11T19:20:00Z"}}
+        text = self.next_actions([row(26, checks=[rerun])], [26], timeline={26: moved}, runs=runs)
         self.assertIn("author: red CI", text)
+
+    def test_a_rerun_after_the_base_changed_of_a_run_from_before_it_is_stale(self):
+        # Live #3663: attempt 2 of "select" started after the retarget but replayed the 11-25 pull_request event.
+        self.save(assessment(26))
+        rerun = {"name": "select", "workflowName": "Build preview pair", "conclusion": "FAILURE",
+                 "startedAt": "2026-11-26T16:56:00Z", "detailsUrl": "https://github.com/o/r/actions/runs/77/job/2"}
+        moved = [{"event": "base_ref_changed", "created_at": "2026-11-26T14:27:00Z"}]
+        runs = {"77": {"created_at": "2026-11-25T10:00:00Z", "run_started_at": "2026-11-26T16:56:00Z",
+                       "run_attempt": 2}}
+        text = self.next_actions([row(26, checks=[rerun])], [26], timeline={26: moved}, runs=runs)
+        self.assertIn("stale check: select (Build preview pair) ran for an event from before the base changed", text)
+        self.assertNotIn("author: red CI", text)
 
 
     def test_a_pr_the_merge_queue_removed_is_a_flake_requeue_not_a_sweep(self):

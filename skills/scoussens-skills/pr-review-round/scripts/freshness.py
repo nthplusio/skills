@@ -91,17 +91,19 @@ def live_from_view(state):
             "target": state.get("target"), "conflicting": conflicting}
 
 
-def classify(assessment, live, *, policy, repo, number, writes):
+def classify(assessment, live, *, policy, repo, number, writes, conflict_ok=False):
     """Fresh, Benign or Stale for a validated assessment against live inputs.
 
     `writes` are the ledger's accepted writes; the round's own posts are not new discussion.
+    `conflict_ok` lets a review write through on a PR that conflicts with its base: the head is the one
+    reviewed, a conflicting PR cannot merge, and the author's resolving push is a new head to review.
     """
     if assessment["head"] != live["head"]:
         return Stale(("head changed",))
     if assessment["evidence_inputs"]["policy"] != policy:
         return Stale(("review policy changed; resolve configuration and review affected checks again",))
     stale, benign = [], []
-    for found_stale, found_benign in (_base_move(assessment, live, repo, number),
+    for found_stale, found_benign in (_base_move(assessment, live, repo, number, conflict_ok),
                                       _discussion_move(assessment["evidence_inputs"]["forge"], live["forge"],
                                                        repo, number, writes)):
         stale += found_stale
@@ -113,7 +115,7 @@ def classify(assessment, live, *, policy, repo, number, writes):
     return Fresh()
 
 
-def _base_move(assessment, live, repo, number):
+def _base_move(assessment, live, repo, number, conflict_ok=False):
     saved, target = assessment["evidence_inputs"].get("target") or {}, live.get("target") or {}
     if not SHA.fullmatch(target.get("sha") or ""):
         return ["actual target ref unavailable"], []
@@ -127,6 +129,9 @@ def _base_move(assessment, live, repo, number):
     if not moves:
         return [], []
     conflicting = _conflicting(live, repo, number)
+    if conflicting and conflict_ok:
+        return [], ["GitHub reports the PR conflicting with its base; the review covers the reviewed head, and "
+                    "the author's resolving push is a new head"]
     if conflicting is not False:
         return ["GitHub reports the PR conflicting" if conflicting
                 else "base moved and GitHub has not reported the PR mergeable"], []

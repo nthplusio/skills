@@ -203,8 +203,9 @@ class CarryCommandTests(unittest.TestCase):
         if head == self.repo.approved:  # nothing pushed: the base did not move either
             item["base"] = tip
             item["evidence_inputs"] = {**item["evidence_inputs"], "target": {"ref": "main", "sha": tip}}
+        self.other = assessment(18)  # another PR in the round's file
         path = self.repo.path / "assessments.json"
-        path.write_text(json.dumps({"repository": "owner/repo", "assessments": [item]}))
+        path.write_text(json.dumps({"repository": "owner/repo", "assessments": [item, self.other]}))
         pr = {"head": {"sha": head}, "base": {"ref": "main", "sha": tip}, "updated_at": self.LATER,
               "mergeable": True, "mergeable_state": "clean"}
         api = lambda route, paginate=False: list(timeline) if "timeline" in route else pr
@@ -217,12 +218,43 @@ class CarryCommandTests(unittest.TestCase):
             code = reapprove.main()
         return code, out.getvalue(), err.getvalue()
 
+    def saved(self):
+        """The round's assessments file, by PR number."""
+        bundle = json.loads((self.repo.path / "assessments.json").read_text())
+        return {a["number"]: a for a in bundle["assessments"]}
+
+    def test_a_carry_saves_into_the_round_file_and_keeps_every_other_pr(self):
+        # Live: the carried bundle went to stdout, and the round overwrote its file with it once.
+        self.repo.on("main", "other.py", "z = 1\n")
+        head = self.repo.merge("main")
+        code, out, err = self.run_carry()
+        self.assertEqual(code, 0, err)
+        saved = self.saved()
+        self.assertEqual(sorted(saved), [17, 18])
+        self.assertEqual((saved[17]["head"], saved[17]["carried"]["from_head"]), (head, self.repo.approved))
+        self.assertEqual(saved[18], self.other)
+        self.assertIn(f"#17 carried from {self.repo.approved[:9]} to {head[:9]}", out)
+        # A refused carry leaves the file as it was.
+        self.repo.commit("test_feature.py", "assert True\n", "add a test")
+        code, out, err = self.run_carry()
+        self.assertEqual(code, 1, err)
+        self.assertEqual(self.saved()[17]["head"], self.repo.approved)
+
+    def test_a_carry_names_the_assessment_it_carried_from_not_an_approval(self):
+        self.repo.on("main", "other.py", "z = 1\n")
+        self.repo.merge("main")
+        code, out, err = self.run_carry()
+        self.assertEqual(code, 0, err)
+        self.assertIn("1 clean base merge(s) since the saved assessment", err)
+        self.assertIn(f"head at the saved assessment (A): {self.repo.approved}", err)
+        self.assertNotIn("approval", err)
+
     def test_a_base_only_merge_carries_an_assessment_the_round_never_approved(self):
         self.repo.on("main", "other.py", "z = 1\n")
         head = self.repo.merge("main")
         code, out, err = self.run_carry()
         self.assertEqual(code, 0, err)
-        carried = json.loads(out)["assessments"][0]
+        carried = self.saved()[17]
         self.assertEqual((carried["head"], carried["carried"]["from_head"]), (head, self.repo.approved))
         self.assertEqual(carried["evidence_inputs"]["forge"], self.LATER)
         self.assertIn("1 base merge(s)", carried["carried"]["reason"])
@@ -246,7 +278,7 @@ class CarryCommandTests(unittest.TestCase):
         self.assertIn("--read", err)
         code, out, err = self.run_carry(comment, read="alex asks about naming; no change to the verdict")
         self.assertEqual(code, 0, err)
-        carried = json.loads(out)["assessments"][0]
+        carried = self.saved()[17]
         self.assertEqual((carried["head"], carried["carried"]["commits"]), (self.repo.approved, []))
         self.assertEqual(carried["evidence_inputs"]["forge"], self.LATER)
         self.assertIn("read by the round: commented by alex", carried["provenance"])

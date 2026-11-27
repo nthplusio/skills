@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] -- read-only.
+"""reapprove.py <n> --repo <owner/repo> [--carry <assessments.json>] -- read-only on the forge.
 
 Whether a PR the round approved earlier has changed only by clean base merges since
 that approval, so the `reapprove-base-only` policy can approve it again without a
@@ -19,9 +19,10 @@ Anything unreadable is not base-only. Output: the verdict, its reason, A, H and 
 merge-tree result per commit.
 
 With `--carry`, A is the head of the PR's saved assessment instead, whether or not
-the round approved it, and the script prints an assessments bundle whose one
-assessment for this PR is that assessment carried to H: the new head, base, target,
-discussion time and policy revision are read live, the original `assessed_at` and
+the round approved it, and the script replaces this PR's assessment in the round's
+assessments file, in place, with that assessment carried to H, keeping every other
+PR's entry; `ledger.py record` then saves it. In the carried record the new head,
+base, target, discussion time and policy revision are read live, the original `assessed_at` and
 decisions are kept, and `carried` plus `provenance` record the tree check, both heads
 and why the review still holds. H may equal A when only the base or the discussion
 moved. It refuses a changed review policy, a base move freshness.py would not call
@@ -57,8 +58,9 @@ def have(sha):
     return git("cat-file", "-e", f"{sha}^{{commit}}") is not None
 
 
-def base_only(approved, head, base_tip):
+def base_only(approved, head, base_tip, anchor="the approval"):
     """{"base_only", "reason", "steps"} for the local commits approved..head against base_tip.
+    `anchor` names what the approved head is in the reason: the round's approval or a saved assessment.
 
     Each step is one commit on head's first-parent chain, newest first, with its second
     parent, the tree `git merge-tree --write-tree` produced (None on conflict) and its own tree.
@@ -71,13 +73,13 @@ def base_only(approved, head, base_tip):
     refused = verdict
     verdict = lambda ok, reason: {**refused(ok, reason), **({} if ok else {"files": pushed(approved, head, base_tip)})}
     if approved == head:
-        return verdict(False, "the head has not moved since the approval")
+        return verdict(False, f"the head has not moved since {anchor}")
     if subprocess.run(["git", "merge-base", "--is-ancestor", approved, head], capture_output=True).returncode:
         return verdict(False, f"approved head {approved[:9]} is not in the live head's history (rebase or force-push)")
     commit = head
     while commit != approved:
         if len(steps) >= MAX_STEPS:
-            return verdict(False, f"more than {MAX_STEPS} commits since the approval")
+            return verdict(False, f"more than {MAX_STEPS} commits since {anchor}")
         parents = (git("rev-list", "--parents", "-n", "1", commit) or "").split()[1:]
         if len(parents) != 2:
             steps.append({"commit": commit, "parents": len(parents)})
@@ -96,7 +98,7 @@ def base_only(approved, head, base_tip):
         if step["merge_tree"] != tree:
             return verdict(False, f"{commit[:9]}: the merge's tree differs from a clean merge of its parents")
         commit = first
-    return verdict(True, f"{len(steps)} clean base merge(s) since the approval")
+    return verdict(True, f"{len(steps)} clean base merge(s) since {anchor}")
 
 
 def pushed(approved, head, base_tip):
@@ -132,7 +134,9 @@ def check(repo, number, since=None):
     head, ref = pr["head"]["sha"], pr["base"]["ref"]
     approved = since or approved_head(repo, number)
     target = target_state(repo, ref)
-    result = {"approved": approved, "head": head, "base": pr["base"]["sha"], "target": target, "steps": []}
+    anchor = "the saved assessment" if since else "the approval"
+    result = {"approved": approved, "anchor": anchor, "head": head, "base": pr["base"]["sha"], "target": target,
+              "steps": []}
     if not approved:
         return {**result, "base_only": False, "reason": "the ledger records no approval of this PR by the round"}, pr
     if not target["sha"]:
@@ -142,7 +146,7 @@ def check(repo, number, since=None):
     for sha in (approved, target["sha"]):
         if not have(sha):  # GitHub serves a dropped commit by SHA for a while
             subprocess.run(["git", "fetch", "-q", "origin", sha], capture_output=True)
-    result.update(base_only(approved, head, target["sha"]))
+    result.update(base_only(approved, head, target["sha"], anchor))
     if result["base_only"] and mergeable(pr) is not True:
         result.update(base_only=False, reason="GitHub reports the PR conflicting" if mergeable(pr) is False
                       else "GitHub has not reported the PR mergeable yet")
@@ -186,7 +190,8 @@ def carry(earlier, result, live, *, policy, discussion, base=([], []), read=None
 
 def describe(result):
     lines = [f'base-only: {"yes" if result["base_only"] else "no"} -- {result["reason"]}',
-             f'approved head (A): {result.get("approved") or "none"}', f'live head (H):     {result.get("head") or "unknown"}']
+             f'head at {result.get("anchor", "the approval")} (A): {result.get("approved") or "none"}',
+             f'live head (H): {result.get("head") or "unknown"}']
     for step in result["steps"]:
         if "second_parent" not in step:
             lines.append(f'  {step["commit"][:9]}  {step["parents"]} parent(s): not a base merge')
@@ -203,7 +208,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("number", type=int)
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--carry", type=Path, help="assessments bundle holding the PR's saved assessment")
+    parser.add_argument("--carry", type=Path, help="the round's assessments file; carry updates this PR's entry in place")
     parser.add_argument("--read", help="with --carry: why the review holds after the round read the new discussion")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo) or args.number <= 0:
@@ -236,7 +241,11 @@ def main():
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         print(f"not carried: {error}", file=sys.stderr)
         return 1
-    print(json.dumps({**{k: v for k, v in bundle.items() if k != "assessments"}, "assessments": [carried]}, indent=2))
+    # Replace this PR's entry in the round's file in place, as `ledger.py decide` does; other PRs' entries stay.
+    bundle["assessments"] = [carried if a.get("number") == args.number else a for a in bundle["assessments"]]
+    args.carry.write_text(json.dumps(bundle, indent=2))
+    print(f'#{args.number} carried from {carried["carried"]["from_head"][:9]} to {carried["head"][:9]} in {args.carry}: '
+          + (carried["carried"]["reason"] or "nothing moved"))
     return 0
 
 

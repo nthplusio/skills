@@ -321,6 +321,32 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 1), output)
         self.assertIn("auto-merge-sweep policy is ask", output)
 
+    def test_auto_merge_on_a_merge_queue_base_finishes_once_the_pr_is_queued(self):
+        # Live: GitHub queued the PR straight away and the helper polled about 40 minutes for a merge.
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(queue_state="queued")],
+                                             ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("#17 QUEUED, not merged; the merge queue merges it when its checks pass", output)
+        self.assertNotIn("timed out", output)
+        # Already queued at the reviewed head: no request, and still finished.
+        writes, output, code = self.run_land([state(queue_state="queued")], ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (0, 0), output)
+        self.assertIn("#17 QUEUED, not merged; in the merge queue at the reviewed head, so no request was sent", output)
+
+    def test_a_killed_run_has_already_printed_what_it_saw(self):
+        # Live: `timeout 150 land.py --enable-auto-merge ...` exited 124 and printed nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            gh = Path(tmp) / "gh"  # answers `gh pr view` with an open PR; every other read fails
+            gh.write_text("#!/bin/sh\n[ \"$1 $2\" = \"pr view\" ] || exit 1\n"
+                          f"echo '{json.dumps(state(mergeStateStatus='BLOCKED'))}'\n")
+            gh.chmod(0o755)
+            env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+            env.update(PATH=f"{tmp}:{env['PATH']}", XDG_STATE_HOME=tmp, PYTHONDONTWRITEBYTECODE="1")
+            with self.assertRaises(subprocess.TimeoutExpired) as killed:
+                subprocess.run([sys.executable, str(Path(land.__file__)), "--watch", "17"], env=env, cwd=tmp,
+                               capture_output=True, timeout=5)
+        self.assertIn("#17 pending -- state=OPEN / merge=BLOCKED", (killed.exception.stdout or b"").decode())
+
     def test_sweep_turns_on_auto_merge_for_a_pr_someone_else_approved_and_holds_without_approval(self):
         auto = {"enabledAt": REVISION}
         sweep = ["--enable-auto-merge", f"17:{HEAD}"]
@@ -743,7 +769,6 @@ class ReviewWriteTests(unittest.TestCase):
              "base changed files this PR changes: src/app.py"),
             ("renamed overlap", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "ahead", "files": [
                 {"filename": "src/main.py", "previous_filename": "src/app.py"}]}}, "base changed files this PR changes"),
-            ("conflict", {**moved, "mergeable": False, "mergeable_state": "dirty"}, MOVED, BENIGN_BASE, "conflicting"),
             ("mergeability unknown", {**moved, "mergeable": None}, MOVED, BENIGN_BASE, "has not reported the PR mergeable"),
             ("unreadable target", pull(), {**TARGET, "sha": None}, BENIGN_BASE, "actual target ref unavailable"),
             ("unreadable base change", moved, MOVED, {"files": BENIGN_BASE["files"]}, "unreadable, truncated or rewritten"),
@@ -760,6 +785,20 @@ class ReviewWriteTests(unittest.TestCase):
                     self.assertEqual((writes, code), ([], 1), output)
                     self.assertIn(reason, output)
                     self.assertEqual(self.recorded, [])
+
+    def test_a_conflicting_pr_gets_its_review_and_a_dismissal_still_holds(self):
+        # Live #3735: the code was cleared, the branch conflicted, and the approval was held.
+        conflicting = pull(base={"sha": MOVED["sha"], "ref": "main"}, mergeable=False, mergeable_state="dirty")
+        for action in ("approve", "comment", "request-changes"):
+            with self.subTest(action=action):
+                writes, output, code = self.run_write(action, flags=["--write"], snapshots=[conflicting, conflicting],
+                                                     target=MOVED, reads=BENIGN_BASE)
+                self.assertEqual(len(writes), 1, output)
+                self.assertIn("Accepted moved inputs: GitHub reports the PR conflicting", output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[conflicting, conflicting],
+                                             target=MOVED, reads=BENIGN_BASE)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("conflicting", output)
 
     def test_discussion_from_bots_automation_and_this_round_is_benign_and_people_are_not(self):
         talked = pull(updated_at=LATER)

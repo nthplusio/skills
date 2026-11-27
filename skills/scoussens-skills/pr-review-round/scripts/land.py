@@ -22,7 +22,9 @@ immediately before the write. Run from the repository root with the official
 Every write rechecks OPEN, non-draft, reviewed head, APPROVED, and actual queue
 membership. --enqueue also waits for CLEAN. --enable-auto-merge is the preferred
 landing path: it turns auto-merge on while checks still run, leaves the wait to
-GitHub's required checks, and reports AUTO-MERGE ENABLED once GitHub shows it. GitHub's --match-head-commit guards the merge request too.
+GitHub's required checks, and reports AUTO-MERGE ENABLED once GitHub shows it, or
+QUEUED once the PR is in the merge queue. GitHub's --match-head-commit guards
+the merge request too.
 No strategy flag: the queue owns the merge strategy. A successful request is
 not proof of queue membership or landing; only subsequent reads establish it.
 A PR that already has auto-merge on, or is already queued, at the reviewed head
@@ -50,6 +52,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 
 from approvers import approvers, lines as approver_lines
@@ -318,6 +321,10 @@ def main():
             if writing and not outcome and args.enable_auto_merge and state.get("autoMergeRequest"):
                 outcome = ("AUTO-MERGE ENABLED, not merged; already on at the reviewed head, so no request was sent. "
                            "GitHub merges it when its required checks pass")
+            elif writing and not outcome and args.enable_auto_merge and queue == "queued":
+                outcome = ("QUEUED, not merged; in the merge queue at the reviewed head"
+                           + ("" if number in submitted else ", so no request was sent")
+                           + ". The merge queue merges it when its checks pass")
             if outcome:
                 outcomes[number] = outcome
                 pending.remove(number)
@@ -350,6 +357,11 @@ def main():
                 if observed.get("state") == "MERGED":
                     outcomes[number] = "MERGED"
                     pending.remove(number)
+                elif (ok and args.enable_auto_merge and observed.get("queue_state") == "queued"
+                      and observed.get("headRefOid") == heads[number] and cleared(number, observed) and not moved):
+                    outcomes[number] = "QUEUED, not merged; the merge queue merges it when its checks pass"
+                    pending.remove(number)
+                    print(f"#{number} {outcomes[number]}")
                 elif (ok and args.enable_auto_merge and observed.get("autoMergeRequest")
                       and observed.get("headRefOid") == heads[number] and cleared(number, observed) and not moved):
                     outcomes[number] = "AUTO-MERGE ENABLED, not merged; GitHub merges it when its required checks pass"
@@ -415,8 +427,8 @@ def main():
     if all(outcomes.get(number) == "MERGED" for number in heads):
         print("all watched PRs landed")
         return 0
-    if all(outcomes.get(number, "").startswith(("MERGED", "AUTO-MERGE ENABLED")) for number in heads):
-        print("every PR merged or has auto-merge on; confirm merges later with land.py --watch")
+    if all(outcomes.get(number, "").startswith(("MERGED", "AUTO-MERGE ENABLED", "QUEUED")) for number in heads):
+        print("every PR merged, has auto-merge on, or is in the merge queue; confirm merges later with land.py --watch")
         return 0
     for number in sorted(pending):
         print(f"#{number} timed out, not confirmed merged; last observed state above")
@@ -425,4 +437,5 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(line_buffering=True)  # each line as it happens, so a killed run still shows what it did
     raise SystemExit(main())
