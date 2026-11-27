@@ -21,7 +21,9 @@ Settle owner decisions in one batch:
 
 `decide` appends a new assessment for every PR whose latest saved assessment carries
 the decision `<key>` (its `subject`, or `<pr>/<decision id>`), and prints each PR as
-clear at its saved head or still blocked by the gates it names.
+clear at its saved head or still blocked by the gates it names. An answer can
+arrive after its round closed, so `decide` appends to that round; `record` refuses
+a closed round.
 
 Read a round's history:
 
@@ -681,6 +683,10 @@ def main():
             sys.exit(f'expected {{"repository": "{repo}", "assessments": [...]}}; nothing recorded')
         if not round_known(rid, repo):
             sys.exit(f"unknown round {rid!r}; run `ledger.py start <base>` and pass the id it prints. Nothing recorded")
+        ended = next((r.get("ended_at") for r in _read("rounds", repo) if r.get("round") == rid), None)
+        if ended:
+            sys.exit(f"round {rid} closed at {ended}; run `ledger.py start <base>` and record into the round it "
+                     "prints. Nothing recorded")
         # Validate every assessment before writing any, so a bad one records nothing.
         for item in bundle["assessments"]:
             try:

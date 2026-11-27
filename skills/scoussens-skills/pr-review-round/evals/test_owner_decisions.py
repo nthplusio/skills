@@ -87,6 +87,20 @@ class OwnerDecisionTests(unittest.TestCase):
         self.assertIn("#17 clear at aaaaaaaaa: nothing unresolved in its saved assessment of that head", out)
         self.assertIn("if the PR's head has moved, review or carry it first", out)
 
+    def test_record_refuses_a_closed_round_and_decide_still_answers_into_it(self):
+        path = self.save(adr_gated(17))
+        rid = ledger.assessments("owner/repo")[17]["round"]
+        ledger.round_end(rid, [], "owner/repo", reconciliation=[])
+        out, code = self.cli("record", rid, str(path))
+        self.assertNotEqual(code, 0)
+        self.assertIn(f"round {rid} closed at", out)
+        self.assertIn("run `ledger.py start <base>`", out)
+        self.assertEqual(len(ledger.assessment_history("owner/repo")), 1)
+        # An owner's answer can come after the round closed; it is saved beside the record it answers.
+        out, code = self.cli("decide", "adr:183", "--answer", "accept", "--instruction", WORDS)
+        self.assertEqual(code, 0, out)
+        self.assertEqual([a["round"] for a in ledger.assessment_history("owner/repo")], [rid, rid])
+
     def test_history_keeps_the_earlier_assessment_beside_the_answered_one(self):
         self.save(adr_gated(17), adr_gated(18))
         self.cli("decide", "adr:183", "--answer", "waive", "--instruction", WORDS)
