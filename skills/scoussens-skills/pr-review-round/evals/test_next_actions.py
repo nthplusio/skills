@@ -203,8 +203,9 @@ class NextActionTests(unittest.TestCase):
                   "startedAt": "2026-11-11T19:00:00Z", "detailsUrl": "https://github.com/o/r/actions/runs/77/job/1"}
         moved = [{"event": "base_ref_changed", "created_at": "2026-11-11T19:10:00Z"}]
         text = self.next_actions([row(26, checks=[failed])], [26], timeline={26: moved})
-        self.assertIn("stale check: select (Build preview pair) failed before the base changed", text)
-        self.assertIn("gh run rerun 77 --failed", text)
+        self.assertIn("stale check: select (Build preview pair) ran for an event from before the base changed", text)
+        self.assertIn("a new push or closing and reopening the PR", text)
+        self.assertNotIn("gh run rerun", text)
         self.assertNotIn("author: red CI", text)
         # The same failure after the base change is red CI.
         rerun = {**failed, "startedAt": "2026-11-11T19:20:00Z"}
@@ -221,7 +222,7 @@ class NextActionTests(unittest.TestCase):
         runs = {"77": {"created_at": "2026-11-25T10:00:00Z", "run_started_at": "2026-11-26T16:56:00Z",
                        "run_attempt": 2}}
         text = self.next_actions([row(26, checks=[rerun])], [26], timeline={26: moved}, runs=runs)
-        self.assertIn("stale check: select (Build preview pair) failed before the base changed", text)
+        self.assertIn("stale check: select (Build preview pair) ran for an event from before the base changed", text)
         self.assertNotIn("author: red CI", text)
 
 

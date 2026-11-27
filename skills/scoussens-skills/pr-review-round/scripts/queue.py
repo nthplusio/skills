@@ -173,12 +173,12 @@ def run_created(slug, check):
 
 
 def rerun_line(check, moved):
-    """A stale failure, named with the command that reruns it."""
+    """A stale failure. A rerun replays the run's original event, from before the base change, so only a new
+    event (a push, or closing and reopening the PR) runs the check against the current base."""
     name = check.get("name") or check.get("context") or "check"
-    run = RUN.search(check.get("detailsUrl") or check.get("targetUrl") or "")
     return (f"stale check: {name}" + (f' ({check["workflowName"]})' if check.get("workflowName") else "")
-            + f" failed before the base changed at {moved}, so it is not red CI; rerun it"
-            + (f" with gh run rerun {run[1]} --failed" if run else ""))
+            + f" ran for an event from before the base changed at {moved}, so it is not red CI. A rerun replays "
+            "that event; a new push or closing and reopening the PR runs it against the current base")
 
 
 def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale, queued, login):
