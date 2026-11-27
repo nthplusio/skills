@@ -29,17 +29,19 @@ reconcile, and merging them first is what stops the queue growing.
 
 With --next it prints the round's work list instead of the table, read-only:
 each scoped PR that has an action left for the round under its authority file
-and saved assessments, then each scoped PR waiting on someone else, then the
-PRs that JOINED or LEFT. A JOINED PR stays outside the round until a new
-intake answer adds it. With no action left it prints "settled". A settle or
-watch round runs it on every wake and acts only on what it lists. When the list
-matches the last one printed for the round, it prints only "unchanged".
+and saved assessments, then each scoped PR with an owner decision waiting on
+you, then each scoped PR waiting on someone else, then the PRs that JOINED or
+LEFT. Owner decisions split as `ledger.py waiting` splits them. A JOINED PR
+stays outside the round until a new intake answer adds it. With no action left
+it prints "settled". A settle or watch round runs it on every wake and acts
+only on what it lists. When the list matches the last one printed for the
+round, it prints only "unchanged".
 """
 import argparse, json, re, shlex, subprocess, sys, time
 from pathlib import Path
 from review_requests import collect, reconcile, effective_reviews
-from ledger import (OWNED, assessments, check_authority, decision_key, gh_said, handled_requests, me, open_round,
-                    repo_slug, state_dir, target_state, unresolved, writes)
+from ledger import (OWNED, assessments, check_authority, gh_said, handled_requests, me, open_round,
+                    repo_slug, state_dir, target_state, unresolved, waiting, writes)
 from freshness import Stale, classify, live_from_view
 from review_config import resolve as review_config
 from branch_rules import gate_lines
@@ -166,19 +168,20 @@ def rerun_line(check, moved):
             + (f" with gh run rerun {run[1]} --failed" if run else ""))
 
 
-def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale, queued):
-    """What the round can still do on one scoped PR, and who else it waits on: (actions, waits).
+def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only, stale, queued, login):
+    """What the round can still do on one scoped PR, what it waits on you for, and who else it waits on:
+    (actions, asks, waits). An owner decision is yours by `ledger.waiting`'s rule for `login`.
 
     `allowed(action)` asks the authority file; `base_only(since)` and `stale()` read the forge, so they run
     only where the answer matters. `base_only` checks since the round's approval, or since `since`; `queued()`
     reads merge-queue membership."""
-    actions, waits = [], []
+    actions, asks, waits = [], [], []
     if requests["unhandled"]:
         actions.append(f'record a disposition for {requests["unhandled"]} review request(s)')
     if requests["coverage"] != "complete":
         waits.append("unknown: request coverage (" + ", ".join(requests["gaps"]) + "); report it")
     if p.get("_degraded"):
-        return actions + ["read it again: its files and checks were unreadable"], waits
+        return actions + ["read it again: its files and checks were unreadable"], asks, waits
     if look in ("new", "HEAD MOVED"):
         if mine in ("DISMISSED", "approved at old head") and allowed("reapprove") and base_only(None):
             actions.append("reapprove: only clean base merges since the round's approval")
@@ -187,11 +190,11 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
         else:
             actions.append("review: no saved assessment" if look == "new"
                            else f'review at new head {p["headRefOid"][:9]}')
-        return actions, waits
+        return actions, asks, waits
     reasons = stale() if look in ("base moved", "discussion changed") else []
     if reasons:
         return actions + ["review again: " + "; ".join(reasons) + "; or read it and, when the review holds, "
-                          f'reapprove.py {p["number"]} --carry --read "<why>"'], waits
+                          f'reapprove.py {p["number"]} --carry --read "<why>"'], asks, waits
     red, pending, rerun = checks_of(p)
     waits += [rerun_line(c, p["_base_changed"]) for c in rerun]
     blocker = blocker_of(p, red, mine)
@@ -203,13 +206,12 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
     elif pending:
         waits.append(f"CI pending: {len(pending)} check(s)")
     blocking = unresolved(saved)
-    for d in blocking:
-        if d["kind"] in OWNED and not d.get("rejected"):
-            waits.append(f'owner decision {decision_key(p["number"], d)} ({d["owner"]}); ask it with ledger.py waiting')
-        else:
-            waits.append(f'{d["owner"]}: {d["unblock"]}')
+    for g in waiting([saved], login):
+        (asks if g["mine"] else waits).append(f'owner decision {g["key"]} ({g["owner"]})'
+                                              + ("; ask it with ledger.py waiting" if g["mine"] else ""))
+    waits += [f'{d["owner"]}: {d["unblock"]}' for d in blocking if d["kind"] not in OWNED or d.get("rejected")]
     if blocking:
-        return actions, waits
+        return actions, asks, waits
     for review in p.get("_stale_bot", []):
         why = (f'{review["user"]["login"]}\'s changes request at {review["commit_id"][:9]} still blocks after its '
                "COMMENT review at the head")
@@ -258,7 +260,7 @@ def round_work(p, saved, mine, look, requests, stacked, own, allowed, base_only,
         actions.append(("decision answered: " if answered else "land: ") + "approve, then auto-merge")
     else:
         waits.append("another approver: nothing unresolved, and this round may not approve")
-    return actions, waits
+    return actions, asks, waits
 
 
 def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states, stacks, login, base, scope):
@@ -281,21 +283,23 @@ def print_next(prs, scoped, slug, authority, saved, mine, looks, request_states,
         return list(verdict.reasons) if isinstance(verdict, Stale) else []
 
     listed = {p["number"] for p in prs}
-    work, waiting = [], []
+    work, yours, others = [], [], []
     for p in (p for p in prs if p["number"] in scoped):
         n = p["number"]
-        actions, waits = round_work(
+        actions, asks, waits = round_work(
             p, saved.get(n), mine[n], looks[n], request_states[n], stacks.get(n),
             login is not None and p["author"]["login"] == login, lambda action: allowed(n, action),
             lambda since: reapprove_check(slug, n, since)[0]["base_only"], lambda: stale(p),
-            lambda: queue_state(p.get("id"), p["headRefOid"]) == "queued")
+            lambda: queue_state(p.get("id"), p["headRefOid"]) == "queued", login)
         work += [f"  #{n:<6} {'; '.join(actions)}"] if actions else []
-        waiting += [f"  #{n:<6} {'; '.join(waits)}"] if waits else []
+        yours += [f"  #{n:<6} {'; '.join(asks)}"] if asks else []
+        others += [f"  #{n:<6} {'; '.join(waits)}"] if waits else []
     mode = authority.get("mode", "once")
     joined = [f"#{p['number']}" for p in prs if p["number"] not in scoped]
     lines = [f"Round work on {len(work)} of {len(scoped)} scoped PR(s), run mode {mode}"
              + (f" until {authority['until']}" if mode == "watch" else "") + ":",
-             *(work or ["  none"]), "Waiting on someone else:", *(waiting or ["  none"]),
+             *(work or ["  none"]), "Waiting on you:", *(yours or ["  none"]),
+             "Waiting on someone else:", *(others or ["  none"]),
              "JOINED, outside this round until a new intake answer adds them: " + (", ".join(joined) or "none"),
              "LEFT the queue: " + (", ".join(f"#{n}" for n in scoped if n not in listed) or "none")]
     # The last list, per round, beside the round's other state: an event that changed nothing gets one line.

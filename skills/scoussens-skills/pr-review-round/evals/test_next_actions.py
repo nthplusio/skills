@@ -100,9 +100,12 @@ class NextActionTests(unittest.TestCase):
         return output.getvalue()
 
     def sections(self, text):
-        work = text.split("Waiting on someone else:")[0]
+        work = text.split("Waiting on")[0]
         waiting = text.split("Waiting on someone else:")[1].split("JOINED")[0]
         return work, waiting
+
+    def yours(self, text):
+        return text.split("Waiting on you:")[1].split("Waiting on someone else:")[0]
 
     def mixed_queue(self):
         self.save(assessment(17), assessment(18), assessment(19), adr_gated(20), assessment(21))
@@ -120,11 +123,26 @@ class NextActionTests(unittest.TestCase):
         self.assertIn("#19     sweep: approved with auto-merge off", work)
         self.assertNotIn("#20", work)
         self.assertNotIn("#21", work)
-        self.assertIn("#20     owner decision adr:183 (Product owner); ask it with ledger.py waiting", waiting)
+        self.assertIn("#20     owner decision adr:183 (Product owner); ask it with ledger.py waiting", self.yours(text))
+        self.assertNotIn("#20", waiting)
         self.assertIn("#21     CI pending: 1 check(s); GitHub: auto-merge is on", waiting)
         self.assertIn("JOINED, outside this round until a new intake answer adds them: #22", text)
         self.assertIn("LEFT the queue: #16", text)
         self.assertNotIn("settled", text)
+
+    def test_owner_decisions_split_between_you_and_someone_else_as_ledger_waiting_does(self):
+        # Live: Seth's own decisions were listed under "Waiting on someone else". The user is `reviewer`.
+        for_me, for_alex = adr_gated(30), adr_gated(31)
+        for_me["decisions"][0].update(subject="adr:184", owner_login="reviewer")
+        for_alex["decisions"][0].update(subject="adr:185", owner_login="alex")
+        self.save(for_me, for_alex)
+        text = self.next_actions([row(30), row(31)], [30, 31])
+        _, waiting = self.sections(text)
+        self.assertIn("#30     owner decision adr:184 (Product owner); ask it with ledger.py waiting", self.yours(text))
+        self.assertNotIn("#31", self.yours(text))
+        self.assertIn("#31     owner decision adr:185 (Product owner)", waiting)
+        self.assertNotIn("#30", waiting)
+        self.assertTrue(text.rstrip().endswith("settled: no scoped PR has an action left for the round"), text)
 
     def test_settled_when_only_others_have_work_and_an_answer_makes_work_again(self):
         rows = self.mixed_queue()
