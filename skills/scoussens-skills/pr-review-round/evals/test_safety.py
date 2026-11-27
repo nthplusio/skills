@@ -321,6 +321,18 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((writes, code), (0, 1), output)
         self.assertIn("auto-merge-sweep policy is ask", output)
 
+    def test_auto_merge_on_a_merge_queue_base_finishes_once_the_pr_is_queued(self):
+        # Live: GitHub queued the PR straight away and the helper polled about 40 minutes for a merge.
+        writes, output, code = self.run_land([state(mergeStateStatus="BLOCKED"), state(queue_state="queued")],
+                                             ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (1, 0), output)
+        self.assertIn("#17 QUEUED, not merged; the merge queue merges it when its checks pass", output)
+        self.assertNotIn("timed out", output)
+        # Already queued at the reviewed head: no request, and still finished.
+        writes, output, code = self.run_land([state(queue_state="queued")], ["--enable-auto-merge", f"17:{HEAD}"])
+        self.assertEqual((writes, code), (0, 0), output)
+        self.assertIn("#17 QUEUED, not merged; in the merge queue at the reviewed head, so no request was sent", output)
+
     def test_sweep_turns_on_auto_merge_for_a_pr_someone_else_approved_and_holds_without_approval(self):
         auto = {"enabledAt": REVISION}
         sweep = ["--enable-auto-merge", f"17:{HEAD}"]
