@@ -394,8 +394,9 @@ def check_authority(authority, repo, number, action):
                      f'authority.py grant <authority.json> --pr {number} --action {action} --instruction "<their words>"')
 
 
-def current_assessment(bundle, repo, number, live):
-    """The PR's one saved assessment and its freshness verdict; raises when the verdict is Stale."""
+def current_assessment(bundle, repo, number, live, conflict_ok=False):
+    """The PR's one saved assessment and its freshness verdict; raises when the verdict is Stale.
+    `conflict_ok` is for review writes only; see freshness.classify."""
     from freshness import Stale, classify
     if bundle.get("repository") != repo:
         raise ValueError("assessment belongs to a different repository")
@@ -406,7 +407,8 @@ def current_assessment(bundle, repo, number, live):
     validate_assessment(assessment)
     discussed = assessment["evidence_inputs"]["forge"] != live.get("forge")
     verdict = classify(assessment, live, policy=review_config(".", bundle.get("review_config"))["revision"],
-                       repo=repo, number=number, writes=writes(repo) if discussed else [])
+                       repo=repo, number=number, writes=writes(repo) if discussed else [],
+                       conflict_ok=conflict_ok)
     if isinstance(verdict, Stale):
         raise ValueError(verdict.message())
     return assessment, verdict

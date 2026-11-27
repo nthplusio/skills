@@ -175,7 +175,10 @@ def main():
             raise RuntimeError("HELD: head changed, PR closed, or draft; review current state again")
         target = target_state(args.repo, pr["base"].get("ref"))
         # A moved base or discussion holds only when it could change the verdict; see freshness.py.
-        _, verdict = current_assessment(bundle, args.repo, args.number, live_from_rest(pr, target))
+        # Review writes go through on a conflicting PR (writing-reviews.md: approve, then comment on the
+        # conflict); a dismissal stays held, because it can release a merge.
+        reviewing = args.action in ("approve", "reapprove", "comment", "request-changes")
+        _, verdict = current_assessment(bundle, args.repo, args.number, live_from_rest(pr, target), reviewing)
         accepted = verdict.record() if isinstance(verdict, Benign) else None
         if accepted:
             print("Accepted moved inputs: " + "; ".join(accepted["reasons"]))
@@ -238,7 +241,7 @@ def main():
         drift = None
         if observed.get("state") != "MERGED":
             try:
-                current_assessment(bundle, args.repo, args.number, live_from_view(observed))
+                current_assessment(bundle, args.repo, args.number, live_from_view(observed), reviewing)
             except ValueError as error:
                 drift = str(error)
         if (observed.get("headRefOid") != args.head or not observed.get("reviewDecision")

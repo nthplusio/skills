@@ -769,7 +769,6 @@ class ReviewWriteTests(unittest.TestCase):
              "base changed files this PR changes: src/app.py"),
             ("renamed overlap", moved, MOVED, {**BENIGN_BASE, "compare": {"status": "ahead", "files": [
                 {"filename": "src/main.py", "previous_filename": "src/app.py"}]}}, "base changed files this PR changes"),
-            ("conflict", {**moved, "mergeable": False, "mergeable_state": "dirty"}, MOVED, BENIGN_BASE, "conflicting"),
             ("mergeability unknown", {**moved, "mergeable": None}, MOVED, BENIGN_BASE, "has not reported the PR mergeable"),
             ("unreadable target", pull(), {**TARGET, "sha": None}, BENIGN_BASE, "actual target ref unavailable"),
             ("unreadable base change", moved, MOVED, {"files": BENIGN_BASE["files"]}, "unreadable, truncated or rewritten"),
@@ -786,6 +785,20 @@ class ReviewWriteTests(unittest.TestCase):
                     self.assertEqual((writes, code), ([], 1), output)
                     self.assertIn(reason, output)
                     self.assertEqual(self.recorded, [])
+
+    def test_a_conflicting_pr_gets_its_review_and_a_dismissal_still_holds(self):
+        # Live #3735: the code was cleared, the branch conflicted, and the approval was held.
+        conflicting = pull(base={"sha": MOVED["sha"], "ref": "main"}, mergeable=False, mergeable_state="dirty")
+        for action in ("approve", "comment", "request-changes"):
+            with self.subTest(action=action):
+                writes, output, code = self.run_write(action, flags=["--write"], snapshots=[conflicting, conflicting],
+                                                     target=MOVED, reads=BENIGN_BASE)
+                self.assertEqual(len(writes), 1, output)
+                self.assertIn("Accepted moved inputs: GitHub reports the PR conflicting", output)
+        writes, output, code = self.run_write("dismiss", flags=["--write"], snapshots=[conflicting, conflicting],
+                                             target=MOVED, reads=BENIGN_BASE)
+        self.assertEqual((writes, code), ([], 1), output)
+        self.assertIn("conflicting", output)
 
     def test_discussion_from_bots_automation_and_this_round_is_benign_and_people_are_not(self):
         talked = pull(updated_at=LATER)
